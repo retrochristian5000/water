@@ -774,6 +774,8 @@ extern void x11drv_init_keyboard( Display *display );
 extern void x11drv_keyboard_init_thread( struct x11drv_thread_data *data );
 extern BOOL X11DRV_ProcessEvents( DWORD mask );
 
+extern BOOL is_ime_hkl( HKL hkl );
+
 typedef int (*x11drv_error_callback)( Display *display, XErrorEvent *event, void *arg );
 
 extern void X11DRV_expect_error( Display *display, x11drv_error_callback callback, void *arg );

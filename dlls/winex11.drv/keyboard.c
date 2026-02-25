@@ -1746,6 +1746,17 @@ static LANGID langid_from_xkb_layout( const char *layout )
     return MAKELANGID(LANG_NEUTRAL, SUBLANG_CUSTOM_UNSPECIFIED);
 }
 
+static struct layout *get_layout_from_xkb_group( int xkb_group )
+{
+    struct layout *layout;
+
+    LIST_FOR_EACH_ENTRY( layout, &xkb_layouts, struct layout, entry )
+        if (layout->xkb_group == xkb_group) return layout;
+
+    WARN( "Failed to find layout for Xkb group %d\n", xkb_group );
+    return NULL;
+}
+
 static const char *xkb_layout_from_langid( LANGID langid )
 {
     for (int i = 0; i < ARRAY_SIZE(layout_ids); i++)
@@ -2034,12 +2045,35 @@ void init_keyboard_layouts( Display *display )
     pthread_mutex_unlock( &kbd_mutex );
 }
 
+static HKL get_hkl( LANGID langid, WORD layout_id )
+{
+    LCID locale = LOWORD(NtUserGetKeyboardLayout(0));
+
+    TRACE( "langid %04x, layout_id %04x\n", langid, layout_id );
+
+    if (layout_id) return ULongToHandle( MAKELONG(locale, 0xf000 | layout_id) );
+    return ULongToHandle( MAKELONG(locale, langid) );
+}
+
 /***********************************************************************
  *		ActivateKeyboardLayout (X11DRV.@)
  */
 BOOL X11DRV_ActivateKeyboardLayout(HKL hkl, UINT flags)
 {
+    struct layout *layout = get_layout_from_hkl( hkl );
+
     WARN("%p, %04x: semi-stub!\n", hkl, flags);
+
+    if (layout == get_current_layout()) return TRUE;
+    if (!layout)
+    {
+        if (!is_ime_hkl(hkl))
+        {
+            WARN( "HKL %p not found, returning FALSE\n", hkl );
+            return FALSE;
+        }
+        layout = get_current_layout();
+    }
 
     if (flags & KLF_SETFORPROCESS)
     {
@@ -2055,7 +2089,9 @@ void x11drv_keyboard_init_thread( struct x11drv_thread_data *data )
 {
     unsigned int xkb_group;
     XkbStateRec xkb_state;
+    struct layout *layout;
     Status status;
+    HKL hkl;
 
     XkbUseExtension( data->display, NULL, NULL );
     XkbSetDetectableAutoRepeat( data->display, True, NULL );
@@ -2063,6 +2099,11 @@ void x11drv_keyboard_init_thread( struct x11drv_thread_data *data )
     status = XkbGetState( data->display, XkbUseCoreKbd, &xkb_state );
     xkb_group = status ? 0 : xkb_state.group;
     TRACE( "current group %u (status %#x)\n", xkb_group, status );
+
+    layout = get_layout_from_xkb_group( xkb_group );
+
+    hkl = get_hkl( layout->lang, layout->layout_id );
+    NtUserActivateKeyboardLayout( hkl, 0 );
 }
 
 /***********************************************************************

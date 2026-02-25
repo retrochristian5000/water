@@ -74,7 +74,7 @@ BOOL xim_in_compose_mode(void)
     return !!ime_comp_buf;
 }
 
-static BOOL is_ime_hkl( HKL hkl )
+BOOL is_ime_hkl( HKL hkl )
 {
     /* See https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-language-pack-default-values#input-method-editors */
     switch (HIWORD(hkl))
