@@ -1150,6 +1150,7 @@ static const struct {
  {0, NULL, NULL} /* sentinel */
 };
 static int xkb_event_base, xkb_error_base;
+static unsigned short xkb_device_spec;
 #ifdef SONAME_LIBXKBREGISTRY
 static struct rxkb_context *rxkb_context;
 
@@ -2012,6 +2013,7 @@ void init_keyboard_layouts( Display *display )
 
     if ((xkb_desc = XkbGetMap( display, XkbAllClientInfoMask, XkbUseCoreKbd )))
     {
+        xkb_device_spec = xkb_desc->device_spec;
         XkbGetNames( display, XkbGroupNamesMask, xkb_desc );
         for (count = 0; count < ARRAY_SIZE(xkb_desc->names->groups); count++)
             if (!xkb_desc->names->groups[count]) break;
@@ -2101,6 +2103,16 @@ static void switch_current_xkb_group( int xkb_group )
     NtUserPostMessage( hwnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)hkl );
 }
 
+static void x11drv_update_input_lang( Display *display )
+{
+    XkbStateRec xkb_state;
+    Status status;
+
+    init_keyboard_layouts( display );
+    status = XkbGetState( display, XkbUseCoreKbd, &xkb_state );
+    switch_current_xkb_group( status ? 0 : xkb_state.group );
+}
+
 void x11drv_keyboard_init_thread( struct x11drv_thread_data *data )
 {
     unsigned int xkb_group;
@@ -2110,8 +2122,8 @@ void x11drv_keyboard_init_thread( struct x11drv_thread_data *data )
     HKL hkl;
 
     XkbUseExtension( data->display, NULL, NULL );
-    XkbSelectEvents( data->display, XkbUseCoreKbd, XkbStateNotifyMask,
-                     XkbStateNotifyMask );
+    XkbSelectEvents( data->display, XkbUseCoreKbd, XkbStateNotifyMask | XkbNewKeyboardNotifyMask,
+                     XkbStateNotifyMask | XkbNewKeyboardNotifyMask );
     XkbSetDetectableAutoRepeat( data->display, True, NULL );
     init_keyboard_layouts( data->display );
     status = XkbGetState( data->display, XkbUseCoreKbd, &xkb_state );
@@ -2153,6 +2165,13 @@ BOOL x11drv_xkb_event_handler( HWND dummy, XEvent *event )
                 return TRUE;
             TRACE( "Switching to group %u\n", e->state.group );
             switch_current_xkb_group( e->state.group );
+            break;
+        case XkbNewKeyboardNotify:
+            TRACE( "Received XkbNewKeyboardNotify event, changed %#x, device %u\n",
+                  e->new_kbd.changed, e->new_kbd.device );
+            if ( !xkb_device_spec || e->new_kbd.device != xkb_device_spec )
+                return TRUE;
+            x11drv_update_input_lang( e->new_kbd.display );
             break;
     }
     return TRUE;
