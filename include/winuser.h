@@ -3799,6 +3799,7 @@ typedef struct tagPOINTER_TYPE_INFO
     POINTER_INPUT_TYPE type;
     union
     {
+        POINTER_INFO pointerInfo;
         POINTER_TOUCH_INFO touchInfo;
         POINTER_PEN_INFO penInfo;
     } DUMMYUNIONNAME;
