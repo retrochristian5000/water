@@ -424,6 +424,7 @@ static HRESULT WINAPI color_sink_Receive(struct strmbase_sink *iface, IMediaSamp
     BYTE *src_buff, *dest;
     LONGLONG start, stop;
     DWORD flags, status;
+    AM_MEDIA_TYPE *mt;
     LONG dst_size;
     UINT32 *data;
     HRESULT hr;
@@ -456,6 +457,32 @@ static HRESULT WINAPI color_sink_Receive(struct strmbase_sink *iface, IMediaSamp
     {
         ERR("Failed to get sample, hr %#lx.\n", hr);
         return hr;
+    }
+
+    /* Handle dynamic format change. */
+    if ((hr = IMediaSample_GetMediaType(dst_sample, &mt)) == S_OK)
+    {
+        if (memcmp(mt, &filter->source.pin.mt, offsetof(AM_MEDIA_TYPE, pbFormat))
+                || memcmp(mt->pbFormat, filter->source.pin.mt.pbFormat, mt->cbFormat))
+        {
+            DMO_MEDIA_TYPE dmo_mt;
+
+            populate_output_dmo_mt(&filter->sink.pin.mt, mt, &dmo_mt);
+            if (FAILED(hr = IMediaObject_SetOutputType(filter->dmo, 0, &dmo_mt, 0)))
+                WARN("Failed to update media type, hr %#lx.\n", hr);
+
+            filter->sample_output_stride = calculate_stride(&((VIDEOINFOHEADER *)mt->pbFormat)->bmiHeader);
+            filter->dmo_output_stride = calculate_stride(&((VIDEOINFOHEADER *)dmo_mt.pbFormat)->bmiHeader);
+            filter->dmo_output_sample_size = dmo_mt.lSampleSize;
+
+            FreeMediaType(&filter->source.pin.mt);
+            filter->source.pin.mt = *mt;
+            CoTaskMemFree(mt);
+        }
+    }
+    else if (hr != S_FALSE)
+    {
+        ERR("Failed to get media type, hr %#lx.\n", hr);
     }
 
     header = &((VIDEOINFOHEADER *)filter->source.pin.mt.pbFormat)->bmiHeader;
