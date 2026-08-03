@@ -3945,6 +3945,7 @@ NTSTATUS WINAPI wow64_NtUserMessageCall( UINT *args )
         }
 
     case NtUserWintabDriverCall:
+    case NtUserInjectPointer:
         return NtUserMessageCall( hwnd, msg, wparam, lparam, result_info, type, ansi );
     }
 

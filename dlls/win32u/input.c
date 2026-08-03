@@ -415,8 +415,7 @@ struct pointer
 {
     UINT32 id;
     struct list entry;
-    POINTER_INPUT_TYPE type;
-    POINTER_INFO info;
+    POINTER_TYPE_INFO info;
 };
 
 BOOL grab_pointer = TRUE;
@@ -2964,7 +2963,7 @@ static struct pointer *pointer_create( UINT32 id, POINTER_INPUT_TYPE type )
 
     if (!(pointer = calloc( 1, sizeof(*pointer) ))) return NULL;
     pointer->id = id;
-    pointer->type = type;
+    pointer->info.type = type;
     list_add_tail( &thread_info->known_pointers, &pointer->entry );
 
     return pointer;
@@ -3042,20 +3041,49 @@ static POINTER_BUTTON_CHANGE_TYPE compare_button( const POINTER_INFO *old, const
     return change;
 }
 
-void update_pointer_from_msg( POINTER_INPUT_TYPE type, const MSG *msg )
+static void update_pointer( const POINTER_TYPE_INFO *pointer_info )
 {
-    POINTER_INFO info = pointer_info_from_msg( msg );
-    POINTER_BUTTON_CHANGE_TYPE buttons;
+    POINTER_INFO info = pointer_info->pointerInfo;
+    POINTER_INPUT_TYPE type = pointer_info->type;
     struct pointer *pointer;
 
     TRACE( "updating pointer id %d.\n", info.pointerId );
 
     if (!(pointer = find_pointer( info.pointerId )) && !(pointer = pointer_create( info.pointerId, type ))) return;
 
-    buttons = compare_button( &pointer->info, &info );
-    pointer->info = info;
-    pointer->info.pointerType = pointer->type;
-    pointer->info.ButtonChangeType = buttons;
+    info.ButtonChangeType = compare_button( &pointer->info.pointerInfo, &info );
+    pointer->info = *pointer_info;
+    pointer->info.pointerInfo = info;
+}
+
+void update_pointer_from_msg( POINTER_INPUT_TYPE type, const MSG *msg )
+{
+    POINTER_TYPE_INFO info = { .type = type, .pointerInfo = pointer_info_from_msg( msg ) };
+
+    update_pointer( &info );
+}
+
+NTSTATUS send_pointer_message( UINT msg, const POINTER_TYPE_INFO *info )
+{
+    POINTER_TYPE_INFO pointer = *info;
+    LARGE_INTEGER counter;
+    NTSTATUS ret;
+
+    TRACE( "Injecting pointer msg %#x.\n", msg );
+    NtQueryPerformanceCounter( &counter, NULL );
+    pointer.pointerInfo.PerformanceCount = counter.QuadPart;
+    pointer.pointerInfo.dwTime = NtGetTickCount();
+
+    SERVER_START_REQ( send_pointer_message )
+    {
+        req->win = wine_server_user_handle( pointer.pointerInfo.hwndTarget );
+        req->msg = msg;
+        wine_server_add_data( req, &pointer, sizeof(pointer) );
+        ret = wine_server_call( req );
+    }
+    SERVER_END_REQ;
+
+    return ret;
 }
 
 static POINTER_INPUT_TYPE pointer_type_from_hw( const struct hw_msg_source *source )
@@ -3077,7 +3105,10 @@ static POINTER_INPUT_TYPE pointer_type_from_hw( const struct hw_msg_source *sour
  */
 BOOL process_pointer_message( MSG *msg, UINT hw_id, const struct hardware_msg_data *msg_data )
 {
-    update_pointer_from_msg( pointer_type_from_hw( &msg_data->source ), msg );
+    if (msg_data->size == sizeof(*msg_data) + sizeof(POINTER_TYPE_INFO))
+        update_pointer((POINTER_TYPE_INFO *)(msg_data + 1));
+    else
+        update_pointer_from_msg( pointer_type_from_hw( &msg_data->source ), msg );
     msg->pt = point_phys_to_win_dpi( msg->hwnd, msg->pt );
     return TRUE;
 }
@@ -3113,7 +3144,7 @@ BOOL WINAPI NtUserGetPointerType( UINT32 id, POINTER_INPUT_TYPE *type )
         return FALSE;
     }
 
-    *type = pointer->type;
+    *type = pointer->info.type;
     return TRUE;
 }
 
@@ -3158,7 +3189,7 @@ BOOL WINAPI NtUserGetPointerInfoList( UINT32 id, POINTER_INPUT_TYPE type, UINT_P
     *pointer_count = 1;
 
     memset( pointer_info, 0, size );
-    *(POINTER_INFO *)pointer_info = pointer->info;
+    *(POINTER_INFO *)pointer_info = pointer->info.pointerInfo;
     return TRUE;
 }
 

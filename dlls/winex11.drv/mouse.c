@@ -1675,36 +1675,41 @@ static BOOL X11DRV_RawMotion( XGenericEventCookie *xev )
 static BOOL X11DRV_TouchEvent( HWND hwnd, XGenericEventCookie *xev )
 {
     RECT virtual = NtUserGetVirtualScreenRect( MDT_RAW_DPI );
-    INPUT input = {.type = INPUT_HARDWARE};
+    POINTER_TYPE_INFO pointer_info = { .type = PT_TOUCH };
+    POINTER_INFO *info = &pointer_info.pointerInfo;
     XIDeviceEvent *event = xev->data;
     POINT pt = { event->event_x, event->event_y }, root = { event->root_x, event->root_y };
-    int flags = 0;
     POINT pos;
+    UINT msg;
 
     pt = map_event_coords( hwnd, event->event, event->root, root, pt );
     pos.x = pt.x * 65535 / (virtual.right - virtual.left);
     pos.y = pt.y * 65535 / (virtual.bottom - virtual.top);
 
+    info->ptPixelLocation = pos;
+    info->pointerId = event->detail;
+    info->pointerFlags = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT;
+
     switch (event->evtype)
     {
     case XI_TouchBegin:
-        input.hi.uMsg = WM_POINTERDOWN;
-        flags |= POINTER_MESSAGE_FLAG_NEW;
-        TRACE("XI_TouchBegin detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, flags);
+        msg = WM_POINTERDOWN;
+        info->pointerFlags |= POINTER_FLAG_NEW;
+        TRACE("XI_TouchBegin detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, info->pointerFlags);
         break;
     case XI_TouchEnd:
-        input.hi.uMsg = WM_POINTERUP;
-        TRACE("XI_TouchEnd detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, flags);
+        msg = WM_POINTERUP;
+        TRACE("XI_TouchEnd detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, info->pointerFlags);
         break;
     case XI_TouchUpdate:
-        input.hi.uMsg = WM_POINTERUPDATE;
-        TRACE("XI_TouchUpdate detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, flags);
+        msg = WM_POINTERUPDATE;
+        TRACE("XI_TouchUpdate detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, info->pointerFlags);
         break;
+    default:
+        return TRUE;
     }
 
-    input.hi.wParamL = event->detail;
-    input.hi.wParamH = POINTER_MESSAGE_FLAG_INRANGE | POINTER_MESSAGE_FLAG_INCONTACT | flags;
-    NtUserSendHardwareInput( hwnd, 0, &input, MAKELPARAM( pos.x, pos.y ) );
+    NtUserMessageCall( hwnd, msg, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
 
     return TRUE;
 }

@@ -2463,18 +2463,19 @@ struct pointer
     struct desktop *desktop;
     user_handle_t win;
     int primary;
-    union hw_input input;
+    POINTER_TYPE_INFO info;
 };
 
-static void queue_pointer_message( struct pointer *pointer, int repeated );
+static unsigned int pointer_frame = 1;
+static void queue_pointer_message( UINT message, struct pointer *pointer, int repeated );
 
 static void pointer_message_timeout( void *private )
 {
     struct pointer *pointer = private;
-    queue_pointer_message( pointer, 1 );
+    queue_pointer_message( WM_POINTERUPDATE, pointer, 1 );
 }
 
-static void queue_pointer_message( struct pointer *pointer, int repeated )
+static void queue_pointer_message( UINT message, struct pointer *pointer, int repeated )
 {
     static const unsigned int messages[][2] =
     {
@@ -2485,30 +2486,37 @@ static void queue_pointer_message( struct pointer *pointer, int repeated )
     struct hw_msg_source source = { IMDT_UNAVAILABLE, IMDT_TOUCH };
     struct desktop *desktop = pointer->desktop;
     desktop_shm_t *desktop_shm = desktop->shared;
-    const union hw_input *input = &pointer->input;
-    unsigned int i, wparam = input->hw.wparam;
+    POINTER_INFO *info = &pointer->info.pointerInfo;
     timeout_t time = get_tick_count();
     user_handle_t win = pointer->win;
     struct rectangle top_rect;
+    unsigned int i, wparam;
     struct message *msg;
     int x, y;
 
     get_virtual_screen_rect( desktop, &top_rect, 0 );
-    x = LOWORD(input->hw.lparam) * (top_rect.right - top_rect.left) / 65535;
-    y = HIWORD(input->hw.lparam) * (top_rect.bottom - top_rect.top) / 65535;
+    x = info->ptPixelLocation.x * (top_rect.right - top_rect.left) / 65535;
+    y = info->ptPixelLocation.y * (top_rect.bottom - top_rect.top) / 65535;
 
-    if (pointer->primary) wparam |= POINTER_MESSAGE_FLAG_PRIMARY << 16;
+    if (pointer->primary) info->pointerFlags |= POINTER_FLAG_PRIMARY;
+    info->pointerType = pointer->info.type;
+    info->frameId = pointer_frame++;
 
-    for (i = 0; i < 2 && messages[input->hw.msg - WM_POINTERUPDATE][i]; i++)
+    wparam = MAKELONG(info->pointerId, info->pointerFlags);
+    for (i = 0; i < 2 && messages[message - WM_POINTERUPDATE][i]; i++)
     {
-        if (!(msg = alloc_hardware_message( 0, source, time, 0 ))) return;
+        struct hardware_msg_data *msg_data;
+
+        if (!(msg = alloc_hardware_message( 0, source, time, sizeof(*info) ))) return;
 
         msg->win       = get_user_full_handle( win );
-        msg->msg       = messages[input->hw.msg - WM_POINTERUPDATE][i];
+        msg->msg       = messages[message - WM_POINTERUPDATE][i];
         msg->wparam    = wparam;
         msg->lparam    = MAKELONG(x, y);
         msg->x         = desktop_shm->cursor.x;
         msg->y         = desktop_shm->cursor.y;
+        msg_data       = msg->data;
+        mem_append( msg_data + 1, info, sizeof(*info) );
 
         queue_hardware_message( desktop, msg, 1 );
     }
@@ -2516,8 +2524,8 @@ static void queue_pointer_message( struct pointer *pointer, int repeated )
     if (!repeated && pointer->primary && (msg = alloc_hardware_message( 0xff515700, source, time, 0 )))
     {
         unsigned int message = WM_MOUSEMOVE;
-        if (input->hw.msg == WM_POINTERDOWN) message = WM_LBUTTONDOWN;
-        else if (input->hw.msg == WM_POINTERUP) message = WM_LBUTTONUP;
+        if (message == WM_POINTERDOWN) message = WM_LBUTTONDOWN;
+        else if (message == WM_POINTERUP) message = WM_LBUTTONUP;
 
         msg->win       = get_user_full_handle( win );
         msg->msg       = message;
@@ -2530,11 +2538,10 @@ static void queue_pointer_message( struct pointer *pointer, int repeated )
             queue_hardware_message( desktop, msg, 0 );
     }
 
-    if (input->hw.msg != WM_POINTERUP)
+    if (message != WM_POINTERUP)
     {
-        pointer->input.hw.msg = WM_POINTERUPDATE;
-        pointer->input.hw.wparam &= ~(POINTER_MESSAGE_FLAG_NEW << 16);
         pointer->timeout = add_timeout_user( -160000, pointer_message_timeout, pointer );
+        info->pointerFlags &= ~POINTER_FLAG_NEW;
     }
     else
     {
@@ -2548,7 +2555,7 @@ static struct pointer *find_pointer_from_id( struct desktop *desktop, unsigned i
     struct pointer *pointer;
 
     LIST_FOR_EACH_ENTRY( pointer, &desktop->pointers, struct pointer, entry )
-        if (LOWORD(pointer->input.hw.wparam) == id) return pointer;
+        if (pointer->info.pointerInfo.pointerId == id) return pointer;
 
     pointer = mem_alloc( sizeof(struct pointer) );
     pointer->timeout = NULL;
@@ -2566,7 +2573,6 @@ static void queue_custom_hardware_message( struct desktop *desktop, user_handle_
     desktop_shm_t *desktop_shm = desktop->shared;
     struct hw_msg_source source = { IMDT_UNAVAILABLE, origin };
     struct thread *foreground;
-    struct pointer *pointer;
     struct message *msg;
 
     switch (input->hw.msg)
@@ -2589,16 +2595,14 @@ static void queue_custom_hardware_message( struct desktop *desktop, user_handle_
             release_object( foreground );
         }
         return;
-    }
 
-    if (input->hw.msg == WM_POINTERDOWN || input->hw.msg == WM_POINTERUP || input->hw.msg == WM_POINTERUPDATE)
-    {
-        pointer = find_pointer_from_id( desktop, LOWORD(input->hw.wparam) );
-        if (pointer->timeout) remove_timeout_user( pointer->timeout );
-        pointer->input = *input;
-        pointer->win = win;
-
-        queue_pointer_message( pointer, 0 );
+    case WM_POINTERUPDATE:
+    case WM_POINTERDOWN:
+    case WM_POINTERUP:
+    case WM_POINTERENTER:
+    case WM_POINTERLEAVE:
+        /* should use send_pointer_message */
+        set_error( STATUS_INVALID_PARAMETER );
         return;
     }
 
@@ -3230,6 +3234,28 @@ DECL_HANDLER(send_hardware_message)
     reply->new_x = desktop_shm->cursor.x;
     reply->new_y = desktop_shm->cursor.y;
     release_object( desktop );
+}
+
+DECL_HANDLER(send_pointer_message)
+{
+    const POINTER_TYPE_INFO *info = get_req_data();
+    struct pointer *pointer;
+    struct desktop *desktop;
+
+    if (!(desktop = get_hardware_input_desktop( req->win ))) return;
+    if (get_req_data_size() != sizeof(*info))
+    {
+        set_error( STATUS_INVALID_PARAMETER );
+        return;
+    }
+
+    pointer = find_pointer_from_id( desktop, LOWORD(info->pointerInfo.pointerId) );
+    if (pointer->timeout) remove_timeout_user( pointer->timeout );
+    pointer->info = *info;
+    pointer->win = req->win;
+
+    queue_pointer_message( req->msg, pointer, 0 );
+    return;
 }
 
 /* post a quit message to the current queue */
