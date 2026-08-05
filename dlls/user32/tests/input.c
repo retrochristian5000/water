@@ -3766,6 +3766,7 @@ static void test_keyboard_layout_name(void)
     free(layouts_preload);
 }
 
+static HWND expect_hwnd;
 static HKL expect_hkl;
 static HKL change_hkl;
 static int got_setfocus;
@@ -3774,7 +3775,11 @@ static LRESULT CALLBACK test_ActivateKeyboardLayout_window_proc( HWND hwnd, UINT
 {
     ok( msg != WM_INPUTLANGCHANGEREQUEST, "got WM_INPUTLANGCHANGEREQUEST\n" );
 
-    if (msg == WM_SETFOCUS) got_setfocus = 1;
+    if (msg == WM_SETFOCUS)
+    {
+        got_setfocus = 1;
+        if (expect_hwnd) ok( hwnd == expect_hwnd, "got hwnd %p\n", hwnd );
+    }
     if (msg == WM_INPUTLANGCHANGE)
     {
         HKL layout = GetKeyboardLayout( 0 );
@@ -3782,6 +3787,8 @@ static LRESULT CALLBACK test_ActivateKeyboardLayout_window_proc( HWND hwnd, UINT
         WCHAR klidW[64];
         UINT codepage;
         LCID lcid;
+
+        if (expect_hwnd) ok( hwnd == expect_hwnd, "got hwnd %p\n", hwnd );
 
         /* get keyboard layout lcid from its name, as the HKL might be aliased */
         GetKeyboardLayoutNameW( klidW );
@@ -3814,7 +3821,7 @@ static DWORD CALLBACK test_ActivateKeyboardLayout_thread_proc( void *arg )
 static void test_ActivateKeyboardLayout( char **argv )
 {
     HKL layout, tmp_layout, *layouts;
-    HWND hwnd1, hwnd2;
+    HWND hwnd1, hwnd2, focus_hwnd;
     HANDLE thread;
     UINT i, count;
     DWORD ret;
@@ -3850,6 +3857,7 @@ static void test_ActivateKeyboardLayout( char **argv )
 
         /* test WM_INPUTLANGCHANGE message */
 
+        expect_hwnd = 0;
         change_hkl = 0;
         expect_hkl = other_layout;
         got_setfocus = 0;
@@ -3858,6 +3866,72 @@ static void test_ActivateKeyboardLayout( char **argv )
         else todo_wine ok( change_hkl == other_layout, "got change_hkl %p\n", change_hkl );
         change_hkl = expect_hkl = 0;
 
+        tmp_layout = GetKeyboardLayout( 0 );
+        todo_wine_if(layout != other_layout)
+        ok( tmp_layout == other_layout, "got tmp_layout %p\n", tmp_layout );
+
+        /* the message is sent to the focus window, whether it's a top level window or not */
+        hwnd2 = CreateWindowA( "static", "static", WS_VISIBLE | WS_CHILD,
+                               0, 0, 100, 100, hwnd1, NULL, NULL, NULL );
+        ok( !!hwnd2, "CreateWindow failed, error %lu\n", GetLastError() );
+        trace("hwnd1 %p, hwnd2 %p\n", hwnd1, hwnd2);
+
+        SetWindowLongPtrA( hwnd2, GWLP_WNDPROC, (LONG_PTR)test_ActivateKeyboardLayout_window_proc );
+
+        focus_hwnd = GetFocus();
+        ok( focus_hwnd == hwnd1, "got focus window %p\n", focus_hwnd );
+
+        expect_hkl = layout;
+        got_setfocus = 0;
+        SetFocus( hwnd2 );
+
+        focus_hwnd = GetFocus();
+        ok( focus_hwnd == hwnd2, "got focus window %p\n", focus_hwnd );
+
+        tmp_layout = GetKeyboardLayout( 0 );
+        todo_wine_if(layout != other_layout)
+        ok( tmp_layout == other_layout, "got tmp_layout %p\n", tmp_layout );
+
+        expect_hwnd = hwnd2;
+        change_hkl = 0;
+        expect_hkl = layout;
+        got_setfocus = 0;
+        ActivateKeyboardLayout( layout, 0 );
+        empty_message_queue();
+        if (other_layout == layout) ok( change_hkl == 0, "got change_hkl %p\n", change_hkl );
+        else todo_wine ok( change_hkl == layout, "got change_hkl %p\n", change_hkl );
+        ok( !got_setfocus, "got got_setfocus %d\n", got_setfocus );
+        expect_hwnd = 0;
+        change_hkl = expect_hkl = 0;
+
+        tmp_layout = GetKeyboardLayout( 0 );
+        todo_wine_if(layout != other_layout)
+        ok( tmp_layout == layout, "got tmp_layout %p\n", tmp_layout );
+
+        expect_hkl = layout;
+        got_setfocus = 0;
+        SetFocus( hwnd1 );
+        empty_message_queue();
+
+        tmp_layout = GetKeyboardLayout( 0 );
+        todo_wine_if(layout != other_layout)
+        ok( tmp_layout == layout, "got tmp_layout %p\n", tmp_layout );
+
+        if (other_layout == layout) ok( change_hkl == 0, "got change_hkl %p\n", change_hkl );
+        else todo_wine ok( change_hkl == 0, "got change_hkl %p\n", change_hkl );
+        change_hkl = expect_hkl = 0;
+
+        DestroyWindow( hwnd2 );
+        empty_message_queue();
+
+        change_hkl = 0;
+        expect_hkl = other_layout;
+        got_setfocus = 0;
+        ActivateKeyboardLayout( other_layout, 0 );
+        empty_message_queue();
+        if (other_layout == layout) ok( change_hkl == 0, "got change_hkl %p\n", change_hkl );
+        else todo_wine ok( change_hkl == other_layout, "got change_hkl %p\n", change_hkl );
+        change_hkl = expect_hkl = 0;
         tmp_layout = GetKeyboardLayout( 0 );
         todo_wine_if(layout != other_layout)
         ok( tmp_layout == other_layout, "got tmp_layout %p\n", tmp_layout );
