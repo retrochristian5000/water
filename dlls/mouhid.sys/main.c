@@ -148,6 +148,8 @@ static void add_contact( struct device *impl, struct list *old_contacts, ULONG i
     info->pointerId = contact->id;
     info->pointerFlags = flags;
     info->ptPixelLocation = contact->pos;
+    if (msg == WM_POINTERDOWN)
+        NtUserMessageCall(0, WM_POINTERENTER, 0, 0, &pointer, NtUserInjectPointer, FALSE);
     NtUserMessageCall(0, msg, 0, 0, &pointer, NtUserInjectPointer, FALSE);
 
     list_add_tail( &impl->contacts, &contact->entry );
@@ -170,6 +172,7 @@ static void release_contacts( struct list *contacts )
         info->ptPixelLocation = contact->pos;
 
         NtUserMessageCall(0, WM_POINTERUP, 0, 0, &pointer, NtUserInjectPointer, FALSE);
+        NtUserMessageCall(0, WM_POINTERLEAVE, 0, 0, &pointer, NtUserInjectPointer, FALSE);
 
         list_remove( &contact->entry );
         free( contact );

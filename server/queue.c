@@ -2477,20 +2477,15 @@ static void pointer_message_timeout( void *private )
 
 static void queue_pointer_message( UINT message, struct pointer *pointer, int repeated )
 {
-    static const unsigned int messages[][2] =
-    {
-        {WM_POINTERUPDATE, 0},
-        {WM_POINTERENTER, WM_POINTERDOWN},
-        {WM_POINTERUP, WM_POINTERLEAVE},
-    };
     struct hw_msg_source source = { IMDT_UNAVAILABLE, IMDT_TOUCH };
     struct desktop *desktop = pointer->desktop;
     desktop_shm_t *desktop_shm = desktop->shared;
     POINTER_INFO *info = &pointer->info.pointerInfo;
+    struct hardware_msg_data *msg_data;
     timeout_t time = get_tick_count();
     user_handle_t win = pointer->win;
     struct rectangle top_rect;
-    unsigned int i, wparam;
+    unsigned int wparam;
     struct message *msg;
     int x, y;
 
@@ -2503,23 +2498,18 @@ static void queue_pointer_message( UINT message, struct pointer *pointer, int re
     info->frameId = pointer_frame++;
 
     wparam = MAKELONG(info->pointerId, info->pointerFlags);
-    for (i = 0; i < 2 && messages[message - WM_POINTERUPDATE][i]; i++)
-    {
-        struct hardware_msg_data *msg_data;
+    if (!(msg = alloc_hardware_message( 0, source, time, sizeof(pointer->info) ))) return;
 
-        if (!(msg = alloc_hardware_message( 0, source, time, sizeof(*info) ))) return;
+    msg->win       = get_user_full_handle( win );
+    msg->msg       = message;
+    msg->wparam    = wparam;
+    msg->lparam    = MAKELONG(x, y);
+    msg->x         = desktop_shm->cursor.x;
+    msg->y         = desktop_shm->cursor.y;
+    msg_data       = msg->data;
+    mem_append( msg_data + 1, &pointer->info, sizeof(pointer->info) );
 
-        msg->win       = get_user_full_handle( win );
-        msg->msg       = messages[message - WM_POINTERUPDATE][i];
-        msg->wparam    = wparam;
-        msg->lparam    = MAKELONG(x, y);
-        msg->x         = desktop_shm->cursor.x;
-        msg->y         = desktop_shm->cursor.y;
-        msg_data       = msg->data;
-        mem_append( msg_data + 1, info, sizeof(*info) );
-
-        queue_hardware_message( desktop, msg, 1 );
-    }
+    queue_hardware_message( desktop, msg, 1 );
 
     if (!repeated && pointer->primary && (msg = alloc_hardware_message( 0xff515700, source, time, 0 )))
     {
@@ -2538,7 +2528,7 @@ static void queue_pointer_message( UINT message, struct pointer *pointer, int re
             queue_hardware_message( desktop, msg, 0 );
     }
 
-    if (message != WM_POINTERUP)
+    if (message != WM_POINTERLEAVE)
     {
         pointer->timeout = add_timeout_user( -160000, pointer_message_timeout, pointer );
         info->pointerFlags &= ~POINTER_FLAG_NEW;

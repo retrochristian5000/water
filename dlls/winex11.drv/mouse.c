@@ -1680,7 +1680,6 @@ static BOOL X11DRV_TouchEvent( HWND hwnd, XGenericEventCookie *xev )
     XIDeviceEvent *event = xev->data;
     POINT pt = { event->event_x, event->event_y }, root = { event->root_x, event->root_y };
     POINT pos;
-    UINT msg;
 
     pt = map_event_coords( hwnd, event->event, event->root, root, pt );
     pos.x = pt.x * 65535 / (virtual.right - virtual.left);
@@ -1693,23 +1692,26 @@ static BOOL X11DRV_TouchEvent( HWND hwnd, XGenericEventCookie *xev )
     switch (event->evtype)
     {
     case XI_TouchBegin:
-        msg = WM_POINTERDOWN;
         info->pointerFlags |= POINTER_FLAG_NEW;
         TRACE("XI_TouchBegin detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, info->pointerFlags);
+
+        NtUserMessageCall( hwnd, WM_POINTERENTER, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
+        NtUserMessageCall( hwnd, WM_POINTERDOWN, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
         break;
     case XI_TouchEnd:
-        msg = WM_POINTERUP;
         TRACE("XI_TouchEnd detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, info->pointerFlags);
+
+        NtUserMessageCall( hwnd, WM_POINTERUP, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
+        NtUserMessageCall( hwnd, WM_POINTERLEAVE, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
         break;
     case XI_TouchUpdate:
-        msg = WM_POINTERUPDATE;
         TRACE("XI_TouchUpdate detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, info->pointerFlags);
+
+        NtUserMessageCall( hwnd, WM_POINTERUPDATE, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
         break;
     default:
         return TRUE;
     }
-
-    NtUserMessageCall( hwnd, msg, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
 
     return TRUE;
 }
