@@ -2512,7 +2512,7 @@ static void queue_pointer_message( UINT message, struct pointer *pointer, int re
 
     queue_hardware_message( desktop, msg, 1 );
 
-    if (!repeated && pointer->primary)
+    if (!repeated && message != WM_POINTERENTER && pointer->primary)
     {
         int click_msgs[2] = { WM_LBUTTONDOWN, WM_LBUTTONUP }, move_msg[2] = { WM_MOUSEMOVE }, *msgs;
         msgs = message == WM_POINTERUP ? click_msgs : move_msg;
