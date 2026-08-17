@@ -4821,6 +4821,10 @@ LRESULT WINAPI NtUserMessageCall( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
     case NtUserInjectPointer:
         return send_pointer_message( msg, result_info );
 
+    case NtUserAllocatePointer:
+        *(UINT *)result_info = allocate_pointer_id();
+        return 0;
+
     default:
         FIXME( "%p %x %lx %lx %p %x %x\n", hwnd, msg, (long)wparam, lparam, result_info, type, ansi );
     }

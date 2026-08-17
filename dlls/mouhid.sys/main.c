@@ -40,7 +40,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(hid);
 struct contact
 {
     struct list entry;
-    ULONG id;
+    UINT id;
+    ULONG hid_id;
     POINT pos;
 };
 
@@ -118,7 +119,7 @@ static void add_contact( struct device *impl, struct list *old_contacts, ULONG i
     struct contact *contact;
 
     LIST_FOR_EACH_ENTRY( contact, old_contacts, struct contact, entry )
-        if (contact->id == id) break;
+        if (contact->hid_id == id) break;
 
     if (&contact->entry != old_contacts)
     {
@@ -127,17 +128,18 @@ static void add_contact( struct device *impl, struct list *old_contacts, ULONG i
 
         contact->pos.x = x;
         contact->pos.y = y;
-        TRACE( "updating contact %#lx, pos %s\n", contact->id, wine_dbgstr_point( &contact->pos ) );
+        TRACE( "updating contact %#lx, pos %s\n", contact->hid_id, wine_dbgstr_point( &contact->pos ) );
     }
     else if ((contact = calloc( 1, sizeof(*contact) )))
     {
         msg = WM_POINTERDOWN;
         flags |= POINTER_MESSAGE_FLAG_NEW;
 
-        contact->id = id;
+        NtUserMessageCall(0, 0, 0, 0, &contact->id, NtUserAllocatePointer, FALSE);
+        contact->hid_id = id;
         contact->pos.x = x;
         contact->pos.y = y;
-        TRACE( "new contact %#lx, pos %s\n", contact->id, wine_dbgstr_point( &contact->pos ) );
+        TRACE( "new contact %#lx, pos %s\n", contact->hid_id, wine_dbgstr_point( &contact->pos ) );
     }
     else
     {
@@ -165,7 +167,7 @@ static void release_contacts( struct list *contacts )
         ULONG flags = POINTER_MESSAGE_FLAG_CONFIDENCE;
         POINTER_INFO *info = &pointer.pointerInfo;
 
-        TRACE( "releasing contact %#lx, pos %s\n", contact->id, wine_dbgstr_point( &contact->pos ) );
+        TRACE( "releasing contact %#lx, pos %s\n", contact->hid_id, wine_dbgstr_point( &contact->pos ) );
 
         info->pointerId = contact->id;
         info->pointerFlags = flags;

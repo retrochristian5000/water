@@ -2467,6 +2467,9 @@ struct pointer
 };
 
 static unsigned int pointer_frame = 1;
+/* pointer id 1 is always hardcoded to PT_MOUSE */
+static unsigned int last_pointer_id = 2;
+
 static void queue_pointer_message( UINT message, struct pointer *pointer, int repeated );
 
 static void pointer_message_timeout( void *private )
@@ -3246,6 +3249,11 @@ DECL_HANDLER(send_pointer_message)
 
     queue_pointer_message( req->msg, pointer, 0 );
     return;
+}
+
+DECL_HANDLER(allocate_pointer_id)
+{
+    reply->id = last_pointer_id++;
 }
 
 /* post a quit message to the current queue */

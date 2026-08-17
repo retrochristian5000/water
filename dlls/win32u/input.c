@@ -2969,6 +2969,20 @@ static struct pointer *pointer_create( UINT32 id, POINTER_INPUT_TYPE type )
     return pointer;
 }
 
+W32KAPI UINT allocate_pointer_id( void )
+{
+    UINT pointerid;
+
+    SERVER_START_REQ( allocate_pointer_id )
+    {
+        wine_server_call( req );
+        pointerid = reply->id;
+    }
+    SERVER_END_REQ;
+
+    return pointerid;
+}
+
 static struct pointer *find_pointer( UINT32 id )
 {
     struct user_thread_info *thread_info = get_user_thread_info();

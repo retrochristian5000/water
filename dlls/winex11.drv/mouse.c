@@ -121,6 +121,14 @@ static const UINT button_up_data[NB_BUTTONS] =
 
 XContext cursor_context = 0;
 
+struct pointer
+{
+    UINT detail, id;
+    struct list entry;
+};
+
+static struct list pointers = LIST_INIT( pointers );
+
 static RECT clip_rect;
 static Cursor create_cursor( HANDLE handle );
 
@@ -1672,6 +1680,24 @@ static BOOL X11DRV_RawMotion( XGenericEventCookie *xev )
     return TRUE;
 }
 
+static struct pointer *pointer_get(UINT detail)
+{
+    struct pointer *pointer;
+
+    LIST_FOR_EACH_ENTRY( pointer, &pointers, struct pointer, entry )
+        if (pointer->detail == detail)
+            return pointer;
+
+    if (!(pointer = calloc( 1, sizeof( *pointer ))))
+        return NULL;
+
+    pointer->detail = detail;
+    NtUserMessageCall(0, 0, 0, 0, &pointer->id, NtUserAllocatePointer, FALSE);
+    list_add_tail( &pointers, &pointer->entry );
+
+    return pointer;
+}
+
 static BOOL X11DRV_TouchEvent( HWND hwnd, XGenericEventCookie *xev )
 {
     RECT virtual = NtUserGetVirtualScreenRect( MDT_RAW_DPI );
@@ -1679,14 +1705,20 @@ static BOOL X11DRV_TouchEvent( HWND hwnd, XGenericEventCookie *xev )
     POINTER_INFO *info = &pointer_info.pointerInfo;
     XIDeviceEvent *event = xev->data;
     POINT pt = { event->event_x, event->event_y }, root = { event->root_x, event->root_y };
+    struct pointer *pointer;
     POINT pos;
+    UINT id;
+
+    if (!(pointer = pointer_get(event->detail)))
+        return FALSE;
 
     pt = map_event_coords( hwnd, event->event, event->root, root, pt );
     pos.x = pt.x * 65535 / (virtual.right - virtual.left);
     pos.y = pt.y * 65535 / (virtual.bottom - virtual.top);
+    id = pointer->id;
 
     info->ptPixelLocation = pos;
-    info->pointerId = event->detail;
+    info->pointerId = id;
     info->pointerFlags = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT;
 
     switch (event->evtype)
@@ -1703,6 +1735,8 @@ static BOOL X11DRV_TouchEvent( HWND hwnd, XGenericEventCookie *xev )
 
         NtUserMessageCall( hwnd, WM_POINTERUP, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
         NtUserMessageCall( hwnd, WM_POINTERLEAVE, 0, 0, &pointer_info, NtUserInjectPointer, FALSE );
+        list_remove( &pointer->entry );
+        free( pointer );
         break;
     case XI_TouchUpdate:
         TRACE("XI_TouchUpdate detail %u pos %dx%d, flags %#x\n", event->detail, pos.x, pos.y, info->pointerFlags);

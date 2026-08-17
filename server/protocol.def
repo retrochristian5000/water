@@ -2441,6 +2441,11 @@ enum message_type
     VARARG(data,bytes);
 @END
 
+@REQ(allocate_pointer_id)
+@REPLY
+    unsigned int id;
+@END
+
 /* Get a message from the current queue */
 @REQ(get_message)
     unsigned int    flags;     /* PM_* flags */

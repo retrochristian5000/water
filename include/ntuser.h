@@ -418,6 +418,7 @@ enum
     NtUserPostDdeCall         = 0x0308,
     NtUserWintabDriverCall    = 0x0309,
     NtUserInjectPointer       = 0x030a,
+    NtUserAllocatePointer     = 0x030b,
 };
 
 /* NtUserWintabDriverCall codes */

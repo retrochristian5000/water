@@ -114,6 +114,7 @@ extern USHORT map_scan_to_kbd_vkey( USHORT scan, HKL layout, UINT *mapped );
 extern void destroy_thread_pointers(void);
 extern BOOL process_pointer_message( MSG *msg, UINT hw_id, const struct hardware_msg_data *msg_data );
 extern NTSTATUS send_pointer_message( UINT msg, const POINTER_TYPE_INFO *info );
+extern UINT allocate_pointer_id( void );
 extern void update_pointer_from_msg( POINTER_INPUT_TYPE type, const MSG *msg );
 extern NTSTATUS send_hardware_input( HWND hwnd, UINT flags, const INPUT *input, LPARAM lparam );
 
