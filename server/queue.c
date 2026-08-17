@@ -2512,21 +2512,25 @@ static void queue_pointer_message( UINT message, struct pointer *pointer, int re
 
     queue_hardware_message( desktop, msg, 1 );
 
-    if (!repeated && pointer->primary && (msg = alloc_hardware_message( 0xff515700, source, time, 0 )))
+    if (!repeated && pointer->primary)
     {
-        unsigned int message = WM_MOUSEMOVE;
-        if (message == WM_POINTERDOWN) message = WM_LBUTTONDOWN;
-        else if (message == WM_POINTERUP) message = WM_LBUTTONUP;
+        int click_msgs[2] = { WM_LBUTTONDOWN, WM_LBUTTONUP }, move_msg[2] = { WM_MOUSEMOVE }, *msgs;
+        msgs = message == WM_POINTERUP ? click_msgs : move_msg;
 
-        msg->win       = get_user_full_handle( win );
-        msg->msg       = message;
-        msg->wparam    = 0;
-        msg->lparam    = 0;
-        msg->x         = x;
-        msg->y         = y;
+        for (size_t i = 0; i < 2 && msgs[i]; i++)
+        {
+            if (!(msg = alloc_hardware_message( 0xff515700, source, time, 0 )))
+                break;
+            msg->win       = get_user_full_handle( win );
+            msg->msg       = msgs[i];
+            msg->wparam    = 0;
+            msg->lparam    = 0;
+            msg->x         = x;
+            msg->y         = y;
 
-        if (!send_hook_ll_message( desktop, msg, WH_MOUSE_LL, 0, NULL ))
-            queue_hardware_message( desktop, msg, 0 );
+            if (!send_hook_ll_message( desktop, msg, WH_MOUSE_LL, 0, NULL ))
+                queue_hardware_message( desktop, msg, 0 );
+        }
     }
 
     if (message != WM_POINTERLEAVE)
