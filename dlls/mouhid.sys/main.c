@@ -114,6 +114,7 @@ static NTSTATUS start_device_read( DEVICE_OBJECT *device )
 static void add_contact( struct device *impl, struct list *old_contacts, ULONG id, LONG x, LONG y )
 {
     UINT msg, flags = POINTER_MESSAGE_FLAG_INRANGE | POINTER_MESSAGE_FLAG_INCONTACT | POINTER_MESSAGE_FLAG_CONFIDENCE;
+    enum wine_pointer_flags inject_flags = WINE_POINTER_MAP_COORDS | WINE_POINTER_TIMEOUT;
     POINTER_TYPE_INFO pointer = { .type = PT_TOUCH };
     POINTER_INFO *info = &pointer.pointerInfo;
     struct contact *contact;
@@ -151,14 +152,15 @@ static void add_contact( struct device *impl, struct list *old_contacts, ULONG i
     info->pointerFlags = flags;
     info->ptPixelLocation = contact->pos;
     if (msg == WM_POINTERDOWN)
-        NtUserMessageCall(0, WM_POINTERENTER, 0, 0, &pointer, NtUserInjectPointer, FALSE);
-    NtUserMessageCall(0, msg, 0, 0, &pointer, NtUserInjectPointer, FALSE);
+        NtUserMessageCall(0, WM_POINTERENTER, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
+    NtUserMessageCall(0, msg, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
 
     list_add_tail( &impl->contacts, &contact->entry );
 }
 
 static void release_contacts( struct list *contacts )
 {
+    enum wine_pointer_flags inject_flags = WINE_POINTER_MAP_COORDS | WINE_POINTER_TIMEOUT;
     struct contact *contact, *next;
 
     LIST_FOR_EACH_ENTRY_SAFE( contact, next, contacts, struct contact, entry )
@@ -173,8 +175,8 @@ static void release_contacts( struct list *contacts )
         info->pointerFlags = flags;
         info->ptPixelLocation = contact->pos;
 
-        NtUserMessageCall(0, WM_POINTERUP, 0, 0, &pointer, NtUserInjectPointer, FALSE);
-        NtUserMessageCall(0, WM_POINTERLEAVE, 0, 0, &pointer, NtUserInjectPointer, FALSE);
+        NtUserMessageCall(0, WM_POINTERUP, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
+        NtUserMessageCall(0, WM_POINTERLEAVE, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
 
         list_remove( &contact->entry );
         free( contact );

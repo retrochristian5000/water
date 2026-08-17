@@ -1753,9 +1753,35 @@ BOOL SYSCALL_API NtUserGetPointerType( UINT32 id, POINTER_INPUT_TYPE *type )
     SYSCALL_FUNC( NtUserGetPointerType );
 }
 
+BOOL SYSCALL_API NtUserGetPointerCursorId( UINT32 id, UINT32 *type )
+{
+    SYSCALL_FUNC( NtUserGetPointerCursorId );
+}
+
+BOOL SYSCALL_API NtUserGetPointerDevices( UINT32 *deviceCount, POINTER_DEVICE_INFO *pointerDevices )
+{
+    SYSCALL_FUNC( NtUserGetPointerDevices );
+}
+
 BOOL SYSCALL_API NtUserGetPointerDeviceRects( HANDLE handle, RECT *device_rect, RECT *display_rect )
 {
     SYSCALL_FUNC( NtUserGetPointerDeviceRects );
+}
+
+BOOL SYSCALL_API NtUserInitializePointerDeviceInjection( POINTER_INPUT_TYPE type, ULONG contactCount,
+                                                         HMONITOR monitor, DWORD visualMode, HANDLE* device )
+{
+    SYSCALL_FUNC( NtUserInitializePointerDeviceInjection );
+}
+
+BOOL SYSCALL_API NtUserRemoveInjectionDevice( HANDLE device )
+{
+    SYSCALL_FUNC( NtUserRemoveInjectionDevice );
+}
+
+BOOL SYSCALL_API NtUserInjectPointerInput( HSYNTHETICPOINTERDEVICE device, const POINTER_TYPE_INFO *pointerInfo, UINT32 count )
+{
+    SYSCALL_FUNC( NtUserInjectPointerInput );
 }
 
 INT SYSCALL_API NtUserGetPriorityClipboardFormat( UINT *list, INT count )

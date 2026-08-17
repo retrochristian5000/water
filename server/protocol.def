@@ -2438,6 +2438,7 @@ enum message_type
 @REQ(send_pointer_message)
     user_handle_t win;
     unsigned int msg;
+    unsigned int flags;
     VARARG(data,bytes);
 @END
 

@@ -4819,7 +4819,7 @@ LRESULT WINAPI NtUserMessageCall( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
         return user_driver->pWintabProc( hwnd, msg, wparam, lparam, result_info );
 
     case NtUserInjectPointer:
-        return send_pointer_message( msg, result_info );
+        return send_pointer_message( msg, lparam, result_info );
 
     case NtUserAllocatePointer:
         *(UINT *)result_info = allocate_pointer_id();

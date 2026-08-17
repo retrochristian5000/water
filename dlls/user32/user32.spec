@@ -399,7 +399,7 @@
 @ stdcall DestroyIcon(long)
 @ stdcall DestroyMenu(long) NtUserDestroyMenu
 # @ stub DestroyReasons
-# @ stub DestroySyntheticPointerDevice
+@ stdcall DestroySyntheticPointerDevice(long) NtUserRemoveInjectionDevice
 @ stdcall DestroyWindow(long) NtUserDestroyWindow
 @ stdcall DialogBoxIndirectParamA(long ptr long ptr long)
 @ stdcall DialogBoxIndirectParamAorW(long ptr long ptr long long)
@@ -747,15 +747,15 @@
 # @ stub InitializeGenericHidInjection
 # @ stub InitializeInputDeviceInjection
 # @ stub InitializeLpkHooks
-# @ stub InitializePointerDeviceInjection
+@ stdcall InitializePointerDeviceInjection(long long long long ptr) NtUserInitializePointerDeviceInjection
 # @ stub InitializePointerDeviceInjectionEx
 @ stdcall InitializeTouchInjection(long long) NtUserInitializeTouchInjection
 # @ stub InjectDeviceInput
 # @ stub InjectGenericHidInput
 # @ stub InjectKeyboardInput
 # @ stub InjectMouseInput
-# @ stub InjectPointerInput
-# @ stub InjectSyntheticPointerInput
+@ stdcall InjectPointerInput(long ptr long) NtUserInjectPointerInput
+@ stdcall InjectSyntheticPointerInput(long ptr long) NtUserInjectPointerInput
 # @ stub InjectTouchInput
 # @ stub InputSpaceRegionFromPoint
 @ stdcall InsertMenuA(long long long long ptr)
@@ -986,7 +986,7 @@
 @ stdcall ReleaseDC(long long) NtUserReleaseDC
 # @ stub ReleaseDwmHitTestWaiters
 @ stdcall RemoveClipboardFormatListener(long) NtUserRemoveClipboardFormatListener
-# @ stub RemoveInjectionDevice
+@ stdcall RemoveInjectionDevice(long) NtUserRemoveInjectionDevice
 @ stdcall RemoveMenu(long long long) NtUserRemoveMenu
 @ stdcall RemovePropA(long str)
 @ stdcall RemovePropW(long wstr)

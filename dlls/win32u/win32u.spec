@@ -1148,7 +1148,7 @@
 @ stdcall -syscall NtUserInitializeClientPfnArrays(ptr ptr ptr ptr)
 @ stub -syscall NtUserInitializeGenericHidInjection
 @ stub -syscall NtUserInitializeInputDeviceInjection
-@ stub -syscall NtUserInitializePointerDeviceInjection
+@ stdcall -syscall NtUserInitializePointerDeviceInjection(long long long long ptr)
 @ stub -syscall NtUserInitializePointerDeviceInjectionEx
 @ stdcall -syscall NtUserInitializeTouchInjection(long long)
 @ stub -syscall NtUserInjectDeviceInput
@@ -1156,7 +1156,7 @@
 @ stub -syscall NtUserInjectGesture
 @ stub -syscall NtUserInjectKeyboardInput
 @ stub -syscall NtUserInjectMouseInput
-@ stub -syscall NtUserInjectPointerInput
+@ stdcall -syscall NtUserInjectPointerInput(long ptr long)
 @ stub -syscall NtUserInjectTouchInput
 @ stub -syscall NtUserInteractiveControlQueryUsage
 @ stdcall -syscall NtUserInternalGetWindowIcon(ptr long)
@@ -1307,7 +1307,7 @@
 @ stub -syscall NtUserRemoteStopScreenUpdates
 @ stub -syscall NtUserRemoteThinwireStats
 @ stdcall -syscall NtUserRemoveClipboardFormatListener(long)
-@ stub -syscall NtUserRemoveInjectionDevice
+@ stdcall -syscall NtUserRemoveInjectionDevice(long)
 @ stdcall -syscall NtUserRemoveMenu(long long long)
 @ stdcall -syscall NtUserRemoveProp(long wstr)
 @ stub -syscall NtUserRemoveQueueCompletion

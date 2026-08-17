@@ -2462,7 +2462,7 @@ struct pointer
     struct timeout_user *timeout;
     struct desktop *desktop;
     user_handle_t win;
-    int primary;
+    int primary, do_timeout;
     POINTER_TYPE_INFO info;
 };
 
@@ -2487,14 +2487,12 @@ static void queue_pointer_message( UINT message, struct pointer *pointer, int re
     struct hardware_msg_data *msg_data;
     timeout_t time = get_tick_count();
     user_handle_t win = pointer->win;
-    struct rectangle top_rect;
     unsigned int wparam;
     struct message *msg;
     int x, y;
 
-    get_virtual_screen_rect( desktop, &top_rect, 0 );
-    x = info->ptPixelLocation.x * (top_rect.right - top_rect.left) / 65535;
-    y = info->ptPixelLocation.y * (top_rect.bottom - top_rect.top) / 65535;
+    x = info->ptPixelLocation.x;
+    y = info->ptPixelLocation.y;
 
     if (pointer->primary) info->pointerFlags |= POINTER_FLAG_PRIMARY;
     info->pointerType = pointer->info.type;
@@ -2533,7 +2531,8 @@ static void queue_pointer_message( UINT message, struct pointer *pointer, int re
 
     if (message != WM_POINTERLEAVE)
     {
-        pointer->timeout = add_timeout_user( -160000, pointer_message_timeout, pointer );
+        if (pointer->do_timeout)
+            pointer->timeout = add_timeout_user( -160000, pointer_message_timeout, pointer );
         info->pointerFlags &= ~POINTER_FLAG_NEW;
     }
     else
@@ -3246,6 +3245,17 @@ DECL_HANDLER(send_pointer_message)
     if (pointer->timeout) remove_timeout_user( pointer->timeout );
     pointer->info = *info;
     pointer->win = req->win;
+    pointer->do_timeout = !!(req->flags & WINE_POINTER_TIMEOUT);
+
+    if (req->flags & WINE_POINTER_MAP_COORDS)
+    {
+        POINT *pt = &pointer->info.pointerInfo.ptPixelLocation;
+        struct rectangle top_rect;
+
+        get_virtual_screen_rect( desktop, &top_rect, 0 );
+        pt->x = pt->x * (top_rect.right - top_rect.left) / 65535;
+        pt->y = pt->y * (top_rect.bottom - top_rect.top) / 65535;
+    }
 
     queue_pointer_message( req->msg, pointer, 0 );
     return;
