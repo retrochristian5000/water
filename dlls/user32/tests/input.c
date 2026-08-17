@@ -184,6 +184,11 @@ static const char *debugstr_wm( UINT msg )
     case WM_LBUTTONUP: return "WM_LBUTTONUP";
     case WM_LBUTTONDBLCLK: return "WM_LBUTTONDBLCLK";
     case WM_NCHITTEST: return "WM_NCHITTEST";
+    case WM_POINTERUPDATE: return "WM_POINTERUPDATE";
+    case WM_POINTERDOWN: return "WM_POINTERDOWN";
+    case WM_POINTERUP: return "WM_POINTERUP";
+    case WM_POINTERENTER: return "WM_POINTERENTER";
+    case WM_POINTERLEAVE: return "WM_POINTERLEAVE";
     }
     return wine_dbg_sprintf( "%#x", msg );
 }
@@ -428,6 +433,7 @@ static BOOL (WINAPI *pIsMouseInPointerEnabled)(void);
 static BOOL (WINAPI *pGetCurrentInputMessageSource)( INPUT_MESSAGE_SOURCE *source );
 static BOOL (WINAPI *pGetPointerType)(UINT32, POINTER_INPUT_TYPE*);
 static BOOL (WINAPI *pGetPointerInfo)(UINT32, POINTER_INFO*);
+static BOOL (WINAPI *pGetPointerPenInfo)(UINT32, POINTER_PEN_INFO*);
 static BOOL (WINAPI *pGetPointerInfoHistory)(UINT32, UINT32*, POINTER_INFO*);
 static BOOL (WINAPI *pGetPointerFrameInfo)(UINT32, UINT32*, POINTER_INFO*);
 static BOOL (WINAPI *pGetPointerFrameInfoHistory)(UINT32, UINT32*, UINT32*, POINTER_INFO*);
@@ -461,6 +467,7 @@ static void init_function_pointers(void)
     GET_PROC(GetCurrentInputMessageSource);
     GET_PROC(GetMouseMovePointsEx);
     GET_PROC(GetPointerInfo);
+    GET_PROC(GetPointerPenInfo);
     GET_PROC(GetPointerInfoHistory);
     GET_PROC(GetPointerFrameInfo);
     GET_PROC(GetPointerFrameInfoHistory);
@@ -5836,6 +5843,290 @@ static BOOL accept_pointer_messages( UINT msg )
     return msg >= WM_TOUCH && msg <= WM_POINTERROUTEDRELEASED;
 }
 
+#define ok_pointer_seq( hwnd, id, msgs ) ok_pointer_seq_( __FILE__, __LINE__, hwnd, id, msgs, #msgs )
+static void ok_pointer_seq_( const char *file, int line, HWND hwnd, UINT32 pointerid, struct user_call *msgs, const char *context )
+{
+
+    for (struct user_call *msg = msgs; msg->func; msg++) {
+        if (msg->message.msg == WM_MOUSEMOVE || msg->message.msg == WM_LBUTTONDOWN || msg->message.msg == WM_LBUTTONUP)
+        {
+            POINT pt = { LOWORD( msg->message.lparam ), HIWORD( msg->message.lparam ) };
+            ScreenToClient( hwnd, &pt );
+            msg->message.lparam = MAKELONG( pt.x, pt.y );
+        }
+        else
+        {
+            msg->message.wparam = MAKELONG( pointerid, HIWORD(msg->message.wparam) );
+        }
+    }
+    ok_seq_( file, line, msgs, context );
+}
+
+#define compare_pen( got, expected ) compare_pen_( __FILE__, __LINE__, got, expected )
+static void compare_pen_( const char *file, int line, POINTER_PEN_INFO *got, POINTER_PEN_INFO *expected )
+{
+    check_member_( file, line, *got, *expected, "%d", pointerInfo.pointerId );
+    check_member_( file, line, *got, *expected, "%#lx", pointerInfo.pointerType );
+    ok_(file, line)( !!got->pointerInfo.frameId, "got frameId %u\n", got->pointerInfo.frameId );
+    check_member_( file, line, *got, *expected, "%#x", pointerInfo.pointerFlags );
+    ok_(file, line)( got->pointerInfo.sourceDevice != INVALID_HANDLE_VALUE, "got sourceDevice %p\n", got->pointerInfo.sourceDevice );
+    check_member_( file, line, *got, *expected, "%p", pointerInfo.hwndTarget );
+
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptPixelLocation.x );
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptPixelLocation.y );
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptPixelLocationRaw.x );
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptPixelLocationRaw.y );
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptHimetricLocation.x );
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptHimetricLocation.y );
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptHimetricLocationRaw.x );
+    check_member_( file, line, *got, *expected, "%lu", pointerInfo.ptHimetricLocationRaw.y );
+
+    ok_(file, line)( !!got->pointerInfo.dwTime, "got dwTime %lu\n", got->pointerInfo.dwTime );
+    check_member_( file, line, *got, *expected, "%d", pointerInfo.InputData );
+    check_member_( file, line, *got, *expected, "%#lx", pointerInfo.dwKeyStates );
+    ok_(file, line)( !!got->pointerInfo.dwTime, "got dwTime %lu\n", got->pointerInfo.dwTime );
+    ok_(file, line)( !!got->pointerInfo.PerformanceCount, "got PerformanceCount %llu\n", got->pointerInfo.PerformanceCount );
+    check_member_( file, line, *got, *expected, "%#x", pointerInfo.ButtonChangeType );
+
+    check_member_( file, line, *got, *expected, "%#x", penMask );
+    check_member_( file, line, *got, *expected, "%#x", pressure );
+    check_member_( file, line, *got, *expected, "%#x", rotation );
+    check_member_( file, line, *got, *expected, "%#x", tiltX );
+    check_member_( file, line, *got, *expected, "%#x", tiltY );
+}
+
+static void test_GetPointerPenInfo( void )
+{
+#define WIN_MSG(m, h, w, l, ...) {.func = MSG_TEST_WIN, .message = {.msg = m, .hwnd = h, .wparam = w, .lparam = l}, ## __VA_ARGS__}
+    UINT flags = POINTER_FLAG_PRIMARY | POINTER_FLAG_CONFIDENCE | POINTER_FLAG_UPDATE;
+    UINT flags_inrange = POINTER_FLAG_INRANGE | flags;
+    struct user_call new_enter[] = {
+        WIN_MSG(WM_POINTERENTER, NULL, MAKELONG(0, POINTER_FLAG_NEW | flags_inrange), MAKELONG(150, 150)),
+        WIN_MSG(WM_POINTERUPDATE, NULL, MAKELONG(0, POINTER_FLAG_NEW | flags_inrange), MAKELONG(150, 150)),
+        WIN_MSG(WM_MOUSEMOVE, NULL, 0, MAKELONG(150, 150)),
+        {0}
+    };
+
+    struct user_call update[] = {
+        WIN_MSG(WM_POINTERUPDATE, NULL, MAKELONG(0, flags_inrange), MAKELONG(150, 150)),
+        {0}
+    };
+
+    struct user_call leave[] = {
+        WIN_MSG(WM_POINTERLEAVE, NULL, MAKELONG(0, flags_inrange), MAKELONG(150, 150)),
+        {0}
+    };
+
+    struct user_call reenter[] = {
+        WIN_MSG(WM_POINTERENTER, NULL, MAKELONG(0, flags_inrange), MAKELONG(175, 150)),
+        WIN_MSG(WM_POINTERUPDATE, NULL, MAKELONG(0, flags_inrange), MAKELONG(175, 150)),
+        WIN_MSG(WM_MOUSEMOVE, NULL, 0, MAKELONG(175, 150)),
+        {0}
+    };
+
+    struct user_call out_range[] = {
+        WIN_MSG(WM_POINTERUPDATE, NULL, MAKELONG(0, flags), MAKELONG(175, 150)),
+        WIN_MSG(WM_POINTERLEAVE, NULL, MAKELONG(0, flags), MAKELONG(175, 150)),
+        {0}
+    };
+
+    struct user_call in_range[] = {
+        WIN_MSG(WM_POINTERENTER, NULL, MAKELONG(0, POINTER_FLAG_NEW | flags_inrange), MAKELONG(175, 150)),
+        WIN_MSG(WM_POINTERUPDATE, NULL, MAKELONG(0, POINTER_FLAG_NEW | flags_inrange), MAKELONG(175, 150)),
+        {0}
+    };
+
+    struct user_call down[] = {
+        WIN_MSG(WM_POINTERDOWN, NULL, MAKELONG(0, POINTER_FLAG_INCONTACT | POINTER_FLAG_FIRSTBUTTON | flags_inrange), MAKELONG(175, 150)),
+        {0}
+    };
+
+    struct user_call up[] = {
+        WIN_MSG(WM_POINTERUP, NULL, MAKELONG(0, flags_inrange), MAKELONG(175, 150)),
+        WIN_MSG(WM_LBUTTONDOWN, NULL, 1, MAKELONG(175, 150)),
+        WIN_MSG(WM_LBUTTONUP, NULL, 0, MAKELONG(175, 150)),
+        {0}
+    };
+#undef WIN_MSG
+
+    HSYNTHETICPOINTERDEVICE dev = CreateSyntheticPointerDevice( PT_PEN, 1, POINTER_FEEDBACK_DEFAULT );
+    POINTER_TYPE_INFO syn_pointer =
+    {
+        .type = PT_PEN,
+        .penInfo = {
+            .pointerInfo =
+            {
+                .pointerFlags = POINTER_FLAG_INRANGE,
+                .ptPixelLocation = { .x = 150, .y = 150 },
+            },
+            .penMask = PEN_MASK_PRESSURE | PEN_MASK_TILT_X,
+            .pressure = 512,
+        }
+    };
+    POINTER_PEN_INFO info, exp = {
+        .pointerInfo =
+        {
+            .pointerType = PT_PEN,
+            .pointerFlags = flags_inrange | POINTER_FLAG_UPDATE | POINTER_FLAG_NEW,
+            .ptPixelLocation = { .x = 150, .y = 150 },
+            .ptPixelLocationRaw = { .x = 150, .y = 150 },
+            .ptHimetricLocation = { .x = 150 * 2540 / 96, .y = 150 * 2540 / 96 },
+            .ptHimetricLocationRaw = { .x = 150 * 2540 / 96, .y = 150 * 2540 / 96 },
+        },
+        .penMask = PEN_MASK_PRESSURE | PEN_MASK_ROTATION | PEN_MASK_TILT_X | PEN_MASK_TILT_Y,
+        .pressure = 512,
+    };
+    UINT32 pointerid, newid;
+    POINTER_INFO *syn_info;
+    WNDCLASSW cls =
+    {
+        .lpfnWndProc   = DefWindowProcW,
+        .hInstance     = GetModuleHandleW( NULL ),
+        .hbrBackground = GetStockObject( WHITE_BRUSH ),
+        .lpszClassName = L"test",
+    };
+    ATOM class;
+    HWND hwnd;
+    BOOL ret;
+
+    class = RegisterClassW( &cls );
+    ok( class, "RegisterClassW failed: %lu\n", GetLastError() );
+
+    hwnd = CreateWindowW( L"test", L"test name", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                          100, 100, 200, 200, 0, 0, NULL, 0 );
+    empty_message_queue();
+
+    SetWindowLongPtrW( hwnd, GWLP_WNDPROC, (LONG_PTR)append_message_wndproc );
+    p_accept_message = accept_pointer_messages;
+
+    syn_info = &syn_pointer.pointerInfo;
+    exp.pointerInfo.hwndTarget = hwnd;
+    exp.pointerInfo.sourceDevice = dev;
+
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok( current_sequence_len, "missing pointer messages\n" );
+    if (!current_sequence_len)
+        return;
+    pointerid = GET_POINTERID_WPARAM(current_sequence[0].message.wparam);
+    exp.pointerInfo.pointerId = pointerid;
+    ok_pointer_seq( hwnd, pointerid, new_enter );
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    compare_pen( &info, &exp );
+
+    exp.pointerInfo.pointerFlags &= ~POINTER_FLAG_NEW;
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok_pointer_seq(hwnd, pointerid, update);
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    compare_pen( &info, &exp );
+
+    syn_info->ptPixelLocation.x = 350;
+
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok_pointer_seq(hwnd, pointerid, leave);
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    compare_pen( &info, &exp );
+
+    syn_info->ptPixelLocation.x = 175;
+    exp.pointerInfo.ptPixelLocation.x = exp.pointerInfo.ptPixelLocationRaw.x = 175;
+    exp.pointerInfo.ptHimetricLocation.x = exp.pointerInfo.ptHimetricLocationRaw.x = 175 * 2540 / 96;
+
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok_pointer_seq(hwnd, pointerid, reenter);
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    compare_pen( &info, &exp );
+
+    syn_info->pointerFlags &= ~POINTER_FLAG_INRANGE;
+
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok_pointer_seq(hwnd, pointerid, out_range);
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    exp.pointerInfo.pointerFlags &= ~(POINTER_FLAG_INRANGE);
+    compare_pen( &info, &exp );
+
+    syn_info->pointerFlags |= POINTER_FLAG_INRANGE;
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok( current_sequence_len, "missing pointer message\n" );
+    newid = GET_POINTERID_WPARAM(current_sequence[0].message.wparam);
+    ok( pointerid != newid, "pointerId %d unchanged\n", pointerid );
+    exp.pointerInfo.pointerId = pointerid = newid;
+    ok_pointer_seq(hwnd, pointerid, in_range);
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    exp.pointerInfo.pointerFlags |= POINTER_FLAG_NEW | POINTER_FLAG_INRANGE;
+    compare_pen( &info, &exp );
+    exp.pointerInfo.pointerFlags &= ~POINTER_FLAG_NEW;
+
+    syn_info->pointerFlags |= POINTER_FLAG_INCONTACT;
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok_pointer_seq(hwnd, pointerid, down);
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    exp.pointerInfo.pointerFlags |= POINTER_FLAG_INCONTACT | POINTER_FLAG_DOWN | POINTER_FLAG_FIRSTBUTTON;
+    exp.pointerInfo.pointerFlags &= ~POINTER_FLAG_UPDATE;
+    exp.pointerInfo.ButtonChangeType = POINTER_CHANGE_FIRSTBUTTON_DOWN;
+    compare_pen( &info, &exp );
+    exp.pointerInfo.pointerFlags &= ~POINTER_FLAG_DOWN;
+
+    syn_info->pointerFlags &= ~POINTER_FLAG_INCONTACT;
+    ret = InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    ok( ret, "InjectSyntheticPointerInput failed, error %lu\n", GetLastError() );
+
+    wait_messages( 100, FALSE );
+    ok_pointer_seq(hwnd, pointerid, up);
+
+    ret = pGetPointerPenInfo( pointerid, &info );
+    ok( ret, "GetPointerInfo failed, error %lu\n", GetLastError() );
+    exp.pointerInfo.pointerFlags &= ~(POINTER_FLAG_FIRSTBUTTON | POINTER_FLAG_INCONTACT);
+    exp.pointerInfo.pointerFlags |= POINTER_FLAG_UP;
+    exp.pointerInfo.ButtonChangeType = POINTER_CHANGE_FIRSTBUTTON_UP;
+    compare_pen( &info, &exp );
+
+    syn_info->pointerFlags &= ~POINTER_FLAG_FIRSTBUTTON;
+    for (unsigned i = 0; i < 5; i++)
+        InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+    wait_messages( 100, FALSE );
+    /* one message, history count == 5 */
+
+    syn_info->pointerFlags &= ~POINTER_FLAG_INRANGE;
+    InjectSyntheticPointerInput( dev, &syn_pointer, 1 );
+
+    DestroySyntheticPointerDevice( dev );
+    p_accept_message = NULL;
+}
+
 static void test_GetPointerInfo( BOOL mouse_in_pointer_enabled )
 {
 #define WIN_MSG(m, h, w, l, ...) {.func = MSG_TEST_WIN, .message = {.msg = m, .hwnd = h, .wparam = w, .lparam = l}, ## __VA_ARGS__}
@@ -5910,7 +6201,7 @@ static void test_GetPointerInfo( BOOL mouse_in_pointer_enabled )
         .lpfnWndProc   = DefWindowProcW,
         .hInstance     = GetModuleHandleW( NULL ),
         .hbrBackground = GetStockObject( WHITE_BRUSH ),
-        .lpszClassName = L"test",
+        .lpszClassName = L"pen-test",
     };
     LONG_PTR old_proc;
     HANDLE thread;
@@ -6966,6 +7257,11 @@ START_TEST(input)
         run_in_process( argv, "test_EnableMouseInPointer 0" );
         run_in_process( argv, "test_EnableMouseInPointer 1" );
     }
+
+    if (!pGetPointerPenInfo)
+        win_skip( "GetPointerInfo not found, skipping tests\n" );
+    else
+        test_GetPointerPenInfo();
 
     test_ClipCursor( argv );
     run_in_desktop( argv, "test_system_messages_with_rawinput_nolegacy", 1 );
