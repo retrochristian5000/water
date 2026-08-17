@@ -3202,8 +3202,23 @@ BOOL WINAPI NtUserGetPointerInfoList( UINT32 id, POINTER_INPUT_TYPE type, UINT_P
     *entry_count = 1;
     *pointer_count = 1;
 
+    if (!pointer_info)
+        return TRUE;
+
     memset( pointer_info, 0, size );
-    *(POINTER_INFO *)pointer_info = pointer->info.pointerInfo;
+    switch (type)
+    {
+        case PT_PEN:
+            *(POINTER_PEN_INFO *)pointer_info = pointer->info.penInfo;
+            break;
+        case PT_TOUCH:
+            *(POINTER_TOUCH_INFO *)pointer_info = pointer->info.touchInfo;
+            break;
+        default:
+            *(POINTER_INFO *)pointer_info = pointer->info.pointerInfo;
+            break;
+    }
+
     return TRUE;
 }
 
