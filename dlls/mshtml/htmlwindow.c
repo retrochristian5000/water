@@ -47,6 +47,7 @@
 WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 static ExternalCycleCollectionParticipant outer_window_ccp;
+static nsresult NSAPI outer_window_unlink(void*);
 
 static int window_map_compare(const void *key, const struct wine_rb_entry *entry)
 {
@@ -1584,6 +1585,11 @@ static const IHTMLWindow2Vtbl outer_window_HTMLWindow2Vtbl = {
     HTMLWindow2_resizeBy,
     HTMLWindow2_get_external
 };
+
+HTMLOuterWindow *unsafe_HTMLOuterWindow_from_IHTMLWindow2(IHTMLWindow2 *iface)
+{
+    return iface->lpVtbl == &outer_window_HTMLWindow2Vtbl ? HTMLOuterWindow_from_IHTMLWindow2(iface) : NULL;
+}
 
 static inline HTMLWindow *impl_from_IHTMLWindow3(IHTMLWindow3 *iface)
 {
@@ -3462,6 +3468,13 @@ static HRESULT WINAPI WindowDispEx_GetNameSpaceParent(IWineJSDispatchHost *iface
     return S_OK;
 }
 
+static ULONG WINAPI WindowDispEx_GetRefCount(IWineJSDispatchHost *iface)
+{
+    HTMLOuterWindow *This = impl_from_IWineJSDispatchHost(iface);
+
+    return NS_REFCOUNT_VALUE(This->ccref);
+}
+
 static HRESULT WINAPI WindowDispEx_GetJSDispatch(IWineJSDispatchHost *iface, IWineJSDispatch **ret)
 {
     HTMLOuterWindow *This = impl_from_IWineJSDispatchHost(iface);
@@ -3551,6 +3564,21 @@ static HRESULT WINAPI WindowDispEx_ToString(IWineJSDispatchHost *iface, BSTR *st
     return IWineJSDispatchHost_ToString(&This->base.inner_window->event_target.dispex.IWineJSDispatchHost_iface, str);
 }
 
+static HRESULT WINAPI WindowDispEx_Traverse(IWineJSDispatchHost *iface, struct cc_traverse_callback *cb)
+{
+    HTMLOuterWindow *This = impl_from_IWineJSDispatchHost(iface);
+    struct cc_native_obj obj = { .obj = &This->base.IHTMLWindow2_iface, .participant = &outer_window_ccp };
+
+    return cc_participant_api.traverse(obj, cb);
+}
+
+static void WINAPI WindowDispEx_Unlink(IWineJSDispatchHost *iface)
+{
+    HTMLOuterWindow *This = impl_from_IWineJSDispatchHost(iface);
+
+    outer_window_unlink(&This->base.IHTMLWindow2_iface);
+}
+
 static const IWineJSDispatchHostVtbl WindowDispExVtbl = {
     WindowDispEx_QueryInterface,
     WindowDispEx_AddRef,
@@ -3567,6 +3595,7 @@ static const IWineJSDispatchHostVtbl WindowDispExVtbl = {
     WindowDispEx_GetMemberName,
     WindowDispEx_GetNextDispID,
     WindowDispEx_GetNameSpaceParent,
+    WindowDispEx_GetRefCount,
     WindowDispEx_GetJSDispatch,
     WindowDispEx_LookupProperty,
     WindowDispEx_GetProperty,
@@ -3578,6 +3607,8 @@ static const IWineJSDispatchHostVtbl WindowDispExVtbl = {
     WindowDispEx_FillProperties,
     WindowDispEx_GetOuterDispatch,
     WindowDispEx_ToString,
+    WindowDispEx_Traverse,
+    WindowDispEx_Unlink
 };
 
 static inline HTMLOuterWindow *impl_from_IEventTarget(IEventTarget *iface)

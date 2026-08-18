@@ -43,6 +43,31 @@ const unsigned int HOSTOBJ_CONSTRUCTOR    = 0x0001;
 const unsigned int HOSTOBJ_VOLATILE_FILL  = 0x0002;
 const unsigned int HOSTOBJ_VOLATILE_PROPS = 0x0004;
 
+struct cc_native_obj
+{
+    void *obj;
+    void *participant;
+};
+
+struct cc_traverse_callback;
+struct cc_traverse_callback_vtbl
+{
+    HRESULT (__stdcall *AdviseRefCount)(struct cc_traverse_callback *This, ULONG refcount);
+    HRESULT (__stdcall *NoteEdge)(struct cc_traverse_callback *This, IUnknown *obj);
+    HRESULT (__stdcall *NoteRawEdge)(struct cc_traverse_callback *This, struct cc_native_obj obj);
+};
+
+struct cc_traverse_callback
+{
+    const struct cc_traverse_callback_vtbl *vtbl;
+};
+
+struct cc_participant_api
+{
+    struct cc_native_obj (__stdcall *canonicalize)(IUnknown *obj);
+    HRESULT (__stdcall *traverse)(struct cc_native_obj obj, struct cc_traverse_callback *callback);
+};
+
 interface IWineJSDispatchHost;
 
 [
@@ -67,6 +92,7 @@ interface IWineJSDispatch : IDispatchEx
 ]
 interface IWineJSDispatchHost : IDispatchEx
 {
+    ULONG GetRefCount();
     HRESULT GetJSDispatch(IWineJSDispatch **ret);
     HRESULT LookupProperty(const WCHAR *name, DWORD flags, struct property_info *desc);
     HRESULT GetProperty(DISPID id, LCID lcid, VARIANT *r, EXCEPINFO *ei, IServiceProvider *caller);
@@ -78,6 +104,8 @@ interface IWineJSDispatchHost : IDispatchEx
     HRESULT FillProperties();
     HRESULT GetOuterDispatch(IWineJSDispatchHost **ret);
     HRESULT ToString(BSTR *str);
+    HRESULT Traverse(struct cc_traverse_callback *cb);
+    void Unlink();
 }
 
 const unsigned int SCRIPTLANGUAGEVERSION_HTML  = 0x400;
@@ -97,4 +125,5 @@ interface IWineJScript : IUnknown
     HRESULT CreateObject(IWineJSDispatch **ret);
     HRESULT CreateArrayBuffer(DWORD size, IWineJSDispatch **ret, void **data);
     HRESULT FillGlobals(IWineJSDispatchHost *script_global);
+    void InitCCParticipantAPI(const struct cc_participant_api *api);
 }

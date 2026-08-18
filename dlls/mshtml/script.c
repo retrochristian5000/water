@@ -204,27 +204,33 @@ static BOOL init_script_engine(ScriptHost *script_host, IActiveScript *script)
         return FALSE;
     }
 
-    if(compat_mode >= COMPAT_MODE_IE9 && IsEqualGUID(&CLSID_JScript, &script_host->guid)) {
+    if(IsEqualGUID(&CLSID_JScript, &script_host->guid)) {
         IWineJScript *jscript;
         hres = IActiveScript_QueryInterface(script, &IID_IWineJScript, (void **)&jscript);
         if(SUCCEEDED(hres)) {
-            DispatchEx *prototype;
+            IWineJScript_InitCCParticipantAPI(jscript, &cc_participant_api);
 
-            assert(!script_host->window->jscript);
-            assert(!script_host->window->event_target.dispex.jsdisp);
-            script_host->window->jscript = jscript;
+            if(compat_mode < COMPAT_MODE_IE9)
+                IWineJScript_Release(jscript);
+            else {
+                DispatchEx *prototype;
 
-            hres = get_prototype(script_host->window, OBJID_Window, &prototype);
-            if(SUCCEEDED(hres))
-                hres = IWineJScript_InitHostObject(jscript,
-                                                   &script_host->window->event_target.dispex.IWineJSDispatchHost_iface,
-                                                   prototype->jsdisp, object_descriptors[OBJID_Window]->js_flags,
-                                                   &script_host->window->event_target.dispex.jsdisp);
-            if(FAILED(hres))
-                ERR("Could not initialize script global: %08lx\n", hres);
+                assert(!script_host->window->jscript);
+                assert(!script_host->window->event_target.dispex.jsdisp);
+                script_host->window->jscript = jscript;
 
-            /* make sure that script global is fully initialized */
-            dispex_compat_mode(&script_host->window->event_target.dispex);
+                hres = get_prototype(script_host->window, OBJID_Window, &prototype);
+                if(SUCCEEDED(hres))
+                    hres = IWineJScript_InitHostObject(jscript,
+                                                       &script_host->window->event_target.dispex.IWineJSDispatchHost_iface,
+                                                       prototype->jsdisp, object_descriptors[OBJID_Window]->js_flags,
+                                                       &script_host->window->event_target.dispex.jsdisp);
+                if(FAILED(hres))
+                    ERR("Could not initialize script global: %08lx\n", hres);
+
+                /* make sure that script global is fully initialized */
+                dispex_compat_mode(&script_host->window->event_target.dispex);
+            }
         }else {
             ERR("Could not get IWineJScript, don't use native jscript.dll\n");
         }

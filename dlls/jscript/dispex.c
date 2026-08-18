@@ -21,6 +21,7 @@
 #include "jscript.h"
 #include "engine.h"
 
+#include "wine/rbtree.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(jscript);
@@ -861,17 +862,37 @@ static void unlink_jsdisp(jsdisp_t *jsdisp)
  *
  */
 struct gc_stack_chunk {
-    jsdisp_t *objects[1020];
+    void *objects[1020];
     struct gc_stack_chunk *prev;
 };
 
+struct cc_map_entry {
+    struct rb_entry entry;
+    ULONG ref;
+    struct cc_native_obj obj;
+};
+
 struct gc_ctx {
+    const struct cc_participant_api *cc_participant_api;
     struct gc_stack_chunk *chunk;
     struct gc_stack_chunk *next;
     unsigned idx;
+    struct cc_traverse_callback cc_cb;
+    struct cc_map_entry *cc_map_entry;
+    struct rb_tree cc_map;
 };
 
-static HRESULT gc_stack_push(struct gc_ctx *gc_ctx, jsdisp_t *obj)
+static inline struct cc_map_entry *cc_map_entry_from_stack_obj(void *obj)
+{
+    return CONTAINING_RECORD(obj, struct cc_map_entry, obj.obj);
+}
+
+static inline void *cc_map_entry_to_stack_obj(struct cc_map_entry *entry)
+{
+    return &entry->obj.obj;
+}
+
+static HRESULT gc_stack_push_impl(struct gc_ctx *gc_ctx, void *obj)
 {
     if(!gc_ctx->idx) {
         if(gc_ctx->next)
@@ -891,9 +912,24 @@ static HRESULT gc_stack_push(struct gc_ctx *gc_ctx, jsdisp_t *obj)
     return S_OK;
 }
 
-static jsdisp_t *gc_stack_pop(struct gc_ctx *gc_ctx)
+static inline HRESULT gc_stack_init(struct gc_ctx *gc_ctx)
 {
-    jsdisp_t *obj = gc_ctx->chunk->objects[gc_ctx->idx];
+    return gc_stack_push_impl(gc_ctx, NULL);
+}
+
+static inline HRESULT gc_stack_push(struct gc_ctx *gc_ctx, jsdisp_t *obj)
+{
+    return gc_stack_push_impl(gc_ctx, &obj->IWineJSDispatch_iface);
+}
+
+static inline HRESULT gc_stack_push_cc_obj(struct gc_ctx *gc_ctx, struct cc_map_entry *entry)
+{
+    return gc_stack_push_impl(gc_ctx, cc_map_entry_to_stack_obj(entry));
+}
+
+static void *gc_stack_pop(struct gc_ctx *gc_ctx)
+{
+    void *obj = gc_ctx->chunk->objects[gc_ctx->idx];
 
     if(++gc_ctx->idx == ARRAY_SIZE(gc_ctx->chunk->objects)) {
         free(gc_ctx->next);
@@ -902,6 +938,138 @@ static jsdisp_t *gc_stack_pop(struct gc_ctx *gc_ctx)
         gc_ctx->idx = 0;
     }
     return obj;
+}
+
+static inline struct gc_ctx *impl_from_cc_traverse_callback(struct cc_traverse_callback *cb)
+{
+    return CONTAINING_RECORD(cb, struct gc_ctx, cc_cb);
+}
+
+static HRESULT WINAPI cc_speculative_cb_AdviseRefCount(struct cc_traverse_callback *This, ULONG refcount)
+{
+    struct gc_ctx *gc_ctx = impl_from_cc_traverse_callback(This);
+
+    /* Add to the existing accumulated (negative) refcount of edges we've already processed */
+    if(gc_ctx->cc_map_entry) {
+        gc_ctx->cc_map_entry->ref += refcount;
+        gc_ctx->cc_map_entry = NULL;
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cc_speculative_cb_NoteRawEdge(struct cc_traverse_callback *This, struct cc_native_obj obj)
+{
+    struct gc_ctx *gc_ctx = impl_from_cc_traverse_callback(This);
+    struct rb_entry *rb_entry = rb_get(&gc_ctx->cc_map, obj.obj);
+    struct cc_map_entry *entry;
+
+    if(rb_entry) {
+        /* Skip traversal if we already visited or will visit it, but do process the edge's ref */
+        WINE_RB_ENTRY_VALUE(rb_entry, struct cc_map_entry, entry)->ref--;
+        return S_OK;
+    }
+
+    if(!(entry = malloc(sizeof(*entry))))
+        return E_OUTOFMEMORY;
+    entry->obj = obj;
+    entry->ref = -1;  /* account for the edge's ref */
+    rb_put(&gc_ctx->cc_map, obj.obj, &entry->entry);
+    return gc_stack_push_cc_obj(gc_ctx, entry);
+}
+
+static HRESULT WINAPI cc_speculative_cb_NoteEdge(struct cc_traverse_callback *This, IUnknown *obj)
+{
+    struct gc_ctx *gc_ctx = impl_from_cc_traverse_callback(This);
+    struct cc_native_obj cc_obj = gc_ctx->cc_participant_api->canonicalize(obj);
+    jsdisp_t *jsdisp = to_jsdisp(cc_obj.obj);
+
+    /* If it's one of our own jscript objects, process the ref and don't traverse it further */
+    if(jsdisp) {
+        jsdisp->ref--;
+        return S_OK;
+    }
+
+    return cc_obj.participant ? cc_speculative_cb_NoteRawEdge(&gc_ctx->cc_cb, cc_obj) : S_OK;
+}
+
+static const struct cc_traverse_callback_vtbl cc_speculative_cb_vtbl = {
+    cc_speculative_cb_AdviseRefCount,
+    cc_speculative_cb_NoteEdge,
+    cc_speculative_cb_NoteRawEdge,
+};
+
+static HRESULT WINAPI cc_unmark_cb_AdviseRefCount(struct cc_traverse_callback *This, ULONG refcount)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI cc_unmark_cb_NoteRawEdge(struct cc_traverse_callback *This, struct cc_native_obj obj)
+{
+    struct gc_ctx *gc_ctx = impl_from_cc_traverse_callback(This);
+    struct rb_entry *rb_entry = rb_get(&gc_ctx->cc_map, obj.obj);
+    struct cc_map_entry *entry;
+
+    assert(rb_entry != NULL);
+    entry = WINE_RB_ENTRY_VALUE(rb_entry, struct cc_map_entry, entry);
+
+    /* Check participant in the map entry itself, as we use it to mark those we've already visited. */
+    return entry->obj.participant ? gc_stack_push_cc_obj(gc_ctx, WINE_RB_ENTRY_VALUE(rb_entry, struct cc_map_entry, entry)) : S_OK;
+}
+
+static HRESULT WINAPI cc_unmark_cb_NoteEdge(struct cc_traverse_callback *This, IUnknown *obj)
+{
+    struct gc_ctx *gc_ctx = impl_from_cc_traverse_callback(This);
+    struct cc_native_obj cc_obj = gc_ctx->cc_participant_api->canonicalize(obj);
+    jsdisp_t *jsdisp = to_jsdisp(cc_obj.obj);
+
+    if(jsdisp) {
+        /* The temporary refcount itself doesn't matter by this point, just make sure it's not 0,
+         * as this will unmark it and all accessible objects from it later, since they're alive. */
+        jsdisp->ref = 1;
+        return S_OK;
+    }
+
+    return cc_obj.participant ? cc_unmark_cb_NoteRawEdge(&gc_ctx->cc_cb, cc_obj) : S_OK;
+}
+
+static const struct cc_traverse_callback_vtbl cc_unmark_cb_vtbl = {
+    cc_unmark_cb_AdviseRefCount,
+    cc_unmark_cb_NoteEdge,
+    cc_unmark_cb_NoteRawEdge,
+};
+
+static HRESULT WINAPI cc_unmark2_cb_NoteEdge(struct cc_traverse_callback *This, IUnknown *obj)
+{
+    struct gc_ctx *gc_ctx = impl_from_cc_traverse_callback(This);
+    struct cc_native_obj cc_obj = gc_ctx->cc_participant_api->canonicalize(obj);
+    jsdisp_t *jsdisp = to_jsdisp(cc_obj.obj);
+
+    if(jsdisp)
+        return jsdisp->gc_marked ? gc_stack_push(gc_ctx, jsdisp) : S_OK;
+
+    return cc_obj.participant ? cc_unmark_cb_NoteRawEdge(&gc_ctx->cc_cb, cc_obj) : S_OK;
+}
+
+static const struct cc_traverse_callback_vtbl cc_unmark2_cb_vtbl = {
+    cc_unmark_cb_AdviseRefCount,
+    cc_unmark2_cb_NoteEdge,
+    cc_unmark_cb_NoteRawEdge,
+};
+
+static inline HRESULT process_edge_speculatively(struct gc_ctx *gc_ctx, IDispatch *edge)
+{
+    return cc_speculative_cb_NoteEdge(&gc_ctx->cc_cb, (IUnknown*)edge);
+}
+
+static inline HRESULT unmark_edge(struct gc_ctx *gc_ctx, IDispatch *edge)
+{
+    return cc_unmark2_cb_NoteEdge(&gc_ctx->cc_cb, (IUnknown*)edge);
+}
+
+static int cc_map_compare(const void *k, const struct rb_entry *e)
+{
+    ULONG_PTR a = (ULONG_PTR)k, b = (ULONG_PTR)RB_ENTRY_VALUE(e, struct cc_map_entry, entry)->obj.obj;
+    return (a > b) - (a < b);
 }
 
 HRESULT gc_run(script_ctx_t *ctx)
@@ -913,16 +1081,25 @@ HRESULT gc_run(script_ctx_t *ctx)
         LONG ref[1020];
     } *head, *chunk;
     struct thread_data *thread_data = ctx->thread_data;
-    jsdisp_t *obj, *obj2, *link, *link2;
+    struct cc_map_entry *cc_map_iter, *cc_map_iter2;
     dispex_prop_t *prop, *props_end;
-    struct gc_ctx gc_ctx = { 0 };
     unsigned chunk_idx = 0;
+    jsdisp_t *obj, *obj2;
+    struct gc_ctx gc_ctx;
     HRESULT hres = S_OK;
     struct list *iter;
+    void *stack_obj;
 
     /* Prevent recursive calls from side-effects during unlinking (e.g. CollectGarbage from host object's Release) */
     if(thread_data->gc_is_unlinking)
         return S_OK;
+    gc_ctx.next = NULL;
+    gc_ctx.idx = 0;
+
+    /* We also scan for non-jscript (host) objects reachable from any jscript object, and store a map of them with their refs */
+    gc_ctx.cc_participant_api = thread_data->cc_participant_api;
+    gc_ctx.cc_cb.vtbl = &cc_speculative_cb_vtbl;
+    rb_init(&gc_ctx.cc_map, cc_map_compare);
 
     if(!(head = malloc(sizeof(*head))))
         return E_OUTOFMEMORY;
@@ -944,18 +1121,24 @@ HRESULT gc_run(script_ctx_t *ctx)
             chunk->next = NULL;
         }
         chunk->ref[chunk_idx++] = obj->ref;
+
+        /* Obtain actual refcount from host objects with external reference counter */
+        if(obj->builtin_info->get_host_disp)
+            obj->ref = IWineJSDispatchHost_GetRefCount(obj->builtin_info->get_host_disp(obj));
     }
     LIST_FOR_EACH_ENTRY(obj, &thread_data->objects, jsdisp_t, entry) {
-        /* Skip objects with external reference counter */
-        if(obj->builtin_info->get_host_disp) {
-            obj->gc_marked = FALSE;
-            continue;
-        }
+        hres = gc_stack_init(&gc_ctx);
+        if(FAILED(hres))
+            goto fail_init;
+
         for(prop = obj->props, props_end = prop + obj->prop_cnt; prop < props_end; prop++) {
             switch(prop->type) {
             case PROP_JSVAL:
-                if(is_object_instance(prop->u.val) && (link = to_jsdisp(get_object(prop->u.val))))
-                    link->ref--;
+                if(!is_object_instance(prop->u.val))
+                    break;
+                hres = process_edge_speculatively(&gc_ctx, get_object(prop->u.val));
+                if(FAILED(hres))
+                    goto fail;
                 break;
             case PROP_ACCESSOR:
                 if(prop->u.accessor.getter)
@@ -972,21 +1155,72 @@ HRESULT gc_run(script_ctx_t *ctx)
             obj->prototype->ref--;
         if(obj->builtin_info->gc_traverse)
             obj->builtin_info->gc_traverse(&gc_ctx, GC_TRAVERSE_SPECULATIVELY, obj);
+
+        for(;;) {
+            stack_obj = gc_stack_pop(&gc_ctx);
+            if(!stack_obj)
+                break;
+            gc_ctx.cc_map_entry = cc_map_entry_from_stack_obj(stack_obj);
+            hres = gc_ctx.cc_participant_api->traverse(gc_ctx.cc_map_entry->obj, &gc_ctx.cc_cb);
+            if(FAILED(hres))
+                goto fail;
+        }
+
         obj->gc_marked = TRUE;
     }
 
     /* 2. Clear mark on objects with non-zero "external refcount" and all objects accessible from them */
+    gc_ctx.cc_cb.vtbl = &cc_unmark_cb_vtbl;
+    RB_FOR_EACH_ENTRY(cc_map_iter, &gc_ctx.cc_map, struct cc_map_entry, entry) {
+        if(!cc_map_iter->ref || !cc_map_iter->obj.participant)
+            continue;
+
+        hres = gc_stack_init(&gc_ctx);
+        if(FAILED(hres))
+            goto fail_init;
+
+        /* Traverse and flood all accessible objects from the native objects in the cc map,
+         * marking already-visited native objects in the map using a NULL participant. */
+        stack_obj = cc_map_entry_to_stack_obj(cc_map_iter);
+        do {
+            struct cc_native_obj cc_obj = cc_map_entry_from_stack_obj(stack_obj)->obj;
+
+            if(cc_obj.participant) {
+                cc_map_entry_from_stack_obj(stack_obj)->obj.participant = NULL;
+                hres = gc_ctx.cc_participant_api->traverse(cc_obj, &gc_ctx.cc_cb);
+                if(FAILED(hres))
+                    goto fail;
+            }
+            stack_obj = gc_stack_pop(&gc_ctx);
+        } while(stack_obj);
+    }
+
+    gc_ctx.cc_cb.vtbl = &cc_unmark2_cb_vtbl;
     LIST_FOR_EACH_ENTRY(obj, &thread_data->objects, jsdisp_t, entry) {
         if(!obj->ref || !obj->gc_marked)
             continue;
 
-        hres = gc_stack_push(&gc_ctx, NULL);
+        hres = gc_stack_init(&gc_ctx);
         if(FAILED(hres))
-            break;
+            goto fail_init;
 
-        obj2 = obj;
+        stack_obj = &obj->IWineJSDispatch_iface;
         do
         {
+            if(!(obj2 = to_jsdisp(stack_obj))) {
+                struct cc_native_obj cc_obj = cc_map_entry_from_stack_obj(stack_obj)->obj;
+
+                if(cc_obj.participant) {
+                    cc_map_entry_from_stack_obj(stack_obj)->obj.participant = NULL;
+                    hres = gc_ctx.cc_participant_api->traverse(cc_obj, &gc_ctx.cc_cb);
+                    if(FAILED(hres))
+                        goto fail;
+                }
+                continue;
+            }
+
+            if(!obj2->gc_marked)
+                continue;
             obj2->gc_marked = FALSE;
 
             for(prop = obj2->props, props_end = prop + obj2->prop_cnt; prop < props_end; prop++) {
@@ -994,41 +1228,37 @@ HRESULT gc_run(script_ctx_t *ctx)
                 case PROP_JSVAL:
                     if(!is_object_instance(prop->u.val))
                         continue;
-                    link = to_jsdisp(get_object(prop->u.val));
-                    link2 = NULL;
+                    hres = unmark_edge(&gc_ctx, get_object(prop->u.val));
+                    if(FAILED(hres))
+                        goto fail;
                     break;
                 case PROP_ACCESSOR:
-                    link = prop->u.accessor.getter;
-                    link2 = prop->u.accessor.setter;
+                    if(prop->u.accessor.getter && prop->u.accessor.getter->gc_marked) {
+                        hres = gc_stack_push(&gc_ctx, prop->u.accessor.getter);
+                        if(FAILED(hres))
+                            goto fail;
+                    }
+                    if(prop->u.accessor.setter && prop->u.accessor.setter->gc_marked) {
+                        hres = gc_stack_push(&gc_ctx, prop->u.accessor.setter);
+                        if(FAILED(hres))
+                            goto fail;
+                    }
                     break;
                 default:
                     continue;
                 }
-                if(link && link->gc_marked) {
-                    hres = gc_stack_push(&gc_ctx, link);
-                    if(FAILED(hres))
-                        break;
-                }
-                if(link2 && link2->gc_marked) {
-                    hres = gc_stack_push(&gc_ctx, link2);
-                    if(FAILED(hres))
-                        break;
-                }
             }
-
-            if(FAILED(hres))
-                break;
 
             if(obj2->prototype && obj2->prototype->gc_marked) {
                 hres = gc_stack_push(&gc_ctx, obj2->prototype);
                 if(FAILED(hres))
-                    break;
+                    goto fail;
             }
 
             if(obj2->builtin_info->gc_traverse) {
                 hres = obj2->builtin_info->gc_traverse(&gc_ctx, GC_TRAVERSE, obj2);
                 if(FAILED(hres))
-                    break;
+                    goto fail;
             }
 
             /* For weak refs, traverse paths accessible from it via the WeakMaps, if the WeakMaps are alive at this point.
@@ -1038,26 +1268,24 @@ HRESULT gc_run(script_ctx_t *ctx)
                 struct weakmap_entry *entry;
 
                 LIST_FOR_EACH_ENTRY(entry, list, struct weakmap_entry, weak_refs_entry) {
-                    if(!entry->weakmap->gc_marked && is_object_instance(entry->value) && (link = to_jsdisp(get_object(entry->value)))) {
-                        hres = gc_stack_push(&gc_ctx, link);
+                    if(!entry->weakmap->gc_marked && is_object_instance(entry->value)) {
+                        hres = unmark_edge(&gc_ctx, get_object(entry->value));
                         if(FAILED(hres))
-                            break;
+                            goto fail;
                     }
                 }
-
-                if(FAILED(hres))
-                    break;
             }
-
-            do obj2 = gc_stack_pop(&gc_ctx); while(obj2 && !obj2->gc_marked);
-        } while(obj2);
-
-        if(FAILED(hres)) {
-            do obj2 = gc_stack_pop(&gc_ctx); while(obj2);
-            break;
-        }
+        } while((stack_obj = gc_stack_pop(&gc_ctx)));
     }
+
+fail:
+    if(FAILED(hres))
+        do stack_obj = gc_stack_pop(&gc_ctx); while(stack_obj);
     free(gc_ctx.next);
+
+fail_init:
+    RB_FOR_EACH_ENTRY_DESTRUCTOR(cc_map_iter, cc_map_iter2, &gc_ctx.cc_map, struct cc_map_entry, entry)
+        free(cc_map_iter);
 
     /* Restore */
     chunk = head; chunk_idx = 0;
@@ -1117,8 +1345,6 @@ HRESULT gc_process_linked_obj(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsd
 
 HRESULT gc_process_linked_val(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsval_t *link)
 {
-    jsdisp_t *jsdisp;
-
     if(op == GC_TRAVERSE_UNLINK) {
         jsval_t val = *link;
         *link = jsval_undefined();
@@ -1126,13 +1352,22 @@ HRESULT gc_process_linked_val(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsv
         return S_OK;
     }
 
-    if(!is_object_instance(*link) || !(jsdisp = to_jsdisp(get_object(*link))))
+    if(!is_object_instance(*link))
         return S_OK;
     if(op == GC_TRAVERSE_SPECULATIVELY)
-        jsdisp->ref--;
-    else if(jsdisp->gc_marked)
-        return gc_stack_push(gc_ctx, jsdisp);
-    return S_OK;
+        return process_edge_speculatively(gc_ctx, get_object(*link));
+    return unmark_edge(gc_ctx, get_object(*link));
+}
+
+HRESULT host_dispatch_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, IWineJSDispatchHost *host_disp)
+{
+    if(op == GC_TRAVERSE_UNLINK) {
+        IWineJSDispatchHost_Unlink(host_disp);
+        return S_OK;
+    }
+
+    gc_ctx->cc_map_entry = NULL;  /* traverse edges but not the refcount on itself as we didn't arrive here from an edge during speculative traversal */
+    return IWineJSDispatchHost_Traverse(host_disp, &gc_ctx->cc_cb);
 }
 
 
@@ -3616,6 +3851,13 @@ static HRESULT HostObject_to_string(jsdisp_t *jsdisp, jsstr_t **ret)
     return *ret ? S_OK : E_OUTOFMEMORY;
 }
 
+static HRESULT HostObject_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsdisp_t *jsdisp)
+{
+    HostObject *This = HostObject_from_jsdisp(jsdisp);
+
+    return host_dispatch_gc_traverse(gc_ctx, op, This->host_iface);
+}
+
 static const builtin_info_t HostObject_info = {
     .class         = JSCLASS_HOST,
     .get_host_disp = HostObject_get_host_disp,
@@ -3626,6 +3868,7 @@ static const builtin_info_t HostObject_info = {
     .prop_config   = HostObject_prop_config,
     .fill_props    = HostObject_fill_props,
     .to_string     = HostObject_to_string,
+    .gc_traverse   = HostObject_gc_traverse
 };
 
 HRESULT init_host_object(script_ctx_t *ctx, IWineJSDispatchHost *host_iface, IWineJSDispatch *prototype_iface,

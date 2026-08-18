@@ -138,6 +138,8 @@ PRIVATE_TID_LIST
 #undef XDIID
 };
 
+static nsresult NSAPI dispex_unlink(void*);
+
 static HRESULT load_typelib(void)
 {
     WCHAR module_path[MAX_PATH + 3];
@@ -2656,6 +2658,13 @@ static HRESULT WINAPI DispatchEx_GetNameSpaceParent(IWineJSDispatchHost *iface, 
     return E_NOTIMPL;
 }
 
+static ULONG WINAPI JSDispatchHost_GetRefCount(IWineJSDispatchHost *iface)
+{
+    DispatchEx *This = impl_from_IWineJSDispatchHost(iface);
+
+    return NS_REFCOUNT_VALUE(This->ccref);
+}
+
 static HRESULT WINAPI JSDispatchHost_GetJSDispatch(IWineJSDispatchHost *iface, IWineJSDispatch **ret)
 {
     DispatchEx *This = impl_from_IWineJSDispatchHost(iface);
@@ -2873,6 +2882,21 @@ static HRESULT WINAPI JSDispatchHost_ToString(IWineJSDispatchHost *iface, BSTR *
     return dispex_to_string(This, str);
 }
 
+static HRESULT WINAPI JSDispatchHost_Traverse(IWineJSDispatchHost *iface, struct cc_traverse_callback *cb)
+{
+    DispatchEx *This = impl_from_IWineJSDispatchHost(iface);
+    struct cc_native_obj obj = { .obj = &This->IWineJSDispatchHost_iface, .participant = &dispex_ccp };
+
+    return cc_participant_api.traverse(obj, cb);
+}
+
+static void WINAPI JSDispatchHost_Unlink(IWineJSDispatchHost *iface)
+{
+    DispatchEx *This = impl_from_IWineJSDispatchHost(iface);
+
+    dispex_unlink(&This->IWineJSDispatchHost_iface);
+}
+
 static IWineJSDispatchHostVtbl JSDispatchHostVtbl = {
     DispatchEx_QueryInterface,
     DispatchEx_AddRef,
@@ -2889,6 +2913,7 @@ static IWineJSDispatchHostVtbl JSDispatchHostVtbl = {
     DispatchEx_GetMemberName,
     DispatchEx_GetNextDispID,
     DispatchEx_GetNameSpaceParent,
+    JSDispatchHost_GetRefCount,
     JSDispatchHost_GetJSDispatch,
     JSDispatchHost_LookupProperty,
     JSDispatchHost_GetProperty,
@@ -2900,6 +2925,122 @@ static IWineJSDispatchHostVtbl JSDispatchHostVtbl = {
     JSDispatchHost_FillProperties,
     JSDispatchHost_GetOuterDispatch,
     JSDispatchHost_ToString,
+    JSDispatchHost_Traverse,
+    JSDispatchHost_Unlink
+};
+
+static DispatchEx *unsafe_impl_from_IWineJSDispatchHost(IWineJSDispatchHost *iface)
+{
+    return iface->lpVtbl == &JSDispatchHostVtbl ? impl_from_IWineJSDispatchHost(iface) : NULL;
+}
+
+static struct cc_native_obj WINAPI cc_participant_api_canonicalize(IUnknown *obj)
+{
+    struct cc_native_obj cc_obj = { .obj = obj, .participant = NULL };
+    DispatchEx *dispex = NULL;
+    IUnknown *unk;
+
+    /* These QI do not AddRef, so they are scan-safe */
+    if(IUnknown_QueryInterface(obj, &IID_nsCycleCollectionISupports, (void**)&unk) != S_OK)
+        return cc_obj;
+
+    /* We can't QI here because we can't touch the refcount and that would add a ref, so inspect vtbl directly */
+    if(!(dispex = unsafe_impl_from_IWineJSDispatchHost((IWineJSDispatchHost*)unk))) {
+        HTMLOuterWindow *outer_window = unsafe_HTMLOuterWindow_from_IHTMLWindow2((IHTMLWindow2*)unk);
+
+        if(outer_window && outer_window->base.inner_window)
+            dispex = &outer_window->base.inner_window->event_target.dispex;
+    }
+
+    if(dispex && dispex->jsdisp) {
+        cc_obj.obj = dispex->jsdisp;
+        return cc_obj;
+    }
+
+    cc_obj.obj = unk;
+    IUnknown_QueryInterface(unk, &IID_nsXPCOMCycleCollectionParticipant, (void**)&cc_obj.participant);
+    return cc_obj;
+}
+
+struct cc_callback_ctx {
+    struct cc_traverse_callback *callback;
+    nsCycleCollectionTraversalCallback cb;
+    HRESULT hres;
+};
+
+static inline struct cc_callback_ctx *impl_from_nsCycleCollectionTraversalCallback(nsCycleCollectionTraversalCallback *cb)
+{
+    return CONTAINING_RECORD(cb, struct cc_callback_ctx, cb);
+}
+
+static void NSAPI cc_callback_DescribeRefCountedNode(nsCycleCollectionTraversalCallback *This, nsrefcnt refcount, const char *objName)
+{
+    struct cc_callback_ctx *ctx = impl_from_nsCycleCollectionTraversalCallback(This);
+    if(SUCCEEDED(ctx->hres))
+        ctx->hres = ctx->callback->vtbl->AdviseRefCount(ctx->callback, refcount);
+}
+
+static void NSAPI cc_callback_DescribeGCedNode(nsCycleCollectionTraversalCallback *This, unsigned char isMarked, const char *objName, UINT64 compartmentAddress)
+{
+}
+
+static void NSAPI cc_callback_NoteXPCOMChild(nsCycleCollectionTraversalCallback *This, nsISupports *child)
+{
+    struct cc_callback_ctx *ctx = impl_from_nsCycleCollectionTraversalCallback(This);
+    if(ctx->hres == S_OK && child)
+        ctx->hres = ctx->callback->vtbl->NoteEdge(ctx->callback, (IUnknown*)child);
+}
+
+static void NSAPI cc_callback_NoteJSObject(nsCycleCollectionTraversalCallback *This, void *child)
+{
+    /* FIXME: somehow obtain the participant and traverse JS objects */
+}
+
+static void NSAPI cc_callback_NoteJSScript(nsCycleCollectionTraversalCallback *This, void *child)
+{
+}
+
+static void NSAPI cc_callback_NoteNativeChild(nsCycleCollectionTraversalCallback *This, void *child, nsCycleCollectionParticipant *participant)
+{
+    struct cc_callback_ctx *ctx = impl_from_nsCycleCollectionTraversalCallback(This);
+    if(ctx->hres == S_OK && child) {
+        struct cc_native_obj cc_obj = { .obj = child, .participant = participant };
+        ctx->hres = ctx->callback->vtbl->NoteRawEdge(ctx->callback, cc_obj);
+    }
+}
+
+static void NSAPI cc_callback_NoteNextEdgeName(nsCycleCollectionTraversalCallback *This, const char *name)
+{
+}
+
+static const nsCycleCollectionTraversalCallbackVtbl cc_callback_vtbl = {
+    cc_callback_DescribeRefCountedNode,
+    cc_callback_DescribeGCedNode,
+    cc_callback_NoteXPCOMChild,
+    cc_callback_NoteJSObject,
+    cc_callback_NoteJSScript,
+    cc_callback_NoteNativeChild,
+    cc_callback_NoteNextEdgeName
+};
+
+static HRESULT WINAPI cc_participant_api_traverse(struct cc_native_obj obj, struct cc_traverse_callback *callback)
+{
+    nsCycleCollectionParticipant *participant = obj.participant;
+    struct cc_callback_ctx ctx;
+    nsresult nsres;
+
+    ctx.cb.lpVtbl = &cc_callback_vtbl;
+    ctx.cb.flags = nsCycleCollectionTraversalCallback_WANT_ALL_TRACES;
+    ctx.callback = callback;
+    ctx.hres = S_FALSE;
+
+    nsres = participant->lpVtbl->Traverse(participant, obj.obj, &ctx.cb);
+    return NS_FAILED(nsres) ? map_nsresult(nsres) : ctx.hres;
+}
+
+const struct cc_participant_api cc_participant_api = {
+    cc_participant_api_canonicalize,
+    cc_participant_api_traverse,
 };
 
 struct EnumVARIANT {
