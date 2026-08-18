@@ -14605,6 +14605,7 @@ struct test_send_buffering_data
     int buffer_size;
     int sent_size;
     SOCKET server;
+    SOCKET client;
     char *buffer;
 };
 
@@ -14631,13 +14632,24 @@ static DWORD WINAPI test_send_buffering_thread(void *arg)
     return 0;
 }
 
+static DWORD WINAPI test_send_exceeding_sndbuf_thread(void *arg)
+{
+    const struct test_send_buffering_data *params = arg;
+    int result;
+
+    result = send(params->client, params->buffer, params->buffer_size, 0);
+    ok(result == params->buffer_size, "Got %d, expected %d.\n", result, params->buffer_size);
+    return 0;
+}
+
 static void test_send_buffering(void)
 {
+    struct sockaddr_in addr = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
     static const char test_data[] = "abcdefg01234567";
-
     struct test_send_buffering_data d;
-    int ret, recv_size, i;
-    SOCKET client;
+    int ret, recv_size, i, value, len;
+    SOCKET client, listener, server;
+    char *recv_buffer;
     HANDLE thread;
 
     d.buffer_size = 1024 * 1024 * 50;
@@ -14708,6 +14720,59 @@ static void test_send_buffering(void)
     ok(!ret && !WSAGetLastError(), "got ret %d, error %u.\n", ret, WSAGetLastError());
     ok(recv_size == d.sent_size, "got %d, expected %d.\n", recv_size, d.sent_size);
     closesocket(client);
+
+    listener = socket(AF_INET, SOCK_STREAM, 0);
+    ok(listener != INVALID_SOCKET, "Failed to create socket: %u.\n", WSAGetLastError());
+    client = socket(AF_INET, SOCK_STREAM, 0);
+    ok(client != INVALID_SOCKET, "Failed to create socket: %u.\n", WSAGetLastError());
+    /* Set a certain and small send buffer size, so that we can stably reproduce
+       the issue on both Linux and macOS by sending a smaller buffer. */
+    value = 4 * 1024;
+    ret = setsockopt(client, SOL_SOCKET, SO_SNDBUF, (char *)&value, sizeof(value));
+    ok(!ret, "Failed to set SO_SNDBUF: %u.\n", WSAGetLastError());
+
+    ret = bind(listener, (const struct sockaddr *)&addr, sizeof(addr));
+    ok(!ret, "Failed to bind: %u.\n", WSAGetLastError());
+    ret = listen(listener, 1);
+    ok(!ret, "Failed to listen: %u.\n", WSAGetLastError());
+    len = sizeof(addr);
+    ret = getsockname(listener, (struct sockaddr *)&addr, &len);
+    ok(!ret, "Failed to get address: %u.\n", WSAGetLastError());
+    ret = connect(client, (struct sockaddr *)&addr, sizeof(addr));
+    ok(!ret, "Failed to connect: %u.\n", WSAGetLastError());
+    server = accept(listener, NULL, NULL);
+    ok(server != INVALID_SOCKET, "Failed to accept: %u.\n", WSAGetLastError());
+    closesocket(listener);
+
+    d.client = client;
+    d.buffer_size = 1024 * 1024;
+    d.buffer = malloc(d.buffer_size);
+    for (i = 0; i < d.buffer_size; ++i)
+        d.buffer[i] = test_data[i % sizeof(test_data)];
+    thread = CreateThread(NULL, 0, test_send_exceeding_sndbuf_thread, &d, 0, NULL);
+    ret = WaitForSingleObject(thread, 1000);
+    todo_wine ok(!ret, "Wait timed out.\n");
+
+    recv_size = 0;
+    recv_buffer = malloc(d.buffer_size);
+    memset(recv_buffer, 0, d.buffer_size);
+    while (recv_size < d.buffer_size && (ret = recv(server, recv_buffer, d.buffer_size, 0)) > 0)
+    {
+        for (i = 0; i < ret; ++i)
+        {
+            if (recv_buffer[i] != test_data[(recv_size + i) % sizeof(test_data)])
+                break;
+        }
+        ok(i == ret, "Data mismatch.\n");
+        recv_size += ret;
+    }
+    ok(recv_size == d.buffer_size, "Got %d, expected %d.\n", recv_size, d.buffer_size);
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+    closesocket(server);
+    closesocket(client);
+    free(d.buffer);
+    free(recv_buffer);
 }
 
 static void test_valid_handle(void)
