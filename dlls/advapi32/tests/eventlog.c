@@ -1409,6 +1409,7 @@ static void test_start_trace(void)
 done:
     free(properties);
     DeleteFileA(filepath);
+    DeleteFileA(filepath2);
 }
 
 static BOOL read_record(HANDLE handle, DWORD flags, DWORD offset, EVENTLOGRECORD **record, DWORD *size)
