@@ -3039,6 +3039,475 @@ static void subtest_export_forwarder_dep_chain( size_t num_chained_export_module
     }
 }
 
+static const char *get_file_name(const char *full_path)
+{
+    const char *file_name = strrchr(full_path, '\\');
+    if (!file_name)
+        file_name = strrchr(full_path, '/');
+
+    return file_name ? (file_name + 1) : full_path;
+}
+
+
+static BOOL rva_to_file_offset_checked(PIMAGE_NT_HEADERS nt, DWORD rva, DWORD file_size, DWORD *file_offset)
+{
+    PIMAGE_SECTION_HEADER section;
+    WORD i;
+
+    if (!nt || !file_offset || rva == 0)
+        return FALSE;
+
+    /* RVA inside PE headers */
+    if (rva < nt->OptionalHeader.SizeOfHeaders)
+    {
+        if (rva >= file_size)
+            return FALSE;
+
+        *file_offset = rva;
+        return TRUE;
+    }
+
+    section = IMAGE_FIRST_SECTION(nt);
+
+    for (i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section)
+    {
+        DWORD va = section->VirtualAddress;
+        DWORD virtual_size = section->Misc.VirtualSize;
+        DWORD raw_size = section->SizeOfRawData;
+        DWORD section_size = (virtual_size > raw_size) ? virtual_size : raw_size;
+        DWORD relative;
+        DWORD offset;
+
+        if (section_size == 0 || rva < va)
+            continue;
+
+        relative = rva - va;
+
+        if (relative >= section_size)
+            continue;
+
+        if (relative >= raw_size)
+        {
+            /* RVA points into virtual zero-filled tail */
+            return FALSE;
+        }
+
+        offset = section->PointerToRawData + relative;
+
+        if (offset < section->PointerToRawData || offset >= file_size)
+            return FALSE;
+
+        *file_offset = offset;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+
+static BOOL update_dll_in_place(const char *dll_path, const char *target_dll)
+{
+    HANDLE h_file = INVALID_HANDLE_VALUE;
+    BYTE *p_buffer = NULL;
+    DWORD file_size = 0;
+    DWORD bytes_read = 0;
+    DWORD bytes_written = 0;
+    BOOL b_success = FALSE;
+
+    PIMAGE_DOS_HEADER p_dos_header = NULL;
+    PIMAGE_NT_HEADERS p_nt_headers = NULL;
+    PIMAGE_DATA_DIRECTORY p_export_data_dir = NULL;
+    PIMAGE_EXPORT_DIRECTORY p_export_dir = NULL;
+    PIMAGE_SECTION_HEADER p_edata_sec = NULL;
+    PIMAGE_SECTION_HEADER p_sec = NULL;
+    PIMAGE_SECTION_HEADER first_section = NULL;
+
+    DWORD export_offset = 0;
+    DWORD functions_offset = 0;
+    DWORD names_offset = 0;
+    DWORD ordinals_offset = 0;
+    DWORD nt_offset = 0;
+
+    DWORD str_space_raw_offset = 0;
+    DWORD str_space_rva = 0;
+    DWORD str_space_remaining = 256;
+    char *p_str_buffer = NULL;
+
+    DWORD *p_functions = NULL;
+    DWORD *p_names = NULL;
+    WORD *p_ordinals = NULL;
+
+    char target_mod_name[MAX_PATH];
+    const char *p_name_only = NULL;
+    char *p_dot = NULL;
+    int patch_count = 0;
+    WORD i = 0;
+    LARGE_INTEGER li_file_size;
+    LARGE_INTEGER zero;
+
+    if (!dll_path || !dll_path[0] || !target_dll || !target_dll[0])
+    {
+        if (winetest_debug > 1)
+            trace("update_dll_in_place: Invalid arguments\n");
+        return FALSE;
+    }
+
+    /* Open target file with write/shared access */
+    h_file = CreateFileA(dll_path, GENERIC_READ | GENERIC_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if (h_file == INVALID_HANDLE_VALUE)
+    {
+        if (winetest_debug > 1)
+            trace("CreateFileA(%s) failed: %lu\n", dll_path, GetLastError());
+        return FALSE;
+    }
+
+    /* Validate file size */
+    if (!GetFileSizeEx(h_file, &li_file_size) || li_file_size.QuadPart <= 0 || li_file_size.QuadPart > MAXDWORD)
+    {
+        if (winetest_debug > 1)
+            trace("GetFileSizeEx failed or invalid size for %s\n", dll_path);
+        goto cleanup;
+    }
+
+    file_size = (DWORD)li_file_size.QuadPart;
+
+    /* Read into heap memory */
+    p_buffer = HeapAlloc(GetProcessHeap(), 0, file_size);
+    if (!p_buffer)
+    {
+        if (winetest_debug > 1)
+            trace("HeapAlloc failed\n");
+        goto cleanup;
+    }
+
+    if (!ReadFile(h_file, p_buffer, file_size, &bytes_read, NULL) || bytes_read != file_size)
+    {
+        if (winetest_debug > 1)
+            trace("ReadFile failed for %s, err=%lu\n", dll_path, GetLastError());
+        goto cleanup;
+    }
+
+    p_dos_header = (PIMAGE_DOS_HEADER)p_buffer;
+    nt_offset = (DWORD)p_dos_header->e_lfanew;
+    p_nt_headers = (PIMAGE_NT_HEADERS)(p_buffer + nt_offset);
+
+    if (p_nt_headers->FileHeader.SizeOfOptionalHeader < sizeof(IMAGE_OPTIONAL_HEADER))
+        goto cleanup;
+
+    /* Validate section table */
+    if (p_nt_headers->FileHeader.NumberOfSections == 0)
+        goto cleanup;
+
+    first_section = IMAGE_FIRST_SECTION(p_nt_headers);
+
+    /* Locate Export Directory */
+    if (p_nt_headers->OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT)
+        goto cleanup;
+
+    p_export_data_dir = &p_nt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if (p_export_data_dir->VirtualAddress == 0 || p_export_data_dir->Size == 0)
+        goto cleanup;
+
+    if (!rva_to_file_offset_checked(p_nt_headers, p_export_data_dir->VirtualAddress, file_size, &export_offset))
+        goto cleanup;
+
+    p_export_dir = (PIMAGE_EXPORT_DIRECTORY)(p_buffer + export_offset);
+
+    /* Locate Export Section Header (.edata) */
+    p_sec = first_section;
+    for (i = 0; i < p_nt_headers->FileHeader.NumberOfSections; ++i, ++p_sec)
+    {
+        DWORD va = p_sec->VirtualAddress;
+        DWORD vs = p_sec->Misc.VirtualSize ? p_sec->Misc.VirtualSize : p_sec->SizeOfRawData;
+
+        if (p_export_data_dir->VirtualAddress >= va && (p_export_data_dir->VirtualAddress - va) < vs)
+        {
+            p_edata_sec = p_sec;
+            break;
+        }
+    }
+
+    if (!p_edata_sec || p_edata_sec->PointerToRawData == 0 || p_edata_sec->SizeOfRawData < 256)
+        goto cleanup;
+
+    /* Reserve space in the last 256 bytes of section raw data */
+    str_space_raw_offset = p_edata_sec->PointerToRawData + p_edata_sec->SizeOfRawData - 256;
+    str_space_rva = p_edata_sec->VirtualAddress + (str_space_raw_offset - p_edata_sec->PointerToRawData);
+    p_str_buffer = (char *)(p_buffer + str_space_raw_offset);
+
+    /* 8. Resolve Export Tables */
+    if (p_export_dir->NumberOfFunctions == 0)
+        goto cleanup;
+
+    if (!rva_to_file_offset_checked(p_nt_headers, p_export_dir->AddressOfFunctions, file_size, &functions_offset))
+        goto cleanup;
+
+    p_functions = (DWORD *)(p_buffer + functions_offset);
+
+    if (p_export_dir->NumberOfNames > 0)
+    {
+        if (!rva_to_file_offset_checked(p_nt_headers, p_export_dir->AddressOfNames, file_size, &names_offset))
+            goto cleanup;
+
+        p_names = (DWORD *)(p_buffer + names_offset);
+
+        if (!rva_to_file_offset_checked(p_nt_headers, p_export_dir->AddressOfNameOrdinals, file_size, &ordinals_offset))
+            goto cleanup;
+
+        p_ordinals = (WORD *)(p_buffer + ordinals_offset);
+    }
+
+    /* Format Target Module Name */
+    p_name_only = get_file_name(target_dll);
+    lstrcpynA(target_mod_name, p_name_only, sizeof(target_mod_name));
+
+    p_dot = strrchr(target_mod_name, '.');
+    if (p_dot && lstrcmpiA(p_dot, ".dll") == 0)
+        *p_dot = '\0';
+
+    if (target_mod_name[0] == '\0')
+        goto cleanup;
+
+    /* Perform Export Patching */
+    for (i = 0; i < p_export_dir->NumberOfNames; ++i)
+    {
+        DWORD name_offset = 0;
+        char *func_name = NULL;
+        WORD ordinal_index = 0;
+        DWORD str_len = 0;
+
+        if (!rva_to_file_offset_checked(p_nt_headers, p_names[i], file_size, &name_offset) || name_offset >= file_size)
+            goto cleanup;
+
+        func_name = (char *)(p_buffer + name_offset);
+        if (!memchr(func_name, '\0', file_size - name_offset))
+            goto cleanup;
+
+        ordinal_index = p_ordinals[i];
+        if (ordinal_index >= p_export_dir->NumberOfFunctions)
+            goto cleanup;
+
+        if (strcmp(func_name, "forward_test_func") == 0)
+        {
+            snprintf(p_str_buffer, str_space_remaining, "%s.forward_test_func", target_mod_name);
+        }
+        else if (strcmp(func_name, "forward_test_func2") == 0)
+        {
+            snprintf(p_str_buffer, str_space_remaining, "%s.#2", target_mod_name);
+        }
+        else
+        {
+            continue;
+        }
+
+        str_len = (DWORD)lstrlenA(p_str_buffer) + 1;
+        if (str_len > str_space_remaining)
+        {
+            if (winetest_debug > 1)
+                trace("Not enough space for forwarder string\n");
+            goto cleanup;
+        }
+
+        p_functions[ordinal_index] = str_space_rva;
+        if (winetest_debug > 1)
+            trace("Patched %s -> %s (RVA: 0x%08lx)\n", func_name, p_str_buffer, str_space_rva);
+
+        p_str_buffer += str_len;
+        str_space_rva += str_len;
+        str_space_remaining -= str_len;
+        patch_count++;
+    }
+
+    if (patch_count == 0)
+    {
+        if (winetest_debug > 1)
+            trace("No functions patched in %s\n", dll_path);
+        b_success = TRUE;
+        goto cleanup;
+    }
+
+    /* Fix PE Header Sizes & Checksums */
+    p_nt_headers->OptionalHeader.CheckSum = 0;
+
+    if (str_space_rva > p_export_data_dir->VirtualAddress)
+        p_export_data_dir->Size = str_space_rva - p_export_data_dir->VirtualAddress;
+
+    if (p_edata_sec->Misc.VirtualSize < p_edata_sec->SizeOfRawData)
+        p_edata_sec->Misc.VirtualSize = p_edata_sec->SizeOfRawData;
+
+    {
+        DWORD section_alignment = p_nt_headers->OptionalHeader.SectionAlignment;
+        DWORD section_end_rva = p_edata_sec->VirtualAddress + p_edata_sec->Misc.VirtualSize;
+        DWORD aligned_image_size = (section_end_rva + section_alignment - 1) & ~(section_alignment - 1);
+
+        if (p_nt_headers->OptionalHeader.SizeOfImage < aligned_image_size)
+            p_nt_headers->OptionalHeader.SizeOfImage = aligned_image_size;
+    }
+
+    /* Write back to disk & Flush */
+    zero.QuadPart = 0;
+    if (!SetFilePointerEx(h_file, zero, NULL, FILE_BEGIN))
+        goto cleanup;
+
+    if (WriteFile(h_file, p_buffer, file_size, &bytes_written, NULL) && bytes_written == file_size)
+    {
+        FlushFileBuffers(h_file);
+        b_success = TRUE;
+    }
+
+cleanup:
+    if (h_file != INVALID_HANDLE_VALUE)
+        CloseHandle(h_file);
+
+    if (p_buffer)
+        HeapFree(GetProcessHeap(), 0, p_buffer);
+
+    return b_success;
+}
+
+
+static void subtest_export_forwarder_circular_detect_child_process( size_t num_modules )
+{
+    size_t importer_index = num_modules - 1;
+    DWORD imp_thunk_base_rva, exp_func_base_rva;
+    char temp_paths[4][MAX_PATH];
+    const char *target_file_name;
+    HANDLE temp_files[4];
+    HMODULE modules[4];
+    DWORD last_error;
+    FARPROC proc;
+    BOOL res;
+    size_t i;
+
+    assert(num_modules >= 1);
+    assert(num_modules <= ARRAY_SIZE(temp_paths));
+    assert(num_modules <= ARRAY_SIZE(temp_files));
+    assert(num_modules <= ARRAY_SIZE(modules));
+
+    for (i = 0; i < num_modules; i++)
+    {
+        temp_files[i] = gen_forward_chain_testdll( temp_paths[i],
+                                                   i >= 1 ? temp_paths[i - 1] : NULL,
+                                                   i < num_modules,
+                                                   importer_index && i == importer_index,
+                                                   i == 0 ? &exp_func_base_rva : NULL,
+                                                   i == importer_index ? &imp_thunk_base_rva : NULL );
+    }
+
+    target_file_name = get_file_name(temp_paths[0]);
+
+    res = update_dll_in_place(temp_paths[0], target_file_name);
+    ok(res, "update_dll_in_place failed for %s\n", temp_paths[0]);
+
+    /*
+    * Single DLL with a self-forward:
+    *   - LoadLibrary succeeds.
+    *   - GetProcAddress fails and returns NULL with ERROR_BAD_EXE_FORMAT (193).
+    *
+    * Chained DLLs:
+    *   - DLLs without imports can be loaded successfully.
+    *   - GetProcAddress fails with ERROR_BAD_EXE_FORMAT (193).
+    *   - The last DLL, which has an import, fails to load with LoadLibraryA,
+    *     returning NULL and ERROR_BAD_EXE_FORMAT (193).
+    */
+    for (i = 0; i < num_modules; i++)
+    {
+        modules[i] = LoadLibraryA( temp_paths[i] );
+        last_error = GetLastError();
+
+        if ( i < num_modules-1 )
+        {
+            ok( !!modules[i], "LoadLibraryA(%s): modules[%Iu/%Iu] = %p, err=%lu\n",
+                temp_paths[i], i, num_modules, modules[i], last_error );
+        }
+        else
+        {
+            if ( num_modules != 1 )
+            {
+                ok( !modules[i] && last_error == ERROR_BAD_EXE_FORMAT,
+                    "LoadLibraryA(%s): modules[%Iu/%Iu] = %p, err=%lu\n",
+                    temp_paths[i], i, num_modules, modules[i], last_error );
+            }
+            else
+            {
+                ok( !!modules[i], "LoadLibraryA(%s): modules[%Iu/%Iu] = %p, err=%lu\n",
+                    temp_paths[i], i, num_modules, modules[i], last_error );
+            }
+        }
+
+        proc = GetProcAddress( modules[i], "forward_test_func" );
+        last_error = GetLastError();
+
+        if ( i < num_modules-1 )
+        {
+            ok( !proc && last_error == ERROR_BAD_EXE_FORMAT, "modules[%Iu] %s GetProcAddress = %p, err=%lu\n",
+                i, temp_paths[i], (void *)proc, last_error );
+        }
+        else
+        {
+            if ( num_modules != 1 )
+            {
+                ok( !proc && last_error == ERROR_PROC_NOT_FOUND,"modules[%Iu] %s GetProcAddress = %p, err=%lu\n",
+                    i, temp_paths[i], (void *)proc, last_error );
+            }
+            else
+            {
+                ok( !proc && last_error == ERROR_BAD_EXE_FORMAT, "modules[%Iu] %s GetProcAddress = %p, err=%lu\n",
+                    i, temp_paths[i], (void *)proc, last_error );
+            }
+        }
+
+    }
+
+    for (i = num_modules; i < num_modules; i++)
+    {
+        res = FreeLibrary( modules[i] );
+        ok( res, "FreeLibrary(modules[%Iu]) err=%lu\n", i, GetLastError() );
+    }
+
+    for (i = 0; i < num_modules; i++)
+    {
+        CloseHandle( temp_files[i] );
+    }
+}
+
+static void subtest_export_forwarder_circular_detect( size_t num_modules )
+{
+    char cmdline[MAX_PATH * 2];
+    char **argv;
+    DWORD ret;
+    PROCESS_INFORMATION pi;
+    STARTUPINFOA si = { sizeof(si) };
+
+    winetest_get_mainargs(&argv);
+
+    *child_failures = -1;
+    sprintf(cmdline, "\"%s\" loader circular_detect %Iu", argv[0], num_modules);
+
+    ret = CreateProcessA(argv[0], cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+    ok(ret, "CreateProcess(%s) error %ld\n", cmdline, GetLastError());
+
+    ret = WaitForSingleObject(pi.hProcess, 10000);
+    ok(ret == WAIT_OBJECT_0, "child process failed to terminate\n");
+    if (ret != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 0);
+
+    GetExitCodeProcess(pi.hProcess, &ret);
+    todo_wine
+    ok(ret == 0, "expected exit code 0, got %lu\n", ret);
+
+    if (*child_failures)
+    {
+        trace("%ld failures in child process\n", *child_failures);
+        winetest_add_failures(*child_failures);
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+}
+
 static void test_export_forwarder_dep_chain(void)
 {
     winetest_push_context( "no import" );
@@ -3068,6 +3537,14 @@ static void test_export_forwarder_dep_chain(void)
 
     winetest_push_context( "dynamic import of dll already loaded with DONT_RESOLVE_DLL_REFERENCES" );
     subtest_export_forwarder_dep_chain( 2, 1, FALSE, DONT_RESOLVE_DLL_REFERENCES );
+    winetest_pop_context();
+
+    winetest_push_context( "static import of export forwarder circular detect with chained dll" );
+    subtest_export_forwarder_circular_detect( 3 );
+    winetest_pop_context();
+
+    winetest_push_context( "static import of export forwarder circular detect with self chained dll" );
+    subtest_export_forwarder_circular_detect( 1 );
     winetest_pop_context();
 }
 
@@ -4986,6 +5463,14 @@ START_TEST(loader)
         *child_failures = -1;
 
     argc = winetest_get_mainargs(&argv);
+
+    if (argc == 4)
+    {
+        test_dll_phase = atoi(argv[3]);
+        subtest_export_forwarder_circular_detect_child_process(test_dll_phase);
+        return;
+    }
+
     if (argc > 4)
     {
         test_dll_phase = atoi(argv[4]);
