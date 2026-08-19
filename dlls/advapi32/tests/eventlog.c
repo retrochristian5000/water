@@ -595,6 +595,9 @@ static void test_openbackup(void)
     DWORD written;
     const char backup[] = "backup.evt";
     const char text[] = "Just some text";
+    CHAR temp_path[MAX_PATH];
+    CHAR corrupt_file[MAX_PATH];
+    CHAR zero_file[MAX_PATH];
 
     SetLastError(0xdeadbeef);
     handle = OpenBackupEventLogA(NULL, NULL);
@@ -656,17 +659,32 @@ static void test_openbackup(void)
         DeleteFileA(backup);
     }
 
-    /* Is there any content checking done? */
-    file = CreateFileA(backup, GENERIC_WRITE, 0, NULL, CREATE_NEW, 0, NULL);
-    CloseHandle(file);
+    /* Zero-byte file */
+    GetTempPathA(MAX_PATH, temp_path);
+    GetTempFileNameA(temp_path, "evt", 0, zero_file);
     SetLastError(0xdeadbeef);
-    handle = OpenBackupEventLogA(NULL, backup);
-    if (handle)
+    handle = OpenBackupEventLogA(NULL, zero_file);
+    if (handle)  /* Win11 allows opening a zero-byte backup file */
     {
-        /* Win11 allows opening a zero-byte backup file */
+        DWORD count = 0xdeadbeef;
+        DWORD oldest = 0xdeadbeef;
+        BOOL ret;
+
+        /* Get record count */
+        SetLastError(0xdeadbeef);
+        ret = GetNumberOfEventLogRecords(handle, &count);
+        ok(ret, "Expected GetNumberOfEventLogRecords to succeed, got error %ld\n", GetLastError());
+        ok(count == 0, "Expected 0 records, got %ld\n", count);
+
+        /* Get oldest record number */
+        SetLastError(0xdeadbeef);
+        ret = GetOldestEventLogRecord(handle, &oldest);
+        ok(ret, "Expected GetOldestEventLogRecord to succeed, got error %ld\n", GetLastError());
+        ok(oldest == 0, "Expected oldest record to be 0, got %ld\n", oldest);
+
         CloseEventLog(handle);
     }
-    else
+    else    /* Older versions of Windows immediately fail */
     {
         ok(GetLastError() == ERROR_NOT_ENOUGH_MEMORY ||
            GetLastError() == ERROR_ACCESS_DENIED ||
@@ -674,26 +692,40 @@ static void test_openbackup(void)
            GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT, /* Vista and Win7 */
            "got %ld\n", GetLastError());
     }
-    DeleteFileA(backup);
+    DeleteFileA(zero_file);
 
-    file = CreateFileA(backup, GENERIC_WRITE, 0, NULL, CREATE_NEW, 0, NULL);
-    WriteFile(file, text, sizeof(text), &written, NULL);
-    CloseHandle(file);
-    SetLastError(0xdeadbeef);
-    handle = OpenBackupEventLogA(NULL, backup);
-    if (handle)
+    /* Corrupt file (random text) */
+    GetTempPathA(MAX_PATH, temp_path);
+    GetTempFileNameA(temp_path, "evt", 0, corrupt_file);
+    file = CreateFileA(corrupt_file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    if (file != INVALID_HANDLE_VALUE)
     {
-        /* Win11 allows this */
-        CloseEventLog(handle);
+        WriteFile(file, text, sizeof(text), &written, NULL);
+        CloseHandle(file);
+        SetLastError(0xdeadbeef);
+        handle = OpenBackupEventLogA(NULL, corrupt_file);
+
+        if (handle) /* Win11 does not validate the file on open */
+        {
+            DWORD count = 0;
+            BOOL ret;
+
+            SetLastError(0xdeadbeef);
+            ret = GetNumberOfEventLogRecords(handle, &count);
+            ok(!ret, "Expected GetNumberOfEventLogRecords to fail\n");
+            ok(GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT,
+                "Expected ERROR_EVENTLOG_FILE_CORRUPT, got %ld\n", GetLastError());
+            CloseEventLog(handle);
+        }
+        else /* Older versions of Windows do */
+        {
+            ok(GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT ||
+               GetLastError() == ERROR_ACCESS_DENIED ||
+               GetLastError() == RPC_S_SERVER_UNAVAILABLE,
+               "got %ld\n", GetLastError());
+        }
     }
-    else
-    {
-        ok(GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT ||
-           GetLastError() == ERROR_ACCESS_DENIED ||
-           GetLastError() == RPC_S_SERVER_UNAVAILABLE,
-           "got %ld\n", GetLastError());
-    }
-    DeleteFileA(backup);
+    DeleteFileA(corrupt_file);
 }
 
 static void test_clear(void)
