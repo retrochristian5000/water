@@ -833,7 +833,7 @@ static void test_readwrite(void)
     ret = ReportEventA(handle, 0x20, 0, 0, NULL, 0, 0, NULL, NULL);
     if (!ret && GetLastError() == ERROR_CRC)
     {
-        win_skip("Win7 fails when using incorrect event types\n");
+        win_skip("NT6+ fails when using incorrect event types\n");
         ret = ReportEventA(handle, 0, 0, 0, NULL, 0, 0, NULL, NULL);
         ok(ret, "Expected success : %ld\n", GetLastError());
     }
@@ -859,7 +859,7 @@ static void test_readwrite(void)
         {
             record = (EVENTLOGRECORD *)buf;
 
-            /* Vista and W2K8 return EVENTLOG_SUCCESS, Windows versions before return
+            /* NT6+ return EVENTLOG_SUCCESS, Windows versions before return
              * the written eventtype (0x20 in this case).
              */
             if (record->EventType == EVENTLOG_SUCCESS)
@@ -941,7 +941,7 @@ static void test_readwrite(void)
 
     /* Report only once */
     if (on_vista)
-        skip("There is no DWORD alignment enforced for UserSid on Vista, W2K8 or Win7\n");
+        skip("There is no DWORD alignment enforced for UserSid on NT6+\n");
 
     if (on_vista && pGetComputerNameExA)
     {
