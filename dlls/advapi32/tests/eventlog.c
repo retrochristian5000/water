@@ -645,13 +645,19 @@ static void test_openbackup(void)
     CloseHandle(file);
     SetLastError(0xdeadbeef);
     handle = OpenBackupEventLogA(NULL, backup);
-    ok(handle == NULL, "Didn't expect a handle\n");
-    ok(GetLastError() == ERROR_NOT_ENOUGH_MEMORY ||
-       GetLastError() == ERROR_ACCESS_DENIED ||
-       GetLastError() == RPC_S_SERVER_UNAVAILABLE ||
-       GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT, /* Vista and Win7 */
-       "got %ld\n", GetLastError());
-    CloseEventLog(handle);
+    if (handle)
+    {
+        /* Win11 allows opening a zero-byte backup file */
+        CloseEventLog(handle);
+    }
+    else
+    {
+        ok(GetLastError() == ERROR_NOT_ENOUGH_MEMORY ||
+           GetLastError() == ERROR_ACCESS_DENIED ||
+           GetLastError() == RPC_S_SERVER_UNAVAILABLE ||
+           GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT, /* Vista and Win7 */
+           "got %ld\n", GetLastError());
+    }
     DeleteFileA(backup);
 
     file = CreateFileA(backup, GENERIC_WRITE, 0, NULL, CREATE_NEW, 0, NULL);
@@ -659,12 +665,18 @@ static void test_openbackup(void)
     CloseHandle(file);
     SetLastError(0xdeadbeef);
     handle = OpenBackupEventLogA(NULL, backup);
-    ok(handle == NULL, "Didn't expect a handle\n");
-    ok(GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT ||
-       GetLastError() == ERROR_ACCESS_DENIED ||
-       GetLastError() == RPC_S_SERVER_UNAVAILABLE,
-       "got %ld\n", GetLastError());
-    CloseEventLog(handle);
+    if (handle)
+    {
+        /* Win11 allows this */
+        CloseEventLog(handle);
+    }
+    else
+    {
+        ok(GetLastError() == ERROR_EVENTLOG_FILE_CORRUPT ||
+           GetLastError() == ERROR_ACCESS_DENIED ||
+           GetLastError() == RPC_S_SERVER_UNAVAILABLE,
+           "got %ld\n", GetLastError());
+    }
     DeleteFileA(backup);
 }
 
