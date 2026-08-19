@@ -60,10 +60,33 @@ static void init_function_pointers(void)
     pWow64RevertWow64FsRedirection = (void*)GetProcAddress(hkernel32, "Wow64RevertWow64FsRedirection");
 }
 
+static BOOL is_admin(void)
+{
+    BOOL (WINAPI *pIsUserAnAdmin)(void);
+    HMODULE hshell = GetModuleHandleA("shell32.dll");
+
+    if (!hshell)
+        hshell = LoadLibraryA("shell32.dll");
+
+    if (hshell)
+    {
+        pIsUserAnAdmin = (void *)GetProcAddress(hshell, "IsUserAnAdmin");
+        if (pIsUserAnAdmin)
+            return pIsUserAnAdmin();
+    }
+    return FALSE;
+}
+
 static BOOL create_backup(const char *filename)
 {
     HANDLE handle;
     DWORD rc, attribs;
+
+    if (!is_admin())
+    {
+        skip("SeBackupPrivilege (administrator) privileges required to backup event log\n");
+        return FALSE;
+    }
 
     handle = OpenEventLogA(NULL, "Application");
     if (!handle && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == RPC_S_SERVER_UNAVAILABLE))
@@ -75,6 +98,7 @@ static BOOL create_backup(const char *filename)
 
     DeleteFileA(filename);
     rc = BackupEventLogA(handle, filename);
+    // It's possible for an Administrator to have SeBackupPrivilege restricted
     if (!rc && GetLastError() == ERROR_PRIVILEGE_NOT_HELD)
     {
         skip("insufficient privileges to backup the eventlog\n");
@@ -326,6 +350,12 @@ static void test_backup(void)
     BOOL ret;
     const char backup[] = "backup.evt";
     const char backup2[] = "backup2.evt";
+
+    if (!is_admin())
+    {
+        skip("SeBackupPrivilege (administrator) privileges required to backup event log\n");
+        return;
+    }
 
     SetLastError(0xdeadbeef);
     ret = BackupEventLogA(NULL, NULL);
