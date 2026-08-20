@@ -152,6 +152,26 @@ static void appbar_cliprect( HWND hwnd, RECT *rect )
     }
 }
 
+/* update the system work area rectangle to exclude the taskbar and appbars
+ * (affects what part of the screen maximized windows cover for example)
+ */
+static void update_work_area(void)
+{
+    RECT rc = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+
+    /* When not running in desktop mode, don't set the work area in order to
+     * avoid interfering with the non-WINE desktop environment's window
+     * management. (See for example freedesktop's _NET_WORKAREA.)
+     */
+    if (get_taskbar_height() == 0)
+        return;
+
+    appbar_cliprect( NULL, &rc );
+    SystemParametersInfoW( SPI_SETWORKAREA, 0, &rc, 0 );
+
+    /* TODO: move and resize existing windows to fit the new work area */
+}
+
 static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
 {
     struct appbar_data* data;
@@ -186,6 +206,8 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
             send_poschanged(hwnd);
 
             free( data );
+
+            update_work_area();
         }
         else WARN( "removing hwnd %p not on the list\n", hwnd );
         return TRUE;
@@ -211,6 +233,8 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
             data->edge = abd->uEdge;
             data->rc = abd->rc;
             data->space_reserved = TRUE;
+
+            update_work_area();
         }
         else
         {
@@ -325,4 +349,6 @@ void initialize_appbar(void)
         ERR( "Could not create appbar message window\n" );
         return;
     }
+
+    update_work_area();
 }
