@@ -1097,6 +1097,12 @@ static void do_show_systray(void)
     sync_taskbar_buttons();
 }
 
+/* for use by appbar.c's accounting */
+int get_taskbar_height(void)
+{
+    return enable_taskbar ? tray_height : 0;
+}
+
 static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
 {
     switch (msg)

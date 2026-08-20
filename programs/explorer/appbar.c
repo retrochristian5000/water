@@ -99,10 +99,30 @@ static void send_poschanged(HWND hwnd)
     }
 }
 
+static RECT get_taskbar_rect(void)
+{
+    RECT rc;
+    int taskbar_height;
+    rc.left = 0;
+    rc.right = GetSystemMetrics(SM_CXSCREEN);
+    rc.bottom = GetSystemMetrics(SM_CYSCREEN);
+    taskbar_height = get_taskbar_height();
+    if (taskbar_height == 0)
+        taskbar_height = 1; /* ensure taskbar has non-zero height */
+    rc.top = rc.bottom - taskbar_height;
+    return rc;
+}
+
 /* appbar_cliprect: cut out parts of the rectangle that interfere with existing appbars */
 static void appbar_cliprect( HWND hwnd, RECT *rect )
 {
+    RECT taskbar_rect;
     struct appbar_data* data;
+
+    /* move in the side that corresponds to the taskbar's top edge */
+    taskbar_rect = get_taskbar_rect();
+    rect->bottom = min(rect->bottom, taskbar_rect.top);
+
     LIST_FOR_EACH_ENTRY(data, &appbars, struct appbar_data, entry)
     {
         if (data->hwnd == hwnd)
@@ -203,10 +223,7 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
     case ABM_GETTASKBARPOS:
         FIXME( "SHAppBarMessage(ABM_GETTASKBARPOS, hwnd=%p): stub\n", hwnd );
         /* Report the taskbar is at the bottom of the screen. */
-        abd->rc.left = 0;
-        abd->rc.right = GetSystemMetrics(SM_CXSCREEN);
-        abd->rc.bottom = GetSystemMetrics(SM_CYSCREEN);
-        abd->rc.top = abd->rc.bottom-1;
+        abd->rc = get_taskbar_rect();
         abd->uEdge = ABE_BOTTOM;
         return TRUE;
     case ABM_ACTIVATE:
