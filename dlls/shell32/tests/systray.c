@@ -33,61 +33,68 @@ static void test_cbsize(void)
     NOTIFYICONDATAA nidA;
     BOOL ret;
 
-    if (pShell_NotifyIconW)
+    /* This test frequently fails with a non-specific E_FAIL on Windows in CI,
+     * but it does work fine when run standalone, and has no problems in WINE.
+     * See: https://bugs.winehq.org//show_bug.cgi?id=55017
+     */
+    flaky_if(!winetest_platform_is_wine)
     {
-        NOTIFYICONDATAW nidW;
+        if (pShell_NotifyIconW)
+        {
+            NOTIFYICONDATAW nidW;
 
-        ZeroMemory(&nidW, sizeof(nidW));
-        nidW.cbSize = NOTIFYICONDATAW_V1_SIZE;
-        nidW.hWnd = hMainWnd;
-        nidW.uID = 1;
-        nidW.uFlags = NIF_ICON|NIF_MESSAGE;
-        nidW.hIcon = LoadIconA(NULL, (LPSTR)IDI_APPLICATION);
-        nidW.uCallbackMessage = WM_USER+17;
+            ZeroMemory(&nidW, sizeof(nidW));
+            nidW.cbSize = NOTIFYICONDATAW_V1_SIZE;
+            nidW.hWnd = hMainWnd;
+            nidW.uID = 1;
+            nidW.uFlags = NIF_ICON|NIF_MESSAGE;
+            nidW.hIcon = LoadIconA(NULL, (LPSTR)IDI_APPLICATION);
+            nidW.uCallbackMessage = WM_USER+17;
+            SetLastError(0xdeadbeef);
+            ret = pShell_NotifyIconW(NIM_ADD, &nidW);
+            ok(ret, "NIM_ADD failed!\n");
+            ok(GetLastError() == ERROR_SUCCESS || GetLastError() == ERROR_NO_TOKEN,
+               "GetLastError() = %lu\n", GetLastError());
+            /* using an invalid cbSize does work */
+            nidW.cbSize = 3;
+            nidW.hWnd = hMainWnd;
+            nidW.uID = 1;
+            ret = pShell_NotifyIconW(NIM_DELETE, &nidW);
+            ok( ret || broken(!ret), /* nt4 */ "NIM_DELETE failed!\n");
+            /* as icon doesn't exist anymore - now there will be an error */
+            nidW.cbSize = sizeof(nidW);
+            SetLastError(0xdeadbeef);
+            ok(!pShell_NotifyIconW(NIM_DELETE, &nidW) != !ret, "The icon was not deleted\n");
+            ok(GetLastError() == E_FAIL || GetLastError() == ERROR_TIMEOUT,
+               "GetLastError() = %lu\n", GetLastError());
+        }
+
+        /* same for Shell_NotifyIconA */
+        ZeroMemory(&nidA, sizeof(nidA));
+        nidA.cbSize = NOTIFYICONDATAA_V1_SIZE;
+        nidA.hWnd = hMainWnd;
+        nidA.uID = 1;
+        nidA.uFlags = NIF_ICON|NIF_MESSAGE;
+        nidA.hIcon = LoadIconA(NULL, (LPSTR)IDI_APPLICATION);
+        nidA.uCallbackMessage = WM_USER+17;
         SetLastError(0xdeadbeef);
-        ret = pShell_NotifyIconW(NIM_ADD, &nidW);
-        ok(ret, "NIM_ADD failed!\n");
+        ok(Shell_NotifyIconA(NIM_ADD, &nidA), "NIM_ADD failed!\n");
         ok(GetLastError() == ERROR_SUCCESS || GetLastError() == ERROR_NO_TOKEN,
            "GetLastError() = %lu\n", GetLastError());
+
         /* using an invalid cbSize does work */
-        nidW.cbSize = 3;
-        nidW.hWnd = hMainWnd;
-        nidW.uID = 1;
-        ret = pShell_NotifyIconW(NIM_DELETE, &nidW);
-        ok( ret || broken(!ret), /* nt4 */ "NIM_DELETE failed!\n");
+        nidA.cbSize = 3;
+        nidA.hWnd = hMainWnd;
+        nidA.uID = 1;
+        ret = Shell_NotifyIconA(NIM_DELETE, &nidA);
+        ok(ret, "NIM_DELETE failed!\n");
         /* as icon doesn't exist anymore - now there will be an error */
-        nidW.cbSize = sizeof(nidW);
+        nidA.cbSize = sizeof(nidA);
         SetLastError(0xdeadbeef);
-        ok(!pShell_NotifyIconW(NIM_DELETE, &nidW) != !ret, "The icon was not deleted\n");
+        ok(!Shell_NotifyIconA(NIM_DELETE, &nidA) != !ret, "The icon was not deleted\n");
         ok(GetLastError() == E_FAIL || GetLastError() == ERROR_TIMEOUT,
            "GetLastError() = %lu\n", GetLastError());
     }
-
-    /* same for Shell_NotifyIconA */
-    ZeroMemory(&nidA, sizeof(nidA));
-    nidA.cbSize = NOTIFYICONDATAA_V1_SIZE;
-    nidA.hWnd = hMainWnd;
-    nidA.uID = 1;
-    nidA.uFlags = NIF_ICON|NIF_MESSAGE;
-    nidA.hIcon = LoadIconA(NULL, (LPSTR)IDI_APPLICATION);
-    nidA.uCallbackMessage = WM_USER+17;
-    SetLastError(0xdeadbeef);
-    ok(Shell_NotifyIconA(NIM_ADD, &nidA), "NIM_ADD failed!\n");
-    ok(GetLastError() == ERROR_SUCCESS || GetLastError() == ERROR_NO_TOKEN,
-       "GetLastError() = %lu\n", GetLastError());
-
-    /* using an invalid cbSize does work */
-    nidA.cbSize = 3;
-    nidA.hWnd = hMainWnd;
-    nidA.uID = 1;
-    ret = Shell_NotifyIconA(NIM_DELETE, &nidA);
-    ok(ret, "NIM_DELETE failed!\n");
-    /* as icon doesn't exist anymore - now there will be an error */
-    nidA.cbSize = sizeof(nidA);
-    SetLastError(0xdeadbeef);
-    ok(!Shell_NotifyIconA(NIM_DELETE, &nidA) != !ret, "The icon was not deleted\n");
-    ok(GetLastError() == E_FAIL || GetLastError() == ERROR_TIMEOUT,
-       "GetLastError() = %lu\n", GetLastError());
 }
 
 START_TEST(systray)
