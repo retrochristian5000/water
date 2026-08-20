@@ -294,7 +294,7 @@ union sysparam_all_entry
 
 static const struct ratio no_dpi;
 UINT system_dpi;
-static RECT work_area;
+static RECT work_area_override;
 static DWORD process_layout = ~0u;
 
 static HDC display_dc;
@@ -2809,6 +2809,16 @@ static BOOL add_virtual_source( struct device_manager_ctx *ctx )
     monitor.rc_monitor.bottom = current.dmPelsHeight;
     monitor.rc_work.right = current.dmPelsWidth;
     monitor.rc_work.bottom = current.dmPelsHeight;
+
+    /* Work area can be modified desktop-wide with SPI_SETWORKAREA */
+    if (!IsRectEmpty(&work_area_override))
+    {
+        monitor.rc_work = work_area_override;
+
+        /* Hygiene: don't apply this more than once */
+        SetRect(&work_area_override, 0, 0, 0, 0);
+    }
+
     add_monitor( &monitor, ctx );
 
     /* Expose the virtual source display modes as physical modes, to avoid DPI scaling */
@@ -5738,6 +5748,8 @@ enum spi_index
 /* indicators whether system parameter value is loaded */
 static char spi_loaded[SPI_INDEX_COUNT];
 
+static RECT spi_loaded_work_area;
+
 static struct sysparam_rgb_entry system_colors[] =
 {
 #define RGB_ENTRY(name,val,reg) { { get_rgb_entry, set_rgb_entry, init_rgb_entry, COLORS_KEY, reg }, (val) }
@@ -6364,8 +6376,41 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
     {
         if (!ptr) return FALSE;
         spi_idx = SPI_SETWORKAREA_IDX;
-        work_area = *(RECT*)ptr;
-        spi_loaded[spi_idx] = TRUE;
+        if (is_virtual_desktop())
+        {
+            struct monitor *monitor;
+            struct ratio dpi = get_thread_dpi();
+
+            if (!lock_display_devices( FALSE )) return FALSE;
+
+            LIST_FOR_EACH_ENTRY( monitor, &monitors, struct monitor, entry )
+            {
+                if (!is_monitor_primary( monitor )) continue;
+                work_area_override = map_monitor_rect( monitor, *(RECT *)ptr, dpi, MDT_DEFAULT, no_dpi, MDT_RAW_DPI );
+                break;
+            }
+
+            unlock_display_devices();
+
+            /* Force rebuilding the monitor cache. When the virtual desktop
+             * monitor is recreated (see add_virtual_source()), the new work
+             * area will be applied and written to the registry, from which it
+             * will propagate to other processes.
+             */
+            NtUserCallNoParam( NtUserCallNoParam_DisplayModeChanged );
+        }
+        else
+        {
+            /* It's not clear if actually modifying the work area rect for
+             * non-virtual desktops would be wise, because that should be
+             * managed by the user's desktop environment or WM (see e.g.
+             * freedesktop's _NET_WORKAREA).
+             */
+            spi_loaded_work_area = *(RECT*)ptr;
+            spi_loaded[spi_idx] = TRUE;
+            FIXME("SPI_SETWORKAREA(%s) for non-virtual desktop is mostly unimplemented\n",
+                 wine_dbgstr_rect( &spi_loaded_work_area ));
+        }
         ret = TRUE;
         break;
     }
@@ -6377,7 +6422,10 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
         if (!ptr) return FALSE;
 
         spi_idx = SPI_SETWORKAREA_IDX;
-        if (!spi_loaded[spi_idx])
+        /* Don't use cached value in virtual desktop mode: the new work area is
+         * written to the monitor struct, and other processes can change it.
+         */
+        if (is_virtual_desktop() || !spi_loaded[spi_idx])
         {
             struct monitor *monitor;
 
@@ -6387,16 +6435,16 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
             {
                 if (!is_monitor_primary( monitor )) continue;
                 monitor_get_info( monitor, &info, dpi );
-                work_area = info.rcWork;
+                spi_loaded_work_area = info.rcWork;
                 break;
             }
 
             unlock_display_devices();
             spi_loaded[spi_idx] = TRUE;
         }
-        *(RECT *)ptr = work_area;
+        *(RECT *)ptr = spi_loaded_work_area;
         ret = TRUE;
-        TRACE("work area %s\n", wine_dbgstr_rect( &work_area ));
+        TRACE("work area %s\n", wine_dbgstr_rect( &spi_loaded_work_area ));
         break;
     }
 
