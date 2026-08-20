@@ -3036,31 +3036,29 @@ static void test_directory(void)
 
 static void test_guid(void)
 {
-    todo_wine {
-        /* try to open My Computer's shell folder by its GUID */
+    /* try to open My Computer's shell folder by its GUID */
 
-        BOOL result;
-        SHELLEXECUTEINFOW sei = {0};
+    BOOL result;
+    SHELLEXECUTEINFOW sei = {0};
 
-        if (!winetest_interactive)
-        {
-            /* This test will open a persistent explorer window for My Computer (if
-             * one isn't already open), and there's no practical way to consistently
-             * auto-close it, so this is best left out of the non-interactive tests.
-             */
-            skip( "interactive explorer GUID path test (set WINETEST_INTERACTIVE=1)\n" );
-            return;
-        }
-
-        sei.cbSize = sizeof(sei);
-        sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
-        sei.lpVerb = L"open";
-        sei.lpFile = L"::{20d04fe0-3aea-1069-a2d8-08002b30309d}";
-        sei.nShow = SW_SHOW;
-
-        result = ShellExecuteExW(&sei);
-        ok(result, "ShellExecuteExW failed\n");
+    if (!winetest_interactive)
+    {
+        /* This test will open a persistent explorer window for My Computer (if
+         * one isn't already open), and there's no practical way to consistently
+         * auto-close it, so this is best left out of the non-interactive tests.
+         */
+        skip( "interactive explorer GUID path test (set WINETEST_INTERACTIVE=1)\n" );
+        return;
     }
+
+    sei.cbSize = sizeof(sei);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
+    sei.lpVerb = L"open";
+    sei.lpFile = L"::{20d04fe0-3aea-1069-a2d8-08002b30309d}";
+    sei.nShow = SW_SHOW;
+
+    result = ShellExecuteExW(&sei);
+    ok(result, "ShellExecuteExW failed\n");
 }
 
 START_TEST(shlexec)
