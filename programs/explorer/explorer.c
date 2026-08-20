@@ -385,7 +385,6 @@ static void make_explorer_window(parameters_struct *params)
     IShellWindows *sw;
     ITEMIDLIST *pidl;
     UINT dpix, dpiy;
-    DWORD size;
     LONG hwnd;
     HDC hdc;
     MSG msg;
@@ -395,9 +394,14 @@ static void make_explorer_window(parameters_struct *params)
 
     if (params->root[0])
     {
-        size = GetFullPathNameW(params->root, 0, NULL, NULL);
-        path = malloc( size * sizeof(WCHAR) );
-        GetFullPathNameW(params->root, size, path, NULL);
+        if (wcsncmp(params->root, L"::{", 3))
+        {
+            DWORD size = GetFullPathNameW(params->root, 0, NULL, NULL);
+            path = malloc( size * sizeof(WCHAR) );
+            GetFullPathNameW(params->root, size, path, NULL);
+        }
+        else
+            path = wcsdup(params->root);
     }
 
     if (sw && path)
@@ -930,7 +934,8 @@ int WINAPI wWinMain(HINSTANCE hinstance,
         ERR( "Could not initialize COM\n" );
         ExitProcess(EXIT_FAILURE);
     }
-    if(parameters.root[0] && !PathIsDirectoryW(parameters.root))
+    if(parameters.root[0] &&
+       (wcsncmp(parameters.root, L"::{", 3) && !PathIsDirectoryW(parameters.root)))
         if(ShellExecuteW(NULL,NULL,parameters.root,NULL,NULL,SW_SHOWDEFAULT) > (HINSTANCE)32)
             ExitProcess(EXIT_SUCCESS);
     init_info.dwSize = sizeof(INITCOMMONCONTROLSEX);
