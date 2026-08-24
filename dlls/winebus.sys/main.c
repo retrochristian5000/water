@@ -258,8 +258,9 @@ static WCHAR *get_compatible_ids(DEVICE_OBJECT *device)
 {
     static const WCHAR xinput_compat[] = L"WINEBUS\\WINE_COMP_XINPUT";
     static const WCHAR hid_compat[] = L"WINEBUS\\WINE_COMP_HID";
+    static const WCHAR usb_compat_format[] = L"USB\\VID_%04X&PID_%04X";
     struct device_extension *ext = (struct device_extension *)device->DeviceExtension;
-    WCHAR usb_compat[71];
+    WCHAR usb_compat[93];
     DWORD usb_len = 0, size;
     WCHAR *dst, *pos;
 
@@ -280,6 +281,10 @@ static WCHAR *get_compatible_ids(DEVICE_OBJECT *device)
         usb_len += swprintf(usb_compat + usb_len, ARRAY_SIZE(usb_compat) - usb_len,
                             L"USB\\Class_%02x", class) + 1;
     }
+
+    if (ext->desc.bus_type == BUS_TYPE_USB)
+        usb_len += swprintf(usb_compat + usb_len, ARRAY_SIZE(usb_compat) - usb_len,
+                            usb_compat_format, ext->desc.vid, ext->desc.pid) + 1;
 
     size = sizeof(hid_compat) + usb_len * sizeof(WCHAR);
     if (ext->desc.is_gamepad) size += sizeof(xinput_compat);
