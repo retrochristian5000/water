@@ -1489,6 +1489,12 @@ static HRESULT WINAPI WineJScript_FillGlobals(IWineJScript *iface, IWineJSDispat
     return fill_globals(This->ctx, script_global);
 }
 
+static void WINAPI WineJScript_InitCCParticipantAPI(IWineJScript *iface, const struct cc_participant_api *api)
+{
+    JScript *This = impl_from_IWineJScript(iface);
+    This->ctx->thread_data->cc_participant_api = api;
+}
+
 static const IWineJScriptVtbl WineJScriptVtbl = {
     WineJScript_QueryInterface,
     WineJScript_AddRef,
@@ -1498,6 +1504,7 @@ static const IWineJScriptVtbl WineJScriptVtbl = {
     WineJScript_CreateObject,
     WineJScript_CreateArrayBuffer,
     WineJScript_FillGlobals,
+    WineJScript_InitCCParticipantAPI,
 };
 
 HRESULT create_jscript_object(BOOL is_encode, REFIID riid, void **ppv)

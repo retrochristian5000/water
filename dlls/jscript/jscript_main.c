@@ -41,6 +41,16 @@ HINSTANCE jscript_hinstance;
 static DWORD jscript_tls;
 static ITypeInfo *dispatch_typeinfo;
 
+static struct cc_native_obj WINAPI cc_participant_api_stub_canonicalize(IUnknown *obj)
+{
+    struct cc_native_obj cc_obj = { .obj = obj, .participant = NULL };
+    return cc_obj;
+}
+
+static const struct cc_participant_api cc_participant_api_stub = {
+    .canonicalize = cc_participant_api_stub_canonicalize,
+};
+
 static int weak_refs_compare(const void *key, const struct rb_entry *entry)
 {
     const struct weak_refs_entry *weak_refs_entry = RB_ENTRY_VALUE(entry, const struct weak_refs_entry, entry);
@@ -57,6 +67,7 @@ struct thread_data *get_thread_data(void)
         if(!thread_data)
             return NULL;
         thread_data->thread_id = GetCurrentThreadId();
+        thread_data->cc_participant_api = &cc_participant_api_stub;
         list_init(&thread_data->objects);
         rb_init(&thread_data->weak_refs, weak_refs_compare);
         TlsSetValue(jscript_tls, thread_data);

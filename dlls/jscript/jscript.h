@@ -134,6 +134,7 @@ struct thread_data {
 
     BOOL gc_is_unlinking;
     DWORD gc_last_tick;
+    const struct cc_participant_api *cc_participant_api;
 
     struct list objects;
     struct rb_tree weak_refs;
@@ -164,8 +165,9 @@ HRESULT create_named_item_script_obj(script_ctx_t*,named_item_t*);
 named_item_t *lookup_named_item(script_ctx_t*,const WCHAR*,unsigned);
 void release_named_item(named_item_t*);
 HRESULT gc_run(script_ctx_t*);
-HRESULT gc_process_linked_obj(struct gc_ctx*,enum gc_traverse_op,jsdisp_t*,jsdisp_t*,void**);
-HRESULT gc_process_linked_val(struct gc_ctx*,enum gc_traverse_op,jsdisp_t*,jsval_t*);
+HRESULT gc_process_linked_obj(struct gc_ctx*,enum gc_traverse_op,jsdisp_t*,void**);
+HRESULT gc_process_linked_val(struct gc_ctx*,enum gc_traverse_op,jsval_t*);
+HRESULT host_dispatch_gc_traverse(struct gc_ctx*, enum gc_traverse_op, IWineJSDispatchHost*);
 
 typedef struct {
     const WCHAR *name;
@@ -181,8 +183,7 @@ typedef struct {
     DWORD props_cnt;
     const builtin_prop_t *props;
     void (*destructor)(jsdisp_t*);
-    ULONG (*addref)(jsdisp_t*);
-    ULONG (*release)(jsdisp_t*);
+    IWineJSDispatchHost *(*get_host_disp)(jsdisp_t*);
     void (*on_put)(jsdisp_t*,const WCHAR*);
     HRESULT (*lookup_prop)(jsdisp_t*,const WCHAR*,unsigned,struct property_info*);
     HRESULT (*prop_get)(jsdisp_t*,unsigned,jsval_t*);

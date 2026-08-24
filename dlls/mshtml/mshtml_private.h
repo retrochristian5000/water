@@ -377,6 +377,11 @@ typedef struct {
     UINT_PTR x;
 } nsCycleCollectingAutoRefCnt;
 
+static inline UINT_PTR NS_REFCOUNT_VALUE(nsCycleCollectingAutoRefCnt ref)
+{
+    return ref.x >> 2;
+}
+
 /*
    dispex is our base IDispatchEx implementation for all mshtml objects, and the vtbl allows
    customizing the behavior depending on the object. Objects have basically 3 types of props:
@@ -646,6 +651,7 @@ extern void (__cdecl *ccref_init)(nsCycleCollectingAutoRefCnt*,nsrefcnt);
 extern void (__cdecl *ccp_init)(ExternalCycleCollectionParticipant*,const CCObjCallback*);
 extern void (__cdecl *describe_cc_node)(nsCycleCollectingAutoRefCnt*,const char*,nsCycleCollectionTraversalCallback*);
 extern void (__cdecl *note_cc_edge)(nsISupports*,const char*,nsCycleCollectionTraversalCallback*);
+extern const struct cc_participant_api cc_participant_api;
 
 void init_dispatch(DispatchEx*,dispex_static_data_t*,HTMLInnerWindow*,compat_mode_t);
 void init_dispatch_from_desc(DispatchEx*,dispex_data_t*,HTMLInnerWindow*,DispatchEx*);
@@ -794,6 +800,8 @@ struct HTMLOuterWindow {
     struct list sibling_entry;
     struct wine_rb_entry entry;
 };
+
+HTMLOuterWindow *unsafe_HTMLOuterWindow_from_IHTMLWindow2(IHTMLWindow2*);
 
 struct HTMLInnerWindow {
     HTMLWindow base;
