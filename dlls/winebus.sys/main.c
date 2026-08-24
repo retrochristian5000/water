@@ -394,6 +394,24 @@ static void make_unique_container_id(struct device_extension *device)
     struct device_extension *ext;
     LARGE_INTEGER ticks;
 
+    /*
+     * If a sibling interface of the same physical device (same VID/PID and
+     * serial number, different interface index) was already added, reuse its
+     * container id instead of generating a new one.
+     */
+    if (*device->desc.serialnumber)
+    {
+        LIST_FOR_EACH_ENTRY(ext, &device_list, struct device_extension, entry)
+            if (ext->desc.vid == device->desc.vid && ext->desc.pid == device->desc.pid &&
+                ext->desc.input != device->desc.input &&
+                !wcscmp(ext->desc.serialnumber, device->desc.serialnumber) &&
+                !IsEqualGUID(&ext->container_id, &GUID_NULL))
+            {
+                device->container_id = ext->container_id;
+                return;
+            }
+    }
+
     LIST_FOR_EACH_ENTRY(ext, &device_list, struct device_extension, entry)
         if (IsEqualGUID(&device->container_id, &ext->container_id)) break;
     if (&ext->entry == &device_list && !IsEqualGUID(&device->container_id, &GUID_NULL)) return;
