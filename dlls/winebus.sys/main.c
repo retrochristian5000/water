@@ -373,6 +373,18 @@ static void make_unique_serial(struct device_extension *device)
         if (!wcscmp(device->desc.serialnumber, ext->desc.serialnumber)) break;
     if (&ext->entry == &device_list && *device->desc.serialnumber) return;
 
+    /*
+     * A collision with a sibling HID interface of the same physical device
+     * (same VID/PID, different interface index) is expected and should not
+     * be rewritten, since applications may rely on the shared serial number
+     * to pair a device's interfaces together.
+     */
+    if (&ext->entry != &device_list &&
+        ext->desc.vid == device->desc.vid &&
+        ext->desc.pid == device->desc.pid &&
+        ext->desc.input != device->desc.input)
+        return;
+
     swprintf(device->desc.serialnumber, ARRAY_SIZE(device->desc.serialnumber), L"%04x%08x%04x%04x",
              device->index, device->desc.input, device->desc.pid, device->desc.vid);
 }
