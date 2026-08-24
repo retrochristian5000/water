@@ -297,6 +297,13 @@ static enum install_res install_from_default_dir(void)
     const WCHAR *package_dir;
     WCHAR *dir_buf = NULL;
     enum install_res ret = INSTALL_NEXT;
+    int i;
+    static const WCHAR * const data_dirs[] = {
+        L"\\\\?\\unix" INSTALL_DATADIR "/wine/",
+        L"\\\\?\\unix/usr/share/wine/",
+        L"\\\\?\\unix/usr/local/share/wine/",
+        L"\\\\?\\unix/opt/wine/"
+    };
 
     if ((package_dir = _wgetenv( L"WINEBUILDDIR" )))
     {
@@ -313,12 +320,14 @@ static enum install_res install_from_default_dir(void)
         free(dir_buf);
     }
 
-    if (ret == INSTALL_NEXT)
-        ret = install_from_file(L"\\\\?\\unix" INSTALL_DATADIR "/wine/", addon->subdir_name, addon->file_name);
-    if (ret == INSTALL_NEXT && strcmp("" INSTALL_DATADIR, "/usr/share") != 0)
-        ret = install_from_file(L"\\\\?\\unix/usr/share/wine/", addon->subdir_name, addon->file_name);
-    if (ret == INSTALL_NEXT)
-        ret = install_from_file(L"\\\\?\\unix/opt/wine/", addon->subdir_name, addon->file_name);
+    for (i = 0; i < ARRAY_SIZE(data_dirs) && ret == INSTALL_NEXT; i++)
+    {
+        TRACE("(Try %d) Installing %s from %s...\n", i, debugstr_w(addon->file_name), debugstr_w(data_dirs[i]));
+        ret = install_from_file(data_dirs[i], addon->subdir_name, addon->file_name);
+
+        if (ret == INSTALL_NEXT) TRACE("(Try %d) fail.\n", i);
+        else TRACE("(Try %d) success.\n", i);
+    }
     return ret;
 }
 
