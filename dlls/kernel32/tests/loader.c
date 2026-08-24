@@ -3495,7 +3495,6 @@ static void subtest_export_forwarder_circular_detect( size_t num_modules )
     if (ret != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 0);
 
     GetExitCodeProcess(pi.hProcess, &ret);
-    todo_wine
     ok(ret == 0, "expected exit code 0, got %lu\n", ret);
 
     if (*child_failures)
