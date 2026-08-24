@@ -430,7 +430,8 @@ static WCHAR *query_hardware_ids(DEVICE_OBJECT *device)
     WCHAR *dst;
     DWORD size;
 
-    size = sizeof(vid_pid_format);
+    size = (wcslen(pdo->base.device_id) + 1) * sizeof(WCHAR);
+    size += sizeof(vid_pid_format);
     size += sizeof(vid_usage_format);
     size += sizeof(usage_format);
     size += sizeof(hid_format);
@@ -438,6 +439,7 @@ static WCHAR *query_hardware_ids(DEVICE_OBJECT *device)
     if ((dst = ExAllocatePool(PagedPool, size + sizeof(WCHAR))))
     {
         DWORD len = size / sizeof(WCHAR), pos = 0;
+        pos += swprintf( dst + pos, len - pos, L"%s", pdo->base.device_id ) + 1;
         pos += swprintf( dst + pos, len - pos, vid_pid_format, info->VendorID, info->ProductID ) + 1;
         pos += swprintf( dst + pos, len - pos, vid_usage_format, info->VendorID, desc->UsagePage, desc->Usage ) + 1;
         pos += swprintf( dst + pos, len - pos, usage_format, desc->UsagePage, desc->Usage ) + 1;
