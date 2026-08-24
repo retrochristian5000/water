@@ -1895,7 +1895,7 @@ static BOOL SHELL_execute( LPSHELLEXECUTEINFOW sei, SHELL_ExecuteW32 execfunc )
                                           sei, execfunc );
         free( env );
     }
-    else if (PathIsDirectoryW(lpFile))
+    else if (!wcsncmp(lpFile, L"::{", 3) || PathIsDirectoryW(lpFile))
     {
         WCHAR wExec[MAX_PATH];
         WCHAR * lpQuotedFile = malloc( sizeof(WCHAR) * (lstrlenW(lpFile) + 3) );
