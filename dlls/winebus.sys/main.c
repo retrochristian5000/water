@@ -258,8 +258,9 @@ static WCHAR *get_compatible_ids(DEVICE_OBJECT *device)
 {
     static const WCHAR xinput_compat[] = L"WINEBUS\\WINE_COMP_XINPUT";
     static const WCHAR hid_compat[] = L"WINEBUS\\WINE_COMP_HID";
+    static const WCHAR usb_compat_format[] = L"USB\\VID_%04X&PID_%04X";
     struct device_extension *ext = (struct device_extension *)device->DeviceExtension;
-    WCHAR usb_compat[71];
+    WCHAR usb_compat[93];
     DWORD usb_len = 0, size;
     WCHAR *dst, *pos;
 
@@ -280,6 +281,10 @@ static WCHAR *get_compatible_ids(DEVICE_OBJECT *device)
         usb_len += swprintf(usb_compat + usb_len, ARRAY_SIZE(usb_compat) - usb_len,
                             L"USB\\Class_%02x", class) + 1;
     }
+
+    if (ext->desc.bus_type == BUS_TYPE_USB)
+        usb_len += swprintf(usb_compat + usb_len, ARRAY_SIZE(usb_compat) - usb_len,
+                            usb_compat_format, ext->desc.vid, ext->desc.pid) + 1;
 
     size = sizeof(hid_compat) + usb_len * sizeof(WCHAR);
     if (ext->desc.is_gamepad) size += sizeof(xinput_compat);
@@ -368,6 +373,18 @@ static void make_unique_serial(struct device_extension *device)
         if (!wcscmp(device->desc.serialnumber, ext->desc.serialnumber)) break;
     if (&ext->entry == &device_list && *device->desc.serialnumber) return;
 
+    /*
+     * A collision with a sibling HID interface of the same physical device
+     * (same VID/PID, different interface index) is expected and should not
+     * be rewritten, since applications may rely on the shared serial number
+     * to pair a device's interfaces together.
+     */
+    if (&ext->entry != &device_list &&
+        ext->desc.vid == device->desc.vid &&
+        ext->desc.pid == device->desc.pid &&
+        ext->desc.input != device->desc.input)
+        return;
+
     swprintf(device->desc.serialnumber, ARRAY_SIZE(device->desc.serialnumber), L"%04x%08x%04x%04x",
              device->index, device->desc.input, device->desc.pid, device->desc.vid);
 }
@@ -376,6 +393,24 @@ static void make_unique_container_id(struct device_extension *device)
 {
     struct device_extension *ext;
     LARGE_INTEGER ticks;
+
+    /*
+     * If a sibling interface of the same physical device (same VID/PID and
+     * serial number, different interface index) was already added, reuse its
+     * container id instead of generating a new one.
+     */
+    if (*device->desc.serialnumber)
+    {
+        LIST_FOR_EACH_ENTRY(ext, &device_list, struct device_extension, entry)
+            if (ext->desc.vid == device->desc.vid && ext->desc.pid == device->desc.pid &&
+                ext->desc.input != device->desc.input &&
+                !wcscmp(ext->desc.serialnumber, device->desc.serialnumber) &&
+                !IsEqualGUID(&ext->container_id, &GUID_NULL))
+            {
+                device->container_id = ext->container_id;
+                return;
+            }
+    }
 
     LIST_FOR_EACH_ENTRY(ext, &device_list, struct device_extension, entry)
         if (IsEqualGUID(&device->container_id, &ext->container_id)) break;
