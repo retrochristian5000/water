@@ -22,6 +22,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);
 
+extern void WINAPI __wine_call_int_handler16( BYTE intnum, CONTEXT *context );
+
 struct Win87EmInfoStruct
 {
     unsigned short Version;
@@ -67,6 +69,16 @@ static void WIN87_SetCtrlWord( CONTEXT *context )
         CtrlWord_Internal = LOWORD(context->Eax);
         __asm__("wait;fldcw %0" : : "m" (CtrlWord_Internal));
     }
+}
+
+static void WIN87_SetExceptionHandler( WORD selector, WORD offset )
+{
+    CONTEXT set_pm_handler = {0};
+    set_pm_handler.Eax = 0x0205; /* set protected mode interrupt vector */
+    set_pm_handler.Ebx = 0x75; /* floating point error */
+    set_pm_handler.Ecx = selector;
+    set_pm_handler.Edx = offset;
+    __wine_call_int_handler16(0x31, &set_pm_handler);
 }
 
 static void WIN87_Init( CONTEXT *context )
@@ -118,7 +130,7 @@ void WINAPI __fpMath( CONTEXT *context )
         break;
 
     case 3:
-        /*INT_SetHandler(0x3E,MAKELONG(AX,DX));*/
+        WIN87_SetExceptionHandler(context->Edx, context->Eax);
         break;
 
     case 4: /* set control word (& ~(CW_Denormal|CW_Invalid)) */
