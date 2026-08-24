@@ -30,6 +30,7 @@
 #include "winternl.h"
 #include "ntgdi.h"
 #include "kernel16_private.h"
+#include "dosexe.h"
 #include "wine/asm.h"
 #include "wine/exception.h"
 #include "wine/debug.h"
@@ -181,6 +182,12 @@ static DWORD call16_handler( EXCEPTION_RECORD *record, EXCEPTION_REGISTRATION_RE
                 return ExceptionContinueExecution;
             }
         }
+    }
+    else if (record->ExceptionCode >= STATUS_FLOAT_DENORMAL_OPERAND &&
+             record->ExceptionCode <= STATUS_FLOAT_UNDERFLOW)
+    {
+        if (DOSVM_EmulateInterruptPM( context, 0x75 ))
+            return ExceptionContinueExecution;
     }
     return ExceptionContinueSearch;
 }
