@@ -2981,6 +2981,33 @@ NTSTATUS WINAPI wow64_NtUserGetPointerDeviceRects( UINT *args )
     return NtUserGetPointerDeviceRects( device, device_rect, display_rect );
 }
 
+NTSTATUS WINAPI wow64_NtUserInitializePointerDeviceInjection( UINT *args )
+{
+    POINTER_INPUT_TYPE type = get_ulong( &args );
+    ULONG contactCount = get_ulong( &args );
+    HMONITOR monitor = get_handle( &args );
+    DWORD visualMode = get_ulong( &args );
+    HANDLE* device = get_ptr( &args );
+
+    return NtUserInitializePointerDeviceInjection( type, contactCount, monitor, visualMode, device );
+}
+
+NTSTATUS WINAPI wow64_NtUserRemoveInjectionDevice( UINT *args )
+{
+    HANDLE device = get_handle( &args );
+
+    return NtUserRemoveInjectionDevice( device );
+}
+
+NTSTATUS WINAPI wow64_NtUserInjectPointerInput( UINT *args )
+{
+    HSYNTHETICPOINTERDEVICE handle = get_handle( &args );
+    const POINTER_TYPE_INFO *pointerInfo = get_ptr( &args );
+    UINT32 count = get_ulong( &args );
+
+    return NtUserInjectPointerInput( handle, pointerInfo, count );
+}
+
 NTSTATUS WINAPI wow64_NtUserGetPriorityClipboardFormat( UINT *args )
 {
     UINT *list = get_ptr( &args );
@@ -3945,6 +3972,7 @@ NTSTATUS WINAPI wow64_NtUserMessageCall( UINT *args )
         }
 
     case NtUserWintabDriverCall:
+    case NtUserInjectPointer:
         return NtUserMessageCall( hwnd, msg, wparam, lparam, result_info, type, ansi );
     }
 

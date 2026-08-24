@@ -40,7 +40,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(hid);
 struct contact
 {
     struct list entry;
-    ULONG id;
+    UINT id;
+    ULONG hid_id;
     POINT pos;
 };
 
@@ -112,31 +113,34 @@ static NTSTATUS start_device_read( DEVICE_OBJECT *device )
 
 static void add_contact( struct device *impl, struct list *old_contacts, ULONG id, LONG x, LONG y )
 {
-    UINT flags = POINTER_MESSAGE_FLAG_INRANGE | POINTER_MESSAGE_FLAG_INCONTACT | POINTER_MESSAGE_FLAG_CONFIDENCE;
-    INPUT input = {.type = INPUT_HARDWARE};
+    UINT msg, flags = POINTER_MESSAGE_FLAG_INRANGE | POINTER_MESSAGE_FLAG_INCONTACT | POINTER_MESSAGE_FLAG_CONFIDENCE;
+    enum wine_pointer_flags inject_flags = WINE_POINTER_MAP_COORDS | WINE_POINTER_TIMEOUT;
+    POINTER_TYPE_INFO pointer = { .type = PT_TOUCH };
+    POINTER_INFO *info = &pointer.pointerInfo;
     struct contact *contact;
 
     LIST_FOR_EACH_ENTRY( contact, old_contacts, struct contact, entry )
-        if (contact->id == id) break;
+        if (contact->hid_id == id) break;
 
     if (&contact->entry != old_contacts)
     {
-        input.hi.uMsg = WM_POINTERUPDATE;
+        msg = WM_POINTERUPDATE;
         list_remove( &contact->entry );
 
         contact->pos.x = x;
         contact->pos.y = y;
-        TRACE( "updating contact %#lx, pos %s\n", contact->id, wine_dbgstr_point( &contact->pos ) );
+        TRACE( "updating contact %#lx, pos %s\n", contact->hid_id, wine_dbgstr_point( &contact->pos ) );
     }
     else if ((contact = calloc( 1, sizeof(*contact) )))
     {
-        input.hi.uMsg = WM_POINTERDOWN;
+        msg = WM_POINTERDOWN;
         flags |= POINTER_MESSAGE_FLAG_NEW;
 
-        contact->id = id;
+        NtUserMessageCall(0, 0, 0, 0, &contact->id, NtUserAllocatePointer, FALSE);
+        contact->hid_id = id;
         contact->pos.x = x;
         contact->pos.y = y;
-        TRACE( "new contact %#lx, pos %s\n", contact->id, wine_dbgstr_point( &contact->pos ) );
+        TRACE( "new contact %#lx, pos %s\n", contact->hid_id, wine_dbgstr_point( &contact->pos ) );
     }
     else
     {
@@ -144,28 +148,35 @@ static void add_contact( struct device *impl, struct list *old_contacts, ULONG i
         return;
     }
 
-    input.hi.wParamL = contact->id;
-    input.hi.wParamH = flags;
-    NtUserSendHardwareInput( 0, 0, &input, MAKELPARAM(contact->pos.x, contact->pos.y) );
+    info->pointerId = contact->id;
+    info->pointerFlags = flags;
+    info->ptPixelLocation = contact->pos;
+    if (msg == WM_POINTERDOWN)
+        NtUserMessageCall(0, WM_POINTERENTER, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
+    NtUserMessageCall(0, msg, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
 
     list_add_tail( &impl->contacts, &contact->entry );
 }
 
 static void release_contacts( struct list *contacts )
 {
+    enum wine_pointer_flags inject_flags = WINE_POINTER_MAP_COORDS | WINE_POINTER_TIMEOUT;
     struct contact *contact, *next;
 
     LIST_FOR_EACH_ENTRY_SAFE( contact, next, contacts, struct contact, entry )
     {
-        INPUT input = {.type = INPUT_HARDWARE};
+        POINTER_TYPE_INFO pointer = { .type = PT_TOUCH };
         ULONG flags = POINTER_MESSAGE_FLAG_CONFIDENCE;
+        POINTER_INFO *info = &pointer.pointerInfo;
 
-        TRACE( "releasing contact %#lx, pos %s\n", contact->id, wine_dbgstr_point( &contact->pos ) );
+        TRACE( "releasing contact %#lx, pos %s\n", contact->hid_id, wine_dbgstr_point( &contact->pos ) );
 
-        input.hi.uMsg = WM_POINTERUP;
-        input.hi.wParamL = contact->id;
-        input.hi.wParamH = flags;
-        NtUserSendHardwareInput( 0, 0, &input, MAKELPARAM(contact->pos.x, contact->pos.y) );
+        info->pointerId = contact->id;
+        info->pointerFlags = flags;
+        info->ptPixelLocation = contact->pos;
+
+        NtUserMessageCall(0, WM_POINTERUP, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
+        NtUserMessageCall(0, WM_POINTERLEAVE, 0, inject_flags, &pointer, NtUserInjectPointer, FALSE);
 
         list_remove( &contact->entry );
         free( contact );

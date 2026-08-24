@@ -417,6 +417,8 @@ enum
     NtUserDragDropCall        = 0x0307,
     NtUserPostDdeCall         = 0x0308,
     NtUserWintabDriverCall    = 0x0309,
+    NtUserInjectPointer       = 0x030a,
+    NtUserAllocatePointer     = 0x030b,
 };
 
 /* NtUserWintabDriverCall codes */
@@ -474,6 +476,7 @@ struct post_dde_message_call_params
 #define NTUSER_OBJ_ACCEL    0x08
 #define NTUSER_OBJ_HOOK     0x0f
 #define NTUSER_OBJ_IMC      0x11
+#define NTUSER_OBJ_POINTER_DEVICE 0x12
 
 /* NtUserScrollWindowEx flag */
 #define SW_NODCCACHE  0x8000
@@ -697,6 +700,12 @@ enum wine_drag_drop_call
     WINE_DRAG_DROP_POST,
 };
 
+enum wine_pointer_flags
+{
+    WINE_POINTER_MAP_COORDS = 0x1,
+    WINE_POINTER_TIMEOUT    = 0x2,
+};
+
 struct ntuser_property_list
 {
     UINT64  data;
@@ -883,6 +892,10 @@ W32KAPI BOOL    WINAPI NtUserGetPointerInfoList( UINT32 id, POINTER_INPUT_TYPE t
                                                  UINT32 *entry_count, UINT32 *pointer_count, void *pointer_info );
 W32KAPI BOOL    WINAPI NtUserGetPointerType( UINT32 id, POINTER_INPUT_TYPE *type );
 W32KAPI BOOL    WINAPI NtUserGetPointerDeviceRects( HANDLE handle, RECT *device_rect, RECT *display_rect );
+W32KAPI BOOL    WINAPI NtUserInitializePointerDeviceInjection( POINTER_INPUT_TYPE type, ULONG contactCount,
+                                                               HMONITOR monitor, DWORD visualMode, HANDLE* device );
+W32KAPI BOOL    WINAPI NtUserRemoveInjectionDevice( HANDLE device );
+W32KAPI BOOL    WINAPI NtUserInjectPointerInput( HSYNTHETICPOINTERDEVICE handle, const POINTER_TYPE_INFO *pointerInfo, UINT32 count );
 W32KAPI INT     WINAPI NtUserGetPriorityClipboardFormat( UINT *list, INT count );
 W32KAPI BOOL    WINAPI NtUserGetProcessDefaultLayout( ULONG *layout );
 W32KAPI ULONG   WINAPI NtUserGetProcessDpiAwarenessContext( HANDLE process );

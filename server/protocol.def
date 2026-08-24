@@ -2435,6 +2435,17 @@ enum message_type
 #define SEND_HWMSG_INJECTED    0x01  /* message is injected from application */
 #define SEND_HWMSG_RAWINPUT    0x02  /* don't generate WM_INPUT x / y updates */
 
+@REQ(send_pointer_message)
+    user_handle_t win;
+    unsigned int msg;
+    unsigned int flags;
+    VARARG(data,bytes);
+@END
+
+@REQ(allocate_pointer_id)
+@REPLY
+    unsigned int id;
+@END
 
 /* Get a message from the current queue */
 @REQ(get_message)

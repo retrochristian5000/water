@@ -1150,7 +1150,7 @@
     SYSCALL_ENTRY( 0x147a, NtUserInitializeClientPfnArrays, 16 ) \
     SYSCALL_ENTRY( 0x147b, NtUserInitializeGenericHidInjection, 0 ) \
     SYSCALL_ENTRY( 0x147c, NtUserInitializeInputDeviceInjection, 0 ) \
-    SYSCALL_ENTRY( 0x147d, NtUserInitializePointerDeviceInjection, 0 ) \
+    SYSCALL_ENTRY( 0x147d, NtUserInitializePointerDeviceInjection, 20 ) \
     SYSCALL_ENTRY( 0x147e, NtUserInitializePointerDeviceInjectionEx, 0 ) \
     SYSCALL_ENTRY( 0x147f, NtUserInitializeTouchInjection, 8 ) \
     SYSCALL_ENTRY( 0x1480, NtUserInjectDeviceInput, 0 ) \
@@ -1158,7 +1158,7 @@
     SYSCALL_ENTRY( 0x1482, NtUserInjectGesture, 0 ) \
     SYSCALL_ENTRY( 0x1483, NtUserInjectKeyboardInput, 0 ) \
     SYSCALL_ENTRY( 0x1484, NtUserInjectMouseInput, 0 ) \
-    SYSCALL_ENTRY( 0x1485, NtUserInjectPointerInput, 0 ) \
+    SYSCALL_ENTRY( 0x1485, NtUserInjectPointerInput, 12 ) \
     SYSCALL_ENTRY( 0x1486, NtUserInjectTouchInput, 0 ) \
     SYSCALL_ENTRY( 0x1487, NtUserInteractiveControlQueryUsage, 0 ) \
     SYSCALL_ENTRY( 0x1488, NtUserInternalGetWindowIcon, 8 ) \
@@ -1309,7 +1309,7 @@
     SYSCALL_ENTRY( 0x1519, NtUserRemoteStopScreenUpdates, 0 ) \
     SYSCALL_ENTRY( 0x151a, NtUserRemoteThinwireStats, 0 ) \
     SYSCALL_ENTRY( 0x151b, NtUserRemoveClipboardFormatListener, 4 ) \
-    SYSCALL_ENTRY( 0x151c, NtUserRemoveInjectionDevice, 0 ) \
+    SYSCALL_ENTRY( 0x151c, NtUserRemoveInjectionDevice, 4 ) \
     SYSCALL_ENTRY( 0x151d, NtUserRemoveMenu, 12 ) \
     SYSCALL_ENTRY( 0x151e, NtUserRemoveProp, 8 ) \
     SYSCALL_ENTRY( 0x151f, NtUserRemoveQueueCompletion, 0 ) \
@@ -2692,7 +2692,7 @@
     SYSCALL_ENTRY( 0x147a, NtUserInitializeClientPfnArrays, 32 ) \
     SYSCALL_ENTRY( 0x147b, NtUserInitializeGenericHidInjection, 0 ) \
     SYSCALL_ENTRY( 0x147c, NtUserInitializeInputDeviceInjection, 0 ) \
-    SYSCALL_ENTRY( 0x147d, NtUserInitializePointerDeviceInjection, 0 ) \
+    SYSCALL_ENTRY( 0x147d, NtUserInitializePointerDeviceInjection, 40 ) \
     SYSCALL_ENTRY( 0x147e, NtUserInitializePointerDeviceInjectionEx, 0 ) \
     SYSCALL_ENTRY( 0x147f, NtUserInitializeTouchInjection, 16 ) \
     SYSCALL_ENTRY( 0x1480, NtUserInjectDeviceInput, 0 ) \
@@ -2700,7 +2700,7 @@
     SYSCALL_ENTRY( 0x1482, NtUserInjectGesture, 0 ) \
     SYSCALL_ENTRY( 0x1483, NtUserInjectKeyboardInput, 0 ) \
     SYSCALL_ENTRY( 0x1484, NtUserInjectMouseInput, 0 ) \
-    SYSCALL_ENTRY( 0x1485, NtUserInjectPointerInput, 0 ) \
+    SYSCALL_ENTRY( 0x1485, NtUserInjectPointerInput, 24 ) \
     SYSCALL_ENTRY( 0x1486, NtUserInjectTouchInput, 0 ) \
     SYSCALL_ENTRY( 0x1487, NtUserInteractiveControlQueryUsage, 0 ) \
     SYSCALL_ENTRY( 0x1488, NtUserInternalGetWindowIcon, 16 ) \
@@ -2851,7 +2851,7 @@
     SYSCALL_ENTRY( 0x1519, NtUserRemoteStopScreenUpdates, 0 ) \
     SYSCALL_ENTRY( 0x151a, NtUserRemoteThinwireStats, 0 ) \
     SYSCALL_ENTRY( 0x151b, NtUserRemoveClipboardFormatListener, 8 ) \
-    SYSCALL_ENTRY( 0x151c, NtUserRemoveInjectionDevice, 0 ) \
+    SYSCALL_ENTRY( 0x151c, NtUserRemoveInjectionDevice, 8 ) \
     SYSCALL_ENTRY( 0x151d, NtUserRemoveMenu, 24 ) \
     SYSCALL_ENTRY( 0x151e, NtUserRemoveProp, 16 ) \
     SYSCALL_ENTRY( 0x151f, NtUserRemoveQueueCompletion, 0 ) \
@@ -3882,14 +3882,12 @@
     SYSCALL_STUB( NtUserInitialize ) \
     SYSCALL_STUB( NtUserInitializeGenericHidInjection ) \
     SYSCALL_STUB( NtUserInitializeInputDeviceInjection ) \
-    SYSCALL_STUB( NtUserInitializePointerDeviceInjection ) \
     SYSCALL_STUB( NtUserInitializePointerDeviceInjectionEx ) \
     SYSCALL_STUB( NtUserInjectDeviceInput ) \
     SYSCALL_STUB( NtUserInjectGenericHidInput ) \
     SYSCALL_STUB( NtUserInjectGesture ) \
     SYSCALL_STUB( NtUserInjectKeyboardInput ) \
     SYSCALL_STUB( NtUserInjectMouseInput ) \
-    SYSCALL_STUB( NtUserInjectPointerInput ) \
     SYSCALL_STUB( NtUserInjectTouchInput ) \
     SYSCALL_STUB( NtUserInteractiveControlQueryUsage ) \
     SYSCALL_STUB( NtUserInternalStartMoveSize ) \
@@ -3996,7 +3994,6 @@
     SYSCALL_STUB( NtUserRemoteShadowStop ) \
     SYSCALL_STUB( NtUserRemoteStopScreenUpdates ) \
     SYSCALL_STUB( NtUserRemoteThinwireStats ) \
-    SYSCALL_STUB( NtUserRemoveInjectionDevice ) \
     SYSCALL_STUB( NtUserRemoveQueueCompletion ) \
     SYSCALL_STUB( NtUserRemoveVisualIdentifier ) \
     SYSCALL_STUB( NtUserReportInertia ) \

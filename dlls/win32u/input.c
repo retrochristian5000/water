@@ -415,8 +415,7 @@ struct pointer
 {
     UINT32 id;
     struct list entry;
-    POINTER_INPUT_TYPE type;
-    POINTER_INFO info;
+    POINTER_TYPE_INFO info;
 };
 
 BOOL grab_pointer = TRUE;
@@ -2966,10 +2965,24 @@ static struct pointer *pointer_create( UINT32 id, POINTER_INPUT_TYPE type )
 
     if (!(pointer = calloc( 1, sizeof(*pointer) ))) return NULL;
     pointer->id = id;
-    pointer->type = type;
+    pointer->info.type = type;
     list_add_tail( &thread_info->known_pointers, &pointer->entry );
 
     return pointer;
+}
+
+W32KAPI UINT allocate_pointer_id( void )
+{
+    UINT pointerid;
+
+    SERVER_START_REQ( allocate_pointer_id )
+    {
+        wine_server_call( req );
+        pointerid = reply->id;
+    }
+    SERVER_END_REQ;
+
+    return pointerid;
 }
 
 static struct pointer *find_pointer( UINT32 id )
@@ -3044,20 +3057,50 @@ static POINTER_BUTTON_CHANGE_TYPE compare_button( const POINTER_INFO *old, const
     return change;
 }
 
-void update_pointer_from_msg( POINTER_INPUT_TYPE type, const MSG *msg )
+static void update_pointer( const POINTER_TYPE_INFO *pointer_info )
 {
-    POINTER_INFO info = pointer_info_from_msg( msg );
-    POINTER_BUTTON_CHANGE_TYPE buttons;
+    POINTER_INFO info = pointer_info->pointerInfo;
+    POINTER_INPUT_TYPE type = pointer_info->type;
     struct pointer *pointer;
 
     TRACE( "updating pointer id %d.\n", info.pointerId );
 
     if (!(pointer = find_pointer( info.pointerId )) && !(pointer = pointer_create( info.pointerId, type ))) return;
 
-    buttons = compare_button( &pointer->info, &info );
-    pointer->info = info;
-    pointer->info.pointerType = pointer->type;
-    pointer->info.ButtonChangeType = buttons;
+    info.ButtonChangeType = compare_button( &pointer->info.pointerInfo, &info );
+    pointer->info = *pointer_info;
+    pointer->info.pointerInfo = info;
+}
+
+void update_pointer_from_msg( POINTER_INPUT_TYPE type, const MSG *msg )
+{
+    POINTER_TYPE_INFO info = { .type = type, .pointerInfo = pointer_info_from_msg( msg ) };
+
+    update_pointer( &info );
+}
+
+NTSTATUS send_pointer_message( UINT msg, enum wine_pointer_flags flags, const POINTER_TYPE_INFO *info )
+{
+    POINTER_TYPE_INFO pointer = *info;
+    LARGE_INTEGER counter;
+    NTSTATUS ret;
+
+    TRACE( "Injecting pointer msg %#x.\n", msg );
+    NtQueryPerformanceCounter( &counter, NULL );
+    pointer.pointerInfo.PerformanceCount = counter.QuadPart;
+    pointer.pointerInfo.dwTime = NtGetTickCount();
+
+    SERVER_START_REQ( send_pointer_message )
+    {
+        req->win = wine_server_user_handle( pointer.pointerInfo.hwndTarget );
+        req->msg = msg;
+        req->flags = flags;
+        wine_server_add_data( req, &pointer, sizeof(pointer) );
+        ret = wine_server_call( req );
+    }
+    SERVER_END_REQ;
+
+    return ret;
 }
 
 static POINTER_INPUT_TYPE pointer_type_from_hw( const struct hw_msg_source *source )
@@ -3079,7 +3122,10 @@ static POINTER_INPUT_TYPE pointer_type_from_hw( const struct hw_msg_source *sour
  */
 BOOL process_pointer_message( MSG *msg, UINT hw_id, const struct hardware_msg_data *msg_data )
 {
-    update_pointer_from_msg( pointer_type_from_hw( &msg_data->source ), msg );
+    if (msg_data->size == sizeof(*msg_data) + sizeof(POINTER_TYPE_INFO))
+        update_pointer((POINTER_TYPE_INFO *)(msg_data + 1));
+    else
+        update_pointer_from_msg( pointer_type_from_hw( &msg_data->source ), msg );
     msg->pt = point_phys_to_win_dpi( msg->hwnd, msg->pt );
     return TRUE;
 }
@@ -3115,7 +3161,7 @@ BOOL WINAPI NtUserGetPointerType( UINT32 id, POINTER_INPUT_TYPE *type )
         return FALSE;
     }
 
-    *type = pointer->type;
+    *type = pointer->info.type;
     return TRUE;
 }
 
@@ -3159,8 +3205,23 @@ BOOL WINAPI NtUserGetPointerInfoList( UINT32 id, POINTER_INPUT_TYPE type, UINT_P
     *entry_count = 1;
     *pointer_count = 1;
 
+    if (!pointer_info)
+        return TRUE;
+
     memset( pointer_info, 0, size );
-    *(POINTER_INFO *)pointer_info = pointer->info;
+    switch (type)
+    {
+        case PT_PEN:
+            *(POINTER_PEN_INFO *)pointer_info = pointer->info.penInfo;
+            break;
+        case PT_TOUCH:
+            *(POINTER_TOUCH_INFO *)pointer_info = pointer->info.touchInfo;
+            break;
+        default:
+            *(POINTER_INFO *)pointer_info = pointer->info.pointerInfo;
+            break;
+    }
+
     return TRUE;
 }
 
@@ -3185,4 +3246,119 @@ BOOL WINAPI NtUserGetPointerDeviceRects( HANDLE handle, RECT *device_rect, RECT 
 
     TRACE( "returning device %s, display %s\n", wine_dbgstr_rect(device_rect), wine_dbgstr_rect(display_rect) );
     return TRUE;
+}
+
+struct syn_pointer
+{
+    HWND focus;
+    UINT32 id;
+    POINTER_TYPE_INFO last;
+};
+
+BOOL WINAPI NtUserInjectPointerInput( HSYNTHETICPOINTERDEVICE device, const POINTER_TYPE_INFO *pointerInfo, UINT32 count )
+{
+    UINT msg = WM_POINTERUPDATE;
+    struct syn_pointer *pointer;
+    POINTER_TYPE_INFO type_info;
+    POINTER_INFO *info;
+    INT hittest;
+    HWND hwnd;
+
+    type_info = *pointerInfo;
+    info = &type_info.pointerInfo;
+    info->pointerType = type_info.type;
+    info->pointerFlags &= (POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT);
+    info->pointerFlags |= POINTER_FLAG_UPDATE | POINTER_FLAG_CONFIDENCE;
+
+    switch (type_info.type)
+    {
+        case PT_PEN:
+            type_info.penInfo.penMask = PEN_MASK_PRESSURE | PEN_MASK_ROTATION | PEN_MASK_TILT_X | PEN_MASK_TILT_Y;
+            break;
+        default: break;
+    }
+
+    hwnd = window_from_point( NULL, info->ptPixelLocation, &hittest, TRUE );
+
+    pointer = get_user_handle_ptr( device, NTUSER_OBJ_POINTER_DEVICE );
+
+    TRACE( "Injecting pointer input for pointer %d.\n", pointer->id );
+
+    if (info->pointerFlags & POINTER_FLAG_INCONTACT)
+        info->pointerFlags |= POINTER_FLAG_FIRSTBUTTON;
+
+    info->pointerId = pointer->id;
+    info->pointerType = PT_PEN;
+    info->ptHimetricLocation.x = info->ptPixelLocation.x * HIMETRIC_PER_INCH / system_dpi;
+    info->ptHimetricLocation.y = info->ptPixelLocation.y * HIMETRIC_PER_INCH / system_dpi;
+
+    info->ptPixelLocationRaw = info->ptPixelLocation;
+    info->ptHimetricLocationRaw = info->ptHimetricLocation;
+    info->sourceDevice = device;
+    info->hwndTarget = hwnd;
+
+    if (!(info->pointerFlags & POINTER_FLAG_INRANGE))
+    {
+        if (pointer->focus)
+        {
+            info->hwndTarget = pointer->focus;
+            send_pointer_message( WM_POINTERUPDATE, 0, &type_info );
+            send_pointer_message( WM_POINTERLEAVE, 0, &type_info );
+        }
+        pointer->focus = NULL;
+        goto out;
+    }
+
+    if (!pointer->focus)
+    {
+        info->pointerId = pointer->id = allocate_pointer_id();
+        info->pointerFlags |= POINTER_FLAG_NEW;
+    }
+
+    if (hwnd != pointer->focus)
+    {
+        if (pointer->focus)
+            send_pointer_message( WM_POINTERLEAVE, 0, &pointer->last );
+        send_pointer_message( WM_POINTERENTER, 0, &type_info );
+        pointer->focus = hwnd;
+    }
+
+    if ((info->pointerFlags & POINTER_FLAG_INCONTACT) != (pointer->last.pointerInfo.pointerFlags & POINTER_FLAG_INCONTACT))
+    {
+        info->pointerFlags &= ~POINTER_FLAG_UPDATE;
+        if (info->pointerFlags & POINTER_FLAG_INCONTACT)
+        {
+            info->pointerFlags |= POINTER_FLAG_DOWN;
+            msg = WM_POINTERDOWN;
+        }
+        else
+        {
+            info->pointerFlags |= POINTER_FLAG_UP;
+            msg = WM_POINTERUP;
+        }
+    }
+
+    send_pointer_message( msg, 0, &type_info );
+    pointer->last = type_info;
+
+out:
+    release_user_handle_ptr( pointer );
+    return TRUE;
+}
+
+W32KAPI BOOL WINAPI NtUserInitializePointerDeviceInjection( POINTER_INPUT_TYPE type, ULONG contactCount,
+                                                            HMONITOR monitor, DWORD visualMode, HANDLE* device )
+{
+    struct syn_pointer *pointer = calloc( 1, sizeof(*pointer) );
+
+    TRACE( "%#x, %u, %p, %d, %p\n", type, contactCount, monitor, visualMode, device );
+
+    *device = alloc_user_handle( pointer, NTUSER_OBJ_POINTER_DEVICE );
+    return TRUE;
+}
+
+W32KAPI BOOL WINAPI NtUserRemoveInjectionDevice( HANDLE device )
+{
+    free( free_user_handle( device, NTUSER_OBJ_POINTER_DEVICE ) );
+    return true;
 }
