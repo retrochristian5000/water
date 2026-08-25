@@ -1877,8 +1877,12 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
     struct closed_fd *closed_fd;
     struct fd *fd;
     int root_fd = -1;
+    int needs_write = (flags & O_ACCMODE) ||
+                      ((access & FILE_UNIX_WRITE_ACCESS) && !(options & FILE_DIRECTORY_FILE));
     int rw_mode;
     char *path;
+
+    flags &= ~O_ACCMODE;
 
     if (((options & FILE_DELETE_ON_CLOSE) && !(access & DELETE)) ||
         ((options & FILE_DIRECTORY_FILE) && (flags & O_TRUNC)))
@@ -1921,7 +1925,7 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
         flags &= ~(O_CREAT | O_EXCL | O_TRUNC);
     }
 
-    if ((access & FILE_UNIX_WRITE_ACCESS) && !(options & FILE_DIRECTORY_FILE))
+    if (needs_write)
     {
         if (access & FILE_UNIX_READ_ACCESS) rw_mode = O_RDWR;
         else rw_mode = O_WRONLY;
@@ -1933,7 +1937,7 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
         /* if we tried to open a directory for write access, retry read-only */
         if (errno == EISDIR)
         {
-            if ((access & FILE_UNIX_WRITE_ACCESS) || (flags & O_CREAT))
+            if (rw_mode != O_RDONLY || (flags & O_CREAT))
                 fd->unix_fd = open( name, O_RDONLY | (flags & ~(O_TRUNC | O_CREAT | O_EXCL)), *mode );
         }
 
