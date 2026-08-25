@@ -27,5 +27,6 @@ extern void initialize_appbar(void);
 extern void handle_parent_notify( HWND hwnd, WPARAM wp );
 extern void do_startmenu( HWND owner );
 extern LRESULT menu_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+extern int get_taskbar_height(void);
 
 #endif  /* __WINE_EXPLORER_PRIVATE_H */

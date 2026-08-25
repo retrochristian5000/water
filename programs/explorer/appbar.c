@@ -99,10 +99,30 @@ static void send_poschanged(HWND hwnd)
     }
 }
 
+static RECT get_taskbar_rect(void)
+{
+    RECT rc;
+    int taskbar_height;
+    rc.left = 0;
+    rc.right = GetSystemMetrics(SM_CXSCREEN);
+    rc.bottom = GetSystemMetrics(SM_CYSCREEN);
+    taskbar_height = get_taskbar_height();
+    if (taskbar_height == 0)
+        taskbar_height = 1; /* ensure taskbar has non-zero height */
+    rc.top = rc.bottom - taskbar_height;
+    return rc;
+}
+
 /* appbar_cliprect: cut out parts of the rectangle that interfere with existing appbars */
 static void appbar_cliprect( HWND hwnd, RECT *rect )
 {
+    RECT taskbar_rect;
     struct appbar_data* data;
+
+    /* move in the side that corresponds to the taskbar's top edge */
+    taskbar_rect = get_taskbar_rect();
+    rect->bottom = min(rect->bottom, taskbar_rect.top);
+
     LIST_FOR_EACH_ENTRY(data, &appbars, struct appbar_data, entry)
     {
         if (data->hwnd == hwnd)
@@ -130,6 +150,26 @@ static void appbar_cliprect( HWND hwnd, RECT *rect )
             }
         }
     }
+}
+
+/* update the system work area rectangle to exclude the taskbar and appbars
+ * (affects what part of the screen maximized windows cover for example)
+ */
+static void update_work_area(void)
+{
+    RECT rc = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+
+    /* When not running in desktop mode, don't set the work area in order to
+     * avoid interfering with the non-WINE desktop environment's window
+     * management. (See for example freedesktop's _NET_WORKAREA.)
+     */
+    if (get_taskbar_height() == 0)
+        return;
+
+    appbar_cliprect( NULL, &rc );
+    SystemParametersInfoW( SPI_SETWORKAREA, 0, &rc, 0 );
+
+    /* TODO: move and resize existing windows to fit the new work area */
 }
 
 static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
@@ -166,6 +206,8 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
             send_poschanged(hwnd);
 
             free( data );
+
+            update_work_area();
         }
         else WARN( "removing hwnd %p not on the list\n", hwnd );
         return TRUE;
@@ -191,6 +233,8 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
             data->edge = abd->uEdge;
             data->rc = abd->rc;
             data->space_reserved = TRUE;
+
+            update_work_area();
         }
         else
         {
@@ -203,10 +247,7 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
     case ABM_GETTASKBARPOS:
         FIXME( "SHAppBarMessage(ABM_GETTASKBARPOS, hwnd=%p): stub\n", hwnd );
         /* Report the taskbar is at the bottom of the screen. */
-        abd->rc.left = 0;
-        abd->rc.right = GetSystemMetrics(SM_CXSCREEN);
-        abd->rc.bottom = GetSystemMetrics(SM_CYSCREEN);
-        abd->rc.top = abd->rc.bottom-1;
+        abd->rc = get_taskbar_rect();
         abd->uEdge = ABE_BOTTOM;
         return TRUE;
     case ABM_ACTIVATE:
@@ -308,4 +349,6 @@ void initialize_appbar(void)
         ERR( "Could not create appbar message window\n" );
         return;
     }
+
+    update_work_area();
 }
