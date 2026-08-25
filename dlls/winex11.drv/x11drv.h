@@ -771,7 +771,10 @@ extern void reapply_cursor_clipping(void);
 extern void ungrab_clipping_window(void);
 extern void move_resize_window( HWND hwnd, int dir, POINT pos );
 extern void x11drv_init_keyboard( Display *display );
+extern void x11drv_keyboard_init_thread( struct x11drv_thread_data *data );
 extern BOOL X11DRV_ProcessEvents( DWORD mask );
+
+extern BOOL is_ime_hkl( HKL hkl );
 
 typedef int (*x11drv_error_callback)( Display *display, XErrorEvent *event, void *arg );
 
