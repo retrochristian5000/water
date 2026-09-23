@@ -22,6 +22,7 @@ AC_ARG_ENABLE(win64, AS_HELP_STRING([--enable-win64],[build a Win64 emulator on 
 AC_ARG_ENABLE(tests, AS_HELP_STRING([--disable-tests],[do not build the regression tests]))
 AC_ARG_ENABLE(build-id, AS_HELP_STRING([--enable-build-id],[include .buildid section in output objects]))
 AC_ARG_ENABLE(maintainer-mode, AS_HELP_STRING([--enable-maintainer-mode],[enable maintainer-specific build rules]))
+AC_ARG_ENABLE(ninja, AS_HELP_STRING([--disable-ninja],[do not generate or prefer Ninja build files]))
 AC_ARG_ENABLE(sast,  AS_HELP_STRING([--enable-sast],[enable static application security testing using Clang]))
 AC_ARG_ENABLE(silent-rules, AS_HELP_STRING([--enable-silent-rules],[use silent build rules (override: "make V=1")]))
 AC_ARG_ENABLE(werror, AS_HELP_STRING([--enable-werror],[treat compilation warnings as errors]))
@@ -119,6 +120,17 @@ dnl **** Check for some programs ****
 
 AC_PROG_CC
 AC_PROG_CXX
+AC_CHECK_PROGS(NINJA,[ninja ninja-build],[false])
+if test "x$enable_ninja" != xno
+then
+    if test "$NINJA" = false
+    then
+        test "x$enable_ninja" != xyes || AC_MSG_ERROR([Ninja was explicitly requested but neither ninja nor ninja-build was found.])
+        enable_ninja=no
+    else
+        enable_ninja=yes
+    fi
+fi
 dnl We can't use AC_PROG_CPP for winegcc, it uses by default $(CC) -E
 AC_CHECK_TOOL(CPPBIN,cpp,cpp)
 AC_DEFINE_UNQUOTED(EXEEXT,["$ac_exeext"],[Define to the file extension for executables.])
@@ -2503,6 +2515,7 @@ AC_CONFIG_COMMANDS([include/stamp-h], [echo timestamp > include/stamp-h])
 AS_ECHO_N("creating Makefile rules...") >&AS_MESSAGE_FD
 
 makedep_flags=" -C"
+test "x$enable_ninja" = xyes && makedep_flags="$makedep_flags -N"
 test "x$enable_silent_rules" = xyes && makedep_flags="$makedep_flags -S"
 
 wine_srcdir=
@@ -3887,8 +3900,15 @@ fi
 
 WINE_PRINT_MESSAGES
 
+if test "x$enable_ninja" = xyes
+then
+    wine_build_command="$NINJA"
+else
+    wine_build_command="${MAKE-make}"
+fi
+
 AS_ECHO("
-$as_me: Finished.  Do '${MAKE-make}' to compile Wine.
+$as_me: Finished.  Do '$wine_build_command' to compile Wine.
 ") >&AS_MESSAGE_FD
 
 dnl Local Variables:
