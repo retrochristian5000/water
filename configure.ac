@@ -127,7 +127,11 @@ AC_CHECK_TOOL(LD,ld)
 AC_SUBST(TARGETFLAGS)
 case $host in
   x86_64*|amd64*)
-    if test "x$enable_win64" != "xyes" -a "$cross_compiling" != "yes" -a x"$enable_archs" = x
+    wine_default_32bit=yes
+    case $host_os in
+      darwin*) test ${enable_win64+y} || wine_default_32bit=no ;;
+    esac
+    if test "x$enable_win64" != "xyes" -a "$cross_compiling" != "yes" -a x"$enable_archs" = x -a "$wine_default_32bit" = yes
     then
       CC="$CC -m32"
       CXX="$CXX -m32"
