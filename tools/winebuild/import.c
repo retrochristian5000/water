@@ -1245,11 +1245,21 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
     }
 }
 
+static void build_windows_import_lib( const char *lib_name, DLLSPEC *spec, struct strarray files );
+
 /* create a Windows-style import library using dlltool */
 static void build_dlltool_import_lib( const char *lib_name, DLLSPEC *spec, struct strarray files )
 {
     const char *def_file, *native_def_file = NULL;
-    struct strarray args;
+    struct strarray args = find_optional_tool( "dlltool", NULL );
+
+    if (!args.count)
+    {
+        if (target.cpu == CPU_ARM64EC)
+            fatal_error( "cannot find the 'dlltool' tool required for ARM64EC import libraries\n" );
+        build_windows_import_lib( lib_name, spec, files );
+        return;
+    }
 
     def_file = open_temp_output_file( ".def" );
     output_def_file( spec, &spec->exports, 1 );
@@ -1262,7 +1272,6 @@ static void build_dlltool_import_lib( const char *lib_name, DLLSPEC *spec, struc
         fclose( output_file );
     }
 
-    args = find_tool( "dlltool", NULL );
     strarray_add( &args, "-k" );
     strarray_add( &args, strendswith( lib_name, ".delay.a" ) ? "-y" : "-l" );
     strarray_add( &args, lib_name );
