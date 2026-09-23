@@ -32,7 +32,7 @@ fi
 autoreconf -f
 
 cd build64
-PATH="$X86_PATH" LIBRARY_PATH="$X86_BREW_HOME/lib" $ARCH_CMD ../configure -C --enable-win64 --with-mingw BISON="$ARCH_BREW_HOME/opt/bison/bin/bison"
+PATH="$X86_PATH" LIBRARY_PATH="$X86_BREW_HOME/lib" $ARCH_CMD ../configure -C --enable-archs=i386,x86_64 --with-mingw BISON="$ARCH_BREW_HOME/opt/bison/bin/bison"
 PATH="$X86_PATH" LIBRARY_PATH="$X86_BREW_HOME/lib" $ARCH_CMD make -s -j$(sysctl -n hw.activecpu)
 cd ..
 
