@@ -1015,7 +1015,7 @@ case $host_os in
 
     if test "$wine_use_preloader" = "yes"
     then
-        WINEPRELOADER_LDFLAGS="-nostartfiles -nodefaultlibs -e _start -ldylib1.o -mmacosx-version-min=10.7 -Wl,-no_new_main,-segalign,0x1000,-pagezero_size,0x1000,-sectcreate,__TEXT,__info_plist,loader/wine_info.plist"
+        WINEPRELOADER_LDFLAGS="-nostartfiles -nodefaultlibs -e _start -ldylib1.o -Wl,-no_new_main,-segalign,0x1000,-pagezero_size,0x1000,-sectcreate,__TEXT,__info_plist,loader/wine_info.plist"
         WINE_TRY_CFLAGS([-Wl,-no_pie],
                         [WINEPRELOADER_LDFLAGS="-Wl,-no_pie $WINEPRELOADER_LDFLAGS"])
         case $HOST_ARCH in
@@ -1027,7 +1027,8 @@ case $host_os in
             ;;
         esac
         dnl If preloader is used, the loader needs to be an LC_UNIXTHREAD binary to avoid AppKit/Core Animation problems.
-        WINELOADER_LDFLAGS="$WINELOADER_LDFLAGS -mmacosx-version-min=10.7"
+        dnl Let Clang select the Darwin deployment target automatically, or honor
+        dnl MACOSX_DEPLOYMENT_TARGET when the user supplies it.
     fi
 
     if test "x$with_coreaudio" != "xno";
