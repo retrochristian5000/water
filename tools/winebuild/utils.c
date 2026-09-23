@@ -212,10 +212,10 @@ static const char *find_clang_tool( struct strarray clang, const char *tool )
 }
 
 /* find a build tool in the path, trying the various names */
-struct strarray find_tool( const char *name, const char * const *names )
+struct strarray find_optional_tool( const char *name, const char * const *names )
 {
     struct strarray ret = empty_strarray;
-    const char *file;
+    const char *file = NULL;
     const char *alt_names[2];
 
     if (!names)
@@ -240,9 +240,15 @@ struct strarray find_tool( const char *name, const char * const *names )
     if (!file) file = find_clang_tool( empty_strarray, strmake( "llvm-%s", name ));
     if (!file) file = find_clang_tool( empty_strarray, name );
 
-    if (!file) fatal_error( "cannot find the '%s' tool\n", name );
+    if (file) strarray_add( &ret, file );
+    return ret;
+}
 
-    strarray_add( &ret, file );
+struct strarray find_tool( const char *name, const char * const *names )
+{
+    struct strarray ret = find_optional_tool( name, names );
+
+    if (!ret.count) fatal_error( "cannot find the '%s' tool\n", name );
     return ret;
 }
 
