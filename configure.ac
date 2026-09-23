@@ -581,11 +581,11 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
         [AS_VAR_SET([wine_cv_crosscc_c99],[no])
          for arg in '' '-std=gnu99' '-D__STDC__'
          do
-             test -z "$arg" || CC="$CC $arg"
+             test -z "$arg" || CFLAGS="$CFLAGS $arg"
              AC_COMPILE_IFELSE([AC_LANG_SOURCE([$ac_c_conftest_c99_program])],
                                [AS_VAR_SET([wine_cv_crosscc_c99],[$arg])],
                                [AS_VAR_SET([wine_cv_crosscc_c99],[no])])
-             AS_VAR_COPY([CC],[${wine_arch}_CC])
+             AS_VAR_COPY([CFLAGS],[${wine_arch}_CFLAGS])
              AS_VAR_IF([wine_cv_crosscc_c99],[no],[],[break])
          done])
     AS_VAR_COPY([res],[wine_cv_crosscc_c99])
@@ -594,7 +594,7 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
       x) AC_MSG_RESULT([none needed]) ;;
       xno) AC_MSG_RESULT([unsupported]) ;;
       x*) AC_MSG_RESULT([$res])
-          AS_VAR_APPEND([${wine_arch}_CC],[" $res"]) ;;
+          AS_VAR_APPEND([${wine_arch}_CFLAGS],[" $res"]) ;;
     esac
     WINE_NO_PE_ERROR([test "x$res" = xno],[The $wine_arch PE compiler doesn't support C99.])
 
@@ -617,11 +617,11 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
         [AS_VAR_SET([wine_cv_crosscxx_cxx17],[no])
          for arg in '' '-std=gnu++17'
          do
-             test -z "$arg" || CXX="$CXX $arg"
+             test -z "$arg" || CXXFLAGS="$CXXFLAGS $arg"
              AC_COMPILE_IFELSE([AC_LANG_SOURCE([_AX_CXX_COMPILE_STDCXX_testbody_17])],
                                [AS_VAR_SET([wine_cv_crosscxx_cxx17],[$arg])],
                                [AS_VAR_SET([wine_cv_crosscxx_cxx17],[no])])
-             AS_VAR_COPY([CXX],[${wine_arch}_CXX])
+             AS_VAR_COPY([CXXFLAGS],[${wine_arch}_CXXFLAGS])
              AS_VAR_IF([wine_cv_crosscxx_cxx17],[no],[],[break])
          done])
     AS_VAR_COPY([res],[wine_cv_crosscxx_cxx17])
@@ -633,7 +633,7 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
       xno) AC_MSG_RESULT([unsupported])
            WINE_WARNING([$wine_arch PE compiler supporting C++17 not found, some modules won't be built.]) ;;
       x*) AC_MSG_RESULT([$res])
-          AS_VAR_APPEND([${wine_arch}_CXX],[" $res"])
+          AS_VAR_APPEND([${wine_arch}_CXXFLAGS],[" $res"])
           enable_cplusplus="$enable_cplusplus,$wine_arch" ;;
     esac
 
