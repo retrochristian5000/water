@@ -365,12 +365,12 @@ static void test_fwprintf(void)
     fclose(fp);
 
     fp = fopen(file_name, "rb");
-    fgetws(bufw, ARRAY_SIZE(bufw), fp);
+    fgetws(bufw, (int)(sizeof(bufw) / sizeof(bufw[0])), fp);
     ret = ftell(fp);
     ok(ret == 24, "ftell returned %d\n", ret);
     ok(!wcscmp(bufw, simple), "buf = %s\n", wine_dbgstr_w(bufw));
 
-    fgetws(bufw, ARRAY_SIZE(bufw), fp);
+    fgetws(bufw, (int)(sizeof(bufw) / sizeof(bufw[0])), fp);
     ret = ftell(fp);
     ok(ret == 52, "ret = %d\n", ret);
     ok(!memcmp(bufw, cont, 28), "buf = %s\n", wine_dbgstr_w(bufw));
