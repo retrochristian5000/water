@@ -1217,12 +1217,16 @@ static const char *get_target_machine(void)
 /* build a library from the current asm files and any additional object files in argv */
 void output_static_lib( const char *output_name, struct strarray files, int create )
 {
+    static const char * const ar_names[] = { "llvm-ar", "ar", NULL };
     struct strarray args;
+    int use_llvm_ar = 0;
 
     if (!create || !is_llvm_pe_target( target ))
     {
-        args = find_tool( "ar", NULL );
-        strarray_add( &args, create ? "rc" : "r" );
+        args = find_tool( "ar", ar_names );
+        use_llvm_ar = strendswith( get_basename( args.str[0] ), "llvm-ar" );
+        strarray_add( &args, create ? (use_llvm_ar ? "rcs" : "rc")
+                                    : (use_llvm_ar ? "rs" : "r") );
         strarray_add( &args, output_name );
     }
     else
@@ -1237,7 +1241,7 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
     if (create) unlink( output_name );
     spawn( args );
 
-    if (!is_llvm_pe_target( target ))
+    if (!is_llvm_pe_target( target ) && !use_llvm_ar)
     {
         struct strarray ranlib = find_tool( "ranlib", NULL );
         strarray_add( &ranlib, output_name );
