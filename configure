@@ -4740,6 +4740,23 @@ host_os=$*
 IFS=$ac_save_IFS
 case $host_os in *\ *) host_os=`printf '%s\n' "$host_os" | sed 's/ /-/g'`;; esac
 
+# A standalone LLVM/Clang build on macOS does not necessarily infer the
+# active SDK the way /usr/bin/clang does.  Keep SDKROOT as an environment
+# variable so paths containing spaces remain intact, and let the compiler
+# translate it to the appropriate Darwin sysroot.
+case $host_os in
+  darwin*)
+    if test -z "$SDKROOT" && command -v xcrun >/dev/null 2>&1
+    then
+        SDKROOT=`xcrun --sdk macosx --show-sdk-path 2>/dev/null`
+    fi
+    if test -n "$SDKROOT"
+    then
+        test -d "$SDKROOT" || as_fn_error $? "macOS SDK root '$SDKROOT' does not exist" "$LINENO" 5
+        export SDKROOT
+    fi
+    ;;
+esac
 
 
 
