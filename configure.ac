@@ -575,26 +575,29 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
              esac
          fi
          AS_VAR_SET([${wine_arch}_STRIP],[$target_strip])])
+    wine_save_cross_CFLAGS=$CFLAGS
     AS_VAR_PUSHDEF([wine_cv_crosscc_c99],[ac_cv_${wine_arch}_crosscc_c99])
     AC_MSG_CHECKING([for $CC option to enable C99 features])
     AC_CACHE_VAL([wine_cv_crosscc_c99],
         [AS_VAR_SET([wine_cv_crosscc_c99],[no])
          for arg in '' '-std=gnu99' '-D__STDC__'
          do
+             CFLAGS="$wine_save_cross_CFLAGS"
              test -z "$arg" || CFLAGS="$CFLAGS $arg"
              AC_COMPILE_IFELSE([AC_LANG_SOURCE([$ac_c_conftest_c99_program])],
                                [AS_VAR_SET([wine_cv_crosscc_c99],[$arg])],
                                [AS_VAR_SET([wine_cv_crosscc_c99],[no])])
-             AS_VAR_COPY([CFLAGS],[${wine_arch}_CFLAGS])
              AS_VAR_IF([wine_cv_crosscc_c99],[no],[],[break])
          done])
+    CFLAGS="$wine_save_cross_CFLAGS"
     AS_VAR_COPY([res],[wine_cv_crosscc_c99])
     AS_VAR_POPDEF([wine_cv_crosscc_c99])
     case "x$res" in
       x) AC_MSG_RESULT([none needed]) ;;
       xno) AC_MSG_RESULT([unsupported]) ;;
       x*) AC_MSG_RESULT([$res])
-          AS_VAR_APPEND([${wine_arch}_CFLAGS],[" $res"]) ;;
+          AS_VAR_APPEND([${wine_arch}_CFLAGS],[" $res"])
+          CFLAGS="$CFLAGS $res" ;;
     esac
     WINE_NO_PE_ERROR([test "x$res" = xno],[The $wine_arch PE compiler doesn't support C99.])
 
