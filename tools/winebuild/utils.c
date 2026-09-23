@@ -299,6 +299,23 @@ struct strarray get_as_command(void)
 
     if (using_cc)
     {
+        int has_target = 0;
+
+        STRARRAY_FOR_EACH( arg, &args )
+        {
+            if (!strcmp( arg, "-target" ) || !strcmp( arg, "--target" ) ||
+                !strncmp( arg, "--target=", 9 ))
+            {
+                has_target = 1;
+                break;
+            }
+        }
+        if (!has_target && target_alias && is_llvm_pe_target( target ))
+        {
+            strarray_add( &args, "-target" );
+            strarray_add( &args, target_alias );
+        }
+
         strarray_add( &args, "-xassembler" );
         strarray_add( &args, "-c" );
         if (force_pointer_size)
