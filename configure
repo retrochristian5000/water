@@ -782,6 +782,7 @@ TOP_INSTALL_DEV
 TOP_INSTALL_LIB
 UNIXLDFLAGS
 UNIXDLLFLAGS
+EXTRACXXFLAGS
 EXTRACFLAGS
 LDEXECFLAGS
 LDDLLFLAGS
@@ -6514,8 +6515,10 @@ printf '%s\n' "$wine_cv_thumb2" >&6; }
     if test x"$wine_cv_thumb2" = xyes
     then
         CFLAGS="$CFLAGS -mthumb"
+        CXXFLAGS="$CXXFLAGS -mthumb"
     else
         CFLAGS="$CFLAGS -marm"
+        CXXFLAGS="$CXXFLAGS -marm"
     fi
     { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether $CC supports floating point instructions" >&5
 printf %s "checking whether $CC supports floating point instructions... " >&6; }
@@ -20416,36 +20419,6 @@ if test "x$ac_cv_cflags__fno_strict_aliasing" = xyes
 then :
   EXTRACFLAGS="$EXTRACFLAGS -fno-strict-aliasing"
 fi
-  { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wdeclaration-after-statement" >&5
-printf %s "checking whether the compiler supports -Wdeclaration-after-statement... " >&6; }
-if test ${ac_cv_cflags__Wdeclaration_after_statement+y}
-then :
-  printf %s "(cached) " >&6
-else case e in #(
-  e) ac_wine_try_cflags_saved=$CFLAGS
-CFLAGS="$CFLAGS -Wdeclaration-after-statement"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-int main(int argc, char **argv) { return 0; }
-_ACEOF
-if ac_fn_c_try_link "$LINENO"
-then :
-  ac_cv_cflags__Wdeclaration_after_statement=yes
-else case e in #(
-  e) ac_cv_cflags__Wdeclaration_after_statement=no ;;
-esac
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam \
-    conftest$ac_exeext conftest.$ac_ext
-CFLAGS=$ac_wine_try_cflags_saved ;;
-esac
-fi
-{ printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__Wdeclaration_after_statement" >&5
-printf '%s\n' "$ac_cv_cflags__Wdeclaration_after_statement" >&6; }
-if test "x$ac_cv_cflags__Wdeclaration_after_statement" = xyes
-then :
-  EXTRACFLAGS="$EXTRACFLAGS -Wdeclaration-after-statement"
-fi
   { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wempty-body" >&5
 printf %s "checking whether the compiler supports -Wempty-body... " >&6; }
 if test ${ac_cv_cflags__Wempty_body+y}
@@ -20655,36 +20628,6 @@ printf '%s\n' "$ac_cv_cflags__Wshift_overflow_2" >&6; }
 if test "x$ac_cv_cflags__Wshift_overflow_2" = xyes
 then :
   EXTRACFLAGS="$EXTRACFLAGS -Wshift-overflow=2"
-fi
-  { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wstrict-prototypes" >&5
-printf %s "checking whether the compiler supports -Wstrict-prototypes... " >&6; }
-if test ${ac_cv_cflags__Wstrict_prototypes+y}
-then :
-  printf %s "(cached) " >&6
-else case e in #(
-  e) ac_wine_try_cflags_saved=$CFLAGS
-CFLAGS="$CFLAGS -Wstrict-prototypes"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-int main(int argc, char **argv) { return 0; }
-_ACEOF
-if ac_fn_c_try_link "$LINENO"
-then :
-  ac_cv_cflags__Wstrict_prototypes=yes
-else case e in #(
-  e) ac_cv_cflags__Wstrict_prototypes=no ;;
-esac
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam \
-    conftest$ac_exeext conftest.$ac_ext
-CFLAGS=$ac_wine_try_cflags_saved ;;
-esac
-fi
-{ printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__Wstrict_prototypes" >&5
-printf '%s\n' "$ac_cv_cflags__Wstrict_prototypes" >&6; }
-if test "x$ac_cv_cflags__Wstrict_prototypes" = xyes
-then :
-  EXTRACFLAGS="$EXTRACFLAGS -Wstrict-prototypes"
 fi
   { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wtype-limits" >&5
 printf %s "checking whether the compiler supports -Wtype-limits... " >&6; }
@@ -21214,6 +21157,68 @@ if test "x$ac_cv_cflags__Wl___build_id" = xyes
 then :
   LDFLAGS="$LDFLAGS -Wl,--build-id"
 fi
+fi
+
+  EXTRACXXFLAGS="$EXTRACFLAGS"
+  { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wdeclaration-after-statement" >&5
+printf %s "checking whether the compiler supports -Wdeclaration-after-statement... " >&6; }
+if test ${ac_cv_cflags__Wdeclaration_after_statement+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_wine_try_cflags_saved=$CFLAGS
+CFLAGS="$CFLAGS -Wdeclaration-after-statement"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+int main(int argc, char **argv) { return 0; }
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_cflags__Wdeclaration_after_statement=yes
+else case e in #(
+  e) ac_cv_cflags__Wdeclaration_after_statement=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+CFLAGS=$ac_wine_try_cflags_saved ;;
+esac
+fi
+{ printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__Wdeclaration_after_statement" >&5
+printf '%s\n' "$ac_cv_cflags__Wdeclaration_after_statement" >&6; }
+if test "x$ac_cv_cflags__Wdeclaration_after_statement" = xyes
+then :
+  EXTRACFLAGS="$EXTRACFLAGS -Wdeclaration-after-statement"
+fi
+  { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wstrict-prototypes" >&5
+printf %s "checking whether the compiler supports -Wstrict-prototypes... " >&6; }
+if test ${ac_cv_cflags__Wstrict_prototypes+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_wine_try_cflags_saved=$CFLAGS
+CFLAGS="$CFLAGS -Wstrict-prototypes"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+int main(int argc, char **argv) { return 0; }
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_cflags__Wstrict_prototypes=yes
+else case e in #(
+  e) ac_cv_cflags__Wstrict_prototypes=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+CFLAGS=$ac_wine_try_cflags_saved ;;
+esac
+fi
+{ printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__Wstrict_prototypes" >&5
+printf '%s\n' "$ac_cv_cflags__Wstrict_prototypes" >&6; }
+if test "x$ac_cv_cflags__Wstrict_prototypes" = xyes
+then :
+  EXTRACFLAGS="$EXTRACFLAGS -Wstrict-prototypes"
 fi
 fi
 
