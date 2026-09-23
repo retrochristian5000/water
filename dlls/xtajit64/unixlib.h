@@ -100,4 +100,13 @@ struct xtajit_reset_params
     UINT64 arm_context;
 };
 
+C_ASSERT( sizeof(struct xtajit_addr_size_params) == 16 );
+C_ASSERT( sizeof(struct xtajit_read_file_params) == 32 );
+C_ASSERT( sizeof(struct xtajit_map_view_params) == 40 );
+C_ASSERT( sizeof(struct xtajit_memory_params) == 32 );
+C_ASSERT( sizeof(struct xtajit_unmap_view_params) == 16 );
+C_ASSERT( sizeof(struct xtajit_process_term_params) == 16 );
+C_ASSERT( sizeof(struct xtajit_thread_term_params) == 16 );
+C_ASSERT( sizeof(struct xtajit_reset_params) == 24 );
+
 #endif /* __WINE_XTAJIT64_UNIXLIB_H */
