@@ -937,7 +937,12 @@ static void compile( struct strarray files, const char *output_name, int compile
     if (!wine_objdir && !nostdinc)
     {
         const char *incl_dirs[] = { INCLUDEDIR, "/usr/include", "/usr/local/include" };
+#ifdef __APPLE__
+        /* -isysroot selects the macOS SDK; Wine's installed headers stay outside it. */
+        const char *root = sysroot ? sysroot : "";
+#else
         const char *root = isysroot ? isysroot : sysroot ? sysroot : "";
+#endif
         const char *isystem = gcc_defs ? "-isystem" : "-I";
         const char *idirafter = gcc_defs ? "-idirafter" : "-I";
 
