@@ -239,6 +239,7 @@ static void create_file(const char* name, int mode, const char* fmt, ...)
 {
     va_list ap;
     FILE *file;
+    int fd;
 
     if (verbose) printf("Creating file %s\n", name);
     va_start(ap, fmt);
@@ -246,8 +247,11 @@ static void create_file(const char* name, int mode, const char* fmt, ...)
 	error("Unable to open %s for writing\n", name);
     vfprintf(file, fmt, ap);
     va_end(ap);
-    fclose(file);
-    chmod(name, mode);
+    if (fflush(file) == EOF) error("Unable to flush %s\n", name);
+    fd = fileno(file);
+    if (fd == -1) error("Unable to get file descriptor for %s\n", name);
+    if (fchmod(fd, mode) == -1) error("Unable to set mode on %s\n", name);
+    if (fclose(file) == EOF) error("Unable to close %s\n", name);
 }
 
 static enum file_type get_file_type(const char* filename)
