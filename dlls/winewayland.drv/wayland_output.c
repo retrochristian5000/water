@@ -152,6 +152,7 @@ static void wayland_output_done(struct wayland_output *output)
     {
         free(output->current.name);
         output->current.name = output->pending.name;
+        if (!output->current.name) output->current.name = strdup("");
         output->pending.name = NULL;
     }
 
