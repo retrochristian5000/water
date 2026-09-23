@@ -23,71 +23,85 @@
 
 static NTSTATUS xtajit_process_init( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_process_term( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_thread_init( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_thread_term( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_flush_instruction_cache( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_flush_instruction_cache_heavy( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_dirty( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_read_file( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_map_view( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_alloc( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_free( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_protect( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_unmap_view( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_reset_to_consistent_state( void *args )
 {
+    (void)args;
     return STATUS_SUCCESS;
 }
 
