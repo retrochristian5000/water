@@ -879,6 +879,7 @@ CPPFLAGS
 LDFLAGS
 CFLAGS
 CC
+NINJA
 SARIF_CONVERTER
 srcdir
 host_os
@@ -938,6 +939,7 @@ enable_win64
 enable_tests
 enable_build_id
 enable_maintainer_mode
+enable_ninja
 enable_sast
 enable_silent_rules
 enable_werror
@@ -2601,6 +2603,7 @@ Optional Features:
   --enable-build-id       include .buildid section in output objects
   --enable-maintainer-mode
                           enable maintainer-specific build rules
+  --disable-ninja         do not generate or prefer Ninja build files
   --enable-sast           enable static application security testing using
                           Clang
   --enable-silent-rules   use silent build rules (override: "make V=1")
@@ -4303,6 +4306,12 @@ fi
 if test ${enable_maintainer_mode+y}
 then :
   enableval=$enable_maintainer_mode;
+fi
+
+# Check whether --enable-ninja was given.
+if test ${enable_ninja+y}
+then :
+  enableval=$enable_ninja;
 fi
 
 # Check whether --enable-sast was given.
@@ -22415,6 +22424,7 @@ ac_config_commands="$ac_config_commands include/stamp-h"
 printf %s "creating Makefile rules..." >&6
 
 makedep_flags=" -C"
+test "x$enable_ninja" = xyes && makedep_flags="$makedep_flags -N"
 test "x$enable_silent_rules" = xyes && makedep_flags="$makedep_flags -S"
 
 wine_srcdir=
@@ -25134,8 +25144,15 @@ fi
 done
 IFS="$ac_save_IFS"
 
+if test "x$enable_ninja" = xyes
+then
+    wine_build_command="$NINJA"
+else
+    wine_build_command="${MAKE-make}"
+fi
+
 printf '%s\n' "
-$as_me: Finished.  Do '${MAKE-make}' to compile Wine.
+$as_me: Finished.  Do '$wine_build_command' to compile Wine.
 " >&6
 
 
