@@ -7712,7 +7712,6 @@ fi
         shift
     done
 
-        target_strip=${target:-llvm}-strip
     if test "$wine_try_msvc" = yes -o -z "$target"
     then
         case $wine_arch in
@@ -7877,7 +7876,31 @@ fi
 fi
 
     eval "${wine_arch}_TARGET=\$target"
-    eval "${wine_arch}_STRIP=\$target_strip"
+    if eval test \${${wine_arch}_STRIP+y}
+then :
+
+else case e in #(
+  e) target_strip=`$CC -print-prog-name=llvm-strip 2>/dev/null`
+         case "$target_strip" in
+           ""|llvm-strip) target_strip= ;;
+           *) test -x "$target_strip" || target_strip= ;;
+         esac
+         if test -z "$target_strip"
+         then
+             case "$target" in
+               *-mingw*)
+                 target_strip=`$CC -print-prog-name=strip 2>/dev/null`
+                 case "$target_strip" in
+                   ""|strip) target_strip="$target-strip" ;;
+                   *) test -x "$target_strip" || target_strip="$target-strip" ;;
+                 esac
+                 ;;
+               *) target_strip=llvm-strip ;;
+             esac
+         fi
+         eval "${wine_arch}_STRIP=\$target_strip" ;;
+esac
+fi
     as_wine_cv_crosscc_c99=`printf '%s\n' "ac_cv_${wine_arch}_crosscc_c99" | sed "$as_sed_sh"`
 
     { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for $CC option to enable C99 features" >&5
