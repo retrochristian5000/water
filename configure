@@ -6184,6 +6184,34 @@ ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
 ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
+{ printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for Ninja" >&5
+printf %s "checking for Ninja... " >&6; }
+if test -z "$NINJA"
+then
+    for ac_prog in ninja ninja-build
+    do
+        if command -v "$ac_prog" >/dev/null 2>&1
+        then
+            NINJA=$ac_prog
+            break
+        fi
+    done
+fi
+test -n "$NINJA" || NINJA=false
+{ printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $NINJA" >&5
+printf '%s\n' "$NINJA" >&6; }
+
+if test "x$enable_ninja" != xno
+then
+    if test "$NINJA" = false
+    then
+        test "x$enable_ninja" != xyes || as_fn_error $? "Ninja was explicitly requested but neither ninja nor ninja-build was found." "$LINENO" 5
+        enable_ninja=no
+    else
+        enable_ninja=yes
+    fi
+fi
+
 if test -n "$ac_tool_prefix"; then
   # Extract the first word of "${ac_tool_prefix}cpp", so it can be a program name with args.
 set dummy ${ac_tool_prefix}cpp; ac_word=$2
