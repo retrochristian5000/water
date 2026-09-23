@@ -83,6 +83,7 @@ function localHostOrDomainIs(host, hostdom) {
 }
 
 function shExpMatch(url, pattern) {
+   pattern = pattern.replace(/\\/g, '\\\\');
    pattern = pattern.replace(/\./g, '\\.');
    pattern = pattern.replace(/\*/g, '.*');
    pattern = pattern.replace(/\?/g, '.');
