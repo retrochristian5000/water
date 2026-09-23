@@ -5187,8 +5187,9 @@ static void output_top_makefile( struct makefile *make )
     strarray_add( &make->distclean_files, "include/config.h" );
     strarray_add( &make->distclean_files, "include/stamp-h" );
     output( "depend: %s\n", makedep );
-    output( "\t%s%s%s\n", makedep,
+    output( "\t%s%s%s%s\n", makedep,
             compile_commands_mode ? " -C" : "",
+            ninja_mode ? " -N" : "",
             silent_rules ? " -S" : "" );
     strarray_add( &make->phony_targets, "depend" );
 
@@ -5213,6 +5214,7 @@ static void output_top_makefile( struct makefile *make )
     else strarray_add( &make->clean_files, "loader-wow64" );
 
     if (compile_commands_mode) strarray_add( &make->distclean_files, "compile_commands.json" );
+    if (ninja_mode) strarray_add( &make->distclean_files, "build.ninja" );
     strarray_addall( &make->distclean_files, get_expanded_make_var_array( make, "CONFIGURE_TARGETS" ));
     if (!make->src_dir)
     {
@@ -5226,6 +5228,7 @@ static void output_top_makefile( struct makefile *make )
     fclose( output_file );
     output_file = NULL;
     rename_temp_file( output_file_name );
+    if (ninja_mode) output_ninja_file( output_file_name );
 }
 
 
