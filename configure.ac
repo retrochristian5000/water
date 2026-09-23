@@ -502,7 +502,6 @@ do
     done
 
     dnl Check if cross compiler supports -target argument
-    target_strip=${target:-llvm}-strip
     if test "$wine_try_msvc" = yes -o -z "$target"
     then
         case $wine_arch in
@@ -542,7 +541,26 @@ do
 Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
 
     AS_VAR_SET([${wine_arch}_TARGET],[$target])
-    AS_VAR_SET([${wine_arch}_STRIP],[$target_strip])
+    AS_VAR_SET_IF([${wine_arch}_STRIP],[],
+        [target_strip=`$CC -print-prog-name=llvm-strip 2>/dev/null`
+         case "$target_strip" in
+           ""|llvm-strip) target_strip= ;;
+           *) test -x "$target_strip" || target_strip= ;;
+         esac
+         if test -z "$target_strip"
+         then
+             case "$target" in
+               *-mingw*)
+                 target_strip=`$CC -print-prog-name=strip 2>/dev/null`
+                 case "$target_strip" in
+                   ""|strip) target_strip="$target-strip" ;;
+                   *) test -x "$target_strip" || target_strip="$target-strip" ;;
+                 esac
+                 ;;
+               *) target_strip=llvm-strip ;;
+             esac
+         fi
+         AS_VAR_SET([${wine_arch}_STRIP],[$target_strip])])
     AS_VAR_PUSHDEF([wine_cv_crosscc_c99],[ac_cv_${wine_arch}_crosscc_c99])
     AC_MSG_CHECKING([for $CC option to enable C99 features])
     AC_CACHE_VAL([wine_cv_crosscc_c99],
