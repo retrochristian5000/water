@@ -4802,17 +4802,54 @@ static unsigned int hash_ninja_target( const char *name )
     return ret % NINJA_HASH_SIZE;
 }
 
+static char *normalize_ninja_path( const char *name )
+{
+    const char *src = name;
+    char *ret = xmalloc( strlen(name) + 1 );
+    char *dst = ret;
+
+    while (src[0] == '.' && src[1] == '/') src += 2;
+    while (*src)
+    {
+        if (src[0] == '/' && src[1] == '/')
+        {
+            src++;
+            continue;
+        }
+        if (src[0] == '/' && src[1] == '.' && src[2] == '/')
+        {
+            src += 2;
+            continue;
+        }
+        *dst++ = *src++;
+    }
+    *dst = 0;
+    if (!ret[0])
+    {
+        ret[0] = '.';
+        ret[1] = 0;
+    }
+    return ret;
+}
+
 static struct ninja_target *get_ninja_target( const char *name )
 {
-    unsigned int hash = hash_ninja_target( name );
+    char *normalized = normalize_ninja_path( name );
+    unsigned int hash = hash_ninja_target( normalized );
     struct ninja_target *target;
 
     LIST_FOR_EACH_ENTRY( target, &ninja_hash[hash], struct ninja_target, hash_entry )
-        if (!strcmp( target->name, name )) return target;
+    {
+        if (!strcmp( target->name, normalized ))
+        {
+            free( normalized );
+            return target;
+        }
+    }
 
     target = xmalloc( sizeof(*target) );
     memset( target, 0, sizeof(*target) );
-    target->name = xstrdup( name );
+    target->name = normalized;
     list_add_tail( &ninja_targets, &target->entry );
     list_add_tail( &ninja_hash[hash], &target->hash_entry );
     return target;
@@ -4834,9 +4871,13 @@ static void add_ninja_words( struct strarray *array, char *str )
 
     for (word = strtok( str, " \t" ); word; word = strtok( NULL, " \t" ))
     {
+        char *normalized;
+
         if (!strcmp( word, "|" )) continue;
         if (*word == '#') break;
-        strarray_add_uniq( array, xstrdup( word ));
+        normalized = normalize_ninja_path( word );
+        if (!strarray_exists( *array, normalized )) strarray_add( array, normalized );
+        else free( normalized );
     }
 }
 
