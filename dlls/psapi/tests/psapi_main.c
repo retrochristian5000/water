@@ -682,6 +682,7 @@ static void test_GetPerformanceInfo(void)
            sys_basic_info.PageSize, (ULONG)info.PageSize);
 
         /* compare with values from SYSTEM_PROCESS_INFORMATION */
+        sys_process_info = NULL;
         size = 0;
         status = pNtQuerySystemInformation(SystemProcessInformation, NULL, 0, &size);
         ok(status == STATUS_INFO_LENGTH_MISMATCH, "expected STATUS_INFO_LENGTH_MISMATCH, got %08lx\n", status);
@@ -693,8 +694,10 @@ static void test_GetPerformanceInfo(void)
             status = pNtQuerySystemInformation(SystemProcessInformation, sys_process_info, size, &size);
             if (status == STATUS_SUCCESS) break;
             HeapFree(GetProcessHeap(), 0, sys_process_info);
+            sys_process_info = NULL;
         }
         ok(status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %08lx\n", status);
+        if (status != STATUS_SUCCESS) return;
 
         process_count = handle_count = thread_count = 0;
         for (spi = sys_process_info;; spi = (SYSTEM_PROCESS_INFORMATION *)(((char *)spi) + spi->NextEntryOffset))
