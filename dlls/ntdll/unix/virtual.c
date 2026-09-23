@@ -60,6 +60,7 @@
 #endif
 #include <unistd.h>
 #include <dlfcn.h>
+#include <stdint.h>
 #ifdef HAVE_VALGRIND_VALGRIND_H
 # include <valgrind/valgrind.h>
 #endif
@@ -1451,7 +1452,7 @@ static struct file_view *find_view( const void *addr, size_t size )
 {
     struct wine_rb_entry *ptr = views_tree.root;
 
-    if ((const char *)addr + size < (const char *)addr) return NULL; /* overflow */
+    if (size > ~(size_t)0 - (size_t)(uintptr_t)addr) return NULL; /* overflow */
 
     while (ptr)
     {
