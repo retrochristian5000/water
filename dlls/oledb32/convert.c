@@ -733,7 +733,7 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
         case DBTYPE_R4:          hr = VarUI1FromR4(*(FLOAT*)src, d);             break;
         case DBTYPE_R8:          hr = VarUI1FromR8(*(double*)src, d);            break;
         case DBTYPE_CY:          hr = VarUI1FromCy(*(CY*)src, d);                break;
-        case DBTYPE_DATE:        hr = VarUI1FromDate(*(DATE*)src, LOCALE_USER_DEFAULT, 0, d); break;
+        case DBTYPE_DATE:        hr = VarUI1FromDate(*(DATE*)src, LOCALE_USER_DEFAULT, 0, 0, d); break;
         case DBTYPE_BSTR:        hr = VarUI1FromStr(*(WCHAR**)src, LOCALE_USER_DEFAULT, 0, d); break;
         case DBTYPE_BOOL:        hr = VarUI1FromBool(*(VARIANT_BOOL*)src, d);    break;
         case DBTYPE_DECIMAL:     hr = VarUI1FromDec(src, d);                     break;
