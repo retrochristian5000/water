@@ -4857,12 +4857,22 @@ static struct ninja_target *get_ninja_target( const char *name )
 
 static bool is_make_assignment( const char *str )
 {
-    const char *p = str;
+    const char *p = str, *name;
 
+    if (!strncmp( p, "override ", 9 )) p = skip_spaces( p + 9 );
+    if (!strncmp( p, "export ", 7 )) p = skip_spaces( p + 7 );
+    if (!strncmp( p, "private ", 8 )) p = skip_spaces( p + 8 );
+
+    name = p;
     while (isalnum(*p) || *p == '_') p++;
-    if (p == str) return false;
+    if (p == name) return false;
     p = skip_spaces( p );
-    return *p == '=';
+
+    if (*p == '=') return true;
+    if ((p[0] == ':' || p[0] == '+' || p[0] == '?' || p[0] == '!') && p[1] == '=') return true;
+    if (p[0] == ':' && p[1] == ':' && p[2] == '=') return true;
+    if (p[0] == ':' && p[1] == ':' && p[2] == ':' && p[3] == '=') return true;
+    return false;
 }
 
 static void add_ninja_words( struct strarray *array, char *str )
