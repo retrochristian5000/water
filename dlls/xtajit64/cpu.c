@@ -222,7 +222,12 @@ NTSTATUS WINAPI ProcessInit(void)
 {
     NTSTATUS status;
 
-    if ((status = __wine_init_unix_call())) return status;
+    if ((status = __wine_init_unix_call()))
+    {
+        TRACE( "No xtajit64 Unix backend available, keeping stub behavior: %#lx\n", status );
+        return STATUS_SUCCESS;
+    }
+
     status = XTAJIT_CALL( process_init, NULL );
     if (NT_SUCCESS(status)) unix_ready = TRUE;
     return status;
