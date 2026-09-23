@@ -1219,12 +1219,16 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
 {
     static const char * const ar_names[] = { "llvm-ar", "ar", NULL };
     struct strarray args;
-    int use_llvm_ar = 0;
+    int use_ar = 0, use_llvm_ar = 0;
 
     if (!create || !is_llvm_pe_target( target ))
     {
+        const char *ar_name;
+
         args = find_tool( "ar", ar_names );
-        use_llvm_ar = strendswith( get_basename( args.str[0] ), "llvm-ar" );
+        ar_name = get_basename( args.str[0] );
+        use_ar = 1;
+        use_llvm_ar = !strncmp( ar_name, "llvm-ar", 7 ) || strstr( ar_name, "-llvm-ar" );
         strarray_add( &args, create ? (use_llvm_ar ? "rcs" : "rc")
                                     : (use_llvm_ar ? "rs" : "r") );
         strarray_add( &args, output_name );
@@ -1241,7 +1245,7 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
     if (create) unlink( output_name );
     spawn( args );
 
-    if (!is_llvm_pe_target( target ) && !use_llvm_ar)
+    if (use_ar && !use_llvm_ar)
     {
         struct strarray ranlib = find_tool( "ranlib", NULL );
         strarray_add( &ranlib, output_name );
