@@ -7941,6 +7941,7 @@ else case e in #(
          eval "${wine_arch}_STRIP=\$target_strip" ;;
 esac
 fi
+    wine_save_cross_CFLAGS=$CFLAGS
     as_wine_cv_crosscc_c99=`printf '%s\n' "ac_cv_${wine_arch}_crosscc_c99" | sed "$as_sed_sh"`
 
     { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for $CC option to enable C99 features" >&5
@@ -7952,6 +7953,7 @@ else case e in #(
   e) eval "$as_wine_cv_crosscc_c99=no"
          for arg in '' '-std=gnu99' '-D__STDC__'
          do
+             CFLAGS="$wine_save_cross_CFLAGS"
              test -z "$arg" || CFLAGS="$CFLAGS $arg"
              cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
@@ -7965,7 +7967,6 @@ else case e in #(
 esac
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
-             eval CFLAGS=\$${wine_arch}_CFLAGS
              if eval test \"x\$"$as_wine_cv_crosscc_c99"\" = x"no"
 then :
 
@@ -7976,8 +7977,9 @@ fi
          done ;;
 esac
 fi
+    CFLAGS="$wine_save_cross_CFLAGS"
 
-    eval res=\$$as_wine_cv_crosscc_c99
+    eval res=\$as_wine_cv_crosscc_c99
 
     case "x$res" in
       x) { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: none needed" >&5
@@ -7986,7 +7988,8 @@ printf '%s\n' "none needed" >&6; } ;;
 printf '%s\n' "unsupported" >&6; } ;;
       x*) { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $res" >&5
 printf '%s\n' "$res" >&6; }
-          as_fn_append ${wine_arch}_CFLAGS " $res" ;;
+          as_fn_append ${wine_arch}_CFLAGS " $res"
+          CFLAGS="$CFLAGS $res" ;;
     esac
     if test "x$res" = xno
 then :
