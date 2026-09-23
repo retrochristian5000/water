@@ -170,8 +170,10 @@ case $host in
     if test x"$wine_cv_thumb2" = xyes
     then
         CFLAGS="$CFLAGS -mthumb"
+        CXXFLAGS="$CXXFLAGS -mthumb"
     else
         CFLAGS="$CFLAGS -marm"
+        CXXFLAGS="$CXXFLAGS -marm"
     fi
     AC_CACHE_CHECK([whether $CC supports floating point instructions],wine_cv_float_abi,
                    [WINE_TRY_ASM_LINK(["vmrs r2,fpscr"],,,[wine_cv_float_abi=yes],[wine_cv_float_abi=no])])
@@ -1001,6 +1003,7 @@ AC_SUBST(DLLFLAGS,"")
 AC_SUBST(LDDLLFLAGS,"")
 AC_SUBST(LDEXECFLAGS,"")
 AC_SUBST(EXTRACFLAGS,"")
+AC_SUBST(EXTRACXXFLAGS,"")
 AC_SUBST(UNIXDLLFLAGS,"-fPIC")
 AC_SUBST(UNIXLDFLAGS,["-shared -Wl,-Bsymbolic -Wl,-soname,\$(UNIXLIB)"])
 AC_SUBST(TOP_INSTALL_LIB,"")
@@ -2014,7 +2017,8 @@ if test "x${GCC}" = "xyes"
 then
   EXTRACFLAGS="$EXTRACFLAGS -Wall -pipe"
 
-  dnl Check for some compiler flags
+  dnl Check for flags shared by C and C++.  C-only warnings are added after
+  dnl EXTRACXXFLAGS snapshots the shared set below.
   dnl clang needs to be told to fail on unknown options
   saved_CFLAGS=$CFLAGS
   WINE_TRY_CFLAGS([-Werror=unknown-warning-option],[CFLAGS="$CFLAGS -Werror=unknown-warning-option"])
@@ -2024,7 +2028,6 @@ then
   WINE_TRY_CFLAGS([-fvisibility=hidden])
   WINE_TRY_CFLAGS([-fno-stack-protector])
   WINE_TRY_CFLAGS([-fno-strict-aliasing])
-  WINE_TRY_CFLAGS([-Wdeclaration-after-statement])
   WINE_TRY_CFLAGS([-Wempty-body])
   WINE_TRY_CFLAGS([-Wignored-qualifiers])
   WINE_TRY_CFLAGS([-Winit-self])
@@ -2032,7 +2035,6 @@ then
   WINE_TRY_CFLAGS([-Wpacked-not-aligned],[EXTRACFLAGS="$EXTRACFLAGS -Wno-packed-not-aligned"])
   WINE_TRY_CFLAGS([-Wpointer-arith])
   WINE_TRY_CFLAGS([-Wshift-overflow=2])
-  WINE_TRY_CFLAGS([-Wstrict-prototypes])
   WINE_TRY_CFLAGS([-Wtype-limits])
   WINE_TRY_CFLAGS([-Wunused-but-set-parameter])
   WINE_TRY_CFLAGS([-Wvla])
@@ -2115,6 +2117,11 @@ void a(int b, ...) { __builtin_ms_va_list list; __builtin_ms_va_start(list,b); }
   fi
 
   AS_VAR_IF([enable_build_id],[yes],[WINE_TRY_CFLAGS([-Wl,--build-id],[LDFLAGS="$LDFLAGS -Wl,--build-id"])])
+
+  dnl Options that differ between C and C++.
+  EXTRACXXFLAGS="$EXTRACFLAGS"
+  WINE_TRY_CFLAGS([-Wdeclaration-after-statement])
+  WINE_TRY_CFLAGS([-Wstrict-prototypes])
 fi
 
 dnl **** Disable Fortify, it has too many false positives
