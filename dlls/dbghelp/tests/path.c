@@ -1820,7 +1820,7 @@ static void test_load_modules_details(void)
         if (test->in_image_name)
         {
             WCHAR *dot;
-            wcscpy_s(expected_module_name, ARRAY_SIZE(expected_module_name), test->in_image_name);
+            lstrcpynW(expected_module_name, test->in_image_name, ARRAY_SIZE(expected_module_name));
             dot = wcsrchr(expected_module_name, L'.');
             if (dot) *dot = L'\0';
         }
