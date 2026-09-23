@@ -259,13 +259,13 @@ static void parse_number(void)
     if (dot) {
         float value;
         ret = sscanf(buffer, "%f", &value);
-        if (!ret) fatal_error( "invalid float token\n" );
+        if (ret != 1) fatal_error( "invalid float token\n" );
         put_word(TOKEN_FLOAT);
         put_float(value);
     } else {
         int value;
         ret = sscanf(buffer, "%d", &value);
-        if (!ret) fatal_error( "invalid integer token\n" );
+        if (ret != 1) fatal_error( "invalid integer token\n" );
         put_word(TOKEN_INTEGER);
         put_dword(value);
     }
