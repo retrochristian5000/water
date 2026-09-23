@@ -217,7 +217,16 @@ static char *encode_dll_name( const char *name )
     for ( ; len > 0; len--, name++)
     {
         if (!strchr( valid_chars, *name ))
-            p += snprintf( p, ret_end - p, "$x%02x", *name );
+        {
+            size_t remaining = ret_end - p;
+            int n = snprintf( p, remaining, "$x%02x", *name );
+            if (n < 0 || (size_t)n >= remaining)
+            {
+                p = ret_end - 1;
+                break;
+            }
+            p += n;
+        }
         else *p++ = *name;
     }
     *p = 0;
