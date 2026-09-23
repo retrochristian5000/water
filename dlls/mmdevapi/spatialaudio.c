@@ -60,14 +60,14 @@ static const char *debugstr_fmtex(const WAVEFORMATEX *fmt)
     else if(fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
     {
         const WAVEFORMATEXTENSIBLE *fmtex = (const WAVEFORMATEXTENSIBLE *)fmt;
-        snprintf(buf, sizeof(buf), "tag: 0x%x (%s), ch: %u (mask: 0x%lx), rate: %lu, depth: %u",
+        snprintf(buf, sizeof(buf), "tag: 0x%x (%s), ch: %u (mask: 0x%lx), rate: %u, depth: %u",
                 fmt->wFormatTag, debugstr_guid(&fmtex->SubFormat),
                 fmt->nChannels, fmtex->dwChannelMask, fmt->nSamplesPerSec,
                 fmt->wBitsPerSample);
     }
     else
     {
-        snprintf(buf, sizeof(buf), "tag: 0x%x, ch: %u, rate: %lu, depth: %u",
+        snprintf(buf, sizeof(buf), "tag: 0x%x, ch: %u, rate: %u, depth: %u",
                 fmt->wFormatTag, fmt->nChannels, fmt->nSamplesPerSec,
                 fmt->wBitsPerSample);
     }
