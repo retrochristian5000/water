@@ -3256,15 +3256,19 @@ static void test_heap_checks( DWORD flags )
             ret = HeapFree( GetProcessHeap(), 0, p );
             ok( !ret || broken(sizeof(void*) == 8), /* not caught on xp64 */
                 "HeapFree succeeded\n" );
+            if (ret) p = NULL;
         }
 
-        p[17] = old;
-        size = HeapSize( GetProcessHeap(), 0, p );
-        ok( size == 17, "Wrong size %Iu\n", size );
+        if (p)
+        {
+            p[17] = old;
+            size = HeapSize( GetProcessHeap(), 0, p );
+            ok( size == 17, "Wrong size %Iu\n", size );
 
-        p2 = HeapReAlloc( GetProcessHeap(), 0, p, 14 );
-        ok( p2 != NULL, "HeapReAlloc failed\n" );
-        p = p2;
+            p2 = HeapReAlloc( GetProcessHeap(), 0, p, 14 );
+            ok( p2 != NULL, "HeapReAlloc failed\n" );
+            p = p2;
+        }
     }
 
     ret = HeapFree( GetProcessHeap(), 0, p );
