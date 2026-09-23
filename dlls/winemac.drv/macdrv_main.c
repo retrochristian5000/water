@@ -127,18 +127,28 @@ HKEY open_hkcu_key(const char *name)
         DWORD_PTR sid_data[(sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE) / sizeof(DWORD_PTR)];
         DWORD i, len = sizeof(sid_data);
         SID *sid;
+        int ret;
 
         if (NtQueryInformationToken(GetCurrentThreadEffectiveToken(), TokenUser, sid_data, len, &len))
             return 0;
 
         sid = ((TOKEN_USER *)sid_data)->User.Sid;
-        len = snprintf(buffer, sizeof(buffer), "\\Registry\\User\\S-%u-%u", sid->Revision,
-                        MAKELONG(MAKEWORD(sid->IdentifierAuthority.Value[5],
-                                           sid->IdentifierAuthority.Value[4]),
-                                  MAKEWORD(sid->IdentifierAuthority.Value[3],
-                                            sid->IdentifierAuthority.Value[2])));
+        ret = snprintf(buffer, sizeof(buffer), "\\Registry\\User\\S-%u-%u", sid->Revision,
+                       MAKELONG(MAKEWORD(sid->IdentifierAuthority.Value[5],
+                                          sid->IdentifierAuthority.Value[4]),
+                                MAKEWORD(sid->IdentifierAuthority.Value[3],
+                                         sid->IdentifierAuthority.Value[2])));
+        if (ret < 0 || ret >= sizeof(buffer))
+            return 0;
+        len = ret;
+
         for (i = 0; i < sid->SubAuthorityCount; i++)
-            len += snprintf(buffer + len, sizeof(buffer) - len, "-%u", sid->SubAuthority[i]);
+        {
+            ret = snprintf(buffer + len, sizeof(buffer) - len, "-%u", sid->SubAuthority[i]);
+            if (ret < 0 || ret >= sizeof(buffer) - len)
+                return 0;
+            len += ret;
+        }
 
         ascii_to_unicode(bufferW, buffer, len);
         hkcu = reg_open_key(NULL, bufferW, len * sizeof(WCHAR));
