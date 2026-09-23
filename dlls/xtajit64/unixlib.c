@@ -72,13 +72,6 @@ static void close_unicorn_module(void)
     memset( &unicorn, 0, sizeof(unicorn) );
 }
 
-static BOOL load_unicorn_symbol( void **func, const char *name )
-{
-    if ((*func = dlsym( unicorn.module, name ))) return TRUE;
-    WARN( "Unicorn is missing required symbol %s\n", name );
-    return FALSE;
-}
-
 static BOOL load_unicorn(void)
 {
     static const char * const default_names[] =
@@ -129,7 +122,13 @@ static BOOL load_unicorn(void)
         return FALSE;
     }
 
-#define LOAD_UNICORN_FUNC(name)     if (!load_unicorn_symbol( (void **)&unicorn.name, "uc_" #name ))     {         close_unicorn_module();         return FALSE;     }
+#define LOAD_UNICORN_FUNC(name) \
+    if (!(unicorn.name = dlsym( unicorn.module, "uc_" #name ))) \
+    { \
+        WARN( "Unicorn is missing required symbol uc_%s\n", #name ); \
+        close_unicorn_module(); \
+        return FALSE; \
+    }
 
     LOAD_UNICORN_FUNC( version );
     LOAD_UNICORN_FUNC( open );
@@ -177,6 +176,24 @@ static void close_unicorn_engine(void)
 
     unicorn.close( entry->engine );
     free( entry );
+}
+
+static void close_all_unicorn_engines(void)
+{
+    struct unicorn_engine_entry *entry, *next;
+
+    pthread_mutex_lock( &unicorn_mutex );
+    entry = unicorn_engines;
+    unicorn_engines = NULL;
+    pthread_mutex_unlock( &unicorn_mutex );
+
+    while (entry)
+    {
+        next = entry->next;
+        unicorn.close( entry->engine );
+        free( entry );
+        entry = next;
+    }
 }
 
 static void invalidate_unicorn_range( UINT64 addr, UINT64 size )
@@ -238,7 +255,8 @@ static NTSTATUS xtajit_process_term( void *args )
 {
     (void)args;
 
-    close_unicorn_engine();
+    if (unicorn_key_valid) pthread_setspecific( unicorn_engine_key, NULL );
+    close_all_unicorn_engines();
     if (unicorn_key_valid)
     {
         pthread_key_delete( unicorn_engine_key );
