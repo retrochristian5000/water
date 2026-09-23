@@ -21259,6 +21259,7 @@ printf '%s\n' "$ac_cv_c_fortify_enabled" >&6; }
 if test "$ac_cv_c_fortify_enabled" = yes
 then
     CFLAGS="$CFLAGS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+    CXXFLAGS="$CXXFLAGS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 fi
 
 
@@ -22253,6 +22254,7 @@ printf '%s\n' "$ac_cv_cpp_def___i386__" >&6; }
 if test "x$ac_cv_cpp_def___i386__" = xyes
 then :
   EXTRACFLAGS="$EXTRACFLAGS -D__i386__"
+  EXTRACXXFLAGS="$EXTRACXXFLAGS -D__i386__"
 fi ;;
   *x86_64*)         { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether we need to define __x86_64__" >&5
 printf %s "checking whether we need to define __x86_64__... " >&6; }
@@ -22288,6 +22290,7 @@ printf '%s\n' "$ac_cv_cpp_def___x86_64__" >&6; }
 if test "x$ac_cv_cpp_def___x86_64__" = xyes
 then :
   EXTRACFLAGS="$EXTRACFLAGS -D__x86_64__"
+  EXTRACXXFLAGS="$EXTRACXXFLAGS -D__x86_64__"
 fi ;;
   *powerpc64*)      { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether we need to define __powerpc64__" >&5
 printf %s "checking whether we need to define __powerpc64__... " >&6; }
@@ -22323,6 +22326,7 @@ printf '%s\n' "$ac_cv_cpp_def___powerpc64__" >&6; }
 if test "x$ac_cv_cpp_def___powerpc64__" = xyes
 then :
   EXTRACFLAGS="$EXTRACFLAGS -D__powerpc64__"
+  EXTRACXXFLAGS="$EXTRACXXFLAGS -D__powerpc64__"
 fi ;;
   *aarch64*)        { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether we need to define __aarch64__" >&5
 printf %s "checking whether we need to define __aarch64__... " >&6; }
@@ -22358,6 +22362,7 @@ printf '%s\n' "$ac_cv_cpp_def___aarch64__" >&6; }
 if test "x$ac_cv_cpp_def___aarch64__" = xyes
 then :
   EXTRACFLAGS="$EXTRACFLAGS -D__aarch64__"
+  EXTRACXXFLAGS="$EXTRACXXFLAGS -D__aarch64__"
 fi ;;
   *arm*)            { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether we need to define __arm__" >&5
 printf %s "checking whether we need to define __arm__... " >&6; }
@@ -22393,6 +22398,7 @@ printf '%s\n' "$ac_cv_cpp_def___arm__" >&6; }
 if test "x$ac_cv_cpp_def___arm__" = xyes
 then :
   EXTRACFLAGS="$EXTRACFLAGS -D__arm__"
+  EXTRACXXFLAGS="$EXTRACXXFLAGS -D__arm__"
 fi ;;
 esac
 
