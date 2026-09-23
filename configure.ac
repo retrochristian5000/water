@@ -93,6 +93,24 @@ AC_ARG_WITH(wine64,    AS_HELP_STRING([--with-wine64=DIR],[use the 64-bit Wine i
 AC_CANONICAL_HOST
 AC_SUBST(srcdir)
 
+dnl A standalone LLVM/Clang build on macOS does not necessarily infer the
+dnl active SDK the way /usr/bin/clang does.  Keep SDKROOT as an environment
+dnl variable so paths containing spaces remain intact, and let the compiler
+dnl translate it to the appropriate Darwin sysroot.
+case $host_os in
+  darwin*)
+    if test -z "$SDKROOT" && command -v xcrun >/dev/null 2>&1
+    then
+        SDKROOT=`xcrun --sdk macosx --show-sdk-path 2>/dev/null`
+    fi
+    if test -n "$SDKROOT"
+    then
+        test -d "$SDKROOT" || AC_MSG_ERROR([macOS SDK root '$SDKROOT' does not exist])
+        export SDKROOT
+    fi
+    ;;
+esac
+
 AS_IF([test "x$enable_sast" = xyes],[CC=${CC:-clang}
 with_mingw=${with_mingw:-clang}
 AC_CHECK_PROGS(SARIF_CONVERTER,sarif-converter,false)])
