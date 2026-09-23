@@ -613,6 +613,7 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
 
     AS_VAR_IF([wine_arch],[$extra_arch],[],[AS_VAR_APPEND([PE_ARCHS],[" $wine_arch"])])
 
+    wine_save_cross_CXXFLAGS=$CXXFLAGS
     AS_VAR_PUSHDEF([wine_cv_crosscxx_cxx17],[ac_cv_${wine_arch}_crosscxx_cxx17])
     AC_MSG_CHECKING([for $CXX option to enable C++17 features])
     AC_LANG_PUSH([C++])
@@ -620,13 +621,14 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
         [AS_VAR_SET([wine_cv_crosscxx_cxx17],[no])
          for arg in '' '-std=gnu++17'
          do
+             CXXFLAGS="$wine_save_cross_CXXFLAGS"
              test -z "$arg" || CXXFLAGS="$CXXFLAGS $arg"
              AC_COMPILE_IFELSE([AC_LANG_SOURCE([_AX_CXX_COMPILE_STDCXX_testbody_17])],
                                [AS_VAR_SET([wine_cv_crosscxx_cxx17],[$arg])],
                                [AS_VAR_SET([wine_cv_crosscxx_cxx17],[no])])
-             AS_VAR_COPY([CXXFLAGS],[${wine_arch}_CXXFLAGS])
              AS_VAR_IF([wine_cv_crosscxx_cxx17],[no],[],[break])
          done])
+    CXXFLAGS="$wine_save_cross_CXXFLAGS"
     AS_VAR_COPY([res],[wine_cv_crosscxx_cxx17])
     AC_LANG_POP([C++])
     AS_VAR_POPDEF([wine_cv_crosscxx_cxx17])
@@ -637,6 +639,7 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
            WINE_WARNING([$wine_arch PE compiler supporting C++17 not found, some modules won't be built.]) ;;
       x*) AC_MSG_RESULT([$res])
           AS_VAR_APPEND([${wine_arch}_CXXFLAGS],[" $res"])
+          CXXFLAGS="$CXXFLAGS $res"
           enable_cplusplus="$enable_cplusplus,$wine_arch" ;;
     esac
 
