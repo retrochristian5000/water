@@ -269,7 +269,8 @@ AC_CACHE_CHECK([whether we need to define $1],ac_var,
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#ifdef $1
 #error no
 #endif])],[AS_VAR_SET([ac_var],[yes])],[AS_VAR_SET([ac_var],[no])]))
-AS_VAR_IF([ac_var],[yes],[EXTRACFLAGS="$EXTRACFLAGS -D$1"])dnl
+AS_VAR_IF([ac_var],[yes],[EXTRACFLAGS="$EXTRACFLAGS -D$1"
+EXTRACXXFLAGS="$EXTRACXXFLAGS -D$1"])dnl
 AS_VAR_POPDEF([ac_var])])
 
 dnl **** Check for functions with some extra libraries ****
