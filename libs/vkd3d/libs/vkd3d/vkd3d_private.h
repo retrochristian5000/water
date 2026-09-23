@@ -1704,9 +1704,9 @@ static inline size_t vkd3d_format_get_data_offset(const struct vkd3d_format *for
         unsigned int row_pitch, unsigned int slice_pitch,
         unsigned int x, unsigned int y, unsigned int z)
 {
-    return z * slice_pitch
-            + (y / format->block_height) * row_pitch
-            + (x / format->block_width) * format->byte_count * format->block_byte_count;
+    return (size_t)z * slice_pitch
+            + (size_t)(y / format->block_height) * row_pitch
+            + (size_t)(x / format->block_width) * format->byte_count * format->block_byte_count;
 }
 
 static inline bool vkd3d_format_is_compressed(const struct vkd3d_format *format)
