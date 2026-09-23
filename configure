@@ -8065,6 +8065,7 @@ else case e in #(
 esac
 fi
 
+    wine_save_cross_CXXFLAGS=$CXXFLAGS
     as_wine_cv_crosscxx_cxx17=`printf '%s\n' "ac_cv_${wine_arch}_crosscxx_cxx17" | sed "$as_sed_sh"`
 
     { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for $CXX option to enable C++17 features" >&5
@@ -8083,6 +8084,7 @@ else case e in #(
   e) eval "$as_wine_cv_crosscxx_cxx17=no"
          for arg in '' '-std=gnu++17'
          do
+             CXXFLAGS="$wine_save_cross_CXXFLAGS"
              test -z "$arg" || CXXFLAGS="$CXXFLAGS $arg"
              cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
@@ -8844,7 +8846,6 @@ else case e in #(
 esac
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
-             eval CXXFLAGS=\$${wine_arch}_CXXFLAGS
              if eval test \"x\$"$as_wine_cv_crosscxx_cxx17"\" = x"no"
 then :
 
@@ -8855,8 +8856,9 @@ fi
          done ;;
 esac
 fi
+    CXXFLAGS="$wine_save_cross_CXXFLAGS"
 
-    eval res=\$$as_wine_cv_crosscxx_cxx17
+    eval res=\$as_wine_cv_crosscxx_cxx17
     ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
 ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
@@ -8874,6 +8876,7 @@ printf '%s\n' "unsupported" >&6; }
       x*) { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $res" >&5
 printf '%s\n' "$res" >&6; }
           as_fn_append ${wine_arch}_CXXFLAGS " $res"
+          CXXFLAGS="$CXXFLAGS $res"
           enable_cplusplus="$enable_cplusplus,$wine_arch" ;;
     esac
 
