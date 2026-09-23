@@ -749,7 +749,6 @@ static void test_rowposition(void)
     ok(hr == S_OK, "got 0x%08lx\n", hr);
 
     hr = IConnectionPointContainer_EnumConnectionPoints(cpc, &enum_points);
-    todo_wine
     ok(hr == S_OK, "got 0x%08lx\n", hr);
 if (hr == S_OK) {
     hr = IEnumConnectionPoints_Next(enum_points, 1, &cp, NULL);

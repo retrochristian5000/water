@@ -297,11 +297,146 @@ static ULONG WINAPI cpc_Release(IConnectionPointContainer *iface)
     return IRowPosition_Release(&This->IRowPosition_iface);
 }
 
+typedef struct
+{
+    IEnumConnectionPoints IEnumConnectionPoints_iface;
+    LONG ref;
+    IConnectionPoint *point;
+    ULONG index;
+} enum_connection_points;
+
+static inline enum_connection_points *impl_from_IEnumConnectionPoints(IEnumConnectionPoints *iface)
+{
+    return CONTAINING_RECORD(iface, enum_connection_points, IEnumConnectionPoints_iface);
+}
+
+static HRESULT WINAPI enum_connection_points_QueryInterface(IEnumConnectionPoints *iface, REFIID riid, void **obj)
+{
+    if (!obj) return E_POINTER;
+
+    *obj = NULL;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IEnumConnectionPoints))
+        *obj = iface;
+    else
+        return E_NOINTERFACE;
+
+    IEnumConnectionPoints_AddRef(iface);
+    return S_OK;
+}
+
+static ULONG WINAPI enum_connection_points_AddRef(IEnumConnectionPoints *iface)
+{
+    enum_connection_points *This = impl_from_IEnumConnectionPoints(iface);
+    return InterlockedIncrement(&This->ref);
+}
+
+static ULONG WINAPI enum_connection_points_Release(IEnumConnectionPoints *iface)
+{
+    enum_connection_points *This = impl_from_IEnumConnectionPoints(iface);
+    LONG ref = InterlockedDecrement(&This->ref);
+
+    if (!ref)
+    {
+        IConnectionPoint_Release(This->point);
+        free(This);
+    }
+    return ref;
+}
+
+static HRESULT WINAPI enum_connection_points_Next(IEnumConnectionPoints *iface, ULONG count,
+        IConnectionPoint **points, ULONG *fetched)
+{
+    enum_connection_points *This = impl_from_IEnumConnectionPoints(iface);
+
+    TRACE("(%p)->(%lu %p %p)\n", This, count, points, fetched);
+
+    if (!points || (count > 1 && !fetched)) return E_POINTER;
+    if (fetched) *fetched = 0;
+    if (!count) return S_OK;
+    if (This->index) return S_FALSE;
+
+    points[0] = This->point;
+    IConnectionPoint_AddRef(points[0]);
+    This->index = 1;
+    if (fetched) *fetched = 1;
+
+    return count == 1 ? S_OK : S_FALSE;
+}
+
+static HRESULT WINAPI enum_connection_points_Skip(IEnumConnectionPoints *iface, ULONG count)
+{
+    enum_connection_points *This = impl_from_IEnumConnectionPoints(iface);
+
+    TRACE("(%p)->(%lu)\n", This, count);
+
+    if (!count) return S_OK;
+    if (This->index) return S_FALSE;
+
+    This->index = 1;
+    return count == 1 ? S_OK : S_FALSE;
+}
+
+static HRESULT WINAPI enum_connection_points_Reset(IEnumConnectionPoints *iface)
+{
+    enum_connection_points *This = impl_from_IEnumConnectionPoints(iface);
+
+    TRACE("(%p)\n", This);
+
+    This->index = 0;
+    return S_OK;
+}
+
+static HRESULT create_enum_connection_points(IConnectionPoint *point, ULONG index,
+        IEnumConnectionPoints **enum_points);
+
+static HRESULT WINAPI enum_connection_points_Clone(IEnumConnectionPoints *iface,
+        IEnumConnectionPoints **enum_points)
+{
+    enum_connection_points *This = impl_from_IEnumConnectionPoints(iface);
+
+    TRACE("(%p)->(%p)\n", This, enum_points);
+
+    return create_enum_connection_points(This->point, This->index, enum_points);
+}
+
+static const IEnumConnectionPointsVtbl enum_connection_points_vtbl =
+{
+    enum_connection_points_QueryInterface,
+    enum_connection_points_AddRef,
+    enum_connection_points_Release,
+    enum_connection_points_Next,
+    enum_connection_points_Skip,
+    enum_connection_points_Reset,
+    enum_connection_points_Clone
+};
+
+static HRESULT create_enum_connection_points(IConnectionPoint *point, ULONG index,
+        IEnumConnectionPoints **enum_points)
+{
+    enum_connection_points *This;
+
+    if (!enum_points) return E_POINTER;
+    *enum_points = NULL;
+
+    if (!(This = malloc(sizeof(*This)))) return E_OUTOFMEMORY;
+
+    This->IEnumConnectionPoints_iface.lpVtbl = &enum_connection_points_vtbl;
+    This->ref = 1;
+    This->point = point;
+    This->index = index;
+    IConnectionPoint_AddRef(point);
+
+    *enum_points = &This->IEnumConnectionPoints_iface;
+    return S_OK;
+}
+
 static HRESULT WINAPI cpc_EnumConnectionPoints(IConnectionPointContainer *iface, IEnumConnectionPoints **enum_points)
 {
     rowpos *This = impl_from_IConnectionPointContainer(iface);
-    FIXME("(%p)->(%p): stub\n", This, enum_points);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%p)\n", This, enum_points);
+
+    return create_enum_connection_points(&This->cp.IConnectionPoint_iface, 0, enum_points);
 }
 
 static HRESULT WINAPI cpc_FindConnectionPoint(IConnectionPointContainer *iface, REFIID riid, IConnectionPoint **point)
