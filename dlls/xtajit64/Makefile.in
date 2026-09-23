@@ -3,6 +3,8 @@ UNIXLIB   = xtajit64.so
 IMPORTS   = ntdll
 EXTRADEFS = -D_CRTIMP=
 
+UNIX_LIBS = $(PTHREAD_LIBS)
+
 EXTRADLLFLAGS = -nodefaultlibs
 
 SOURCES = \
