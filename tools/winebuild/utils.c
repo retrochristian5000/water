@@ -189,11 +189,15 @@ static const char *find_clang_tool( struct strarray clang, const char *tool )
         close( sout );
     }
 
-    if (stat(out, &st) || !st.st_size) return NULL;
-
-    path = xmalloc(st.st_size + 1);
     sout = open(out, O_RDONLY);
     if (sout == -1) return NULL;
+    if (fstat(sout, &st) || !st.st_size)
+    {
+        close( sout );
+        return NULL;
+    }
+
+    path = xmalloc(st.st_size + 1);
     cnt = read(sout, path, st.st_size);
     close(sout);
     path[cnt] = 0;
