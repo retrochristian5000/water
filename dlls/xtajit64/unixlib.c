@@ -15,33 +15,199 @@
 
 #include "config.h"
 
+#include <dlfcn.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "ntstatus.h"
 #include "windef.h"
 #include "winnt.h"
 #include "winternl.h"
 #include "unixlib.h"
+#include "wine/debug.h"
+
+WINE_DEFAULT_DEBUG_CHANNEL(xtajit);
+
+struct uc_engine;
+
+struct unicorn_api
+{
+    void *module;
+    unsigned int (*version)( unsigned int *major, unsigned int *minor );
+    int (*open)( int arch, int mode, struct uc_engine **engine );
+    int (*close)( struct uc_engine *engine );
+    const char *(*strerror)( int error );
+};
+
+static struct unicorn_api unicorn;
+static pthread_key_t unicorn_engine_key;
+static BOOL unicorn_key_valid;
+static BOOL unicorn_required;
+
+enum
+{
+    UNICORN_ARCH_X86 = 4,
+    UNICORN_MODE_64 = 1 << 3,
+    UNICORN_ERR_OK = 0,
+    UNICORN_API_MAJOR = 2,
+};
+
+static void close_unicorn_module(void)
+{
+    if (unicorn.module) dlclose( unicorn.module );
+    memset( &unicorn, 0, sizeof(unicorn) );
+}
+
+static BOOL load_unicorn_symbol( void **func, const char *name )
+{
+    if ((*func = dlsym( unicorn.module, name ))) return TRUE;
+    WARN( "Unicorn is missing required symbol %s\n", name );
+    return FALSE;
+}
+
+static BOOL load_unicorn(void)
+{
+    static const char * const default_names[] =
+    {
+#ifdef __APPLE__
+        "libunicorn.2.dylib",
+        "libunicorn.dylib",
+#else
+        "libunicorn.so.2",
+        "libunicorn.so",
+#endif
+        NULL
+    };
+    const char *backend = getenv( "WINE_XTAJIT_BACKEND" );
+    const char *library = getenv( "WINE_UNICORN_LIBRARY" );
+    unsigned int major = 0, minor = 0;
+    unsigned int i;
+
+    unicorn_required = backend && !strcmp( backend, "unicorn" );
+    if (backend && !strcmp( backend, "none" ))
+    {
+        TRACE( "Unicorn backend disabled by WINE_XTAJIT_BACKEND\n" );
+        return FALSE;
+    }
+    if (backend && strcmp( backend, "auto" ) && strcmp( backend, "unicorn" ))
+    {
+        WARN( "Unknown WINE_XTAJIT_BACKEND value %s\n", backend );
+        return FALSE;
+    }
+
+    if (library && *library)
+    {
+        TRACE( "Trying Unicorn library %s\n", library );
+        unicorn.module = dlopen( library, RTLD_NOW | RTLD_LOCAL );
+    }
+    else
+    {
+        for (i = 0; default_names[i]; i++)
+        {
+            TRACE( "Trying Unicorn library %s\n", default_names[i] );
+            if ((unicorn.module = dlopen( default_names[i], RTLD_NOW | RTLD_LOCAL ))) break;
+        }
+    }
+
+    if (!unicorn.module)
+    {
+        TRACE( "Unicorn backend unavailable: %s\n", dlerror() );
+        return FALSE;
+    }
+
+#define LOAD_UNICORN_FUNC(name)     if (!load_unicorn_symbol( (void **)&unicorn.name, "uc_" #name ))     {         close_unicorn_module();         return FALSE;     }
+
+    LOAD_UNICORN_FUNC( version );
+    LOAD_UNICORN_FUNC( open );
+    LOAD_UNICORN_FUNC( close );
+    LOAD_UNICORN_FUNC( strerror );
+#undef LOAD_UNICORN_FUNC
+
+    unicorn.version( &major, &minor );
+    if (major != UNICORN_API_MAJOR)
+    {
+        WARN( "Unsupported Unicorn API version %u.%u, expected major %u\n",
+              major, minor, UNICORN_API_MAJOR );
+        close_unicorn_module();
+        return FALSE;
+    }
+
+    TRACE( "Loaded Unicorn API %u.%u\n", major, minor );
+    return TRUE;
+}
+
+static struct uc_engine *get_unicorn_engine(void)
+{
+    return unicorn_key_valid ? pthread_getspecific( unicorn_engine_key ) : NULL;
+}
+
+static void close_unicorn_engine(void)
+{
+    struct uc_engine *engine = get_unicorn_engine();
+
+    if (!engine) return;
+    pthread_setspecific( unicorn_engine_key, NULL );
+    unicorn.close( engine );
+}
 
 static NTSTATUS xtajit_process_init( void *args )
 {
     (void)args;
+
+    if (!load_unicorn())
+        return unicorn_required ? STATUS_NOT_SUPPORTED : STATUS_SUCCESS;
+
+    if (pthread_key_create( &unicorn_engine_key, NULL ))
+    {
+        close_unicorn_module();
+        return unicorn_required ? STATUS_NO_MEMORY : STATUS_SUCCESS;
+    }
+    unicorn_key_valid = TRUE;
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_process_term( void *args )
 {
     (void)args;
+
+    close_unicorn_engine();
+    if (unicorn_key_valid)
+    {
+        pthread_key_delete( unicorn_engine_key );
+        unicorn_key_valid = FALSE;
+    }
+    close_unicorn_module();
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_thread_init( void *args )
 {
+    struct uc_engine *engine;
+    int error;
+
     (void)args;
+    if (!unicorn.module || !unicorn_key_valid || get_unicorn_engine()) return STATUS_SUCCESS;
+
+    if ((error = unicorn.open( UNICORN_ARCH_X86, UNICORN_MODE_64, &engine )) != UNICORN_ERR_OK)
+    {
+        WARN( "Failed to create Unicorn x86-64 engine: %s\n", unicorn.strerror( error ) );
+        return unicorn_required ? STATUS_NOT_SUPPORTED : STATUS_SUCCESS;
+    }
+    if (pthread_setspecific( unicorn_engine_key, engine ))
+    {
+        unicorn.close( engine );
+        return unicorn_required ? STATUS_NO_MEMORY : STATUS_SUCCESS;
+    }
+
+    TRACE( "Created Unicorn x86-64 engine %p\n", engine );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_thread_term( void *args )
 {
     (void)args;
+    close_unicorn_engine();
     return STATUS_SUCCESS;
 }
 
