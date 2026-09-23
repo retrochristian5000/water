@@ -1022,17 +1022,17 @@ void fill_vm_counters( VM_COUNTERS_EX *pvmi, int unix_pid )
 
     while (fgets(line, sizeof(line), f))
     {
-        if (sscanf(line, "VmPeak: %lu", &value))
+        if (sscanf(line, "VmPeak: %lu", &value) == 1)
             pvmi->PeakVirtualSize = (ULONG64)value * 1024;
-        else if (sscanf(line, "VmSize: %lu", &value))
+        else if (sscanf(line, "VmSize: %lu", &value) == 1)
             pvmi->VirtualSize = (ULONG64)value * 1024;
-        else if (sscanf(line, "VmHWM: %lu", &value))
+        else if (sscanf(line, "VmHWM: %lu", &value) == 1)
             pvmi->PeakWorkingSetSize = (ULONG64)value * 1024;
-        else if (sscanf(line, "VmRSS: %lu", &value))
+        else if (sscanf(line, "VmRSS: %lu", &value) == 1)
             pvmi->WorkingSetSize = (ULONG64)value * 1024;
-        else if (sscanf(line, "RssAnon: %lu", &value))
+        else if (sscanf(line, "RssAnon: %lu", &value) == 1)
             pvmi->PagefileUsage += (ULONG64)value * 1024;
-        else if (sscanf(line, "VmSwap: %lu", &value))
+        else if (sscanf(line, "VmSwap: %lu", &value) == 1)
             pvmi->PagefileUsage += (ULONG64)value * 1024;
     }
     pvmi->PeakPagefileUsage = pvmi->PagefileUsage;
