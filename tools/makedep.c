@@ -255,6 +255,7 @@ static const char *output_file_name;
 static const char *temp_file_name;
 static char cwd[PATH_MAX];
 static bool compile_commands_mode;
+static bool ninja_mode;
 static bool silent_rules;
 static int input_line;
 static int output_column;
@@ -301,6 +302,7 @@ static const char Usage[] =
     "Usage: makedep [options]\n"
     "Options:\n"
     "   -C          Generate compile_commands.json along with the makefile\n"
+    "   -N          Generate build.ninja alongside the makefile\n"
     "   -S          Generate Automake-style silent rules\n"
     "   -fxxx       Store output in file 'xxx' (default: Makefile)\n";
 
@@ -5028,6 +5030,9 @@ static bool parse_option( const char *opt )
         break;
     case 'C':
         compile_commands_mode = true;
+        break;
+    case 'N':
+        ninja_mode = true;
         break;
     case 'S':
         silent_rules = true;
