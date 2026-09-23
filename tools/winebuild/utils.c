@@ -225,16 +225,16 @@ struct strarray find_optional_tool( const char *name, const char * const *names 
         names = alt_names;
     }
 
-    while (*names)
-    {
-        if ((file = find_binary( target_alias, *names ))) break;
-        names++;
-    }
-
-    if (!file && cc_command.count)
+    if (cc_command.count)
     {
         file = find_clang_tool( cc_command, strmake( "llvm-%s", name ));
         if (!file) file = find_clang_tool( cc_command, name );
+    }
+
+    while (!file && *names)
+    {
+        if ((file = find_binary( target_alias, *names ))) break;
+        names++;
     }
     if (!file) file = find_binary( "llvm", name );
     if (!file) file = find_clang_tool( empty_strarray, strmake( "llvm-%s", name ));
