@@ -4788,7 +4788,6 @@ struct ninja_target
     char           *name;
     struct strarray deps;
     struct strarray commands;
-    bool            phony;
 };
 
 static struct list ninja_targets = LIST_INIT( ninja_targets );
@@ -4881,7 +4880,7 @@ static void parse_ninja_makefile( const char *name )
             struct strarray names = empty_strarray;
 
             add_ninja_words( &names, copy );
-            STRARRAY_FOR_EACH( target_name, &names ) get_ninja_target( target_name )->phony = true;
+            STRARRAY_FOR_EACH( target_name, &names ) get_ninja_target( target_name );
             continue;
         }
         if (!strcmp( targets, ".INIT" ) || !strcmp( targets, ".PRECIOUS" ) ||
@@ -5098,11 +5097,13 @@ static void output_ninja_file( const char *makefile_name )
     output( "ninja_required_version = 1.10\n\n" );
     output( "rule wine_command\n" );
     output( "  command = $cmd\n" );
-    output( "  description = BUILD $out\n\n" );
+    output( "  description = BUILD $out\n" );
+    output( "  restat = 1\n\n" );
     output( "rule wine_generator\n" );
     output( "  command = $cmd\n" );
     output( "  description = REGEN $out\n" );
-    output( "  generator = 1\n\n" );
+    output( "  generator = 1\n" );
+    output( "  restat = 1\n\n" );
 
     LIST_FOR_EACH_ENTRY( target, &ninja_targets, struct ninja_target, entry )
     {
