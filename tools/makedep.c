@@ -4789,6 +4789,7 @@ struct ninja_target
     char           *name;
     struct strarray deps;
     struct strarray commands;
+    bool            phony;
 };
 
 static struct list ninja_targets = LIST_INIT( ninja_targets );
@@ -4879,7 +4880,7 @@ static void parse_ninja_makefile( const char *name )
             struct strarray names = empty_strarray;
 
             add_ninja_words( &names, copy );
-            STRARRAY_FOR_EACH( target_name, &names ) get_ninja_target( target_name );
+            STRARRAY_FOR_EACH( target_name, &names ) get_ninja_target( target_name )->phony = true;
             free( copy );
             continue;
         }
@@ -5141,6 +5142,10 @@ static void output_ninja_file( const char *makefile_name )
             makefile_target = target;
             continue;
         }
+
+        /* Make emits empty dependency sentinel rules for source files. They are
+         * not producers and must not become Ninja output edges. */
+        if (!target->phony && !target->commands.count && !target->deps.count) continue;
 
         output( "build " );
         output_ninja_path( target->name );
