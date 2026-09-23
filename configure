@@ -8858,7 +8858,7 @@ esac
 fi
     CXXFLAGS="$wine_save_cross_CXXFLAGS"
 
-    eval res=\$as_wine_cv_crosscxx_cxx17
+    eval res=\${$as_wine_cv_crosscxx_cxx17}
     ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
 ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
