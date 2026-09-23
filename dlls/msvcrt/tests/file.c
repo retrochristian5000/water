@@ -216,9 +216,9 @@ static void test_fileops( void )
     ok(fgetws(wbuffer,ARRAY_SIZE(wbuffer),file) ==0,"fgetws didn't signal EOF\n");
     ok(feof(file) !=0,"feof doesn't signal EOF\n");
     rewind(file);
-    ok(fgetws(wbuffer,strlen(outbuffer),file) !=0,"fgetws failed unexpected\n");
+    ok(fgetws(wbuffer,ARRAY_SIZE(wbuffer),file) !=0,"fgetws failed unexpected\n");
     ok(lstrlenW(wbuffer) == (lstrlenA(outbuffer) -1),"fgetws didn't read right size\n");
-    ok(fgetws(wbuffer,ARRAY_SIZE(outbuffer),file) !=0,"fgets failed unexpected\n");
+    ok(fgetws(wbuffer,ARRAY_SIZE(wbuffer),file) !=0,"fgets failed unexpected\n");
     ok(lstrlenW(wbuffer) == 1,"fgets dropped chars\n");
     fclose (file);
 
