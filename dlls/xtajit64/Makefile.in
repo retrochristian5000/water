@@ -1,8 +1,10 @@
 MODULE    = xtajit64.dll
+UNIXLIB   = xtajit64.so
 IMPORTS   = ntdll
 EXTRADEFS = -D_CRTIMP=
 
 EXTRADLLFLAGS = -nodefaultlibs
 
 SOURCES = \
-	cpu.c
+	cpu.c \
+	unixlib.c
