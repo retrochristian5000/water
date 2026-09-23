@@ -37,10 +37,19 @@ struct unicorn_api
     unsigned int (*version)( unsigned int *major, unsigned int *minor );
     int (*open)( int arch, int mode, struct uc_engine **engine );
     int (*close)( struct uc_engine *engine );
+    int (*ctl)( struct uc_engine *engine, unsigned int control, ... );
     const char *(*strerror)( int error );
 };
 
+struct unicorn_engine_entry
+{
+    struct unicorn_engine_entry *next;
+    struct uc_engine *engine;
+};
+
 static struct unicorn_api unicorn;
+static struct unicorn_engine_entry *unicorn_engines;
+static pthread_mutex_t unicorn_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_key_t unicorn_engine_key;
 static BOOL unicorn_key_valid;
 static BOOL unicorn_required;
@@ -51,7 +60,11 @@ enum
     UNICORN_MODE_64 = 1 << 3,
     UNICORN_ERR_OK = 0,
     UNICORN_API_MAJOR = 2,
+    UNICORN_CTL_TB_REMOVE_CACHE = 9,
+    UNICORN_CTL_TB_FLUSH = 10,
 };
+
+#define UNICORN_CTL_WRITE(type,nr) ((type) | ((nr) << 26) | (1u << 30))
 
 static void close_unicorn_module(void)
 {
@@ -121,6 +134,7 @@ static BOOL load_unicorn(void)
     LOAD_UNICORN_FUNC( version );
     LOAD_UNICORN_FUNC( open );
     LOAD_UNICORN_FUNC( close );
+    LOAD_UNICORN_FUNC( ctl );
     LOAD_UNICORN_FUNC( strerror );
 #undef LOAD_UNICORN_FUNC
 
@@ -137,18 +151,71 @@ static BOOL load_unicorn(void)
     return TRUE;
 }
 
-static struct uc_engine *get_unicorn_engine(void)
+static struct unicorn_engine_entry *get_unicorn_engine_entry(void)
 {
     return unicorn_key_valid ? pthread_getspecific( unicorn_engine_key ) : NULL;
 }
 
 static void close_unicorn_engine(void)
 {
-    struct uc_engine *engine = get_unicorn_engine();
+    struct unicorn_engine_entry *entry = get_unicorn_engine_entry();
+    struct unicorn_engine_entry **cursor;
 
-    if (!engine) return;
+    if (!entry) return;
+
     pthread_setspecific( unicorn_engine_key, NULL );
-    unicorn.close( engine );
+    pthread_mutex_lock( &unicorn_mutex );
+    for (cursor = &unicorn_engines; *cursor; cursor = &(*cursor)->next)
+    {
+        if (*cursor == entry)
+        {
+            *cursor = entry->next;
+            break;
+        }
+    }
+    pthread_mutex_unlock( &unicorn_mutex );
+
+    unicorn.close( entry->engine );
+    free( entry );
+}
+
+static void invalidate_unicorn_range( UINT64 addr, UINT64 size )
+{
+    struct unicorn_engine_entry *entry;
+    UINT64 end;
+    int error;
+
+    if (!unicorn.module || !size) return;
+    end = addr + size;
+    if (end < addr) end = ~(UINT64)0;
+
+    pthread_mutex_lock( &unicorn_mutex );
+    for (entry = unicorn_engines; entry; entry = entry->next)
+    {
+        error = unicorn.ctl( entry->engine,
+                             UNICORN_CTL_WRITE( UNICORN_CTL_TB_REMOVE_CACHE, 2 ), addr, end );
+        if (error != UNICORN_ERR_OK)
+            WARN( "Failed to invalidate Unicorn cache %#llx-%#llx: %s\n",
+                  (unsigned long long)addr, (unsigned long long)end, unicorn.strerror( error ) );
+    }
+    pthread_mutex_unlock( &unicorn_mutex );
+}
+
+static void flush_unicorn_cache(void)
+{
+    struct unicorn_engine_entry *entry;
+    int error;
+
+    if (!unicorn.module) return;
+
+    pthread_mutex_lock( &unicorn_mutex );
+    for (entry = unicorn_engines; entry; entry = entry->next)
+    {
+        error = unicorn.ctl( entry->engine, UNICORN_CTL_WRITE( UNICORN_CTL_TB_FLUSH, 0 ) );
+        if (error != UNICORN_ERR_OK)
+            WARN( "Failed to flush Unicorn translation cache: %s\n", unicorn.strerror( error ) );
+    }
+    pthread_mutex_unlock( &unicorn_mutex );
 }
 
 static NTSTATUS xtajit_process_init( void *args )
@@ -183,24 +250,33 @@ static NTSTATUS xtajit_process_term( void *args )
 
 static NTSTATUS xtajit_thread_init( void *args )
 {
-    struct uc_engine *engine;
+    struct unicorn_engine_entry *entry;
     int error;
 
     (void)args;
-    if (!unicorn.module || !unicorn_key_valid || get_unicorn_engine()) return STATUS_SUCCESS;
+    if (!unicorn.module || !unicorn_key_valid || get_unicorn_engine_entry()) return STATUS_SUCCESS;
+    if (!(entry = calloc( 1, sizeof(*entry) )))
+        return unicorn_required ? STATUS_NO_MEMORY : STATUS_SUCCESS;
 
-    if ((error = unicorn.open( UNICORN_ARCH_X86, UNICORN_MODE_64, &engine )) != UNICORN_ERR_OK)
+    if ((error = unicorn.open( UNICORN_ARCH_X86, UNICORN_MODE_64, &entry->engine )) != UNICORN_ERR_OK)
     {
         WARN( "Failed to create Unicorn x86-64 engine: %s\n", unicorn.strerror( error ) );
+        free( entry );
         return unicorn_required ? STATUS_NOT_SUPPORTED : STATUS_SUCCESS;
     }
-    if (pthread_setspecific( unicorn_engine_key, engine ))
+    if (pthread_setspecific( unicorn_engine_key, entry ))
     {
-        unicorn.close( engine );
+        unicorn.close( entry->engine );
+        free( entry );
         return unicorn_required ? STATUS_NO_MEMORY : STATUS_SUCCESS;
     }
 
-    TRACE( "Created Unicorn x86-64 engine %p\n", engine );
+    pthread_mutex_lock( &unicorn_mutex );
+    entry->next = unicorn_engines;
+    unicorn_engines = entry;
+    pthread_mutex_unlock( &unicorn_mutex );
+
+    TRACE( "Created Unicorn x86-64 engine %p\n", entry->engine );
     return STATUS_SUCCESS;
 }
 
@@ -213,55 +289,73 @@ static NTSTATUS xtajit_thread_term( void *args )
 
 static NTSTATUS xtajit_flush_instruction_cache( void *args )
 {
-    (void)args;
+    const struct xtajit_addr_size_params *params = args;
+    invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_flush_instruction_cache_heavy( void *args )
 {
-    (void)args;
+    const struct xtajit_addr_size_params *params = args;
+    invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_dirty( void *args )
 {
-    (void)args;
+    const struct xtajit_addr_size_params *params = args;
+    invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_read_file( void *args )
 {
-    (void)args;
+    const struct xtajit_read_file_params *params = args;
+
+    if (params->is_post && !params->status)
+        invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_map_view( void *args )
 {
-    (void)args;
+    const struct xtajit_map_view_params *params = args;
+    invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_alloc( void *args )
 {
-    (void)args;
+    const struct xtajit_memory_params *params = args;
+
+    if (params->is_post && !params->status)
+        invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_free( void *args )
 {
-    (void)args;
+    const struct xtajit_memory_params *params = args;
+
+    if (params->is_post && !params->status)
+        invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_memory_protect( void *args )
 {
-    (void)args;
+    const struct xtajit_memory_params *params = args;
+
+    if (params->is_post && !params->status)
+        invalidate_unicorn_range( params->addr, params->size );
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS xtajit_notify_unmap_view( void *args )
 {
-    (void)args;
+    const struct xtajit_unmap_view_params *params = args;
+
+    if (!params->is_post) flush_unicorn_cache();
     return STATUS_SUCCESS;
 }
 
