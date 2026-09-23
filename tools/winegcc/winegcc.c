@@ -692,7 +692,12 @@ static const char *get_multiarch_dir( struct target target )
 
 static char *get_lib_dir(void)
 {
+#ifdef __APPLE__
+    /* Keep Wine library lookup inside the active or configured prefix on macOS. */
+    const char *stdlibpath[] = { libdir, LIBDIR };
+#else
     const char *stdlibpath[] = { libdir, LIBDIR, "/usr/lib", "/usr/local/lib", "/lib" };
+#endif
     const char *bit_suffix, *other_bit_suffix, *build_multiarch, *target_multiarch, *winecrt0;
     const char *root = sysroot ? sysroot : "";
     unsigned int i;
@@ -936,8 +941,10 @@ static void compile( struct strarray files, const char *output_name, int compile
     /* standard includes come last in the include search path */
     if (!wine_objdir && !nostdinc)
     {
-        const char *incl_dirs[] = { INCLUDEDIR, "/usr/include", "/usr/local/include" };
 #ifdef __APPLE__
+        /* The configured Wine prefix is authoritative on macOS; don't fall back to
+         * unrelated package-manager or legacy system prefixes. */
+        const char *incl_dirs[] = { INCLUDEDIR };
         /* -isysroot selects the macOS SDK; Wine's installed headers stay outside it. */
         const char *root = sysroot ? sysroot : "";
 #else
