@@ -312,11 +312,12 @@ static char *make_string(WCHAR *uc, int len)
     char *cptr = str;
     int i;
     int b;
+    int overflow = 0;
 
     *cptr++ = ' ';
     *cptr++ = 'L';
     *cptr++ = '"';
-    for(i = b = 0; i < len; i++, uc++)
+    for(i = b = 0; i < len && !overflow; i++, uc++)
     {
         switch(*uc)
         {
@@ -337,13 +338,29 @@ static char *make_string(WCHAR *uc, int len)
             }
             else
             {
-                int n = snprintf(cptr, str_end - cptr, "\\x%04x", *uc);
-                cptr += n;
-                b += n;
+                size_t remaining = str_end - cptr;
+                int n = snprintf(cptr, remaining, "\\x%04x", *uc);
+
+                if (n < 0)
+                {
+                    overflow = 1;
+                    cptr = str_end - 1;
+                    *cptr = '\0';
+                }
+                else if ((size_t)n >= remaining)
+                {
+                    overflow = 1;
+                    cptr = str_end - 1;
+                }
+                else
+                {
+                    cptr += n;
+                    b += n;
+                }
             }
             break;
         }
-        if(i < len-1 && b >= 72)
+        if(i < len-1 && b >= 72 && !overflow)
         {
             *cptr++ = '"';
             *cptr++ = ',';
@@ -355,7 +372,7 @@ static char *make_string(WCHAR *uc, int len)
         }
     }
     len = (len + 1) & ~1;
-    for(; i < len; i++)
+    for(; i < len && !overflow; i++)
     {
         *cptr++ = '\\';
         *cptr++ = 'x';
@@ -364,7 +381,7 @@ static char *make_string(WCHAR *uc, int len)
         *cptr++ = '0';
         *cptr++ = '0';
     }
-    *cptr++ = '"';
+    if (cptr < str_end - 1) *cptr++ = '"';
     *cptr = '\0';
     return str;
 }
