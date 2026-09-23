@@ -7952,7 +7952,7 @@ else case e in #(
   e) eval "$as_wine_cv_crosscc_c99=no"
          for arg in '' '-std=gnu99' '-D__STDC__'
          do
-             test -z "$arg" || CC="$CC $arg"
+             test -z "$arg" || CFLAGS="$CFLAGS $arg"
              cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 $ac_c_conftest_c99_program
@@ -7965,7 +7965,7 @@ else case e in #(
 esac
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
-             eval CC=\$${wine_arch}_CC
+             eval CFLAGS=\$${wine_arch}_CFLAGS
              if eval test \"x\$"$as_wine_cv_crosscc_c99"\" = x"no"
 then :
 
@@ -7986,7 +7986,7 @@ printf '%s\n' "none needed" >&6; } ;;
 printf '%s\n' "unsupported" >&6; } ;;
       x*) { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $res" >&5
 printf '%s\n' "$res" >&6; }
-          as_fn_append ${wine_arch}_CC " $res" ;;
+          as_fn_append ${wine_arch}_CFLAGS " $res" ;;
     esac
     if test "x$res" = xno
 then :
@@ -8080,7 +8080,7 @@ else case e in #(
   e) eval "$as_wine_cv_crosscxx_cxx17=no"
          for arg in '' '-std=gnu++17'
          do
-             test -z "$arg" || CXX="$CXX $arg"
+             test -z "$arg" || CXXFLAGS="$CXXFLAGS $arg"
              cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -8841,7 +8841,7 @@ else case e in #(
 esac
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
-             eval CXX=\$${wine_arch}_CXX
+             eval CXXFLAGS=\$${wine_arch}_CXXFLAGS
              if eval test \"x\$"$as_wine_cv_crosscxx_cxx17"\" = x"no"
 then :
 
@@ -8870,7 +8870,7 @@ printf '%s\n' "unsupported" >&6; }
            as_fn_append wine_warnings "|$wine_arch PE compiler supporting C++17 not found, some modules won't be built." ;;
       x*) { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $res" >&5
 printf '%s\n' "$res" >&6; }
-          as_fn_append ${wine_arch}_CXX " $res"
+          as_fn_append ${wine_arch}_CXXFLAGS " $res"
           enable_cplusplus="$enable_cplusplus,$wine_arch" ;;
     esac
 
