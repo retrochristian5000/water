@@ -7979,7 +7979,7 @@ esac
 fi
     CFLAGS="$wine_save_cross_CFLAGS"
 
-    eval res=\${$as_wine_cv_crosscc_c99}
+    eval res=\$as_wine_cv_crosscc_c99
 
     case "x$res" in
       x) { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: none needed" >&5
