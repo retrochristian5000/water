@@ -25,9 +25,12 @@
 #include "winbase.h"
 #include "winnt.h"
 #include "winternl.h"
+#include "unixlib.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(xtajit);
+
+static BOOL unix_ready;
 
 
 /**********************************************************************
@@ -81,7 +84,10 @@ void WINAPI BeginSimulation(void)
  */
 void WINAPI BTCpu64FlushInstructionCache( void *addr, SIZE_T size )
 {
+    struct xtajit_addr_size_params params = { (UINT_PTR)addr, size };
+
     TRACE( "%p %Ix\n", addr, size );
+    if (unix_ready) XTAJIT_CALL( flush_instruction_cache, &params );
 }
 
 
@@ -114,7 +120,10 @@ BOOLEAN WINAPI BTCpu64IsProcessorFeaturePresent( UINT feature )
  */
 void WINAPI BTCpu64NotifyMemoryDirty( void *addr, SIZE_T size )
 {
+    struct xtajit_addr_size_params params = { (UINT_PTR)addr, size };
+
     TRACE( "%p %Ix\n", addr, size );
+    if (unix_ready) XTAJIT_CALL( notify_memory_dirty, &params );
 }
 
 
@@ -123,7 +132,10 @@ void WINAPI BTCpu64NotifyMemoryDirty( void *addr, SIZE_T size )
  */
 void WINAPI BTCpu64NotifyReadFile( HANDLE handle, void *addr, SIZE_T size, BOOL is_post, NTSTATUS status )
 {
+    struct xtajit_read_file_params params = { (UINT_PTR)handle, (UINT_PTR)addr, size, is_post, status };
+
     TRACE( "%p %p %Ix\n", handle, addr, size );
+    if (unix_ready) XTAJIT_CALL( notify_read_file, &params );
 }
 
 
@@ -132,7 +144,10 @@ void WINAPI BTCpu64NotifyReadFile( HANDLE handle, void *addr, SIZE_T size, BOOL 
  */
 void WINAPI FlushInstructionCacheHeavy( void *addr, SIZE_T size )
 {
+    struct xtajit_addr_size_params params = { (UINT_PTR)addr, size };
+
     TRACE( "%p %Ix\n", addr, size );
+    if (unix_ready) XTAJIT_CALL( flush_instruction_cache_heavy, &params );
 }
 
 
@@ -142,8 +157,13 @@ void WINAPI FlushInstructionCacheHeavy( void *addr, SIZE_T size )
 NTSTATUS WINAPI NotifyMapViewOfSection( void *unk1, void *addr, void *unk2, SIZE_T size,
                                         ULONG alloc_type, ULONG protect )
 {
+    struct xtajit_map_view_params params =
+    {
+        (UINT_PTR)unk1, (UINT_PTR)addr, (UINT_PTR)unk2, size, alloc_type, protect
+    };
+
     TRACE( "%p %Ix %lx %lx\n", addr, size, alloc_type, protect );
-    return STATUS_SUCCESS;
+    return unix_ready ? XTAJIT_CALL( notify_map_view, &params ) : STATUS_SUCCESS;
 }
 
 
@@ -152,7 +172,10 @@ NTSTATUS WINAPI NotifyMapViewOfSection( void *unk1, void *addr, void *unk2, SIZE
  */
 void WINAPI NotifyMemoryAlloc( void *addr, SIZE_T size, ULONG type, ULONG prot, BOOL is_post, NTSTATUS status )
 {
+    struct xtajit_memory_params params = { (UINT_PTR)addr, size, type, prot, is_post, status };
+
     TRACE( "%p %Ix\n", addr, size );
+    if (unix_ready) XTAJIT_CALL( notify_memory_alloc, &params );
 }
 
 
@@ -161,7 +184,10 @@ void WINAPI NotifyMemoryAlloc( void *addr, SIZE_T size, ULONG type, ULONG prot, 
  */
 void WINAPI NotifyMemoryFree( void *addr, SIZE_T size, ULONG type, BOOL is_post, NTSTATUS status )
 {
+    struct xtajit_memory_params params = { (UINT_PTR)addr, size, type, 0, is_post, status };
+
     TRACE( "%p %Ix %lx\n", addr, size, type );
+    if (unix_ready) XTAJIT_CALL( notify_memory_free, &params );
 }
 
 
@@ -170,7 +196,10 @@ void WINAPI NotifyMemoryFree( void *addr, SIZE_T size, ULONG type, BOOL is_post,
  */
 void WINAPI NotifyMemoryProtect( void *addr, SIZE_T size, ULONG prot, BOOL is_post, NTSTATUS status )
 {
+    struct xtajit_memory_params params = { (UINT_PTR)addr, size, 0, prot, is_post, status };
+
     TRACE( "%p %Ix %lx\n", addr, size, prot );
+    if (unix_ready) XTAJIT_CALL( notify_memory_protect, &params );
 }
 
 
@@ -179,7 +208,10 @@ void WINAPI NotifyMemoryProtect( void *addr, SIZE_T size, ULONG prot, BOOL is_po
  */
 void WINAPI NotifyUnmapViewOfSection( void *addr, BOOL is_post, NTSTATUS status )
 {
+    struct xtajit_unmap_view_params params = { (UINT_PTR)addr, is_post, status };
+
     TRACE( "%p\n", addr );
+    if (unix_ready) XTAJIT_CALL( notify_unmap_view, &params );
 }
 
 
@@ -188,7 +220,12 @@ void WINAPI NotifyUnmapViewOfSection( void *addr, BOOL is_post, NTSTATUS status 
  */
 NTSTATUS WINAPI ProcessInit(void)
 {
-    return STATUS_SUCCESS;
+    NTSTATUS status;
+
+    if ((status = __wine_init_unix_call())) return status;
+    status = XTAJIT_CALL( process_init, NULL );
+    if (NT_SUCCESS(status)) unix_ready = TRUE;
+    return status;
 }
 
 
@@ -197,7 +234,10 @@ NTSTATUS WINAPI ProcessInit(void)
  */
 void WINAPI ProcessTerm( HANDLE handle, BOOL is_post, NTSTATUS status )
 {
+    struct xtajit_process_term_params params = { (UINT_PTR)handle, is_post, status };
+
     TRACE( "%p\n", handle );
+    if (unix_ready) XTAJIT_CALL( process_term, &params );
 }
 
 
@@ -206,7 +246,10 @@ void WINAPI ProcessTerm( HANDLE handle, BOOL is_post, NTSTATUS status )
  */
 void WINAPI ResetToConsistentState( EXCEPTION_RECORD *rec, CONTEXT *context, ARM64_NT_CONTEXT *arm_ctx )
 {
+    struct xtajit_reset_params params = { (UINT_PTR)rec, (UINT_PTR)context, (UINT_PTR)arm_ctx };
+
     TRACE( "%p %p %p\n", rec, context, arm_ctx );
+    if (unix_ready) XTAJIT_CALL( reset_to_consistent_state, &params );
 }
 
 
@@ -215,7 +258,7 @@ void WINAPI ResetToConsistentState( EXCEPTION_RECORD *rec, CONTEXT *context, ARM
  */
 NTSTATUS WINAPI ThreadInit(void)
 {
-    return STATUS_SUCCESS;
+    return unix_ready ? XTAJIT_CALL( thread_init, NULL ) : STATUS_SUCCESS;
 }
 
 
@@ -224,7 +267,10 @@ NTSTATUS WINAPI ThreadInit(void)
  */
 void WINAPI ThreadTerm( HANDLE handle, LONG exit_code )
 {
+    struct xtajit_thread_term_params params = { (UINT_PTR)handle, exit_code };
+
     TRACE( "%p %lx\n", handle, exit_code );
+    if (unix_ready) XTAJIT_CALL( thread_term, &params );
 }
 
 
