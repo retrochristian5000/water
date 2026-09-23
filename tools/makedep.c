@@ -4854,7 +4854,7 @@ static void parse_ninja_makefile( const char *name )
     {
         char *p = line, *colon, *targets, *deps;
         struct strarray dep_list = empty_strarray;
-        bool double_colon = false;
+        bool double_colon;
 
         if (*p == '\t')
         {
@@ -4892,14 +4892,18 @@ static void parse_ninja_makefile( const char *name )
             add_ninja_words( &dep_list, copy );
         }
 
-        for (char *target_name = strtok( targets, " \t" ); target_name;
-             target_name = strtok( NULL, " \t" ))
         {
-            struct ninja_target *target = get_ninja_target( target_name );
+            char *target_name;
 
-            STRARRAY_FOR_EACH( dep, &dep_list )
-                if (strcmp( dep, target_name )) strarray_add_uniq( &target->deps, dep );
-            strarray_add( &current_targets, target->name );
+            for (target_name = strtok( targets, " \t" ); target_name;
+                 target_name = strtok( NULL, " \t" ))
+            {
+                struct ninja_target *target = get_ninja_target( target_name );
+
+                STRARRAY_FOR_EACH( dep, &dep_list )
+                    if (strcmp( dep, target_name )) strarray_add_uniq( &target->deps, dep );
+                strarray_add( &current_targets, target->name );
+            }
         }
     }
 
@@ -4939,212 +4943,7 @@ static void ninja_buffer_add_shell_text( struct ninja_buffer *buffer, const char
 {
     while (*str)
     {
-        if (*str == '$')
-        {
-            ninja_buffer_add( buffer, "$$" );
-            if (str[1] == '$') str += 2;
-            else str++;
-        }
-        else ninja_buffer_addn( buffer, str++, 1 );
-    }
-}
-
-static bool is_ninja_runtime_variable( const char *name )
-{
-    static const char * const names[] =
-    {
-        "ANDROID_HOME",
-        "DESTDIR",
-        "RUNTESTFLAGS",
-        "SASTFLAGS",
-        NULL
-    };
-    unsigned int i;
-
-    for (i = 0; names[i]; i++) if (!strcmp( name, names[i] )) return true;
-    return false;
-}
-
-static char *expand_ninja_command( const char *command, const char *target )
-{
-    struct ninja_buffer buffer = { 0 };
-    const char *p = command;
-    bool ignore_error = false;
-
-    while (*p == '@' || *p == '-' || *p == '+')
-    {
-        if (*p == '-') ignore_error = true;
-        p++;
-    }
-
-    if (!strncmp( p, "$(quiet_", 8 ))
-    {
-        const char *end = strchr( p + 8, ')' );
-        if (end) p = end + 1;
-    }
-
-    while (*p)
-    {
-        if (p[0] == '$' && p[1] == '@')
-        {
-            ninja_buffer_add_shell_text( &buffer, target );
-            p += 2;
-            continue;
-        }
-
-        if (p[0] == '$' && p[1] == '(')
-        {
-            const char *end = strchr( p + 2, ')' );
-            char *name, *value;
-            const char *raw;
-
-            if (!end) fatal_error( "unterminated make variable in Ninja command '%s'\n", command );
-            name = xmalloc( end - p - 1 );
-            memcpy( name, p + 2, end - p - 2 );
-            name[end - p - 2] = 0;
-
-            if (!strncmp( name, "quiet_", 6 ))
-            {
-                p = end + 1;
-                continue;
-            }
-
-            raw = get_make_variable( top_makefile, name );
-            if (is_ninja_runtime_variable( name ) || !raw)
-            {
-                ninja_buffer_add( &buffer, "$${" );
-                ninja_buffer_add( &buffer, name );
-                ninja_buffer_add( &buffer, "}" );
-            }
-            else if ((value = get_expanded_make_variable( top_makefile, name )))
-                ninja_buffer_add_shell_text( &buffer, value );
-
-            p = end + 1;
-            continue;
-        }
-
-        if (*p == '$')
-        {
-            ninja_buffer_add( &buffer, "$$" );
-            if (p[1] == '$') p += 2;
-            else p++;
-            continue;
-        }
-
-        ninja_buffer_addn( &buffer, p++, 1 );
-    }
-
-    if (!buffer.str) buffer.str = xstrdup( "" );
-    if (ignore_error)
-    {
-        char *ret = strmake( "(%s) || true", buffer.str );
-        free( buffer.str );
-        return ret;
-    }
-    return buffer.str;
-}
-
-static void output_ninja_path( const char *name )
-{
-    for (; *name; name++)
-    {
-        switch (*name)
-        {
-        case '$': output( "$$" ); break;
-        case ' ': output( "$ " ); break;
-        case ':': output( "$:" ); break;
-        default: output( "%c", *name ); break;
-        }
-    }
-}
-
-static void output_ninja_deps( struct strarray deps )
-{
-    STRARRAY_FOR_EACH( dep, &deps )
-    {
-        output( " " );
-        output_ninja_path( dep );
-    }
-}
-
-static void output_ninja_commands( struct ninja_target *target )
-{
-    unsigned int i;
-
-    output( "  cmd = " );
-    for (i = 0; i < target->commands.count; i++)
-    {
-        char *command = expand_ninja_command( target->commands.str[i], target->name );
-        if (i) output( " && " );
-        output( "%s", command );
-        free( command );
-    }
-    output( "\n" );
-}
-
-static void output_ninja_file( const char *makefile_name )
-{
-    const char *dest = "build.ninja";
-    const char *saved_output_name = output_file_name;
-    struct ninja_target *target, *makefile_target = NULL;
-
-    parse_ninja_makefile( makefile_name );
-
-    output_file_name = dest;
-    output_file = create_temp_file( dest );
-
-    output( "# Automatically generated by tools/makedep; DO NOT EDIT.\n" );
-    output( "ninja_required_version = 1.10\n\n" );
-    output( "rule wine_command\n" );
-    output( "  command = $cmd\n" );
-    output( "  description = BUILD $out\n" );
-    output( "  restat = 1\n\n" );
-    output( "rule wine_generator\n" );
-    output( "  command = $cmd\n" );
-    output( "  description = REGEN $out\n" );
-    output( "  generator = 1\n" );
-    output( "  restat = 1\n\n" );
-
-    LIST_FOR_EACH_ENTRY( target, &ninja_targets, struct ninja_target, entry )
-    {
-        if (!strcmp( target->name, "Makefile" ))
-        {
-            makefile_target = target;
-            continue;
-        }
-
-        output( "build " );
-        output_ninja_path( target->name );
-        output( ": %s", target->commands.count ? "wine_command" : "phony" );
-        output_ninja_deps( target->deps );
-        output( "\n" );
-        if (target->commands.count) output_ninja_commands( target );
-    }
-
-    if (makefile_target)
-    {
-        output( "build Makefile build.ninja: wine_generator" );
-        output_ninja_deps( makefile_target->deps );
-        output( "\n" );
-        if (makefile_target->commands.count)
-        {
-            char *command = expand_ninja_command( makefile_target->commands.str[0], "Makefile" );
-            output( "  cmd = %s\n", command );
-            free( command );
-        }
-        else output( "  cmd = ./config.status Makefile\n" );
-    }
-
-    output( "\ndefault all\n" );
-
-    if (fclose( output_file )) fatal_perror( "write" );
-    output_file = NULL;
-    rename_temp_file_if_changed( dest );
-    output_file_name = saved_output_name;
-}
-
-
-/*******************************************************************
+        if (*str == '/*******************************************************************
  *         output_top_makefile
  */
 static void output_top_makefile( struct makefile *make )
@@ -5833,9 +5632,6 @@ static bool parse_option( const char *opt )
     case 'C':
         compile_commands_mode = true;
         break;
-    case 'N':
-        ninja_mode = true;
-        break;
     case 'S':
         silent_rules = true;
         break;
@@ -6307,9 +6103,6 @@ static bool parse_option( const char *opt )
     case 'C':
         compile_commands_mode = true;
         break;
-    case 'N':
-        ninja_mode = true;
-        break;
     case 'S':
         silent_rules = true;
         break;
@@ -6745,9 +6538,6 @@ static bool parse_option( const char *opt )
     case 'C':
         compile_commands_mode = true;
         break;
-    case 'N':
-        ninja_mode = true;
-        break;
     case 'S':
         silent_rules = true;
         break;
@@ -6938,19 +6728,24 @@ int main( int argc, char *argv[] )
             if (!strncmp( name, "quiet_", 6 ))
             {
                 p = end + 1;
+                free( name );
                 continue;
             }
 
             raw = get_make_variable( top_makefile, name );
             if (is_ninja_runtime_variable( name ) || !raw)
             {
-                ninja_buffer_add( &buffer, "$" "{" );
+                ninja_buffer_add( &buffer, "${" );
                 ninja_buffer_add( &buffer, name );
                 ninja_buffer_add( &buffer, "}" );
             }
             else if ((value = get_expanded_make_variable( top_makefile, name )))
+            {
                 ninja_buffer_add_shell_text( &buffer, value );
+                free( value );
+            }
 
+            free( name );
             p = end + 1;
             continue;
         }
@@ -7206,9 +7001,6 @@ static bool parse_option( const char *opt )
         break;
     case 'C':
         compile_commands_mode = true;
-        break;
-    case 'N':
-        ninja_mode = true;
         break;
     case 'S':
         silent_rules = true;
@@ -7640,9 +7432,6 @@ static bool parse_option( const char *opt )
         break;
     case 'C':
         compile_commands_mode = true;
-        break;
-    case 'N':
-        ninja_mode = true;
         break;
     case 'S':
         silent_rules = true;
@@ -8096,9 +7885,6 @@ static bool parse_option( const char *opt )
     case 'C':
         compile_commands_mode = true;
         break;
-    case 'N':
-        ninja_mode = true;
-        break;
     case 'S':
         silent_rules = true;
         break;
@@ -8322,11 +8108,13 @@ static void output_ninja_file( const char *makefile_name )
     output( "ninja_required_version = 1.10\n\n" );
     output( "rule wine_command\n" );
     output( "  command = $cmd\n" );
-    output( "  description = BUILD $out\n\n" );
+    output( "  description = BUILD $out\n" );
+    output( "  restat = 1\n\n" );
     output( "rule wine_generator\n" );
     output( "  command = $cmd\n" );
     output( "  description = REGEN $out\n" );
-    output( "  generator = 1\n\n" );
+    output( "  generator = 1\n" );
+    output( "  restat = 1\n\n" );
 
     LIST_FOR_EACH_ENTRY( target, &ninja_targets, struct ninja_target, entry )
     {
@@ -8618,9 +8406,6 @@ static bool parse_option( const char *opt )
         break;
     case 'C':
         compile_commands_mode = true;
-        break;
-    case 'N':
-        ninja_mode = true;
         break;
     case 'S':
         silent_rules = true;
