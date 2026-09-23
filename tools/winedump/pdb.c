@@ -682,9 +682,10 @@ static void pdb_dump_symbols(struct pdb_reader* reader)
             cfile = src->table[i];
             for (j = cfile; j < num_source_files && j < cfile + indx[i]; j++)
             {
+                const char* src_end = (const char*)src + symbols->srcmodule_size;
                 /* FIXME: in some cases, it's a p_string but WHEN ? */
-                if (cstr + offset[j] >= start_cstr /* wrap around */ &&
-                    cstr + offset[j] < (const char*)src + symbols->srcmodule_size)
+                if (cstr >= start_cstr && cstr <= src_end &&
+                    (size_t)offset[j] < (size_t)(src_end - cstr))
                     printf("\t\t\tSource file: %s\n", cstr + offset[j]);
                 else
                     printf("\t\t\tSource file: <<out of bounds>>\n");
