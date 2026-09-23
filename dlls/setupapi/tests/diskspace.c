@@ -661,31 +661,31 @@ static void test_query_drives(void)
 
     SetLastError(0xdeadbeef);
     ret = SetupQueryDrivesInDiskSpaceListA(handle, NULL, 0, NULL);
-    todo_wine ok(ret == TRUE, "got %d\n", ret);
-    todo_wine ok(!GetLastError(), "got error %lu\n", GetLastError());
+    ok(ret == TRUE, "got %d\n", ret);
+    ok(!GetLastError(), "got error %lu\n", GetLastError());
 
     SetLastError(0xdeadbeef);
     len = 0xdeadbeef;
     ret = SetupQueryDrivesInDiskSpaceListA(handle, NULL, 0, &len);
-    todo_wine ok(ret == TRUE, "got %d\n", ret);
-    todo_wine ok(!GetLastError(), "got error %lu\n", GetLastError());
-    todo_wine ok(len == 1, "got len %lu\n", len);
+    ok(ret == TRUE, "got %d\n", ret);
+    ok(!GetLastError(), "got error %lu\n", GetLastError());
+    ok(len == 1, "got len %lu\n", len);
 
     SetLastError(0xdeadbeef);
     len = 0xdeadbeef;
     ret = SetupQueryDrivesInDiskSpaceListA(handle, buffer, 0, &len);
     ok(!ret, "got %d\n", ret);
-    todo_wine ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
-    todo_wine ok(len == 1, "got len %lu\n", len);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
+    ok(len == 1, "got len %lu\n", len);
 
     SetLastError(0xdeadbeef);
     len = 0xdeadbeef;
     memset(buffer, 0xcc, sizeof(buffer));
     ret = SetupQueryDrivesInDiskSpaceListA(handle, buffer, 1, &len);
-    todo_wine ok(ret == TRUE, "got %d\n", ret);
-    todo_wine ok(!GetLastError(), "got error %lu\n", GetLastError());
-    todo_wine ok(len == 1, "got len %lu\n", len);
-    todo_wine ok(!buffer[0], "got %s\n", debugstr_an(buffer, len));
+    ok(ret == TRUE, "got %d\n", ret);
+    ok(!GetLastError(), "got error %lu\n", GetLastError());
+    ok(len == 1, "got len %lu\n", len);
+    ok(!buffer[0], "got %s\n", debugstr_an(buffer, len));
 
     ret = SetupAddToDiskSpaceListA(handle, "P:/file1", 123, FILEOP_DELETE, 0, 0);
     ok(ret, "got error %lu\n", GetLastError());
@@ -704,36 +704,36 @@ static void test_query_drives(void)
     memset(buffer, 0xcc, sizeof(buffer));
     ret = SetupQueryDrivesInDiskSpaceListA(handle, buffer, 4, &len);
     ok(!ret, "got %d\n", ret);
-    todo_wine ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
-    todo_wine ok(len == 7, "got len %lu\n", len);
-    todo_wine ok(!memcmp(buffer, "h:\0\xcc", 4), "got %s\n", debugstr_an(buffer, len));
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
+    ok(len == 7, "got len %lu\n", len);
+    ok(!memcmp(buffer, "h:\0\xcc", 4), "got %s\n", debugstr_an(buffer, len));
 
     SetLastError(0xdeadbeef);
     len = 0xdeadbeef;
     memset(bufferW, 0xcc, sizeof(bufferW));
     ret = SetupQueryDrivesInDiskSpaceListW(handle, bufferW, 4, &len);
     ok(!ret, "got %d\n", ret);
-    todo_wine ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
-    todo_wine ok(len == 7, "got len %lu\n", len);
-    todo_wine ok(!memcmp(bufferW, L"h:\0\xcccc", 4 * sizeof(WCHAR)), "got %s\n", debugstr_wn(bufferW, len));
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
+    ok(len == 7, "got len %lu\n", len);
+    ok(!memcmp(bufferW, L"h:\0\xcccc", 4 * sizeof(WCHAR)), "got %s\n", debugstr_wn(bufferW, len));
 
     SetLastError(0xdeadbeef);
     len = 0xdeadbeef;
     memset(buffer, 0xcc, sizeof(buffer));
     ret = SetupQueryDrivesInDiskSpaceListA(handle, buffer, 8, &len);
     ok(!ret, "got %d\n", ret);
-    todo_wine ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
-    todo_wine ok(len == 10, "got len %lu\n", len);
-    todo_wine ok(!memcmp(buffer, "h:\0p:\0\xcc\xcc", 8), "got %s\n", debugstr_an(buffer, len));
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got error %lu\n", GetLastError());
+    ok(len == 10, "got len %lu\n", len);
+    ok(!memcmp(buffer, "h:\0p:\0\xcc\xcc", 8), "got %s\n", debugstr_an(buffer, len));
 
     SetLastError(0xdeadbeef);
     len = 0xdeadbeef;
     memset(buffer, 0xcc, sizeof(buffer));
     ret = SetupQueryDrivesInDiskSpaceListA(handle, buffer, sizeof(buffer), &len);
-    todo_wine ok(ret == TRUE, "got %d\n", ret);
-    todo_wine ok(!GetLastError(), "got error %lu\n", GetLastError());
-    todo_wine ok(len == 10, "got len %lu\n", len);
-    todo_wine ok(!memcmp(buffer, "h:\0p:\0r:\0", 10), "got %s\n", debugstr_an(buffer, len));
+    ok(ret == TRUE, "got %d\n", ret);
+    ok(!GetLastError(), "got error %lu\n", GetLastError());
+    ok(len == 10, "got len %lu\n", len);
+    ok(!memcmp(buffer, "h:\0p:\0r:\0", 10), "got %s\n", debugstr_an(buffer, len));
 
     ret = SetupDestroyDiskSpaceList(handle);
     ok(ret, "got error %lu\n", GetLastError());
@@ -751,9 +751,9 @@ static void test_query_drives(void)
     SetLastError(0xdeadbeef);
     memset(buffer, 0xcc, sizeof(buffer));
     ret = SetupQueryDrivesInDiskSpaceListA(handle, buffer, sizeof(buffer), NULL);
-    todo_wine ok(ret == TRUE, "got %d\n", ret);
-    todo_wine ok(!GetLastError(), "got error %lu\n", GetLastError());
-    todo_wine ok(!memcmp(buffer, cwd, 4), "expected %s, got %s\n", debugstr_an(cwd, 4), debugstr_an(buffer, len));
+    ok(ret == TRUE, "got %d\n", ret);
+    ok(!GetLastError(), "got error %lu\n", GetLastError());
+    ok(!memcmp(buffer, cwd, 4), "expected %s, got %s\n", debugstr_an(cwd, 4), debugstr_an(buffer, len));
 
     ret = SetupDestroyDiskSpaceList(handle);
     ok(ret, "got error %lu\n", GetLastError());

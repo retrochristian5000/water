@@ -52,6 +52,113 @@ static bool ascii_isalpha(WCHAR c)
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
+static unsigned int get_drive_mask(const struct disk_space_list *list)
+{
+    unsigned int mask = 0;
+
+    for (size_t i = 0; i < list->count; ++i)
+    {
+        WCHAR drive = towlower(list->files[i].path[0]);
+
+        if (drive >= 'a' && drive <= 'z')
+            mask |= 1u << (drive - 'a');
+    }
+    return mask;
+}
+
+static BOOL query_drives_in_disk_space_list(struct disk_space_list *list, void *buffer,
+        DWORD buffer_size, DWORD *required_size, BOOL unicode)
+{
+    unsigned int mask, drive;
+    DWORD pos = 0;
+
+    if (!list)
+    {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+
+    mask = get_drive_mask(list);
+
+    if (!buffer)
+    {
+        DWORD size = 1;
+
+        for (drive = 0; drive < 26; ++drive)
+            if (mask & (1u << drive)) size += 3;
+
+        if (required_size) *required_size = size;
+        SetLastError(ERROR_SUCCESS);
+        return TRUE;
+    }
+
+    for (drive = 0; drive < 26; ++drive)
+    {
+        if (!(mask & (1u << drive))) continue;
+
+        if (pos + 3 > buffer_size)
+        {
+            if (required_size) *required_size = pos + 4;
+            SetLastError(ERROR_INSUFFICIENT_BUFFER);
+            return FALSE;
+        }
+
+        if (unicode)
+        {
+            WCHAR *out = buffer;
+
+            out[pos] = 'a' + drive;
+            out[pos + 1] = ':';
+            out[pos + 2] = 0;
+        }
+        else
+        {
+            char *out = buffer;
+
+            out[pos] = 'a' + drive;
+            out[pos + 1] = ':';
+            out[pos + 2] = 0;
+        }
+        pos += 3;
+    }
+
+    if (pos >= buffer_size)
+    {
+        if (required_size) *required_size = pos + 1;
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return FALSE;
+    }
+
+    if (unicode)
+        ((WCHAR *)buffer)[pos] = 0;
+    else
+        ((char *)buffer)[pos] = 0;
+
+    if (required_size) *required_size = pos + 1;
+    SetLastError(ERROR_SUCCESS);
+    return TRUE;
+}
+
+/***********************************************************************
+ *      SetupQueryDrivesInDiskSpaceListA  (SETUPAPI.@)
+ */
+BOOL WINAPI SetupQueryDrivesInDiskSpaceListA(HDSKSPC disk_space, PSTR return_buffer,
+        DWORD return_buffer_size, PDWORD required_size)
+{
+    TRACE("%p, %p, %lu, %p\n", disk_space, return_buffer, return_buffer_size, required_size);
+    return query_drives_in_disk_space_list(disk_space, return_buffer, return_buffer_size, required_size, FALSE);
+}
+
+/***********************************************************************
+ *      SetupQueryDrivesInDiskSpaceListW  (SETUPAPI.@)
+ */
+BOOL WINAPI SetupQueryDrivesInDiskSpaceListW(HDSKSPC disk_space, PWSTR return_buffer,
+        DWORD return_buffer_size, PDWORD required_size)
+{
+    TRACE("%p, %p, %lu, %p\n", disk_space, return_buffer, return_buffer_size, required_size);
+    return query_drives_in_disk_space_list(disk_space, return_buffer, return_buffer_size, required_size, TRUE);
+}
+
 /***********************************************************************
  *		SetupCreateDiskSpaceListW  (SETUPAPI.@)
  */
