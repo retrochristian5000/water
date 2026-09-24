@@ -20,6 +20,7 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "winsvc.h"
 #include "mprapi.h"
 #include "wine/debug.h"
 
@@ -56,9 +57,33 @@ DWORD APIENTRY MprAdminGetErrorString(DWORD mprerror, LPWSTR *localstr)
  */
 BOOL APIENTRY MprAdminIsServiceRunning(LPWSTR server)
 {
-    FIXME("(%s): stub!\n", debugstr_w(server));
+    static const WCHAR *services[] = { L"RemoteAccess", L"Router" };
+    SC_HANDLE manager, service;
+    SERVICE_STATUS_PROCESS status;
+    DWORD needed;
+    unsigned int i;
+    BOOL running = FALSE;
 
-    return FALSE;
+    TRACE("(%s)\n", debugstr_w(server));
+
+    manager = OpenSCManagerW(server, NULL, SC_MANAGER_CONNECT);
+    if (!manager) return FALSE;
+
+    for (i = 0; i < ARRAY_SIZE(services); ++i)
+    {
+        service = OpenServiceW(manager, services[i], SERVICE_QUERY_STATUS);
+        if (!service) continue;
+
+        if (QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, (BYTE *)&status,
+                                 sizeof(status), &needed))
+            running = status.dwCurrentState == SERVICE_RUNNING;
+
+        CloseServiceHandle(service);
+        if (running) break;
+    }
+
+    CloseServiceHandle(manager);
+    return running;
 }
 
 /***********************************************************************
