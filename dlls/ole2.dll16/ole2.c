@@ -492,6 +492,39 @@ static HRESULT stream_write_string16(SEGPTR stream, const char *string)
     return hres;
 }
 
+static HRESULT stream_write_clipformat16(SEGPTR stream, CLIPFORMAT format)
+{
+    char name[0x40];
+    LONG len;
+    HRESULT hres;
+    int count;
+
+    if (!format)
+    {
+        len = 0;
+        return stream_write16(stream, &len, sizeof(len));
+    }
+
+    count = GetClipboardFormatNameA(format, name, ARRAY_SIZE(name));
+    if (count)
+    {
+        len = count + 1;
+        hres = stream_write16(stream, &len, sizeof(len));
+        if (SUCCEEDED(hres))
+            hres = stream_write16(stream, name, len);
+        return hres;
+    }
+
+    len = -1;
+    hres = stream_write16(stream, &len, sizeof(len));
+    if (SUCCEEDED(hres))
+    {
+        DWORD standard_format = format;
+        hres = stream_write16(stream, &standard_format, sizeof(standard_format));
+    }
+    return hres;
+}
+
 static HRESULT storage_create_stream16(SEGPTR storage, const char *name, DWORD mode, SEGPTR *stream)
 {
     HANDLE16 hstream;
@@ -567,7 +600,6 @@ HRESULT WINAPI WriteFmtUserTypeStg16(SEGPTR storage, CLIPFORMAT format, LPCOLEST
         {0xf4, 0x39, 0xb2, 0x71, 0x00, 0x00, 0x00, 0x00,
          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     static const char compobj_name[] = "\1CompObj";
-    char clip_name[0x40] = {0};
     char *progid = NULL;
     LPOLESTR wide_progid = NULL;
     CLSID clsid = CLSID_NULL;
@@ -582,9 +614,6 @@ HRESULT WINAPI WriteFmtUserTypeStg16(SEGPTR storage, CLIPFORMAT format, LPCOLEST
 
     if (FAILED(ReadClassStg16(storage, &clsid)))
         clsid = CLSID_NULL;
-
-    if (format)
-        GetClipboardFormatNameA(format, clip_name, ARRAY_SIZE(clip_name));
 
     if (SUCCEEDED(ProgIDFromCLSID(&clsid, &wide_progid)) && wide_progid)
     {
@@ -602,7 +631,7 @@ HRESULT WINAPI WriteFmtUserTypeStg16(SEGPTR storage, CLIPFORMAT format, LPCOLEST
     if (SUCCEEDED(hres))
         hres = stream_write_string16(stream, user_type);
     if (SUCCEEDED(hres))
-        hres = stream_write_string16(stream, format ? clip_name : NULL);
+        hres = stream_write_clipformat16(stream, format);
     if (SUCCEEDED(hres))
         hres = stream_write_string16(stream, progid);
     if (SUCCEEDED(hres))
