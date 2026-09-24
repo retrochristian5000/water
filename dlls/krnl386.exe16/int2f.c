@@ -193,6 +193,10 @@ void WINAPI DOSVM_Int2fHandler( CONTEXT *context )
                 break;
             }
             break;
+        case 0x33:  /* Windows 95 - check for MS-DOS 7+ */
+            if (HIBYTE(HIWORD(GetVersion16())) >= 7)
+                SET_AX( context, 0 );
+            break;
         default:
             INT_BARF( context, 0x2f );
         }
