@@ -3935,15 +3935,91 @@ end:
     return context;
 }
 
+typedef BOOL (WINAPI *CertVerifyCTLUsageFunc)(DWORD, DWORD, void *, PCTL_USAGE,
+                                                 DWORD, PCTL_VERIFY_USAGE_PARA,
+                                                 PCTL_VERIFY_USAGE_STATUS);
+
 BOOL WINAPI CertVerifyCTLUsage(DWORD dwEncodingType, DWORD dwSubjectType,
                                void *pvSubject, PCTL_USAGE pSubjectUsage, DWORD dwFlags,
                                PCTL_VERIFY_USAGE_PARA pVerifyUsagePara,
                                PCTL_VERIFY_USAGE_STATUS pVerifyUsageStatus)
 {
-    FIXME("(0x%lx, %ld, %p, %p, 0x%lx, %p, %p): stub\n", dwEncodingType,
+    static HCRYPTOIDFUNCSET set;
+    CertVerifyCTLUsageFunc func;
+    HCRYPTOIDFUNCADDR hfunc = NULL;
+    BOOL ret;
+
+    TRACE("(0x%lx, %ld, %p, %p, 0x%lx, %p, %p)\n", dwEncodingType,
           dwSubjectType, pvSubject, pSubjectUsage, dwFlags, pVerifyUsagePara,
           pVerifyUsageStatus);
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+
+    if (!pVerifyUsageStatus || pVerifyUsageStatus->cbSize != sizeof(*pVerifyUsageStatus) ||
+        !pSubjectUsage)
+    {
+        SetLastError(E_INVALIDARG);
+        return FALSE;
+    }
+
+    if (!set) set = CryptInitOIDFunctionSet(CRYPT_OID_VERIFY_CTL_USAGE_FUNC, 0);
+    if (!set)
+    {
+        pVerifyUsageStatus->dwError = CRYPT_E_NO_VERIFY_USAGE_DLL;
+        SetLastError(CRYPT_E_NO_VERIFY_USAGE_DLL);
+        return FALSE;
+    }
+
+    if (pSubjectUsage->cUsageIdentifier && pSubjectUsage->rgpszUsageIdentifier &&
+        pSubjectUsage->rgpszUsageIdentifier[0] &&
+        CryptGetOIDFunctionAddress(set, dwEncodingType,
+                                   pSubjectUsage->rgpszUsageIdentifier[0], 0,
+                                   (void **)&func, &hfunc))
+    {
+        ret = func(dwEncodingType, dwSubjectType, pvSubject, pSubjectUsage,
+                   dwFlags, pVerifyUsagePara, pVerifyUsageStatus);
+        CryptFreeOIDFunctionAddress(hfunc, 0);
+        return ret;
+    }
+
+    {
+        DWORD size;
+
+        ret = CryptGetDefaultOIDDllList(set, dwEncodingType, NULL, &size);
+        if (ret && size > 1)
+        {
+            WCHAR *dlls = CryptMemAlloc(size * sizeof(WCHAR));
+
+            if (!dlls)
+            {
+                SetLastError(ERROR_OUTOFMEMORY);
+                return FALSE;
+            }
+
+            ret = CryptGetDefaultOIDDllList(set, dwEncodingType, dlls, &size);
+            if (ret)
+            {
+                WCHAR *dll;
+
+                for (dll = dlls; ret && *dll; dll += lstrlenW(dll) + 1)
+                {
+                    if (CryptGetDefaultOIDFunctionAddress(set, dwEncodingType, dll, 0,
+                                                          (void **)&func, &hfunc))
+                    {
+                        ret = func(dwEncodingType, dwSubjectType, pvSubject, pSubjectUsage,
+                                   dwFlags, pVerifyUsagePara, pVerifyUsageStatus);
+                        CryptFreeOIDFunctionAddress(hfunc, 0);
+                        hfunc = NULL;
+                    }
+                    else
+                        ret = FALSE;
+                }
+            }
+            CryptMemFree(dlls);
+            if (ret) return TRUE;
+        }
+    }
+
+    pVerifyUsageStatus->dwError = CRYPT_E_NO_VERIFY_USAGE_DLL;
+    SetLastError(CRYPT_E_NO_VERIFY_USAGE_DLL);
     return FALSE;
 }
 
