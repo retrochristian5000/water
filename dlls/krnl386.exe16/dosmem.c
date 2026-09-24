@@ -53,7 +53,6 @@ WORD int16_sel = 0;
 
 /*
  * Memory Control Block (MCB) definition
- * FIXME: implement Allocation Strategy
  */
 
 #define MCB_DUMP(mc) \
