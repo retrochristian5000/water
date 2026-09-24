@@ -83,6 +83,72 @@ typedef struct _OLEOBJECT
 
 static LONG OLE_current_handle;
 
+static OLESTATUS unsupported_object_creation(_LPOLEOBJECT *object)
+{
+    if (!object)
+        return OLE_ERROR_ADDRESS;
+
+    *object = NULL;
+    return OLE_ERROR_GENERIC;
+}
+
+/******************************************************************************
+ *              OleSaveToStream        [OLECLI32.3]
+ */
+OLESTATUS WINAPI OleSaveToStream(_LPOLEOBJECT object, struct _OLESTREAM *stream)
+{
+    if (!object || !object->lpvtbl || !object->lpvtbl->SaveToStream)
+        return OLE_ERROR_OBJECT;
+    if (!stream)
+        return OLE_ERROR_STREAM;
+
+    return object->lpvtbl->SaveToStream(object, stream);
+}
+
+/******************************************************************************
+ *              OleLoadFromStream      [OLECLI32.4]
+ */
+OLESTATUS WINAPI OleLoadFromStream(struct _OLESTREAM *stream, LPCSTR protocol,
+                                   LPOLECLIENT client, LHCLIENTDOC clientdoc,
+                                   LPCSTR object_name, _LPOLEOBJECT *object)
+{
+    FIXME("(%p,%s,%p,%ld,%s,%p): stub\n", stream, debugstr_a(protocol),
+          client, clientdoc, debugstr_a(object_name), object);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              OleCreate              [OLECLI32.34]
+ */
+OLESTATUS WINAPI OleCreate(LPCSTR protocol, LPOLECLIENT client, LPCSTR class_name,
+                           LHCLIENTDOC clientdoc, LPCSTR object_name,
+                           _LPOLEOBJECT *object, OLEOPT_RENDER render,
+                           OLECLIPFORMAT format)
+{
+    FIXME("(%s,%p,%s,%ld,%s,%p,%d,%ld): stub\n", debugstr_a(protocol),
+          client, debugstr_a(class_name), clientdoc, debugstr_a(object_name),
+          object, render, format);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              OleCreateFromFile      [OLECLI32.38]
+ */
+OLESTATUS WINAPI OleCreateFromFile(LPCSTR protocol, LPOLECLIENT client,
+                                   LPCSTR class_name, LPCSTR filename,
+                                   LHCLIENTDOC clientdoc, LPCSTR object_name,
+                                   _LPOLEOBJECT *object, OLEOPT_RENDER render,
+                                   OLECLIPFORMAT format)
+{
+    FIXME("(%s,%p,%s,%s,%ld,%s,%p,%d,%ld): stub\n", debugstr_a(protocol),
+          client, debugstr_a(class_name), debugstr_a(filename), clientdoc,
+          debugstr_a(object_name), object, render, format);
+
+    return unsupported_object_creation(object);
+}
+
 /******************************************************************************
  *		OleSavedClientDoc	[OLECLI32.45]
  */
