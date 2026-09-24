@@ -33,7 +33,54 @@ typedef struct tagCURSORINFO16
     WORD wXMickeys;
     WORD wYMickeys;
 } CURSORINFO16, *PCURSORINFO16, *LPCURSORINFO16;
+
+
+typedef struct tagDISPVALMODE16
+{
+    UINT16 dvmSize;
+    UINT16 dvmBpp;
+    INT16  dvmXRes;
+    INT16  dvmYRes;
+} DISPVALMODE16;
+
+enum
+{
+    VALMODE_YES = 0,
+    VALMODE_NO_UNKNOWN = 4
+};
 #pragma pack(pop)
+
+
+/***********************************************************************
+ *           ValidateMode                  (DISPLAY.700)
+ *
+ * Windows 95 links this entry point by name.  The legacy display driver
+ * contract only supplies resolution and color depth, so validate those
+ * against the modes exposed by the current host display driver.
+ */
+UINT16 WINAPI ValidateMode16( const DISPVALMODE16 *mode )
+{
+    DEVMODEA devmode = {0};
+    DWORD i;
+
+    if (!mode || mode->dvmSize < sizeof(*mode) || mode->dvmXRes <= 0 ||
+        mode->dvmYRes <= 0 || !mode->dvmBpp)
+        return VALMODE_NO_UNKNOWN;
+
+    for (i = 0; ; i++)
+    {
+        devmode.dmSize = sizeof(devmode);
+        devmode.dmDriverExtra = 0;
+        if (!EnumDisplaySettingsA( NULL, i, &devmode )) break;
+
+        if (devmode.dmPelsWidth == (DWORD)mode->dvmXRes &&
+            devmode.dmPelsHeight == (DWORD)mode->dvmYRes &&
+            devmode.dmBitsPerPel == mode->dvmBpp)
+            return VALMODE_YES;
+    }
+
+    return VALMODE_NO_UNKNOWN;
+}
 
 /***********************************************************************
  *           Inquire			(DISPLAY.101)

@@ -3,7 +3,7 @@
 3   stub Control
 4   stub Disable
 5   stub Enable
-6   stub EnumFonts
+6   stub EnumDFonts
 7   stub EnumObj
 8   stub Output
 9   stub Pixel
@@ -54,3 +54,4 @@
 502 stub ORDINAL_ONLY2
 600 stub InkReady
 601 stub GetLPDevice
+700 pascal -ret16 ValidateMode(ptr) ValidateMode16
