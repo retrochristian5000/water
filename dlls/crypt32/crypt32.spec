@@ -47,7 +47,7 @@
 @ stdcall CertFindChainInStore(ptr long long long ptr ptr)
 @ stdcall CertFindExtension(str long ptr)
 @ stdcall CertFindRDNAttr(str ptr)
-@ stub CertFindSubjectInCTL
+@ stdcall CertFindSubjectInCTL(long long ptr ptr long)
 @ stdcall CertFreeCRLContext(ptr)
 @ stdcall CertFreeCTLContext(ptr)
 @ stdcall CertFreeCertificateChain(ptr)
