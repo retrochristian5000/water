@@ -223,6 +223,8 @@ static inline int is_pe(void)
 #define	IMAGE_SUBSYSTEM_NATIVE      1
 #define	IMAGE_SUBSYSTEM_WINDOWS_GUI 2
 #define	IMAGE_SUBSYSTEM_WINDOWS_CUI 3
+#define	IMAGE_SUBSYSTEM_OS2_CUI     5
+#define	IMAGE_SUBSYSTEM_POSIX_CUI   7
 #define	IMAGE_SUBSYSTEM_WINDOWS_CE_GUI 9
 
 /* global functions */
