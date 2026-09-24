@@ -300,6 +300,46 @@ static int get_length(DBTYPE type)
     }
 }
 
+static BOOL integer_type(DBTYPE type)
+{
+    switch (type)
+    {
+    case DBTYPE_I1:
+    case DBTYPE_I2:
+    case DBTYPE_I4:
+    case DBTYPE_I8:
+    case DBTYPE_UI1:
+    case DBTYPE_UI2:
+    case DBTYPE_UI4:
+    case DBTYPE_UI8:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static BOOL unsigned_integer_type(DBTYPE type)
+{
+    return type == DBTYPE_UI1 || type == DBTYPE_UI2 || type == DBTYPE_UI4 || type == DBTYPE_UI8;
+}
+
+static BOOL negative_integer(DBTYPE type, const void *src)
+{
+    switch (type)
+    {
+    case DBTYPE_I1:
+        return *(const signed char *)src < 0;
+    case DBTYPE_I2:
+        return *(const SHORT *)src < 0;
+    case DBTYPE_I4:
+        return *(const LONG *)src < 0;
+    case DBTYPE_I8:
+        return *(const LONGLONG *)src < 0;
+    default:
+        return FALSE;
+    }
+}
+
 static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
                                           DBTYPE src_type, DBTYPE dst_type,
                                           DBLENGTH src_len, DBLENGTH *dst_len,
@@ -1333,8 +1373,29 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
     if(hr == DISP_E_OVERFLOW)
     {
         *dst_status = DBSTATUS_E_DATAOVERFLOW;
-        *dst_len = get_length(dst_type);
-        hr = DB_E_ERRORSOCCURRED;
+
+        if (integer_type(src_type) && integer_type(dst_type))
+        {
+            if (unsigned_integer_type(dst_type) && negative_integer(src_type, src))
+            {
+                *dst_status = DBSTATUS_E_SIGNMISMATCH;
+                hr = DB_E_ERRORSOCCURRED;
+            }
+            else if (get_length(src_type) > get_length(dst_type))
+            {
+                *dst_len = get_length(dst_type);
+                hr = DB_E_DATAOVERFLOW;
+            }
+            else
+            {
+                hr = DB_E_ERRORSOCCURRED;
+            }
+        }
+        else
+        {
+            *dst_len = get_length(dst_type);
+            hr = DB_E_ERRORSOCCURRED;
+        }
     }
     else if(hr == S_OK)
     {
