@@ -35,7 +35,7 @@
 512 stub  IStorage16_DestroyElement
 513 stub  IStorage16_RenameElement
 514 stub  IStorage16_SetElementTimes
-515 stub  IStorage16_SetClass
+515 cdecl IStorage16_SetClass(ptr ptr) IStorage16_fnSetClass
 516 stub  IStorage16_SetStateBits
 517 cdecl IStorage16_Stat(ptr ptr long) IStorage16_fnStat
 
