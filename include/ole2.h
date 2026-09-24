@@ -21,6 +21,15 @@
 #ifndef __WINE_OLE2_H
 #define __WINE_OLE2_H
 
+/* Match the native Windows SDK guard for source compatibility. */
+#ifndef _OLE2_H_
+#define _OLE2_H_
+#endif
+
+#ifndef RC_INVOKED
+#include <pshpack8.h>
+#endif
+
 #include <winerror.h>
 #include <objbase.h>
 #include <oleauto.h>
@@ -49,6 +58,8 @@ extern "C" {
 #define EMBDHLP_CREATENOW       0x00000000
 #define EMBDHLP_DELAYCREATE     0x00010000
 
+#define OLECREATE_LEAVERUNNING  0x00000001
+
 /*
  * API declarations
  */
@@ -76,6 +87,9 @@ WINOLE32API HRESULT     WINAPI GetHGlobalFromStream(LPSTREAM pstm, HGLOBAL* phgl
 WINOLE32API HRESULT     WINAPI OleRegEnumVerbs (REFCLSID clsid, LPENUMOLEVERB* ppenum);
 WINOLE32API BOOL        WINAPI OleIsRunning(LPOLEOBJECT pObject);
 WINOLE32API HRESULT     WINAPI OleCreateLinkFromData(LPDATAOBJECT pSrcDataObj, REFIID riid, DWORD renderopt, LPFORMATETC pFormatEtc, LPOLECLIENTSITE pClientSite, LPSTORAGE pStg, LPVOID* ppvObj);
+WINOLE32API HRESULT     WINAPI OleCreateLinkFromDataEx(LPDATAOBJECT pSrcDataObj, REFIID riid, DWORD flags, DWORD renderopt, ULONG num_fmts,
+                                                       DWORD *adv_flags, LPFORMATETC fmts, IAdviseSink *sink, DWORD *conns,
+                                                       LPOLECLIENTSITE pClientSite, LPSTORAGE pStg, LPVOID* ppvObj);
 WINOLE32API HRESULT     WINAPI OleSetContainedObject(LPUNKNOWN pUnknown, BOOL fContained);
 WINOLE32API HRESULT     WINAPI OleNoteObjectVisible(LPUNKNOWN pUnknown, BOOL fVisible);
 WINOLE32API HRESULT     WINAPI OleQueryLinkFromData(IDataObject* pSrcDataObject);
@@ -102,13 +116,22 @@ WINOLE32API HRESULT     WINAPI OleCreateFromFileEx(REFCLSID clsid, LPCOLESTR fil
                                                    DWORD renderopt, ULONG num_fmts, DWORD *adv_flags, LPFORMATETC fmts, IAdviseSink *sink,
                                                    DWORD *conns, LPOLECLIENTSITE client_site, LPSTORAGE storage, LPVOID* obj);
 WINOLE32API HRESULT     WINAPI OleCreateLink(LPMONIKER pmkLinkSrc, REFIID riid, DWORD renderopt, LPFORMATETC lpFormatEtc,LPOLECLIENTSITE pClientSite, LPSTORAGE pStg, LPVOID* ppvObj);
+WINOLE32API HRESULT     WINAPI OleCreateLinkEx(LPMONIKER pmkLinkSrc, REFIID riid, DWORD flags, DWORD renderopt, ULONG num_fmts,
+                                               DWORD *adv_flags, LPFORMATETC fmts, IAdviseSink *sink, DWORD *conns,
+                                               LPOLECLIENTSITE pClientSite, LPSTORAGE pStg, LPVOID* ppvObj);
 WINOLE32API HRESULT     WINAPI OleCreate(REFCLSID rclsid, REFIID riid, DWORD renderopt, LPFORMATETC pFormatEtc, LPOLECLIENTSITE pClientSite,LPSTORAGE pStg, LPVOID* ppvObj);
+WINOLE32API HRESULT     WINAPI OleCreateEx(REFCLSID rclsid, REFIID riid, DWORD flags, DWORD renderopt, ULONG num_fmts,
+                                           DWORD *adv_flags, LPFORMATETC fmts, IAdviseSink *sink, DWORD *conns,
+                                           LPOLECLIENTSITE pClientSite, LPSTORAGE pStg, LPVOID* ppvObj);
 WINOLE32API HRESULT     WINAPI OleFlushClipboard(void);
 WINOLE32API HRESULT     WINAPI GetConvertStg(LPSTORAGE pStg);
 WINOLE32API HRESULT     WINAPI SetConvertStg(LPSTORAGE pStg, BOOL fConvert);
 WINOLE32API BOOL        WINAPI IsAccelerator(HACCEL hAccel, int cAccelEntries, struct tagMSG* lpMsg, WORD* lpwCmd);
 WINOLE32API HRESULT     WINAPI OleCreateLinkToFile(LPCOLESTR lpszFileName, REFIID riid, DWORD renderopt, LPFORMATETC lpFormatEtc,
                                                    LPOLECLIENTSITE pClientSite, LPSTORAGE pStg, LPVOID* ppvObj);
+WINOLE32API HRESULT     WINAPI OleCreateLinkToFileEx(LPCOLESTR lpszFileName, REFIID riid, DWORD flags, DWORD renderopt, ULONG num_fmts,
+                                                     DWORD *adv_flags, LPFORMATETC fmts, IAdviseSink *sink, DWORD *conns,
+                                                     LPOLECLIENTSITE pClientSite, LPSTORAGE pStg, LPVOID* ppvObj);
 WINOLE32API HANDLE      WINAPI OleDuplicateData(HANDLE hSrc, CLIPFORMAT cfFormat, UINT uiFlags);
 WINOLE32API HRESULT     WINAPI WriteFmtUserTypeStg(LPSTORAGE pstg, CLIPFORMAT cf, LPOLESTR lpszUserType);
 WINOLE32API HRESULT     WINAPI OleTranslateAccelerator (LPOLEINPLACEFRAME lpFrame, LPOLEINPLACEFRAMEINFO lpFrameInfo, struct tagMSG* lpmsg);
@@ -141,6 +164,8 @@ typedef struct _OLESTREAM {
 } OLESTREAM;
 
 WINOLE32API HRESULT     WINAPI OleConvertOLESTREAMToIStorage( LPOLESTREAM lpolestream, LPSTORAGE pstg, const DVTARGETDEVICE* ptd);
+WINOLE32API HRESULT     WINAPI OleConvertOLESTREAMToIStorageEx( LPOLESTREAM lpolestream, LPSTORAGE pstg, CLIPFORMAT *pcf,
+                                                                LONG *width, LONG *height, DWORD *size, LPSTGMEDIUM medium );
 WINOLE32API HRESULT     WINAPI OleConvertIStorageToOLESTREAM( LPSTORAGE pstg, LPOLESTREAM lpolestream);
 WINOLE32API HRESULT     WINAPI OleConvertIStorageToOLESTREAMEx( LPSTORAGE stg, CLIPFORMAT cf, LONG width, LONG height,
                                                                 DWORD size, LPSTGMEDIUM medium, LPOLESTREAM olestream );
@@ -151,5 +176,9 @@ WINOLE32API HRESULT     WINAPI OleSetAutoConvert( REFCLSID clsidOld, REFCLSID cl
 #ifdef __cplusplus
 } /* extern "C" */
 #endif /* defined(__cplusplus) */
+
+#ifndef RC_INVOKED
+#include <poppack.h>
+#endif
 
 #endif  /* __WINE_OLE2_H */
