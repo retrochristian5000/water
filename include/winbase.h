@@ -1116,23 +1116,23 @@ typedef struct tagCOMMPROP {
 #define SP_RLSD         ((DWORD)0x40)
 #define SP_STOPBITS     ((DWORD)0x08)
 
-#define DATABITS_5   ((DWORD)0x01)
-#define DATABITS_6   ((DWORD)0x02)
-#define DATABITS_7   ((DWORD)0x04)
-#define DATABITS_8   ((DWORD)0x08)
-#define DATABITS_16  ((DWORD)0x10)
-#define DATABITS_16X ((DWORD)0x20)
+#define DATABITS_5   ((WORD)0x01)
+#define DATABITS_6   ((WORD)0x02)
+#define DATABITS_7   ((WORD)0x04)
+#define DATABITS_8   ((WORD)0x08)
+#define DATABITS_16  ((WORD)0x10)
+#define DATABITS_16X ((WORD)0x20)
 
-#define STOPBITS_10 ((DWORD)1)
-#define STOPBITS_15 ((DWORD)2)
-#define STOPBITS_20 ((DWORD)4)
+#define STOPBITS_10 ((WORD)1)
+#define STOPBITS_15 ((WORD)2)
+#define STOPBITS_20 ((WORD)4)
 
 #undef PARITY_NONE  /* defined on Android */
-#define PARITY_NONE  ((DWORD)0x100)
-#define PARITY_ODD   ((DWORD)0x200)
-#define PARITY_EVEN  ((DWORD)0x400)
-#define PARITY_MARK  ((DWORD)0x800)
-#define PARITY_SPACE ((DWORD)0x1000)
+#define PARITY_NONE  ((WORD)0x100)
+#define PARITY_ODD   ((WORD)0x200)
+#define PARITY_EVEN  ((WORD)0x400)
+#define PARITY_MARK  ((WORD)0x800)
+#define PARITY_SPACE ((WORD)0x1000)
 
 typedef struct tagCOMMTIMEOUTS {
 	DWORD	ReadIntervalTimeout;
