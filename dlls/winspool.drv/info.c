@@ -3272,13 +3272,27 @@ done:
  */
 DWORD WINAPI StartDocPrinterW(HANDLE printer, DWORD level, BYTE *doc_info)
 {
-    HANDLE handle = get_backend_handle(printer);
-    DOC_INFO_1W *info = (DOC_INFO_1W *)doc_info;
+    HANDLE handle;
+    DOC_INFO_1W *info;
 
-    TRACE("(%p, %ld, %p {%s, %s, %s})\n", printer, level, doc_info,
-            debugstr_w(info->pDocName), debugstr_w(info->pOutputFile),
-            debugstr_w(info->pDatatype));
+    TRACE("(%p, %ld, %p)\n", printer, level, doc_info);
 
+    if (level < 1 || level > 3)
+    {
+        SetLastError(ERROR_INVALID_LEVEL);
+        return 0;
+    }
+    if (!doc_info)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    info = (DOC_INFO_1W *)doc_info;
+    TRACE("document {%s, %s, %s}\n", debugstr_w(info->pDocName),
+          debugstr_w(info->pOutputFile), debugstr_w(info->pDatatype));
+
+    handle = get_backend_handle(printer);
     if (!handle)
     {
         SetLastError(ERROR_INVALID_HANDLE);
