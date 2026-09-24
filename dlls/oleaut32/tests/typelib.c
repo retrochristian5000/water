@@ -8868,14 +8868,15 @@ static void test_forward_coclass_ref(void)
     if (SUCCEEDED(hr))
     {
         ok(attr->typekind == TKIND_COCLASS, "Unexpected typekind %d.\n", attr->typekind);
-        ok(attr->cImplTypes == 2, "Unexpected implemented interface count %u.\n", attr->cImplTypes);
+        ok(attr->cImplTypes == 2, "Unexpected implemented interface count %d.\n", attr->cImplTypes);
         ITypeInfo_ReleaseTypeAttr(coclass, attr);
     }
 
     hr = ITypeInfo_GetImplTypeFlags(coclass, 1, &flags);
     ok(hr == S_OK, "GetImplTypeFlags failed, hr %#lx.\n", hr);
-    ok(flags == (IMPLTYPEFLAG_FDEFAULT | IMPLTYPEFLAG_FSOURCE),
-            "Unexpected source interface flags %#x.\n", flags);
+    if (SUCCEEDED(hr))
+        ok(flags == (IMPLTYPEFLAG_FDEFAULT | IMPLTYPEFLAG_FSOURCE),
+                "Unexpected source interface flags %#x.\n", (unsigned int)flags);
 
     hr = ITypeInfo_GetRefTypeOfImplType(coclass, 1, &href);
     ok(hr == S_OK, "GetRefTypeOfImplType failed, hr %#lx.\n", hr);
