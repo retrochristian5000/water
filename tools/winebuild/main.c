@@ -133,6 +133,8 @@ static void set_subsystem( const char *subsystem, DLLSPEC *spec )
     if (!strcmp( str, "native" )) spec->subsystem = IMAGE_SUBSYSTEM_NATIVE;
     else if (!strcmp( str, "windows" )) spec->subsystem = IMAGE_SUBSYSTEM_WINDOWS_GUI;
     else if (!strcmp( str, "console" )) spec->subsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
+    else if (!strcmp( str, "os2" ))     spec->subsystem = IMAGE_SUBSYSTEM_OS2_CUI;
+    else if (!strcmp( str, "posix" ))   spec->subsystem = IMAGE_SUBSYSTEM_POSIX_CUI;
     else if (!strcmp( str, "wince" ))   spec->subsystem = IMAGE_SUBSYSTEM_WINDOWS_CE_GUI;
     else if (!strcmp( str, "win16" )) spec->type = SPEC_WIN16;
     else fatal_error( "Invalid subsystem name '%s'\n", subsystem );
@@ -208,7 +210,7 @@ static const char usage_str[] =
 "       --safeseh             Mark object files as SEH compatible\n"
 "       --save-temps          Do not delete the generated intermediate files\n"
 "       --strip-cmd=STRIP     Command to use for stripping (default: none)\n"
-"       --subsystem=SUBSYS    Set the subsystem (one of native, windows, console, wince)\n"
+"       --subsystem=SUBSYS    Set the subsystem (native, windows, console, os2, posix, wince)\n"
 "   -u, --undefined=SYMBOL    Add an undefined reference to SYMBOL when linking\n"
 "   -v, --verbose             Display the programs invoked\n"
 "       --version             Print the version and exit\n"
