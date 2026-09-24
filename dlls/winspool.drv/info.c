@@ -1867,12 +1867,57 @@ LONG WINAPI DocumentPropertiesW(HWND hWnd, HANDLE hPrinter,
  * Validate a DEVMODE structure and fix errors if possible.
  *
  */
-BOOL WINAPI IsValidDevmodeA(PDEVMODEA pDevMode, SIZE_T size)
+BOOL WINAPI IsValidDevmodeA(PDEVMODEA dm, SIZE_T size)
 {
-    FIXME("(%p,%Id): stub\n", pDevMode, size);
+    static const struct
+    {
+        DWORD flag;
+        SIZE_T size;
+    } map[] =
+    {
+#define F_SIZE(field) FIELD_OFFSET(DEVMODEA, field) + sizeof(dm->field)
+        { DM_ORIENTATION, F_SIZE(dmOrientation) },
+        { DM_PAPERSIZE, F_SIZE(dmPaperSize) },
+        { DM_PAPERLENGTH, F_SIZE(dmPaperLength) },
+        { DM_PAPERWIDTH, F_SIZE(dmPaperWidth) },
+        { DM_SCALE, F_SIZE(dmScale) },
+        { DM_COPIES, F_SIZE(dmCopies) },
+        { DM_DEFAULTSOURCE, F_SIZE(dmDefaultSource) },
+        { DM_PRINTQUALITY, F_SIZE(dmPrintQuality) },
+        { DM_POSITION, F_SIZE(dmPosition) },
+        { DM_DISPLAYORIENTATION, F_SIZE(dmDisplayOrientation) },
+        { DM_DISPLAYFIXEDOUTPUT, F_SIZE(dmDisplayFixedOutput) },
+        { DM_COLOR, F_SIZE(dmColor) },
+        { DM_DUPLEX, F_SIZE(dmDuplex) },
+        { DM_YRESOLUTION, F_SIZE(dmYResolution) },
+        { DM_TTOPTION, F_SIZE(dmTTOption) },
+        { DM_COLLATE, F_SIZE(dmCollate) },
+        { DM_FORMNAME, F_SIZE(dmFormName) },
+        { DM_LOGPIXELS, F_SIZE(dmLogPixels) },
+        { DM_BITSPERPEL, F_SIZE(dmBitsPerPel) },
+        { DM_PELSWIDTH, F_SIZE(dmPelsWidth) },
+        { DM_PELSHEIGHT, F_SIZE(dmPelsHeight) },
+        { DM_DISPLAYFLAGS, F_SIZE(dmDisplayFlags) },
+        { DM_NUP, F_SIZE(dmNup) },
+        { DM_DISPLAYFREQUENCY, F_SIZE(dmDisplayFrequency) },
+        { DM_ICMMETHOD, F_SIZE(dmICMMethod) },
+        { DM_ICMINTENT, F_SIZE(dmICMIntent) },
+        { DM_MEDIATYPE, F_SIZE(dmMediaType) },
+        { DM_DITHERTYPE, F_SIZE(dmDitherType) },
+        { DM_PANNINGWIDTH, F_SIZE(dmPanningWidth) },
+        { DM_PANNINGHEIGHT, F_SIZE(dmPanningHeight) }
+#undef F_SIZE
+    };
+    const DWORD fields_off = FIELD_OFFSET(DEVMODEA, dmFields) + sizeof(dm->dmFields);
+    unsigned int i;
 
-    if(!pDevMode)
-        return FALSE;
+    if (!dm) return FALSE;
+    if (size < fields_off) return FALSE;
+    if (dm->dmSize < fields_off || size < dm->dmSize + dm->dmDriverExtra) return FALSE;
+
+    for (i = 0; i < ARRAY_SIZE(map); i++)
+        if ((dm->dmFields & map[i].flag) && dm->dmSize < map[i].size)
+            return FALSE;
 
     return TRUE;
 }
@@ -3105,10 +3150,19 @@ BOOL WINAPI EndDocPrinter(HANDLE printer)
 /*****************************************************************************
  *          EndPagePrinter  [WINSPOOL.@]
  */
-BOOL WINAPI EndPagePrinter(HANDLE hPrinter)
+BOOL WINAPI EndPagePrinter(HANDLE printer)
 {
-    FIXME("(%p): stub\n", hPrinter);
-    return TRUE;
+    HANDLE handle = get_backend_handle(printer);
+
+    TRACE("(%p)\n", printer);
+
+    if (!handle)
+    {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+
+    return backend->fpEndPagePrinter(handle);
 }
 
 /*****************************************************************************
@@ -3175,10 +3229,19 @@ DWORD WINAPI StartDocPrinterW(HANDLE printer, DWORD level, BYTE *doc_info)
 /*****************************************************************************
  *          StartPagePrinter  [WINSPOOL.@]
  */
-BOOL WINAPI StartPagePrinter(HANDLE hPrinter)
+BOOL WINAPI StartPagePrinter(HANDLE printer)
 {
-    FIXME("(%p): stub\n", hPrinter);
-    return TRUE;
+    HANDLE handle = get_backend_handle(printer);
+
+    TRACE("(%p)\n", printer);
+
+    if (!handle)
+    {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+
+    return backend->fpStartPagePrinter(handle);
 }
 
 /*****************************************************************************
