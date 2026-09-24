@@ -298,7 +298,12 @@ static HRESULT WINAPI shellfolder_CreateViewObject(IShellFolder *iface, HWND hwn
 static HRESULT WINAPI shellfolder_GetAttributesOf(IShellFolder *iface, UINT count,
                                                    LPCITEMIDLIST *pidls, SFGAOF *attributes)
 {
-    static const SFGAOF supported = SFGAO_FILESYSTEM | SFGAO_DROPTARGET;
+    /*
+     * Native registration also advertises SFGAO_DROPTARGET.  Do not expose
+     * that capability until an IrDA transport and IDropTarget are present.
+     * The historical filesystem bit is retained for shell compatibility.
+     */
+    static const SFGAOF supported = SFGAO_FILESYSTEM;
 
     if (!attributes) return E_POINTER;
     if (count) return E_INVALIDARG;
