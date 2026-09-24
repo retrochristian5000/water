@@ -427,6 +427,48 @@ static void testAddCTLToStore(void)
     CertCloseStore(store, 0);
 }
 
+static unsigned int verify_usage_called;
+
+static BOOL WINAPI verify_usage_callback(DWORD encoding, DWORD subject_type, void *subject,
+                                         PCTL_USAGE usage, DWORD flags,
+                                         PCTL_VERIFY_USAGE_PARA para,
+                                         PCTL_VERIFY_USAGE_STATUS status)
+{
+    verify_usage_called++;
+    status->dwError = ERROR_SUCCESS;
+    return TRUE;
+}
+
+static void testVerifyCTLUsageDispatch(void)
+{
+    static char oid[] = "1.2.3.4.5.6.7.8.9";
+    CRYPT_OID_FUNC_ENTRY entry = { oid, verify_usage_callback };
+    HCRYPTOIDFUNCSET set;
+    CTL_VERIFY_USAGE_STATUS status = { sizeof(status) };
+    CTL_USAGE usage = { 1, &entry.pszOID };
+    BOOL ret;
+
+    set = CryptInitOIDFunctionSet(CRYPT_OID_VERIFY_CTL_USAGE_FUNC, 0);
+    ok(set != NULL, "CryptInitOIDFunctionSet failed: %08lx\n", GetLastError());
+
+    ret = CryptInstallOIDFunctionAddress(GetModuleHandleW(NULL), X509_ASN_ENCODING,
+                                         CRYPT_OID_VERIFY_CTL_USAGE_FUNC, 1, &entry, 0);
+    ok(ret, "CryptInstallOIDFunctionAddress failed: %08lx\n", GetLastError());
+
+    verify_usage_called = 0;
+    ret = CertVerifyCTLUsage(X509_ASN_ENCODING, CTL_ANY_SUBJECT_TYPE, &usage,
+                             &usage, 0, NULL, &status);
+    ok(ret, "CertVerifyCTLUsage failed: %08lx\n", GetLastError());
+    ok(verify_usage_called == 1, "callback called %u times\n", verify_usage_called);
+
+    status.cbSize = sizeof(status) - 1;
+    SetLastError(0xdeadbeef);
+    ret = CertVerifyCTLUsage(X509_ASN_ENCODING, CTL_ANY_SUBJECT_TYPE, &usage,
+                             &usage, 0, NULL, &status);
+    ok(!ret, "unexpected success\n");
+    ok(GetLastError() == E_INVALIDARG, "got error %08lx\n", GetLastError());
+}
+
 static void testFindSubjectInCTL(void)
 {
     BYTE id1[] = { 0x11, 0x22 };
@@ -477,6 +519,7 @@ START_TEST(ctl)
     testCreateCTL();
     testDupCTL();
     testCTLProperties();
+    testVerifyCTLUsageDispatch();
     testFindSubjectInCTL();
     testAddCTLToStore();
 }
