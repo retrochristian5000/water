@@ -1,5 +1,7 @@
 PROGRAMS = winebuild
 
+PCH = winebuild_pch.h
+
 SOURCES = \
 	import.c \
 	main.c \
