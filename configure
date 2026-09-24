@@ -880,6 +880,7 @@ CPPFLAGS
 LDFLAGS
 CFLAGS
 CC
+COMPILER_CACHE
 NINJA
 SARIF_CONVERTER
 srcdir
@@ -990,6 +991,7 @@ with_xshape
 with_xshm
 with_xxf86vm
 with_system_dllpath
+with_compiler_cache
 with_wine_tools
 with_wine64
 enable_largefile
@@ -2664,6 +2666,9 @@ Optional Packages:
   --with-system-dllpath=PATH
                           load external PE dependencies from colon-separated
                           path PATH
+  --with-compiler-cache[=PROGRAM]
+                          use compiler cache launcher (auto-detect sccache or
+                          ccache by default)
   --with-wine-tools=DIR   use Wine tools from directory DIR
   --with-wine64=DIR       use the 64-bit Wine in DIR for a Wow64 build
   --with-x                use the X Window System
@@ -4659,6 +4664,13 @@ then :
 fi
 
 
+# Check whether --with-compiler-cache was given.
+if test ${with_compiler_cache+y}
+then :
+  withval=$with_compiler_cache;
+fi
+
+
 # Check whether --with-wine-tools was given.
 if test ${with_wine_tools+y}
 then :
@@ -6184,6 +6196,45 @@ ac_cpp='$CPP $CPPFLAGS'
 ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
 ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
+
+case "x$with_compiler_cache" in
+  xno)
+    COMPILER_CACHE=
+    ;;
+  x|xyes|xauto)
+    { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for compiler cache" >&5
+printf %s "checking for compiler cache... " >&6; }
+    if test -z "$COMPILER_CACHE"
+    then
+        for ac_prog in sccache ccache
+        do
+            if command -v "$ac_prog" >/dev/null 2>&1
+            then
+                COMPILER_CACHE=$ac_prog
+                break
+            fi
+        done
+    fi
+    { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: ${COMPILER_CACHE:-none}" >&5
+printf '%s\n' "${COMPILER_CACHE:-none}" >&6; }
+    ;;
+  *)
+    { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for compiler cache $with_compiler_cache" >&5
+printf %s "checking for compiler cache $with_compiler_cache... " >&6; }
+    if test -x "$with_compiler_cache"
+    then
+        COMPILER_CACHE=$with_compiler_cache
+    elif command -v "$with_compiler_cache" >/dev/null 2>&1
+    then
+        COMPILER_CACHE=`command -v "$with_compiler_cache"`
+    else
+        as_fn_error $? "compiler cache '$with_compiler_cache' not found" "$LINENO" 5
+    fi
+    { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $COMPILER_CACHE" >&5
+printf '%s\n' "$COMPILER_CACHE" >&6; }
+    ;;
+esac
+
 
 { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for Ninja" >&5
 printf %s "checking for Ninja... " >&6; }
@@ -24524,6 +24575,7 @@ host_vendor = $host_vendor
 host_os = $host_os
 srcdir = $srcdir
 SARIF_CONVERTER = $SARIF_CONVERTER
+COMPILER_CACHE = $COMPILER_CACHE
 CC = $CC
 CFLAGS = $CFLAGS
 LDFLAGS = $LDFLAGS
