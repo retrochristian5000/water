@@ -427,10 +427,56 @@ static void testAddCTLToStore(void)
     CertCloseStore(store, 0);
 }
 
+static void testFindSubjectInCTL(void)
+{
+    BYTE id1[] = { 0x11, 0x22 };
+    BYTE id2[] = { 0x33, 0x44, 0x55 };
+    CTL_ENTRY entries[2] = {0};
+    CTL_INFO info = {0};
+    CTL_CONTEXT context = {0};
+    CTL_ANY_SUBJECT_INFO subject = {0};
+    PCTL_ENTRY entry;
+
+    entries[0].SubjectIdentifier.pbData = id1;
+    entries[0].SubjectIdentifier.cbData = sizeof(id1);
+    entries[1].SubjectIdentifier.pbData = id2;
+    entries[1].SubjectIdentifier.cbData = sizeof(id2);
+
+    info.SubjectAlgorithm.pszObjId = (char *)szOID_RSA_MD5;
+    info.cCTLEntry = ARRAY_SIZE(entries);
+    info.rgCTLEntry = entries;
+    context.pCtlInfo = &info;
+
+    subject.SubjectAlgorithm.pszObjId = (char *)szOID_RSA_MD5;
+    subject.SubjectIdentifier.pbData = id2;
+    subject.SubjectIdentifier.cbData = sizeof(id2);
+
+    SetLastError(0xdeadbeef);
+    entry = CertFindSubjectInCTL(0, CTL_ANY_SUBJECT_TYPE, &subject, &context, 0);
+    ok(entry == &entries[1], "expected second CTL entry, got %p\n", entry);
+
+    subject.SubjectIdentifier.pbData = id1;
+    subject.SubjectIdentifier.cbData = sizeof(id1);
+    entry = CertFindSubjectInCTL(0, CTL_ANY_SUBJECT_TYPE, &subject, &context, 0);
+    ok(entry == &entries[0], "expected first CTL entry, got %p\n", entry);
+
+    subject.SubjectAlgorithm.pszObjId = (char *)szOID_OIWSEC_sha1;
+    SetLastError(0xdeadbeef);
+    entry = CertFindSubjectInCTL(0, CTL_ANY_SUBJECT_TYPE, &subject, &context, 0);
+    ok(!entry, "unexpected CTL entry %p\n", entry);
+    ok(GetLastError() == CRYPT_E_NOT_FOUND, "got error %08lx\n", GetLastError());
+
+    SetLastError(0xdeadbeef);
+    entry = CertFindSubjectInCTL(0, 0xdeadbeef, &subject, &context, 0);
+    ok(!entry, "unexpected CTL entry %p\n", entry);
+    ok(GetLastError() == E_INVALIDARG, "got error %08lx\n", GetLastError());
+}
+
 START_TEST(ctl)
 {
     testCreateCTL();
     testDupCTL();
     testCTLProperties();
+    testFindSubjectInCTL();
     testAddCTLToStore();
 }
