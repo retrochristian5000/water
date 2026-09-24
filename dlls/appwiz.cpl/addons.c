@@ -266,6 +266,12 @@ static enum install_res install_from_registered_dir(void)
         return INSTALL_NEXT;
 
     package_dir = malloc(size + sizeof(unix_prefix));
+    if (!package_dir)
+    {
+        RegCloseKey(hkey);
+        return INSTALL_FAILED;
+    }
+
     res = RegGetValueW(hkey, NULL, addon->dir_config_key, RRF_RT_ANY, &type,
                         (PBYTE)package_dir + sizeof(unix_prefix), &size);
     if(res == ERROR_MORE_DATA) {
@@ -301,6 +307,7 @@ static enum install_res install_from_default_dir(void)
     if ((package_dir = _wgetenv( L"WINEBUILDDIR" )))
     {
         dir_buf = malloc( wcslen(package_dir) * sizeof(WCHAR) + sizeof(L"\\..\\") );
+        if (!dir_buf) return INSTALL_FAILED;
         lstrcpyW( dir_buf, package_dir );
         lstrcatW( dir_buf, L"\\..\\" );
         package_dir = dir_buf;
@@ -403,18 +410,23 @@ static IInternetBindInfo InstallCallbackBindInfo;
 static HRESULT WINAPI InstallCallback_QueryInterface(IBindStatusCallback *iface,
         REFIID riid, void **ppv)
 {
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+
     if(IsEqualGUID(&IID_IUnknown, riid) || IsEqualGUID(&IID_IBindStatusCallback, riid)) {
         *ppv = iface;
+        IBindStatusCallback_AddRef(iface);
         return S_OK;
     }
 
     if(IsEqualGUID(&IID_IInternetBindInfo, riid)) {
         TRACE("IID_IInternetBindInfo\n");
         *ppv = &InstallCallbackBindInfo;
+        IInternetBindInfo_AddRef(&InstallCallbackBindInfo);
         return S_OK;
     }
 
-    return E_INVALIDARG;
+    return E_NOINTERFACE;
 }
 
 static ULONG WINAPI InstallCallback_AddRef(IBindStatusCallback *iface)
@@ -476,19 +488,26 @@ static HRESULT WINAPI InstallCallback_OnStopBinding(IBindStatusCallback *iface,
     if(FAILED(hresult)) {
         if(hresult == E_ABORT)
             TRACE("Binding aborted\n");
-        else if (hresult == INET_E_DOWNLOAD_FAILURE)
+        else
         {
+            ERR("Binding failed %08lx\n", hresult);
             if(LoadStringW(hInst, IDS_DOWNLOAD_FAILED, message, ARRAY_SIZE(message)))
                 MessageBoxW(install_dialog, message, NULL, MB_ICONERROR);
-            EndDialog(install_dialog, IDCANCEL);
         }
-        else
-            ERR("Binding failed %08lx\n", hresult);
+
+        if (msi_file)
+        {
+            DeleteFileW(msi_file);
+            free(msi_file);
+            msi_file = NULL;
+        }
+        if (install_dialog) EndDialog(install_dialog, IDCANCEL);
         return S_OK;
     }
 
     if(!msi_file) {
         ERR("No MSI file\n");
+        if (install_dialog) EndDialog(install_dialog, IDCANCEL);
         return E_FAIL;
     }
 
@@ -585,6 +604,10 @@ static HRESULT WINAPI InstallCallbackBindInfo_GetBindInfo(IInternetBindInfo *ifa
 static HRESULT WINAPI InstallCallbackBindInfo_GetBindString(IInternetBindInfo *iface, ULONG string_type,
         WCHAR **strs, ULONG cnt, ULONG *fetched)
 {
+    if (!strs || !fetched || !cnt) return E_INVALIDARG;
+    *strs = NULL;
+    *fetched = 0;
+
     switch(string_type) {
     case BINDSTRING_USER_AGENT:
         TRACE("BINDSTRING_USER_AGENT\n");
@@ -638,7 +661,7 @@ static LPWSTR get_url(void)
 
     static const WCHAR httpW[] = {'h','t','t','p'};
 
-    url = malloc(size);
+    if (!(url = malloc(size))) return NULL;
     returned_size = size;
 
     hkey = open_config_key();
@@ -695,16 +718,17 @@ static void run_winebrowser(const WCHAR *url)
     url_len = lstrlenW(url);
 
     len = GetSystemDirectoryW(app, MAX_PATH - ARRAY_SIZE(L"\\winebrowser.exe"));
+    if (!len || len >= MAX_PATH - ARRAY_SIZE(L"\\winebrowser.exe"))
+        return;
+
     lstrcpyW(app+len, L"\\winebrowser.exe");
     len += ARRAY_SIZE(L"\\winebrowser.exe") - 1;
 
-    args = malloc((len + 1 + url_len) * sizeof(WCHAR));
+    args = malloc((len + url_len + 6) * sizeof(WCHAR));
     if(!args)
         return;
 
-    memcpy(args, app, len*sizeof(WCHAR));
-    args[len++] = ' ';
-    memcpy(args+len, url, (url_len+1) * sizeof(WCHAR));
+    swprintf(args, len + url_len + 6, L"\"%s\" \"%s\"", app, url);
 
     TRACE("starting %s\n", debugstr_w(args));
 
@@ -725,6 +749,10 @@ static INT_PTR CALLBACK installer_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         ShowWindow(GetDlgItem(hwnd, ID_DWL_PROGRESS), SW_HIDE);
         install_dialog = hwnd;
         return TRUE;
+
+    case WM_DESTROY:
+        if (install_dialog == hwnd) install_dialog = NULL;
+        break;
 
     case WM_NOTIFY:
         switch (((NMHDR *)lParam)->code)
