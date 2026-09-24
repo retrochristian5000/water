@@ -1794,6 +1794,9 @@ WINBASEAPI DWORD       WINAPI GetFileSize(HANDLE,LPDWORD);
 WINBASEAPI BOOL        WINAPI GetFileSizeEx(HANDLE,PLARGE_INTEGER);
 WINBASEAPI BOOL        WINAPI GetFileTime(HANDLE,LPFILETIME,LPFILETIME,LPFILETIME);
 WINBASEAPI DWORD       WINAPI GetFileType(HANDLE);
+WINBASEAPI DWORD       WINAPI GetFirmwareEnvironmentVariableA(LPCSTR,LPCSTR,PVOID,DWORD);
+WINBASEAPI DWORD       WINAPI GetFirmwareEnvironmentVariableW(LPCWSTR,LPCWSTR,PVOID,DWORD);
+#define                       GetFirmwareEnvironmentVariable WINELIB_NAME_AW(GetFirmwareEnvironmentVariable)
 WINBASEAPI BOOL        WINAPI GetFirmwareType(PFIRMWARE_TYPE);
 #define                       GetFreeSpace(w) (__MSABI_LONG(0x100000))
 WINBASEAPI DWORD       WINAPI GetFullPathNameA(LPCSTR,DWORD,LPSTR,LPSTR*);
@@ -2249,6 +2252,9 @@ WINADVAPI  BOOL        WINAPI SetFileSecurityW(LPCWSTR,SECURITY_INFORMATION,PSEC
 #define                       SetFileSecurity WINELIB_NAME_AW(SetFileSecurity)
 WINBASEAPI BOOL        WINAPI SetFileTime(HANDLE,const FILETIME*,const FILETIME*,const FILETIME*);
 WINBASEAPI BOOL        WINAPI SetFileValidData(HANDLE,LONGLONG);
+WINBASEAPI BOOL        WINAPI SetFirmwareEnvironmentVariableA(LPCSTR,LPCSTR,PVOID,DWORD);
+WINBASEAPI BOOL        WINAPI SetFirmwareEnvironmentVariableW(LPCWSTR,LPCWSTR,PVOID,DWORD);
+#define                       SetFirmwareEnvironmentVariable WINELIB_NAME_AW(SetFirmwareEnvironmentVariable)
 WINBASEAPI UINT        WINAPI SetHandleCount(UINT);
 WINBASEAPI BOOL        WINAPI SetHandleInformation(HANDLE,DWORD,DWORD);
 WINBASEAPI BOOL        WINAPI SetInformationJobObject(HANDLE,JOBOBJECTINFOCLASS,LPVOID,DWORD);
