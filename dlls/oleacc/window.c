@@ -169,8 +169,18 @@ static HRESULT WINAPI Window_get_accDescription(IAccessible *iface,
 static HRESULT WINAPI Window_get_accRole(IAccessible *iface, VARIANT varID, VARIANT *pvarRole)
 {
     Window *This = impl_from_Window(iface);
-    FIXME("(%p)->(%s %p)\n", This, debugstr_variant(&varID), pvarRole);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%s %p)\n", This, debugstr_variant(&varID), pvarRole);
+
+    if (convert_child_id(&varID) != CHILDID_SELF)
+    {
+        V_VT(pvarRole) = VT_EMPTY;
+        return E_INVALIDARG;
+    }
+
+    V_VT(pvarRole) = VT_I4;
+    V_I4(pvarRole) = ROLE_SYSTEM_WINDOW;
+    return S_OK;
 }
 
 static HRESULT WINAPI Window_get_accState(IAccessible *iface, VARIANT varID, VARIANT *pvarState)
