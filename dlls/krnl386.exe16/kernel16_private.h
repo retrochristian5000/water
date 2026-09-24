@@ -203,9 +203,13 @@ extern LPVOID DOSMEM_MapDosToLinear(UINT);   /* linear DOS to Wine */
 extern UINT   DOSMEM_MapLinearToDos(LPVOID); /* linear Wine to DOS */
 extern BOOL   DOSMEM_MapDosLayout(void);
 extern LPVOID DOSMEM_AllocBlock(UINT size, WORD* p);
+extern LPVOID DOSMEM_AllocBlockStrategy(UINT size, WORD *p, BYTE strategy);
+extern LPVOID DOSMEM_AllocBlockHigh(UINT size, WORD *p, BYTE strategy);
 extern BOOL   DOSMEM_FreeBlock(void* ptr);
 extern UINT   DOSMEM_ResizeBlock(void* ptr, UINT size, BOOL exact);
 extern UINT   DOSMEM_Available(void);
+extern UINT   DOSMEM_AvailableHigh(void);
+extern DWORD  GlobalDOSAllocStrategy16(DWORD size, BYTE strategy, BOOL high);
 
 /* global16.c */
 extern HGLOBAL16 GLOBAL_CreateBlock( UINT16 flags, void *ptr, DWORD size,
