@@ -763,24 +763,34 @@ DWORD WINAPI GetFreeSpace16( UINT16 wFlags )
  * RETURNS
  *	Address (HW=Paragraph segment; LW=Selector)
  */
-DWORD WINAPI GlobalDOSAlloc16(
-             DWORD size /* [in] Number of bytes to be allocated */
-) {
-   UINT16    uParagraph;
-   LPVOID    lpBlock = DOSMEM_AllocBlock( size, &uParagraph );
+DWORD GlobalDOSAllocStrategy16( DWORD size, BYTE strategy, BOOL high )
+{
+    UINT16 paragraph;
+    LPVOID block;
+    HMODULE16 module;
+    WORD selector;
+    GLOBALARENA *arena;
 
-   if( lpBlock )
-   {
-       HMODULE16 hModule = GetModuleHandle16("KERNEL");
-       WORD	 wSelector;
-       GLOBALARENA *pArena;
+    block = high ? DOSMEM_AllocBlockHigh( size, &paragraph, strategy )
+                 : DOSMEM_AllocBlockStrategy( size, &paragraph, strategy );
+    if (!block) return 0;
 
-       wSelector = GLOBAL_CreateBlock(GMEM_FIXED, lpBlock, size, hModule, data_segment );
-       pArena = GET_ARENA_PTR(wSelector);
-       pArena->flags |= GA_DOSMEM;
-       return MAKELONG(wSelector,uParagraph);
-   }
-   return 0;
+    module = GetModuleHandle16( "KERNEL" );
+    selector = GLOBAL_CreateBlock( GMEM_FIXED, block, size, module, data_segment );
+    if (!selector)
+    {
+        DOSMEM_FreeBlock( block );
+        return 0;
+    }
+
+    arena = GET_ARENA_PTR( selector );
+    arena->flags |= GA_DOSMEM;
+    return MAKELONG( selector, paragraph );
+}
+
+DWORD WINAPI GlobalDOSAlloc16( DWORD size )
+{
+    return GlobalDOSAllocStrategy16( size, 0, FALSE );
 }
 
 
@@ -796,13 +806,14 @@ DWORD WINAPI GlobalDOSAlloc16(
 WORD WINAPI GlobalDOSFree16(
             WORD sel /* [in] Selector */
 ) {
-   DWORD   block = GetSelectorBase(sel);
+   DWORD block = GetSelectorBase(sel);
+   UINT dosaddr = DOSMEM_MapLinearToDos( (LPVOID)(ULONG_PTR)block );
 
-   if( block && block < 0x100000 )
+   if (block && dosaddr < 0x100000)
    {
-       LPVOID lpBlock = DOSMEM_MapDosToLinear( block );
-       if( DOSMEM_FreeBlock( lpBlock ) )
-	   GLOBAL_FreeBlock( sel );
+       LPVOID lpBlock = DOSMEM_MapDosToLinear( dosaddr );
+       if (DOSMEM_FreeBlock( lpBlock ))
+           GLOBAL_FreeBlock( sel );
        sel = 0;
    }
    return sel;
