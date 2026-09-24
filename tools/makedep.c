@@ -4504,7 +4504,13 @@ static void output_pch( struct makefile *make )
     output_filename( "Makefile" );
     output_filenames( make->pch_file->dependencies );
     output( "\n" );
-    output( "\t%s$(CC) -x c-header -o $@ %s", cmd_prefix( "PCH" ), wrapper );
+    output( "\t%s", cmd_prefix( "PCH" ) );
+    if (compiler_cache && *compiler_cache)
+    {
+        output_filename( compiler_cache );
+        output( " " );
+    }
+    output( "$(CC) -x c-header -o $@ %s", wrapper );
     output_filenames( defines );
     output_filenames( cflags );
     output_filename( "$(CFLAGS)" );
