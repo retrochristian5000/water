@@ -2103,6 +2103,24 @@ BOOL WINAPI DllEntryPoint( DWORD reason, HINSTANCE16 inst, WORD ds,
 
 
 /**********************************************************************
+ *         SetWindowContextHelpId    (USER.382)
+ */
+BOOL16 WINAPI SetWindowContextHelpId16( HWND16 hwnd, DWORD context_id )
+{
+    return SetWindowContextHelpId( WIN_Handle32(hwnd), context_id );
+}
+
+
+/**********************************************************************
+ *         GetWindowContextHelpId    (USER.383)
+ */
+DWORD WINAPI GetWindowContextHelpId16( HWND16 hwnd )
+{
+    return GetWindowContextHelpId( WIN_Handle32(hwnd) );
+}
+
+
+/**********************************************************************
  *         SetMenuContextHelpId    (USER.384)
  */
 BOOL16 WINAPI SetMenuContextHelpId16( HMENU16 hMenu, DWORD dwContextHelpID)

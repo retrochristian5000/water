@@ -1778,6 +1778,59 @@ HWND16 WINAPI FindWindowEx16( HWND16 parent, HWND16 child, LPCSTR className, LPC
 }
 
 
+static WORD arrange_windows16( BOOL tile, HWND16 parent, UINT16 flags, const RECT16 *rect16,
+                               UINT16 count, const HWND16 *windows16 )
+{
+    RECT rect, *rect_ptr = NULL;
+    HWND *windows = NULL;
+    WORD ret;
+    UINT i;
+
+    if (rect16)
+    {
+        rect.left = rect16->left;
+        rect.top = rect16->top;
+        rect.right = rect16->right;
+        rect.bottom = rect16->bottom;
+        rect_ptr = &rect;
+    }
+
+    if (windows16 && count)
+    {
+        if (!(windows = HeapAlloc( GetProcessHeap(), 0, count * sizeof(*windows) ))) return 0;
+        for (i = 0; i < count; ++i) windows[i] = WIN_Handle32( windows16[i] );
+    }
+
+    if (tile)
+        ret = TileWindows( WIN_Handle32(parent), flags, rect_ptr, count, windows );
+    else
+        ret = CascadeWindows( WIN_Handle32(parent), flags, rect_ptr, count, windows );
+
+    HeapFree( GetProcessHeap(), 0, windows );
+    return ret;
+}
+
+
+/**************************************************************************
+ *              TileWindows   (USER.428)
+ */
+WORD WINAPI TileWindows16( HWND16 parent, UINT16 flags, const RECT16 *rect,
+                           UINT16 count, const HWND16 *windows )
+{
+    return arrange_windows16( TRUE, parent, flags, rect, count, windows );
+}
+
+
+/**************************************************************************
+ *              CascadeWindows   (USER.429)
+ */
+WORD WINAPI CascadeWindows16( HWND16 parent, UINT16 flags, const RECT16 *rect,
+                              UINT16 count, const HWND16 *windows )
+{
+    return arrange_windows16( FALSE, parent, flags, rect, count, windows );
+}
+
+
 /***********************************************************************
  *		DefFrameProc (USER.445)
  */
@@ -2114,6 +2167,37 @@ BOOL16 WINAPI DrawCaption16( HWND16 hwnd, HDC16 hdc, const RECT16 *rect, UINT16 
 
 
 /**************************************************************************
+ *              MenuItemFromPoint   (USER.479)
+ */
+INT16 WINAPI MenuItemFromPoint16( HWND16 hwnd, HMENU16 menu, POINT16 point )
+{
+    POINT point32;
+
+    point32.x = point.x;
+    point32.y = point.y;
+    return (INT16)MenuItemFromPoint( WIN_Handle32(hwnd), HMENU_32(menu), point32 );
+}
+
+
+/**************************************************************************
+ *              GetMenuDefaultItem   (USER.663)
+ */
+UINT16 WINAPI GetMenuDefaultItem16( HMENU16 menu, UINT16 by_position, UINT16 flags )
+{
+    return (UINT16)GetMenuDefaultItem( HMENU_32(menu), by_position, flags );
+}
+
+
+/**************************************************************************
+ *              SetMenuDefaultItem   (USER.664)
+ */
+BOOL16 WINAPI SetMenuDefaultItem16( HMENU16 menu, UINT16 item, UINT16 by_position )
+{
+    return SetMenuDefaultItem( HMENU_32(menu), item, by_position );
+}
+
+
+/**************************************************************************
  *              GetMenuItemRect   (USER.665)
  */
 BOOL16 WINAPI GetMenuItemRect16( HWND16 hwnd, HMENU16 hMenu, UINT16 uItem,
@@ -2137,6 +2221,15 @@ BOOL16 WINAPI GetMenuItemRect16( HWND16 hwnd, HMENU16 hMenu, UINT16 uItem,
 INT16 WINAPI SetWindowRgn16( HWND16 hwnd, HRGN16 hrgn, BOOL16 redraw )
 {
     return SetWindowRgn( WIN_Handle32(hwnd), HRGN_32(hrgn), redraw );
+}
+
+
+/**************************************************************************
+ *              GetWindowRgn   (USER.669)
+ */
+INT16 WINAPI GetWindowRgn16( HWND16 hwnd, HRGN16 hrgn )
+{
+    return GetWindowRgn( WIN_Handle32(hwnd), HRGN_32(hrgn) );
 }
 
 

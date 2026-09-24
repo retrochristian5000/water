@@ -1875,6 +1875,15 @@ BOOL16 WINAPI SetMessageQueue16( INT16 size )
 
 
 /***********************************************************************
+ *              SetMessageExtraInfo   (USER.376)
+ */
+DWORD WINAPI SetMessageExtraInfo16( DWORD extra_info )
+{
+    return (DWORD)SetMessageExtraInfo( extra_info );
+}
+
+
+/***********************************************************************
  *		UserYield (USER.332)
  */
 void WINAPI UserYield16(void)

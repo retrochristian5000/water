@@ -353,15 +353,15 @@
 373 pascal -ret16 SubtractRect(ptr ptr ptr) SubtractRect16
 374 pascal -ret16 DllEntryPoint(long word word word long word)
 375 stub DrawTextEx
-376 stub SetMessageExtraInfo
+376 pascal   SetMessageExtraInfo(long) SetMessageExtraInfo16
 378 stub SetPropEx
 379 stub GetPropEx
 380 stub RemovePropEx
 #381 stub UsrMPR_ThunkData16
-382 stub SetWindowContextHelpID
-383 stub GetWindowContextHelpID
-384 pascal -ret16 SetMenuContextHelpId(word word) SetMenuContextHelpId16
-385 pascal -ret16 GetMenuContextHelpId(word) GetMenuContextHelpId16
+382 pascal -ret16 SetWindowContextHelpID(word long) SetWindowContextHelpId16
+383 pascal   GetWindowContextHelpID(word) GetWindowContextHelpId16
+384 pascal -ret16 SetMenuContextHelpId(word long) SetMenuContextHelpId16
+385 pascal   GetMenuContextHelpId(word) GetMenuContextHelpId16
 389 pascal   LoadImage(word str word word word word) LoadImage16
 390 pascal -ret16 CopyImage(word word word word word) CopyImage16
 391 pascal -ret16 SignalProc32(long long long word) UserSignalProc
@@ -392,8 +392,8 @@
 422 pascal -ret16 DlgDirSelectEx(word ptr word word) DlgDirSelectEx16
 423 pascal -ret16 DlgDirSelectComboBoxEx(word ptr word word) DlgDirSelectComboBoxEx16
 427 pascal -ret16 FindWindowEx(word word str str) FindWindowEx16
-428 stub TileWindows
-429 stub CascadeWindows
+428 pascal -ret16 TileWindows(word word ptr word ptr) TileWindows16
+429 pascal -ret16 CascadeWindows(word word ptr word ptr) CascadeWindows16
 430 pascal -ret16 lstrcmp(str str) lstrcmp16
 431 pascal   AnsiUpper(segstr) AnsiUpper16
 432 pascal   AnsiLower(segstr) AnsiLower16
@@ -434,7 +434,7 @@
 476 pascal -ret16 GetScrollInfo(word s_word ptr) GetScrollInfo16
 477 pascal -ret16 GetKeyboardLayoutName(ptr) GetKeyboardLayoutName16
 478 stub LoadKeyboardLayout
-479 stub MenuItemFromPoint
+479 pascal -ret16 MenuItemFromPoint(word word long) MenuItemFromPoint16
 480 stub GetUserLocalObjType
 #481 HARDWARE_EVENT
 482 pascal -ret16 EnableScrollBar(word word word) EnableScrollBar16
@@ -512,13 +512,13 @@
 660 pascal -ret16 DrawCaption(word word ptr word) DrawCaption16
 661 stub SetSysColorsTemp
 662 stub DrawMenubarTemp
-663 stub GetMenuDefaultItem
-664 stub SetMenuDefaultItem
+663 pascal -ret16 GetMenuDefaultItem(word word word) GetMenuDefaultItem16
+664 pascal -ret16 SetMenuDefaultItem(word word word) SetMenuDefaultItem16
 665 pascal -ret16 GetMenuItemRect(word word word ptr) GetMenuItemRect16
 666 pascal -ret16 CheckMenuRadioItem(word word word word word) CheckMenuRadioItem16
 667 stub TrackPopupMenuEx
 668 pascal -ret16 SetWindowRgn(word word word) SetWindowRgn16
-669 stub GetWindowRgn
+669 pascal -ret16 GetWindowRgn(word word) GetWindowRgn16
 800 stub CHOOSEFONT_CALLBACK16
 801 stub FINDREPLACE_CALLBACK16
 802 stub OPENFILENAME_CALLBACK16
