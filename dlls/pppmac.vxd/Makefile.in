@@ -1,0 +1,4 @@
+MODULE    = pppmac.vxd
+
+SOURCES = \
+	pppmac.c

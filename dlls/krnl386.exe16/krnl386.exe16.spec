@@ -545,6 +545,7 @@
  951 pascal -register __wine_vxd_configmg() __wine_vxd_configmg
  955 pascal -register __wine_vxd_enable() __wine_vxd_enable
 1990 pascal -register __wine_vxd_timerapi() __wine_vxd_timerapi
+2077 pascal -register __wine_vxd_pppmac() __wine_vxd_pppmac
 
 ################################################################
 # 32-bit version of the various 16-bit functions exported by kernel32

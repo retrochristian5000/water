@@ -63,7 +63,8 @@ static struct vxd_module vxd_modules[MAX_VXD_MODULES];
 static struct vxdcall_service vxd_services[] =
 {
     { {'v','m','m','.','v','x','d',0},             0x0001, NULL, NULL },
-    { {'v','w','i','n','3','2','.','v','x','d',0}, 0x002a, NULL, NULL }
+    { {'v','w','i','n','3','2','.','v','x','d',0}, 0x002a, NULL, NULL },
+    { {'p','p','p','m','a','c','.','v','x','d',0}, 0x0499, NULL, NULL }
 };
 
 #define W32S_APP2WINE(addr) ((addr)? (DWORD)(addr) + W32S_offset : 0)
@@ -288,6 +289,38 @@ void WINAPI __wine_vxd_vmm ( CONTEXT *context )
         VXD_BARF( context, "VMM" );
     }
 }
+
+/***********************************************************************
+ *           __wine_vxd_pppmac (WPROCS.2077)
+ *
+ * PPPMAC is the Windows 95/98 virtual PPP driver (VxD id 0499h).
+ * Ralf Brown's Interrupt List records services 00h through 09h for
+ * Windows 95 SP1 but does not document their calling conventions.
+ * Reverse-engineering metadata identifies service 00h as the version
+ * entry point, so only that service is exposed until the remaining
+ * contracts are known.
+ */
+void WINAPI __wine_vxd_pppmac( CONTEXT *context )
+{
+    unsigned int service = AX_reg(context);
+
+    TRACE("[%04x] PPPMAC\n", service);
+
+    switch (service)
+    {
+    case 0x0000: /* PPP_Get_Version */
+        SET_AX( context, 0x0300 );
+        RESET_CFLAG(context);
+        break;
+
+    default:
+        FIXME("PPPMAC service %04x not implemented\n", service);
+        SET_AX( context, ERROR_INVALID_FUNCTION );
+        SET_CFLAG(context);
+        break;
+    }
+}
+
 
 /***********************************************************************
  *           __wine_vxd_pagefile (WPROCS.433)
