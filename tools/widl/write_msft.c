@@ -72,6 +72,13 @@ typedef struct tagMSFT_ImpFile {
     char filename[0]; /* preceded by two bytes of encoded (length << 2) + flags in the low two bits. */
 } MSFT_ImpFile;
 
+typedef struct _msft_deferred_ref_t
+{
+    type_t *type;
+    int offset;
+    struct _msft_deferred_ref_t *next;
+} msft_deferred_ref_t;
+
 typedef struct _msft_typelib_t
 {
     typelib_t *typelib;
@@ -89,6 +96,7 @@ typedef struct _msft_typelib_t
 
     struct _msft_typeinfo_t *typeinfos;
     struct _msft_typeinfo_t *last_typeinfo;
+    msft_deferred_ref_t *deferred_refs;
 } msft_typelib_t;
 
 typedef struct _msft_typeinfo_t
@@ -751,6 +759,30 @@ static void add_union_typeinfo(msft_typelib_t *typelib, type_t *tunion);
 static void add_coclass_typeinfo(msft_typelib_t *typelib, type_t *cls);
 static void add_dispinterface_typeinfo(msft_typelib_t *typelib, type_t *dispinterface);
 static void add_typedef_typeinfo(msft_typelib_t *typelib, type_t *dispinterface);
+
+static int type_defined_in_typelib(const msft_typelib_t *typelib, const type_t *type)
+{
+    const statement_t *stmt;
+
+    if (!typelib->typelib->stmts)
+        return 0;
+
+    LIST_FOR_EACH_ENTRY(stmt, typelib->typelib->stmts, const statement_t, entry)
+        if (stmt->type == STMT_TYPE && stmt->u.type == type)
+            return 1;
+
+    return 0;
+}
+
+static void defer_typeinfo_ref(msft_typelib_t *typelib, type_t *type, int offset)
+{
+    msft_deferred_ref_t *deferred = xmalloc(sizeof(*deferred));
+
+    deferred->type = type;
+    deferred->offset = offset;
+    deferred->next = typelib->deferred_refs;
+    typelib->deferred_refs = deferred;
+}
 
 
 /****************************************************************************
@@ -2348,10 +2380,19 @@ static void add_coclass_typeinfo(msft_typelib_t *typelib, type_t *cls)
 
     i = 0;
     if (ifaces) LIST_FOR_EACH_ENTRY( iref, ifaces, typeref_t, entry ) {
-        if(iref->type->typelib_idx == -1)
+        int ref_offset = offset + i * sizeof(*ref);
+
+        if (iref->type->typelib_idx == -1 && !type_defined_in_typelib(typelib, iref->type))
             add_interface_typeinfo(typelib, iref->type);
-        ref = (MSFT_RefRecord*) (typelib->typelib_segment_data[MSFT_SEG_REFERENCES] + offset + i * sizeof(*ref));
-        ref->reftype = typelib->typelib_typeinfo_offsets[iref->type->typelib_idx];
+
+        ref = (MSFT_RefRecord*) (typelib->typelib_segment_data[MSFT_SEG_REFERENCES] + ref_offset);
+        if (iref->type->typelib_idx == -1)
+        {
+            ref->reftype = -1;
+            defer_typeinfo_ref(typelib, iref->type, ref_offset);
+        }
+        else
+            ref->reftype = typelib->typelib_typeinfo_offsets[iref->type->typelib_idx];
         ref->flags = 0;
         ref->oCustData = -1;
         ref->onext = -1;
@@ -2490,10 +2531,19 @@ static void add_entry(msft_typelib_t *typelib, const statement_t *stmt)
         add_module_typeinfo(typelib, stmt->u.type);
         break;
     case STMT_TYPE:
-    case STMT_TYPEREF:
     {
         type_t *type = stmt->u.type;
         add_type_typeinfo(typelib, type);
+        break;
+    }
+    case STMT_TYPEREF:
+    {
+        type_t *type = stmt->u.type;
+
+        /* A forward declaration must not pull a later local typeinfo
+         * out of source order. The full definition will add it. */
+        if (!type_defined_in_typelib(typelib, type))
+            add_type_typeinfo(typelib, type);
         break;
     }
     }
@@ -2692,6 +2742,31 @@ static void ctl2_write_typeinfos(msft_typelib_t *typelib)
     }
 }
 
+static void resolve_deferred_refs(msft_typelib_t *typelib)
+{
+    msft_deferred_ref_t *deferred = typelib->deferred_refs;
+
+    while (deferred)
+    {
+        msft_deferred_ref_t *next = deferred->next;
+        MSFT_RefRecord *ref;
+
+        if (deferred->type->typelib_idx == -1)
+            add_interface_typeinfo(typelib, deferred->type);
+
+        if (deferred->type->typelib_idx != -1)
+        {
+            ref = (MSFT_RefRecord *)(typelib->typelib_segment_data[MSFT_SEG_REFERENCES] + deferred->offset);
+            ref->reftype = typelib->typelib_typeinfo_offsets[deferred->type->typelib_idx];
+        }
+
+        free(deferred);
+        deferred = next;
+    }
+
+    typelib->deferred_refs = NULL;
+}
+
 static void save_all_changes(msft_typelib_t *typelib)
 {
     int filepos;
@@ -2833,6 +2908,7 @@ int create_msft_typelib(typelib_t *typelib)
         LIST_FOR_EACH_ENTRY( stmt, typelib->stmts, const statement_t, entry )
             add_entry(msft, stmt);
 
+    resolve_deferred_refs(msft);
     save_all_changes(msft);
     free(msft);
     return 1;
