@@ -2200,6 +2200,28 @@ BOOL16 WINAPI SetMenuDefaultItem16( HMENU16 menu, UINT16 item, UINT16 by_positio
 /**************************************************************************
  *              GetMenuItemRect   (USER.665)
  */
+/**************************************************************************
+ *              TrackPopupMenuEx   (USER.667)
+ */
+BOOL16 WINAPI TrackPopupMenuEx16( HMENU16 menu, UINT16 flags, INT16 x, INT16 y,
+                                  HWND16 owner, const TPMPARAMS16 *params16 )
+{
+    TPMPARAMS params, *params_ptr = NULL;
+
+    if (params16)
+    {
+        params.cbSize = sizeof(params);
+        params.rcExclude.left = params16->rcExclude.left;
+        params.rcExclude.top = params16->rcExclude.top;
+        params.rcExclude.right = params16->rcExclude.right;
+        params.rcExclude.bottom = params16->rcExclude.bottom;
+        params_ptr = &params;
+    }
+
+    return TrackPopupMenuEx( HMENU_32(menu), flags, x, y, WIN_Handle32(owner), params_ptr );
+}
+
+
 BOOL16 WINAPI GetMenuItemRect16( HWND16 hwnd, HMENU16 hMenu, UINT16 uItem,
                                  LPRECT16 rect)
 {

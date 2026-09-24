@@ -168,6 +168,12 @@ typedef struct {
 
 typedef struct
 {
+    UINT16 cbSize;
+    RECT16 rcExclude;
+} TPMPARAMS16, *LPTPMPARAMS16;
+
+typedef struct
+{
     BYTE   fVirt;
     WORD   key;
     WORD   cmd;

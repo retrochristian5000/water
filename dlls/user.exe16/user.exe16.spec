@@ -516,7 +516,7 @@
 664 pascal -ret16 SetMenuDefaultItem(word word word) SetMenuDefaultItem16
 665 pascal -ret16 GetMenuItemRect(word word word ptr) GetMenuItemRect16
 666 pascal -ret16 CheckMenuRadioItem(word word word word word) CheckMenuRadioItem16
-667 stub TrackPopupMenuEx
+667 pascal -ret16 TrackPopupMenuEx(word word s_word s_word word ptr) TrackPopupMenuEx16
 668 pascal -ret16 SetWindowRgn(word word word) SetWindowRgn16
 669 pascal -ret16 GetWindowRgn(word word) GetWindowRgn16
 800 stub CHOOSEFONT_CALLBACK16
