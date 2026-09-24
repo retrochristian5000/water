@@ -1,0 +1,9 @@
+MODULE    = dvdplay.exe
+IMPORTS   = advapi32
+
+EXTRADLLFLAGS = -mwindows -municode
+
+VER_FILEDESCRIPTION_STR = "DVD Play Placeholder Application"
+
+SOURCES = \
+	main.c

@@ -250,6 +250,9 @@ HKCR,cplfile\shell\cplopen,,2,"Open with Control Panel"
 HKCR,cplfile\shell\cplopen\command,,2,"rundll32.exe shell32.dll,Control_RunDLL ""%1"",%*"
 HKCR,Directory\Background\shellex\ContextMenuHandlers\New,,,"{d969a300-e7ff-11d0-a93b-00a0c90f2719}"
 HKCR,DirectShow,,16
+HKCR,DVD\shell,,2,"Play"
+HKCR,DVD\shell\play,,2,"&Play"
+HKCR,DVD\shell\play\command,,2,"""%11%\dvdplay.exe"" /play ""%1"""
 HKCR,exefile,,2,"Application"
 HKCR,exefile\DefaultIcon,,2,"%1"
 HKCR,exefile\shell\open\command,,2,"""%1"" %*"
@@ -580,6 +583,8 @@ HKLM,Software\Microsoft\EnterpriseCertificates,,16
 HKLM,Software\Microsoft\EventSystem,,16
 HKLM,%CurrentVersion%\App Paths\ICWCONN1.EXE,,2,"%16422%\Internet Explorer\Connection Wizard\icwconn1.exe"
 HKLM,%CurrentVersion%\App Paths\ICWCONN1.EXE,"Path",2,"%16422%\Internet Explorer\Connection Wizard"
+HKLM,%CurrentVersion%\App Paths\wmplayer.exe,,2,"%16422%\Windows Media Player\wmplayer.exe"
+HKLM,%CurrentVersion%\App Paths\wmplayer.exe,"Path",2,"%16422%\Windows Media Player"
 HKLM,Software\Microsoft\Internet Connection Wizard,"InstallationDirectory",2,"%16422%\Internet Explorer\Connection Wizard"
 HKLM,Software\Microsoft\MediaPlayer,"Installation DirectoryLFN",2,"%16422%\Windows Media Player"
 HKLM,Software\Microsoft\MediaPlayer\PlayerUpgrade,"PlayerVersion",2,"12,0,7601,18840"
