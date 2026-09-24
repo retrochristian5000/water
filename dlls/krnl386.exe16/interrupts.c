@@ -21,6 +21,8 @@
 #include <stdio.h>
 
 #include "wine/winbase16.h"
+#include "wincon.h"
+#include "winuser.h"
 #include "kernel16_private.h"
 #include "dosexe.h"
 #include "winternl.h"
@@ -34,6 +36,7 @@ WINE_DECLARE_DEBUG_CHANNEL(relay);
 
 static void WINAPI DOSVM_Int11Handler(CONTEXT*);
 static void WINAPI DOSVM_Int12Handler(CONTEXT*);
+static void WINAPI DOSVM_Int16Handler(CONTEXT*);
 static void WINAPI DOSVM_Int17Handler(CONTEXT*);
 static void WINAPI DOSVM_Int19Handler(CONTEXT*);
 static void WINAPI DOSVM_Int1aHandler(CONTEXT*);
@@ -52,7 +55,7 @@ static const INTPROC DOSVM_VectorsBuiltin[] =
   /* 08 */ 0,                  0,                  0,                  0,
   /* 0C */ 0,                  0,                  0,                  0,
   /* 10 */ 0,                  DOSVM_Int11Handler, DOSVM_Int12Handler, 0,
-  /* 14 */ 0,                  DOSVM_Int15Handler, 0,                  DOSVM_Int17Handler,
+  /* 14 */ 0,                  DOSVM_Int15Handler, DOSVM_Int16Handler, DOSVM_Int17Handler,
   /* 18 */ 0,                  DOSVM_Int19Handler, DOSVM_Int1aHandler, 0,
   /* 1C */ 0,                  0,                  0,                  0,
   /* 20 */ DOSVM_Int20Handler, DOSVM_Int21Handler, 0,                  0,
@@ -88,6 +91,103 @@ static const INTPROC DOSVM_VectorsBuiltin[] =
  */
 static void WINAPI DOSVM_DefaultHandler( CONTEXT *context )
 {
+}
+
+
+/**********************************************************************
+ *          DOSVM_GetKeyboardEvent
+ *
+ * Retrieve a BIOS-style keyboard event from the current console.
+ * Non-key and modifier-only events are consumed because they do not
+ * enter the BIOS keyboard buffer.
+ */
+static BOOL DOSVM_GetKeyboardEvent( KEY_EVENT_RECORD *key, BOOL remove )
+{
+    INPUT_RECORD record;
+    HANDLE input = GetStdHandle( STD_INPUT_HANDLE );
+    DWORD count;
+
+    if (!input || input == INVALID_HANDLE_VALUE) return FALSE;
+
+    for (;;)
+    {
+        if (remove)
+        {
+            if (!ReadConsoleInputA( input, &record, 1, &count ) || !count) return FALSE;
+        }
+        else
+        {
+            if (!PeekConsoleInputA( input, &record, 1, &count ) || !count) return FALSE;
+        }
+
+        if (record.EventType == KEY_EVENT && record.Event.KeyEvent.bKeyDown)
+        {
+            WORD vk = record.Event.KeyEvent.wVirtualKeyCode;
+
+            if (vk != VK_SHIFT && vk != VK_CONTROL && vk != VK_MENU &&
+                vk != VK_CAPITAL && vk != VK_NUMLOCK && vk != VK_SCROLL &&
+                record.Event.KeyEvent.wVirtualScanCode)
+            {
+                *key = record.Event.KeyEvent;
+                return TRUE;
+            }
+        }
+
+        if (!remove && (!ReadConsoleInputA( input, &record, 1, &count ) || !count))
+            return FALSE;
+    }
+}
+
+
+/**********************************************************************
+ *          DOSVM_Int16Handler
+ *
+ * Basic BIOS keyboard services used by DOS command-line tools such as
+ * DOSKEY.COM.  Enhanced-keyboard functions 10h/11h share the same
+ * behavior here because KEY_EVENT_RECORD already carries scan codes.
+ */
+static void WINAPI DOSVM_Int16Handler( CONTEXT *context )
+{
+    KEY_EVENT_RECORD key;
+    BYTE flags = 0;
+
+    switch (AH_reg(context))
+    {
+    case 0x00:  /* read keystroke */
+    case 0x10:  /* enhanced keyboard - read keystroke */
+        if (DOSVM_GetKeyboardEvent( &key, TRUE ))
+            SET_AX( context, MAKEWORD( (BYTE)key.uChar.AsciiChar,
+                                      (BYTE)key.wVirtualScanCode ) );
+        break;
+
+    case 0x01:  /* check for keystroke */
+    case 0x11:  /* enhanced keyboard - check for keystroke */
+        if (DOSVM_GetKeyboardEvent( &key, FALSE ))
+        {
+            SET_AX( context, MAKEWORD( (BYTE)key.uChar.AsciiChar,
+                                      (BYTE)key.wVirtualScanCode ) );
+            RESET_ZFLAG( context );
+        }
+        else
+            SET_ZFLAG( context );
+        break;
+
+    case 0x02:  /* get shift flags */
+        if (GetKeyState( VK_RSHIFT ) & 0x8000) flags |= 0x01;
+        if (GetKeyState( VK_LSHIFT ) & 0x8000) flags |= 0x02;
+        if (GetKeyState( VK_CONTROL ) & 0x8000) flags |= 0x04;
+        if (GetKeyState( VK_MENU ) & 0x8000) flags |= 0x08;
+        if (GetKeyState( VK_SCROLL ) & 0x0001) flags |= 0x10;
+        if (GetKeyState( VK_NUMLOCK ) & 0x0001) flags |= 0x20;
+        if (GetKeyState( VK_CAPITAL ) & 0x0001) flags |= 0x40;
+        if (GetKeyState( VK_INSERT ) & 0x0001) flags |= 0x80;
+        SET_AL( context, flags );
+        break;
+
+    default:
+        FIXME( "INT 16h function %02x not implemented\n", AH_reg(context) );
+        break;
+    }
 }
 
 
