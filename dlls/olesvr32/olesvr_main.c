@@ -18,9 +18,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-/*	At the moment, these are only empty stubs.
- */
-
 #include <stdarg.h>
 #include <string.h>
 
@@ -89,6 +86,7 @@ typedef enum
     OLE_ERROR_UPDATE,
     OLE_ERROR_SETDATA_FORMAT,
     OLE_ERROR_STATIC_FROM_OTHER_OS,
+    OLE_ERROR_FILE_VER,
     OLE_WARN_DELETE_DATA = 1000
 } OLESTATUS;
 
@@ -119,7 +117,7 @@ typedef struct _OLESERVERVTBL
     OLESTATUS (CALLBACK *Edit)(LPOLESERVER,LHSERVERDOC,LPCOLESTR16,LPCOLESTR16,LPOLESERVERDOC *);
     OLESTATUS (CALLBACK *Exit)(LPOLESERVER);
     OLESTATUS (CALLBACK *Release)(LPOLESERVER);
-    OLESTATUS (CALLBACK *Execute)(LPOLESERVER);
+    OLESTATUS (CALLBACK *Execute)(LPOLESERVER,HGLOBAL);
 } OLESERVERVTBL, *LPOLESERVERVTBL;
 
 typedef struct _OLESERVER
