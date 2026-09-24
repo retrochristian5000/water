@@ -1,5 +1,5 @@
 @ stub CompressPhoneNumber
-@ stub MprAdminBufferFree
+@ stdcall MprAdminBufferFree(ptr)
 @ stub MprAdminConnectionClearStats
 @ stub MprAdminConnectionEnum
 @ stub MprAdminConnectionGetInfo
@@ -66,7 +66,7 @@
 @ stub MprAdminUserSetInfo
 @ stub MprAdminUserWrite
 @ stub MprAdminUserWriteProfFlags
-@ stub MprConfigBufferFree
+@ stdcall MprConfigBufferFree(ptr)
 @ stub MprConfigGetFriendlyName
 @ stub MprConfigGetGuidName
 @ stub MprConfigInterfaceCreate
