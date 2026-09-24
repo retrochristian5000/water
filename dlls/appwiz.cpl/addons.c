@@ -634,21 +634,28 @@ static const IInternetBindInfoVtbl InstallCallbackBindInfoVtbl = {
 
 static IInternetBindInfo InstallCallbackBindInfo = { &InstallCallbackBindInfoVtbl };
 
-static void append_url_params( WCHAR *url )
+static BOOL append_url_param(WCHAR *url, DWORD capacity, const WCHAR *name, const char *value)
 {
-    DWORD size = INTERNET_MAX_URL_LENGTH * sizeof(WCHAR);
     DWORD len = lstrlenW(url);
+    DWORD name_len = lstrlenW(name);
+    int value_len;
 
-    lstrcpyW(url+len, L"?arch=");
-    len += lstrlenW(L"?arch=");
-    len += MultiByteToWideChar(CP_ACP, 0, addon->arch, strlen(addon->arch) + 1,
-                               url+len, size/sizeof(WCHAR)-len)-1;
-    lstrcpyW(url+len, L"&v=");
-    len += lstrlenW(L"&v=");
-    len += MultiByteToWideChar(CP_ACP, 0, addon->version, -1, url+len, size/sizeof(WCHAR)-len)-1;
-    lstrcpyW(url+len, L"&winev=");
-    len += lstrlenW(L"&winev=");
-    MultiByteToWideChar(CP_ACP, 0, p_wine_get_version ? p_wine_get_version() : 0, -1, url+len, size/sizeof(WCHAR)-len);
+    if (!value) value = "";
+    value_len = MultiByteToWideChar(CP_ACP, 0, value, -1, NULL, 0);
+    if (!value_len || len + name_len + value_len > capacity) return FALSE;
+
+    memcpy(url + len, name, name_len * sizeof(WCHAR));
+    return MultiByteToWideChar(CP_ACP, 0, value, -1, url + len + name_len,
+                               capacity - len - name_len) != 0;
+}
+
+static BOOL append_url_params(WCHAR *url, DWORD capacity)
+{
+    const char *wine_version = p_wine_get_version ? p_wine_get_version() : "";
+
+    return append_url_param(url, capacity, L"?arch=", addon->arch)
+        && append_url_param(url, capacity, L"&v=", addon->version)
+        && append_url_param(url, capacity, L"&winev=", wine_version);
 }
 
 static LPWSTR get_url(void)
@@ -667,15 +674,26 @@ static LPWSTR get_url(void)
     hkey = open_config_key();
     if (hkey)
     {
-        res = RegQueryValueExW(hkey, addon->url_config_key, NULL, &type, (LPBYTE)url, &returned_size);
+        res = RegGetValueW(hkey, NULL, addon->url_config_key, RRF_RT_REG_SZ, &type, url, &returned_size);
         RegCloseKey(hkey);
-        if(res == ERROR_SUCCESS && type == REG_SZ) goto found;
+        if(res == ERROR_SUCCESS) goto found;
     }
 
-    MultiByteToWideChar( CP_ACP, 0, addon->url_default, -1, url, size / sizeof(WCHAR) );
+    if (!MultiByteToWideChar(CP_ACP, 0, addon->url_default, -1, url, size / sizeof(WCHAR)))
+    {
+        free(url);
+        return NULL;
+    }
+    returned_size = (lstrlenW(url) + 1) * sizeof(WCHAR);
 
 found:
-    if (returned_size > sizeof(httpW) && !memcmp(url, httpW, sizeof(httpW))) append_url_params( url );
+    if (returned_size > sizeof(httpW) && !memcmp(url, httpW, sizeof(httpW))
+        && !append_url_params(url, size / sizeof(WCHAR)))
+    {
+        WARN("Addon URL is too long\n");
+        free(url);
+        return NULL;
+    }
 
     TRACE("Got URL %s\n", debugstr_w(url));
     return url;
