@@ -70,7 +70,7 @@
 70 stub OLECONVERTISTORAGETOOLESTREAM
 71 stub OLECONVERTOLESTREAMTOISTORAGE
 74 stub READFMTUSERTYPESTG
-75 stub WRITEFMTUSERTYPESTG
+75 pascal WriteFmtUserTypeStg(segptr word str) WriteFmtUserTypeStg16
 76 pascal -ret16 OleFlushClipboard() OleFlushClipboard16
 77 pascal OleIsCurrentClipboard(ptr) OleIsCurrentClipboard16
 78 stub OLETRANSLATEACCELERATOR
