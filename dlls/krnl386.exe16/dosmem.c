@@ -48,6 +48,8 @@ WORD int16_sel = 0;
 /* DOS memory highest address (including HMA) */
 #define DOSMEM_SIZE             0x110000
 #define DOSMEM_64KB             0x10000
+#define DOSMEM_UMB_BOTTOM       0x0d0000
+#define DOSMEM_UMB_TOP          0x0effff
 
 /*
  * Memory Control Block (MCB) definition
@@ -88,8 +90,9 @@ typedef struct {
 #define VM_STUB(x) (0x90CF00CD|(x<<8)) /* INT x; IRET; NOP */
 #define VM_STUB_SEGMENT 0xf000         /* BIOS segment */
 
-/* FIXME: this should be moved to the LOL */
-static MCB* DOSMEM_root_block;
+/* FIXME: these should be moved to the LOL */
+static MCB *DOSMEM_root_block;
+static MCB *DOSMEM_umb_block;
 
 /* when looking at DOS and real mode memory, we activate in three different
  * modes, depending the situation.
@@ -372,8 +375,13 @@ BOOL DOSMEM_InitDosMemory(void)
             DOSMEM_root_block->psp = MCB_PSP_FREE;
             DOSMEM_root_block->size = (DOSMEM_dosmem + 0x9fffc  - ((char*)DOSMEM_root_block)) >> 4;
 
-            TRACE("DOS conventional memory initialized, %d bytes free.\n",
-                  DOSMEM_Available());
+            DOSMEM_umb_block = (MCB *)(DOSMEM_dosmem + DOSMEM_UMB_BOTTOM);
+            DOSMEM_umb_block->type = MCB_TYPE_LAST;
+            DOSMEM_umb_block->psp = MCB_PSP_FREE;
+            DOSMEM_umb_block->size = ((DOSMEM_UMB_TOP + 1 - DOSMEM_UMB_BOTTOM) >> 4) - 1;
+
+            TRACE("DOS conventional memory initialized, %d bytes free, %d bytes UMB free.\n",
+                  DOSMEM_Available(), DOSMEM_AvailableHigh());
 
             DOSMEM_InitSegments();
 
@@ -489,66 +497,106 @@ LPVOID DOSMEM_MapRealToLinear(DWORD x)
 }
 
 /***********************************************************************
+ *           DOSMEM_AllocFromChain
+ *
+ * Allocate from one DOS MCB chain using first, best, or last fit.
+ */
+static LPVOID DOSMEM_AllocFromChain( MCB *root, UINT size, UINT16 *pseg, BYTE strategy )
+{
+    MCB *curr, *chosen = NULL, *next;
+    WORD psp;
+
+    if (!(psp = DOSVM_psp)) psp = MCB_PSP_DOS;
+    if (pseg) *pseg = 0;
+
+    size = (size + 15) >> 4;
+    strategy &= 3;
+
+    for (curr = root; curr; curr = MCB_NEXT(curr))
+    {
+        if (!MCB_VALID(curr))
+        {
+            ERR("MCB List Corrupt\n");
+            MCB_DUMP(curr);
+            return NULL;
+        }
+        if (curr->psp != MCB_PSP_FREE) continue;
+
+        DOSMEM_Collapse(curr);
+        if (curr->size < size) continue;
+
+        if (!chosen || strategy == 0 ||
+            (strategy == 1 && curr->size < chosen->size) ||
+            strategy == 2)
+            chosen = curr;
+
+        if (strategy == 0) break;
+    }
+
+    if (!chosen) return NULL;
+
+    if (strategy == 2 && chosen->size > size)
+    {
+        /* Last fit allocates from the high end of the selected free block. */
+        next = (MCB *)((char *)chosen + ((chosen->size - size) << 4));
+        next->type = chosen->type;
+        next->psp = psp;
+        next->size = size;
+        chosen->type = MCB_TYPE_NORMAL;
+        chosen->size -= size + 1;
+        chosen = next;
+    }
+    else
+    {
+        if (chosen->size > size)
+        {
+            next = (MCB *)((char *)chosen + ((size + 1) << 4));
+            next->psp = MCB_PSP_FREE;
+            next->size = chosen->size - (size + 1);
+            next->type = chosen->type;
+            chosen->type = MCB_TYPE_NORMAL;
+            chosen->size = size;
+        }
+        chosen->psp = psp;
+    }
+
+    if (pseg) *pseg = ((char *)chosen + 16 - DOSMEM_dosmem) >> 4;
+    return (char *)chosen + 16;
+}
+
+
+/***********************************************************************
  *           DOSMEM_AllocBlock
  *
- * Carve a chunk of the DOS memory block (without selector).
+ * Carve a chunk of conventional DOS memory using first fit.
  */
 LPVOID DOSMEM_AllocBlock(UINT size, UINT16* pseg)
 {
-    MCB *curr;
-    MCB *next = NULL;
-    WORD psp;
-
     DOSMEM_InitDosMemory();
+    TRACE("(low,%04xh)\n", size);
+    return DOSMEM_AllocFromChain(DOSMEM_root_block, size, pseg, 0);
+}
 
-    curr = DOSMEM_root_block;
-    if (!(psp = DOSVM_psp)) psp = MCB_PSP_DOS;
 
-    if (pseg) *pseg = 0;
+/***********************************************************************
+ *           DOSMEM_AllocBlockStrategy
+ */
+LPVOID DOSMEM_AllocBlockStrategy(UINT size, UINT16 *pseg, BYTE strategy)
+{
+    DOSMEM_InitDosMemory();
+    TRACE("(low,%04xh,strategy=%02x)\n", size, strategy);
+    return DOSMEM_AllocFromChain(DOSMEM_root_block, size, pseg, strategy);
+}
 
-    TRACE( "(%04xh)\n", size );
 
-    /* round up to paragraph */
-    size = (size + 15) >> 4;
-
-#ifdef __DOSMEM_DEBUG__
-    DOSMEM_Available();     /* checks the whole MCB list */
-#endif
-
-    /* loop over all MCB and search the next large enough MCB */
-    while (curr)
-    {
-        if (!MCB_VALID (curr))
-        {
-            ERR( "MCB List Corrupt\n" );
-            MCB_DUMP( curr );
-            return NULL;
-        }
-        if (curr->psp == MCB_PSP_FREE)
-        {
-            DOSMEM_Collapse( curr );
-            /* is it large enough (one paragraph for the MCB)? */
-            if (curr->size >= size)
-            {
-                if (curr->size > size)
-                {
-                    /* split curr */
-                    next = (MCB *) ((char*) curr + ((size+1) << 4));
-                    next->psp = MCB_PSP_FREE;
-                    next->size = curr->size - (size+1);
-                    next->type = curr->type;
-                    curr->type = MCB_TYPE_NORMAL;
-                    curr->size = size;
-                }
-                /* curr is the found block */
-                curr->psp = psp;
-                if( pseg ) *pseg = (((char*)curr) + 16 - DOSMEM_dosmem) >> 4;
-                return (LPVOID) ((char*)curr + 16);
-            }
-        }
-        curr = MCB_NEXT(curr);
-    }
-    return NULL;
+/***********************************************************************
+ *           DOSMEM_AllocBlockHigh
+ */
+LPVOID DOSMEM_AllocBlockHigh(UINT size, UINT16 *pseg, BYTE strategy)
+{
+    DOSMEM_InitDosMemory();
+    TRACE("(high,%04xh,strategy=%02x)\n", size, strategy);
+    return DOSMEM_AllocFromChain(DOSMEM_umb_block, size, pseg, strategy);
 }
 
 /***********************************************************************
@@ -638,32 +686,47 @@ UINT DOSMEM_ResizeBlock(void *ptr, UINT size, BOOL exact)
 /***********************************************************************
  *           DOSMEM_Available
  */
-UINT DOSMEM_Available(void)
+static UINT DOSMEM_AvailableInChain(MCB *root)
 {
-    UINT  available = 0;
-    UINT  total = 0;
-    MCB *curr = DOSMEM_root_block;
-    /* loop over all MCB and search the largest free MCB */
+    UINT available = 0;
+    MCB *curr = root;
+
     while (curr)
     {
 #ifdef __DOSMEM_DEBUG__
-        MCB_DUMP( curr );
+        MCB_DUMP(curr);
 #endif
-        if (!MCB_VALID (curr))
+        if (!MCB_VALID(curr))
         {
-            ERR( "MCB List Corrupt\n" );
-            MCB_DUMP( curr );
+            ERR("MCB List Corrupt\n");
+            MCB_DUMP(curr);
             return 0;
         }
-        if (curr->psp == MCB_PSP_FREE &&
-            curr->size > available )
+        if (curr->psp == MCB_PSP_FREE && curr->size > available)
             available = curr->size;
-
-        total += curr->size + 1;
-        curr = MCB_NEXT( curr );
+        curr = MCB_NEXT(curr);
     }
-    TRACE( " %04xh of %04xh paragraphs available\n", available, total );
     return available << 4;
+}
+
+UINT DOSMEM_Available(void)
+{
+    UINT available;
+
+    DOSMEM_InitDosMemory();
+    available = DOSMEM_AvailableInChain(DOSMEM_root_block);
+    TRACE("%04xh paragraphs conventional memory available\n", available >> 4);
+    return available;
+}
+
+UINT DOSMEM_AvailableHigh(void)
+{
+    UINT available;
+
+    DOSMEM_InitDosMemory();
+    available = DOSMEM_AvailableInChain(DOSMEM_umb_block);
+    TRACE("%04xh paragraphs upper memory available\n", available >> 4);
+    return available;
 }
 
 /******************************************************************
