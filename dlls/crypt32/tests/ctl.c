@@ -478,11 +478,13 @@ static void testVerifyCTLUsageDispatch(void)
     verify_usage_error = CRYPT_E_NOT_IN_CTL;
     status.cbSize = sizeof(status);
     status.dwError = ERROR_SUCCESS;
+    SetLastError(0xdeadbeef);
     ret = CertVerifyCTLUsage(X509_ASN_ENCODING, CTL_ANY_SUBJECT_TYPE, &usage,
                              &usage, 0, NULL, &status);
     ok(!ret, "unexpected success\n");
     ok(verify_usage_called == 2, "callback called %u times\n", verify_usage_called);
     ok(status.dwError == CRYPT_E_NOT_IN_CTL, "got status error %08lx\n", status.dwError);
+    ok(GetLastError() == CRYPT_E_NOT_IN_CTL, "got error %08lx\n", GetLastError());
 
     status.cbSize = sizeof(status) - 1;
     SetLastError(0xdeadbeef);
