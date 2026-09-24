@@ -97,8 +97,8 @@ typedef enum {
     OLE_SERVER_SINGLE
 } OLE_SERVER_USE;
 
-typedef LONG LHSERVER;
-typedef LONG LHSERVERDOC;
+typedef LONG_PTR LHSERVER;
+typedef LONG_PTR LHSERVERDOC;
 typedef LPCSTR LPCOLESTR16;
 
 typedef struct _OLESERVERDOC *LPOLESERVERDOC;
@@ -207,7 +207,7 @@ OLESTATUS WINAPI OleBlockServer(LHSERVER hServer)
     struct server_entry *server;
     OLESTATUS status = OLE_OK;
 
-    TRACE("(%ld)\n", hServer);
+    TRACE("(%Id)\n", hServer);
 
     AcquireSRWLockExclusive(&server_lock);
     if (!(server = find_server(hServer)))
@@ -227,7 +227,7 @@ OLESTATUS WINAPI OleUnblockServer(LHSERVER hServer, BOOL *block)
     struct server_entry *server;
     OLESTATUS status = OLE_OK;
 
-    TRACE("(%ld,%p)\n", hServer, block);
+    TRACE("(%Id,%p)\n", hServer, block);
 
     if (!block) return OLE_ERROR_ADDRESS;
 
@@ -254,7 +254,7 @@ OLESTATUS WINAPI OleRevokeServerDoc(LHSERVERDOC hServerDoc)
 {
     struct document_entry **cursor, *document;
 
-    TRACE("(%ld)\n", hServerDoc);
+    TRACE("(%Id)\n", hServerDoc);
 
     AcquireSRWLockExclusive(&server_lock);
     for (cursor = &documents; (document = *cursor); cursor = &document->next)
@@ -318,7 +318,7 @@ OLESTATUS WINAPI OleRegisterServerDoc(LHSERVER hServer, LPCSTR docname,
 {
     struct document_entry *entry;
 
-    TRACE("(%ld,%s,%p,%p)\n", hServer, debugstr_a(docname), document, hRet);
+    TRACE("(%Id,%s,%p,%p)\n", hServer, debugstr_a(docname), document, hRet);
 
     if (!docname || !document || !document->lpvtbl || !hRet)
         return OLE_ERROR_ADDRESS;
@@ -370,7 +370,7 @@ OLESTATUS WINAPI OleRenameServerDoc(LHSERVERDOC hDoc, LPCSTR newName)
     struct document_entry *document;
     char *name;
 
-    TRACE("(%ld,%s)\n", hDoc, debugstr_a(newName));
+    TRACE("(%Id,%s)\n", hDoc, debugstr_a(newName));
 
     if (!newName) return OLE_ERROR_ADDRESS;
     if (!(name = heap_strdupA(newName))) return OLE_ERROR_MEMORY;
@@ -399,7 +399,7 @@ OLESTATUS WINAPI OleRevertServerDoc(LHSERVERDOC hDoc)
     struct document_entry *document;
     OLESTATUS status = OLE_OK;
 
-    TRACE("(%ld)\n", hDoc);
+    TRACE("(%Id)\n", hDoc);
 
     AcquireSRWLockExclusive(&server_lock);
     if (!(document = find_document(hDoc)))
@@ -419,7 +419,7 @@ OLESTATUS WINAPI OleSavedServerDoc(LHSERVERDOC hDoc)
     struct document_entry *document;
     OLESTATUS status = OLE_OK;
 
-    TRACE("(%ld)\n", hDoc);
+    TRACE("(%Id)\n", hDoc);
 
     AcquireSRWLockExclusive(&server_lock);
     if (!(document = find_document(hDoc)))
@@ -439,7 +439,7 @@ OLESTATUS WINAPI OleRevokeServer(LHSERVER hServer)
     struct document_entry **doc_cursor, *document;
     struct server_entry **cursor, *server;
 
-    TRACE("(%ld)\n", hServer);
+    TRACE("(%Id)\n", hServer);
 
     AcquireSRWLockExclusive(&server_lock);
     for (cursor = &servers; (server = *cursor); cursor = &server->next)
