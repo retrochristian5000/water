@@ -107,6 +107,25 @@ static inline BOOL contains_path( LPCSTR name )
     return ((*name && (name[1] == ':')) || strchr(name, '/') || strchr(name, '\\'));
 }
 
+static BOOL is_kernel16_filename( LPCSTR name, LPCSTR kernel )
+{
+    const char *base = name, *p;
+    size_t len;
+
+    if (base[0] && base[1] == ':') base += 2;
+    if ((p = strrchr( base, '\\' ))) base = p + 1;
+    if ((p = strrchr( base, '/' ))) base = p + 1;
+
+    len = strlen( base );
+    if (len > 4 && !stricmp( base + len - 4, ".exe" )) len -= 4;
+    return len == strlen( kernel ) && !_strnicmp( base, kernel, len );
+}
+
+static inline BOOL is_kernel16_alias( LPCSTR name )
+{
+    return is_kernel16_filename( name, "krnl286" ) || is_kernel16_filename( name, "krnl386" );
+}
+
 
 /***********************************************************************
  *           NE_GetPtr
@@ -936,7 +955,7 @@ static HINSTANCE16 MODULE_LoadModule16( LPCSTR libname, BOOL implicit, BOOL lib_
     const IMAGE_DOS_HEADER *descr = NULL;
     const char *file_name = NULL;
     char dllname[32];
-    const char *basename, *main_module, *p;
+    const char *basename, *builtin_basename, *main_module, *p;
 
     /* strip path information */
 
@@ -945,14 +964,19 @@ static HINSTANCE16 MODULE_LoadModule16( LPCSTR libname, BOOL implicit, BOOL lib_
     if ((p = strrchr( basename, '\\' ))) basename = p + 1;
     if ((p = strrchr( basename, '/' ))) basename = p + 1;
 
-    if (strlen(basename) < sizeof(dllname)-6)
+    /* Windows 3.x used KRNL286.EXE and KRNL386.EXE as different files
+       implementing the same KERNEL module.  Reuse the KRNL386 builtin
+       image as the backend for the KRNL286 compatibility filename. */
+    builtin_basename = is_kernel16_filename( basename, "krnl286" ) ? "krnl386.exe" : basename;
+
+    if (strlen(builtin_basename) < sizeof(dllname)-6)
     {
         DWORD count;
         char *q;
 
         ReleaseThunkLock( &count );
 
-        strcpy( dllname, basename );
+        strcpy( dllname, builtin_basename );
         q = strrchr( dllname, '.' );
         if (!q) strcat( dllname, (GetExeVersion16() >= 0x0300) ? ".dll" : ".exe" );
         for (q = dllname; *q; q++) if (*q >= 'A' && *q <= 'Z') *q += 32;
@@ -1389,6 +1413,20 @@ HMODULE16 WINAPI GetModuleHandle16( LPCSTR name )
     len = strlen(name);
     if (!len) return 0;
 
+    if (is_kernel16_alias( name ))
+    {
+        for (hModule = hFirstModule; hModule; hModule = pModule->next)
+        {
+            pModule = NE_GetPtr( hModule );
+            if (!pModule) break;
+            if (pModule->ne_flags & NE_FFLAGS_WIN32) continue;
+
+            name_table = (BYTE *)pModule + pModule->ne_restab;
+            if (*name_table == 6 && !_strnicmp( (const char *)name_table + 1, "KERNEL", 6 ))
+                return hModule;
+        }
+    }
+
     lstrcpynA(tmpstr, name, sizeof(tmpstr));
 
     /* If 'name' matches exactly the module name of a module:
@@ -1785,11 +1823,14 @@ static HMODULE16 NE_GetModuleByFilename( LPCSTR name )
         if (!stricmp(loadedfn, s))
             return hModule;
     }
+    /* KRNL286.EXE and KRNL386.EXE are filenames for the KERNEL module. */
+    if (is_kernel16_alias( s )) strcpy( s, "KERNEL" );
+    else if ((p = strrchr( s, '.' ))) *p = '\0';
+
     /* If basename (without ext) matches the module name of a module:
      * Return its handle.
      */
 
-    if ( (p = strrchr( s, '.' )) != NULL ) *p = '\0';
     len = strlen(s);
 
     for (hModule = hFirstModule; hModule ; hModule = pModule->next)
