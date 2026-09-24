@@ -207,6 +207,7 @@ struct makefile
     struct strarray install[NB_INSTALL_RULES];
     struct strarray extra_targets;
     struct strarray extra_imports;
+    struct strarray pch_exclude;
     struct list     sources;
     struct list     includes;
     const char     *src_dir;
@@ -217,6 +218,8 @@ struct makefile
     const char     *staticlib;
     const char     *importlib;
     const char     *unixlib;
+    const char     *pch;
+    struct incl_file *pch_file;
     bool            data_only;
     bool            external;
     bool            is_win16;
@@ -258,6 +261,16 @@ static char cwd[PATH_MAX];
 static bool compile_commands_mode;
 static bool ninja_mode;
 static bool silent_rules;
+
+enum pch_compiler
+{
+    PCH_COMPILER_UNCHECKED,
+    PCH_COMPILER_NONE,
+    PCH_COMPILER_GCC,
+    PCH_COMPILER_CLANG
+};
+
+static enum pch_compiler pch_compiler;
 static int input_line;
 static int output_column;
 static FILE *output_file;
@@ -1947,6 +1960,44 @@ static char *get_expanded_arch_var( const struct makefile *make, const char *nam
 static struct strarray get_expanded_arch_var_array( const struct makefile *make, const char *name, int arch )
 {
     return get_expanded_make_var_array( make, arch ? strmake( "%s_%s", archs.str[arch], name ) : name );
+}
+
+
+/*******************************************************************
+ *         get_pch_compiler
+ */
+static enum pch_compiler get_pch_compiler(void)
+{
+    const char *cc;
+    char *command, buffer[512];
+    FILE *pipe;
+    bool gcc = false, clang = false;
+    int status;
+
+    if (pch_compiler != PCH_COMPILER_UNCHECKED) return pch_compiler;
+
+    pch_compiler = PCH_COMPILER_NONE;
+    if (!(cc = get_expanded_make_variable( top_makefile, "CC" ))) return pch_compiler;
+
+    command = strmake( "printf '' | %s -dM -E -x c - 2>/dev/null", cc );
+    if (!(pipe = popen( command, "r" )))
+    {
+        free( command );
+        return pch_compiler;
+    }
+    free( command );
+
+    while (fgets( buffer, sizeof(buffer), pipe ))
+    {
+        if (strstr( buffer, "__clang__" )) clang = true;
+        if (strstr( buffer, "__GNUC__" )) gcc = true;
+    }
+    status = pclose( pipe );
+    if (status) return pch_compiler;
+
+    if (clang) pch_compiler = PCH_COMPILER_CLANG;
+    else if (gcc) pch_compiler = PCH_COMPILER_GCC;
+    return pch_compiler;
 }
 
 
@@ -3654,13 +3705,34 @@ static void output_source_nasm( struct makefile *make, struct incl_file *source,
 /*******************************************************************
  *         output_source_one_arch
  */
+static bool source_uses_pch( struct makefile *make, struct incl_file *source,
+                             const char *obj, unsigned int arch )
+{
+    struct strarray local_defs;
+
+    if (!make->pch_file || arch || get_pch_compiler() == PCH_COMPILER_NONE) return false;
+    if (!make->programs.count || make->module || make->testdll || make->staticlib || make->unixlib) return false;
+    if (source->file->flags & (FLAG_C_CXX | FLAG_C_ASM | FLAG_C_UNIX)) return false;
+    if (source->use_msvcrt != make->pch_file->use_msvcrt) return false;
+    if (strarray_exists( make->pch_exclude, source->name )) return false;
+    if (source->sourcename && strarray_exists( make->pch_exclude, source->sourcename )) return false;
+
+    local_defs = get_expanded_file_local_var( make, obj, "EXTRADEFS" );
+    return !local_defs.count;
+}
+
+
+/*******************************************************************
+ *         output_source_one_arch
+ */
 static void output_source_one_arch( struct makefile *make, struct incl_file *source, const char *obj,
                                     struct strarray defines, struct strarray *targets,
                                     unsigned int arch )
 {
     const char *obj_name, *var_cc, *var_cflags;
     struct compile_command *cmd;
-    struct strarray cflags = empty_strarray;
+    struct strarray cflags = empty_strarray, pch_flags = empty_strarray;
+    bool use_pch;
 
     if (make->disabled[arch] && !(source->file->flags & FLAG_C_IMPLIB)) return;
     if (is_subdir_other_arch( source->name, arch )) return;
@@ -3688,6 +3760,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
 
     obj_name = strmake( "%s%s.o", source->arch ? "" : arch_dirs[arch], obj );
     strarray_add( targets, obj_name );
+    use_pch = source_uses_pch( make, source, obj, arch );
 
     if (source->file->flags & FLAG_C_UNIX)
         strarray_add( &make->unixobj_files, obj_name );
@@ -3749,7 +3822,24 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
             strarray_add( &cflags, "-fno-builtin" );
     }
 
-    output( "%s: %s\n", obj_dir_path( make, obj_name ), source->filename );
+    if (use_pch)
+    {
+        if (get_pch_compiler() == PCH_COMPILER_CLANG)
+        {
+            strarray_add( &pch_flags, "-include-pch" );
+            strarray_add( &pch_flags, obj_dir_path( make, ".wine-pch.h.gch" ));
+        }
+        else
+        {
+            strarray_add( &pch_flags, "-include" );
+            strarray_add( &pch_flags, obj_dir_path( make, ".wine-pch.h" ));
+            strarray_add( &pch_flags, "-Winvalid-pch" );
+        }
+    }
+
+    output( "%s: %s", obj_dir_path( make, obj_name ), source->filename );
+    if (use_pch) output_filename( obj_dir_path( make, ".wine-pch.h.gch" ));
+    output( "\n" );
     output( "\t%s", cmd_prefix( "CC" ) );
     if (compiler_cache && *compiler_cache)
     {
@@ -3759,6 +3849,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     output( "%s -c -o $@ %s", var_cc, source->filename );
     output_filenames( defines );
     output_filenames( cflags );
+    output_filenames( pch_flags );
     output_filename( var_cflags );
     output( "\n" );
 
@@ -3804,6 +3895,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     cmd->args = empty_strarray;
     strarray_addall( &cmd->args, defines );
     strarray_addall( &cmd->args, cflags );
+    strarray_addall( &cmd->args, pch_flags );
 
     if ((source->file->flags & FLAG_ARM64EC_X64) && !strcmp( archs.str[arch], "arm64ec" ))
     {
@@ -4378,6 +4470,52 @@ static void output_subdirs( struct makefile *make )
 /*******************************************************************
  *         output_sources
  */
+static void output_pch( struct makefile *make )
+{
+    struct strarray defines = empty_strarray, cflags = empty_strarray;
+    const char *wrapper, *pch;
+
+    if (!make->pch_file || get_pch_compiler() == PCH_COMPILER_NONE) return;
+    if (!make->programs.count || make->module || make->testdll || make->staticlib || make->unixlib)
+        fatal_error( "PCH is currently supported only for host programs (%s)\n", make->obj_dir );
+
+    wrapper = obj_dir_path( make, ".wine-pch.h" );
+    pch = obj_dir_path( make, ".wine-pch.h.gch" );
+
+    strarray_addall( &defines, make->include_args );
+    if (make->pch_file->use_msvcrt)
+    {
+        strarray_add( &defines, strmake( "-I%s", root_src_dir_path( "include/msvcrt" )));
+        STRARRAY_FOR_EACH( path, &make->include_paths ) strarray_add( &defines, strmake( "-I%s", path ));
+        strarray_add( &defines, get_crt_define( make ));
+    }
+    strarray_addall( &defines, make->define_args );
+
+    if (!make->pch_file->use_msvcrt) strarray_addall( &cflags, make->unix_cflags );
+    strarray_addall( &cflags, extra_cflags[0] );
+    strarray_addall( &cflags, cpp_flags );
+
+    output( "%s: %s\n", wrapper, make->pch_file->filename );
+    output( "\t%sprintf '#include \"%s\"\\n' >$@\n", cmd_prefix( "GEN" ), make->pch );
+
+    output( "%s: %s", pch, wrapper );
+    output_filenames( make->pch_file->dependencies );
+    output( "\n" );
+    output( "\t%s$(CC) -x c-header -o $@ %s", cmd_prefix( "PCH" ), wrapper );
+    output_filenames( defines );
+    output_filenames( cflags );
+    output_filename( "$(CFLAGS)" );
+    output( "\n" );
+
+    strarray_add( &make->clean_files, ".wine-pch.h" );
+    strarray_add( &make->clean_files, ".wine-pch.h.gch" );
+    strarray_addall_uniq( &make->dependencies, make->pch_file->dependencies );
+}
+
+
+/*******************************************************************
+ *         output_sources
+ */
 static void output_sources( struct makefile *make )
 {
     struct strarray all_targets = empty_strarray;
@@ -4385,6 +4523,7 @@ static void output_sources( struct makefile *make )
     unsigned int i, j, arch;
 
     strarray_add_uniq( &make->phony_targets, "all" );
+    output_pch( make );
 
     LIST_FOR_EACH_ENTRY( source, &make->sources, struct incl_file, entry )
     {
@@ -4767,6 +4906,7 @@ static void output_silent_rules(void)
         "GEN",
         "LN",
         "MSG",
+        "PCH",
         "SAST",
         "SED",
         "TEST",
@@ -5389,6 +5529,8 @@ static void load_sources( struct makefile *make )
     make->delayimports  = get_expanded_make_var_array( make, "DELAYIMPORTS" );
     make->extradllflags = get_expanded_make_var_array( make, "EXTRADLLFLAGS" );
     make->extra_targets = get_expanded_make_var_array( make, "EXTRA_TARGETS" );
+    make->pch            = get_expanded_make_variable( make, "PCH" );
+    make->pch_exclude    = get_expanded_make_var_array( make, "PCH_EXCLUDE" );
     for (i = 0; i < NB_INSTALL_RULES; i++)
         make->install[i] = get_expanded_make_var_array( make, install_variables[i] );
 
@@ -5449,12 +5591,24 @@ static void load_sources( struct makefile *make )
     list_init( &make->sources );
     list_init( &make->includes );
 
+    if (make->pch)
+    {
+        file = xmalloc( sizeof(*file) );
+        memset( file, 0, sizeof(*file) );
+        file->name = xstrdup( make->pch );
+        file->use_msvcrt = is_using_msvcrt( make );
+        parse_file( make, file, true );
+        if (!file->file) fatal_error( "PCH source %s not found\n", make->pch );
+        make->pch_file = file;
+    }
+
     value = get_expanded_make_var_array( make, "SOURCES" );
     STRARRAY_FOR_EACH( file, &value ) add_src_file( make, file );
 
     add_generated_sources( make );
 
     LIST_FOR_EACH_ENTRY( file, &make->includes, struct incl_file, entry ) parse_file( make, file, false );
+    if (make->pch_file) get_dependencies( make->pch_file, make->pch_file );
     LIST_FOR_EACH_ENTRY( file, &make->sources, struct incl_file, entry ) get_dependencies( file, file );
 
     STRARRAY_FOR_EACH( imp, &make->delayimports )
