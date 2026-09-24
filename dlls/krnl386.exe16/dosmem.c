@@ -713,7 +713,7 @@ UINT DOSMEM_Available(void)
 {
     UINT available;
 
-    DOSMEM_InitDosMemory();
+    if (!DOSMEM_root_block) DOSMEM_InitDosMemory();
     available = DOSMEM_AvailableInChain(DOSMEM_root_block);
     TRACE("%04xh paragraphs conventional memory available\n", available >> 4);
     return available;
@@ -723,7 +723,7 @@ UINT DOSMEM_AvailableHigh(void)
 {
     UINT available;
 
-    DOSMEM_InitDosMemory();
+    if (!DOSMEM_umb_block) DOSMEM_InitDosMemory();
     available = DOSMEM_AvailableInChain(DOSMEM_umb_block);
     TRACE("%04xh paragraphs upper memory available\n", available >> 4);
     return available;
