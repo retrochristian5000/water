@@ -23628,6 +23628,7 @@ wine_fn_config_makefile programs/hostname enable_hostname
 wine_fn_config_makefile programs/icacls enable_icacls
 wine_fn_config_makefile programs/icinfo enable_icinfo
 wine_fn_config_makefile programs/iexplore enable_iexplore
+wine_fn_config_makefile programs/icwconn1 enable_icwconn1
 wine_fn_config_makefile programs/ipconfig enable_ipconfig
 wine_fn_config_makefile programs/klist enable_klist
 wine_fn_config_makefile programs/lodctr enable_lodctr

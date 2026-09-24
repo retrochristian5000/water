@@ -1,0 +1,10 @@
+MODULE    = icwconn1.exe
+
+IMPORTS   = advapi32 ole32 shell32 uuid
+
+EXTRADLLFLAGS = -mwindows -municode
+
+VER_FILEDESCRIPTION_STR = "Internet Connection Wizard"
+
+SOURCES = \
+	main.c
