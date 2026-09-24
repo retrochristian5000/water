@@ -266,6 +266,10 @@ AC_SUBST(wine64dir,[$with_wine64])
 AC_SUBST(RUNTESTFLAGS,["-q -P wine"])
 AC_SUBST(SED_CMD,["LC_ALL=C sed -e 's,@bindir@,\${bindir},g' -e 's,@PACKAGE_STRING@,$PACKAGE_STRING,g' -e 's,@PACKAGE_VERSION@,$PACKAGE_VERSION,g'"])
 
+AS_IF([test ! -f "$srcdir/libs/fluidsynth/Makefile.in"],
+      [AC_MSG_ERROR([the Fsynth submodule is not initialized.
+Run 'git submodule update --init libs/fluidsynth' from the source tree before configuring.])])
+
 if test -n "$host_alias" -a "$host_alias" != "$build_alias"
 then
     TARGETFLAGS="-b $host_alias $TARGETFLAGS"

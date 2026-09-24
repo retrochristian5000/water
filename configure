@@ -6684,6 +6684,12 @@ RUNTESTFLAGS="-q -P wine"
 SED_CMD="LC_ALL=C sed -e 's,@bindir@,\${bindir},g' -e 's,@PACKAGE_STRING@,$PACKAGE_STRING,g' -e 's,@PACKAGE_VERSION@,$PACKAGE_VERSION,g'"
 
 
+if test ! -f "$srcdir/libs/fluidsynth/Makefile.in"
+then :
+  as_fn_error $? "the Fsynth submodule is not initialized.
+Run 'git submodule update --init libs/fluidsynth' from the source tree before configuring." "$LINENO" 5
+fi
+
 if test -n "$host_alias" -a "$host_alias" != "$build_alias"
 then
     TARGETFLAGS="-b $host_alias $TARGETFLAGS"

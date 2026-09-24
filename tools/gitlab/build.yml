@@ -6,6 +6,9 @@
   interruptible: true
   variables:
     GIT_DEPTH: 0
+    # Fsynth is a first-level build dependency. Its own optional submodules are
+    # not used by Water's bundled profile, so avoid recursive checkout work.
+    GIT_SUBMODULE_STRATEGY: normal
   cache:
     - key: $CI_JOB_NAME-ccache
       paths:

@@ -5,6 +5,11 @@ echo "---"
 
 set -Eeuxo pipefail
 
+if test -f .gitmodules; then
+    git submodule sync -- libs/fluidsynth
+    git submodule update --init -- libs/fluidsynth
+fi
+
 X86_BREW_HOME='/usr/local'
 if [ "$(arch)" = 'arm64' ]; then
     ARCH_BREW_HOME='/opt/homebrew'

@@ -25,6 +25,7 @@ my (@makefiles, %makefiles);
 my @nls_files;
 my @winmd_files;
 my %deleted_files;
+my %submodule_makefiles;
 
 sub dirname($)
 {
@@ -32,6 +33,38 @@ sub dirname($)
     return "" unless $ret =~ /\//;
     $ret =~ s!/[^/]*$!!;
     return $ret;
+}
+
+# Add build-managed library submodules without letting this script rewrite
+# their curated source lists. git ls-files only exposes the gitlink from the
+# superproject, not files tracked by the submodule itself.
+sub add_submodule_makefiles()
+{
+    return unless -f ".gitmodules";
+
+    open GITMODULES, ".gitmodules" or die "cannot open .gitmodules\n";
+    while (<GITMODULES>)
+    {
+        next unless /^\s*path\s*=\s*(.*?)\s*$/;
+        my $dir = $1;
+        next unless $dir =~ /^libs\//;
+
+        my $file = "$dir/Makefile.in";
+        die "$dir submodule is not initialized; run 'git submodule update --init $dir'\n"
+            unless -f $file;
+
+        my $index = `git ls-files -s -- "$dir"`;
+        $index =~ /^160000 ([0-9a-f]+) / or die "$dir is not recorded as a git submodule\n";
+        my $expected = $1;
+        my $actual = `git -C "$dir" rev-parse HEAD 2>/dev/null`;
+        chomp $actual;
+        die "$dir is checked out at $actual, expected $expected; run 'git submodule update --init $dir'\n"
+            unless $actual eq $expected;
+
+        $submodule_makefiles{$file} = 1;
+        push @makefiles, $file;
+    }
+    close GITMODULES;
 }
 
 # update a file if changed
@@ -382,7 +415,11 @@ sub update_makefiles(@)
 
     # update the source variables in all the makefiles
 
-    foreach my $file (sort @_) { replace_makefile_variables( $file, "SOURCES" ); }
+    foreach my $file (sort @_)
+    {
+        next if defined $submodule_makefiles{$file};
+        replace_makefile_variables( $file, "SOURCES" );
+    }
     replace_makefile_variables( "include/Makefile.in", "INSTALL_LIB" );
 
     push @lines, "dnl End of auto-generated output commands\n";
@@ -405,6 +442,7 @@ die "needs to be run from a git checkout" unless -e $git_dir;
 my @all_files = split /\0/, `git ls-files -c -z` or die "cannot get files list";
 map { $deleted_files{$_} = 1; } split /\0/, `git ls-files -d -z`;
 @makefiles = grep /Makefile.in$/, @all_files;
+add_submodule_makefiles();
 
 foreach my $file (sort @makefiles)
 {

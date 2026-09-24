@@ -5,6 +5,11 @@ echo "---"
 
 set -Eeuxo pipefail
 
+if test -f .gitmodules; then
+    git submodule sync -- libs/fluidsynth
+    git submodule update --init -- libs/fluidsynth
+fi
+
 ./tools/make_requests
 ./tools/make_specfiles
 ./tools/make_makefiles
