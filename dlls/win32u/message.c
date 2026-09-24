@@ -3506,6 +3506,7 @@ DWORD WINAPI NtUserWaitForInputIdle( HANDLE process, DWORD timeout, BOOL wow )
 
     handles[0] = process;
     handles[1] = 0;
+    ret = 0;
     SERVER_START_REQ( get_process_idle_event )
     {
         req->handle = wine_server_obj_handle( process );
