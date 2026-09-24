@@ -5504,6 +5504,28 @@ static void *encode_pointer( void *ptr )
     return (void *)rotate_bits_right( ptrval ^ process_cookie, process_cookie );
 }
 
+static void test_nt3_compat_exports(void)
+{
+    static const char * const exports[] =
+    {
+        "NtReleaseProcessMutant",
+        "NtWaitForProcessMutant",
+        "ZwReleaseProcessMutant",
+        "ZwWaitForProcessMutant",
+    };
+    unsigned int i;
+
+    if (!winetest_platform_is_wine)
+    {
+        win_skip( "NT 3.x compatibility exports are Water-specific on newer Windows.\n" );
+        return;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(exports); i++)
+        ok( GetProcAddress( hntdll, exports[i] ) != NULL, "%s is not exported.\n", exports[i] );
+}
+
+
 static void *decode_pointer( void *ptr )
 {
     DWORD_PTR ptrval = (DWORD_PTR)ptr;
@@ -5547,6 +5569,7 @@ START_TEST(rtl)
 {
     InitFunctionPtrs();
 
+    test_nt3_compat_exports();
     test_RtlQueryProcessDebugInformation();
     test_RtlCompareMemory();
     test_RtlCompareMemoryUlong();
