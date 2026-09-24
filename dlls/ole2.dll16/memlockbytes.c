@@ -65,6 +65,9 @@ struct HGLOBALLockBytesImpl16
 
 typedef struct HGLOBALLockBytesImpl16 HGLOBALLockBytesImpl16;
 
+static ILockBytes16Vtbl lockbytes_vtbl16;
+static SEGPTR lockbytes_vtbl16_segptr;
+
 /******************************************************************************
  *
  * HGLOBALLockBytesImpl16 implementation
@@ -90,8 +93,6 @@ HGLOBALLockBytesImpl16_Construct(HGLOBAL16 hGlobal,
 {
   HGLOBALLockBytesImpl16* newLockBytes;
 
-  static ILockBytes16Vtbl vt16;
-  static SEGPTR msegvt16;
   HMODULE16 hcomp = GetModuleHandle16("OLE2");
 
 
@@ -103,9 +104,9 @@ HGLOBALLockBytesImpl16_Construct(HGLOBAL16 hGlobal,
   /*
    * Set up the virtual function table and reference count.
    */
-  if (!msegvt16)
+  if (!lockbytes_vtbl16_segptr)
   {
-#define VTENT(x) vt16.x = (void*)GetProcAddress16(hcomp,"HGLOBALLockBytesImpl16_"#x);assert(vt16.x)
+#define VTENT(x) lockbytes_vtbl16.x = (void*)GetProcAddress16(hcomp,"HGLOBALLockBytesImpl16_"#x);assert(lockbytes_vtbl16.x)
       VTENT(QueryInterface);
       VTENT(AddRef);
       VTENT(Release);
@@ -117,9 +118,9 @@ HGLOBALLockBytesImpl16_Construct(HGLOBAL16 hGlobal,
       VTENT(UnlockRegion);
       VTENT(Stat);
 #undef VTENT
-      msegvt16 = MapLS( &vt16 );
+      lockbytes_vtbl16_segptr = MapLS(&lockbytes_vtbl16);
   }
-  newLockBytes->ILockBytes16_iface.lpVtbl = (const ILockBytes16Vtbl*)msegvt16;
+  newLockBytes->ILockBytes16_iface.lpVtbl = (const ILockBytes16Vtbl *)lockbytes_vtbl16_segptr;
   newLockBytes->ref = 0;
   /*
    * Initialize the support.
@@ -514,10 +515,40 @@ HRESULT WINAPI CreateILockBytesOnHGlobal16(
 {
   HGLOBALLockBytesImpl16* newLockBytes; /* SEGPTR */
 
+  if (!ppLkbyt)
+    return E_INVALIDARG;
+
+  *ppLkbyt = NULL;
   newLockBytes = HGLOBALLockBytesImpl16_Construct(hGlobal, fDeleteOnRelease);
 
   if (newLockBytes != NULL)
     return HGLOBALLockBytesImpl16_QueryInterface(&newLockBytes->ILockBytes16_iface,
             &IID_ILockBytes, (void**)ppLkbyt);
   return E_OUTOFMEMORY;
+}
+
+/******************************************************************************
+ *           GetHGlobalFromILockBytes     [OLE2.55]
+ */
+HRESULT WINAPI GetHGlobalFromILockBytes16(SEGPTR lockbytes, HGLOBAL16 *global)
+{
+  ILockBytes16 *iface;
+  HGLOBALLockBytesImpl16 *This;
+
+  TRACE("(0x%lx,%p)\n", lockbytes, global);
+
+  if (!lockbytes || !global)
+    return E_INVALIDARG;
+
+  *global = 0;
+  iface = MapSL(lockbytes);
+  if (!iface || iface->lpVtbl != (const ILockBytes16Vtbl *)lockbytes_vtbl16_segptr)
+    return E_INVALIDARG;
+
+  This = impl_from_ILockBytes16(iface);
+  if (!This->supportHandle)
+    return E_INVALIDARG;
+
+  *global = This->supportHandle;
+  return S_OK;
 }
