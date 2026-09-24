@@ -72,15 +72,15 @@ static BOOL create_test_pif(const WCHAR *path)
     memset(data, 0, sizeof(data));
     write_record(data, pifex_offset, "MICROSOFT PIFEX", vmm_offset, 0, PIF_BASE_SIZE);
     write_record(data, vmm_offset, "WINDOWS VMM 4.0", config_offset,
-            vmm_data_offset, sizeof(vmm_data));
+            vmm_data_offset, (WORD)sizeof(vmm_data));
     write_record(data, config_offset, "CONFIG SYS 4.0", 0xffff,
-            config_data_offset, sizeof(config_data) - 1);
+            config_data_offset, (WORD)(sizeof(config_data) - 1));
     memcpy(data + vmm_data_offset, vmm_data, sizeof(vmm_data));
     memcpy(data + config_data_offset, config_data, sizeof(config_data) - 1);
 
     file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) return FALSE;
-    if (!WriteFile(file, data, sizeof(data), &written, NULL) || written != sizeof(data))
+    if (!WriteFile(file, data, (DWORD)sizeof(data), &written, NULL) || written != (DWORD)sizeof(data))
     {
         CloseHandle(file);
         return FALSE;
