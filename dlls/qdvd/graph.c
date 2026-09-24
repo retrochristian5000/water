@@ -28,6 +28,7 @@ struct graph_builder
     IDvdGraphBuilder IDvdGraphBuilder_iface;
 
     IUnknown *outer_unk;
+    IGraphBuilder *graph;
     LONG refcount;
 };
 
@@ -50,7 +51,10 @@ static ULONG WINAPI inner_Release(IUnknown *iface)
     ULONG refcount = InterlockedDecrement(&builder->refcount);
     TRACE("%p decreasing refcount to %lu.\n", builder, refcount);
     if (!refcount)
+    {
+        IGraphBuilder_Release(builder->graph);
         free(builder);
+    }
     return refcount;
 }
 
@@ -107,8 +111,15 @@ static HRESULT WINAPI graph_builder_QueryInterface(IDvdGraphBuilder *iface, REFI
 
 static HRESULT WINAPI graph_builder_GetFiltergraph(IDvdGraphBuilder *iface, IGraphBuilder **graph)
 {
-    FIXME("iface %p, graph %p, stub!\n", iface, graph);
-    return E_NOTIMPL;
+    struct graph_builder *builder = impl_from_IDvdGraphBuilder(iface);
+
+    TRACE("iface %p, graph %p.\n", iface, graph);
+
+    if (!graph) return E_INVALIDARG;
+
+    *graph = builder->graph;
+    IGraphBuilder_AddRef(*graph);
+    return S_OK;
 }
 
 static HRESULT WINAPI graph_builder_GetDvdInterface(IDvdGraphBuilder *iface, REFIID iid, void **out)
@@ -136,9 +147,17 @@ static const struct IDvdGraphBuilderVtbl graph_builder_vtbl =
 HRESULT graph_builder_create(IUnknown *outer, IUnknown **out)
 {
     struct graph_builder *builder;
+    HRESULT hr;
 
     if (!(builder = calloc(1, sizeof(*builder))))
         return E_OUTOFMEMORY;
+
+    if (FAILED(hr = CoCreateInstance(&CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IGraphBuilder, (void **)&builder->graph)))
+    {
+        free(builder);
+        return hr;
+    }
 
     builder->IDvdGraphBuilder_iface.lpVtbl = &graph_builder_vtbl;
     builder->IUnknown_inner.lpVtbl = &inner_vtbl;

@@ -66,6 +66,30 @@ static void test_interfaces(void)
     IDvdGraphBuilder_Release(graph);
 }
 
+static void test_filtergraph(void)
+{
+    IGraphBuilder *filtergraph = (IGraphBuilder *)0xdeadbeef;
+    IDvdGraphBuilder *builder = create_graph_builder();
+    HRESULT hr;
+
+    hr = IDvdGraphBuilder_GetFiltergraph(builder, NULL);
+    ok(hr == E_INVALIDARG, "Got hr %#lx.\n", hr);
+
+    hr = IDvdGraphBuilder_GetFiltergraph(builder, &filtergraph);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    ok(filtergraph && filtergraph != (IGraphBuilder *)0xdeadbeef,
+            "Got unexpected filter graph %p.\n", filtergraph);
+
+    if (filtergraph)
+    {
+        check_interface(filtergraph, &IID_IGraphBuilder, TRUE);
+        check_interface(filtergraph, &IID_IUnknown, TRUE);
+        IGraphBuilder_Release(filtergraph);
+    }
+
+    IDvdGraphBuilder_Release(builder);
+}
+
 static const GUID test_iid = {0x33333333};
 static LONG outer_ref = 1;
 
@@ -165,6 +189,7 @@ START_TEST(graph)
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
     test_interfaces();
+    test_filtergraph();
     test_aggregation();
 
     CoUninitialize();
