@@ -853,6 +853,14 @@ typedef struct _CTL_CONTEXT {
 } CTL_CONTEXT, *PCTL_CONTEXT;
 typedef const CTL_CONTEXT *PCCTL_CONTEXT;
 
+#define CTL_ANY_SUBJECT_TYPE  1
+#define CTL_CERT_SUBJECT_TYPE 2
+
+typedef struct _CTL_ANY_SUBJECT_INFO {
+    CRYPT_ALGORITHM_IDENTIFIER SubjectAlgorithm;
+    CRYPT_DATA_BLOB            SubjectIdentifier;
+} CTL_ANY_SUBJECT_INFO, *PCTL_ANY_SUBJECT_INFO;
+
 typedef struct _CRYPT_TIME_STAMP_REQUEST_INFO {
     LPSTR            pszTimeStampAlgorithm;
     LPSTR            pszContentType;
@@ -4354,6 +4362,9 @@ WINCRYPT32API PCCERT_CONTEXT WINAPI CertFindCertificateInStore( HCERTSTORE hCert
 WINCRYPT32API PCCRL_CONTEXT WINAPI CertFindCRLInStore(HCERTSTORE hCertStore,
  DWORD dwCertEncodingType, DWORD dwFindFlags, DWORD dwFindType,
  const void *pvFindPara, PCCRL_CONTEXT pPrevCrlContext);
+
+WINCRYPT32API PCTL_ENTRY WINAPI CertFindSubjectInCTL(DWORD dwEncodingType,
+ DWORD dwSubjectType, void *pvSubject, PCCTL_CONTEXT pCtlContext, DWORD dwFlags);
 
 WINCRYPT32API PCCTL_CONTEXT WINAPI CertFindCTLInStore(HCERTSTORE hCertStore,
  DWORD dwCertEncodingType, DWORD dwFindFlags, DWORD dwFindType,
