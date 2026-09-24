@@ -1,6 +1,9 @@
 PROGRAMS = wrc
 UNIX_LIBS = $(GETTEXTPO_LIBS)
 
+PCH = wrc_pch.h
+PCH_EXCLUDE = wpp.c
+
 SOURCES = \
 	genres.c \
 	newstruc.c \
