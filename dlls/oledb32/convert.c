@@ -106,6 +106,152 @@ static ULONG WINAPI convert_Release(IDataConvert* iface)
     return ref;
 }
 
+static BOOL numeric_multiply_10(BYTE value[16])
+{
+    unsigned int carry = 0;
+    unsigned int i;
+
+    for (i = 0; i < 16; ++i)
+    {
+        unsigned int v = value[i] * 10 + carry;
+        value[i] = (BYTE)v;
+        carry = v >> 8;
+    }
+
+    return !carry;
+}
+
+static unsigned int numeric_digit_count(const BYTE value[16])
+{
+    BYTE tmp[16];
+    unsigned int digits = 0;
+    BOOL nonzero;
+
+    memcpy(tmp, value, sizeof(tmp));
+
+    do
+    {
+        unsigned int remainder = 0;
+        int i;
+
+        nonzero = FALSE;
+        for (i = 15; i >= 0; --i)
+        {
+            unsigned int v = (remainder << 8) | tmp[i];
+            tmp[i] = (BYTE)(v / 10);
+            remainder = v % 10;
+            if (tmp[i]) nonzero = TRUE;
+        }
+        ++digits;
+    } while (nonzero);
+
+    return digits;
+}
+
+static HRESULT decimal_to_numeric(const DECIMAL *src, BYTE precision, BYTE scale, DB_NUMERIC *dst)
+{
+    DECIMAL rounded;
+    HRESULT hr;
+    unsigned int i;
+
+    if ((hr = VarDecRound(src, scale, &rounded)) != S_OK)
+        return hr;
+
+    memset(dst, 0, sizeof(*dst));
+    dst->precision = precision;
+    dst->scale = scale;
+    dst->sign = (rounded.sign & DECIMAL_NEG) ? 0 : 1;
+
+    for (i = 0; i < 8; ++i)
+        dst->val[i] = (BYTE)(rounded.Lo64 >> (8 * i));
+    for (i = 0; i < 4; ++i)
+        dst->val[i + 8] = (BYTE)(rounded.Hi32 >> (8 * i));
+
+    for (i = rounded.scale; i < scale; ++i)
+        if (!numeric_multiply_10(dst->val))
+            return DISP_E_OVERFLOW;
+
+    if (precision && numeric_digit_count(dst->val) > precision)
+        return DISP_E_OVERFLOW;
+
+    return S_OK;
+}
+
+static HRESULT convert_to_numeric(DBTYPE src_type, const void *src, BYTE precision, BYTE scale,
+        DB_NUMERIC *dst)
+{
+    DECIMAL dec;
+    VARIANT tmp;
+    HRESULT hr;
+
+    memset(&dec, 0, sizeof(dec));
+
+    switch (src_type)
+    {
+    case DBTYPE_EMPTY:
+        hr = S_OK;
+        break;
+    case DBTYPE_I1:
+        hr = VarDecFromI1(*(const signed char *)src, &dec);
+        break;
+    case DBTYPE_I2:
+        hr = VarDecFromI2(*(const SHORT *)src, &dec);
+        break;
+    case DBTYPE_I4:
+        hr = VarDecFromI4(*(const LONG *)src, &dec);
+        break;
+    case DBTYPE_I8:
+        hr = VarDecFromI8(*(const LONGLONG *)src, &dec);
+        break;
+    case DBTYPE_UI1:
+        hr = VarDecFromUI1(*(const BYTE *)src, &dec);
+        break;
+    case DBTYPE_UI2:
+        hr = VarDecFromUI2(*(const USHORT *)src, &dec);
+        break;
+    case DBTYPE_UI4:
+        hr = VarDecFromUI4(*(const ULONG *)src, &dec);
+        break;
+    case DBTYPE_UI8:
+        hr = VarDecFromUI8(*(const ULONGLONG *)src, &dec);
+        break;
+    case DBTYPE_R4:
+        hr = VarDecFromR4(*(const FLOAT *)src, &dec);
+        break;
+    case DBTYPE_R8:
+        hr = VarDecFromR8(*(const DOUBLE *)src, &dec);
+        break;
+    case DBTYPE_CY:
+        hr = VarDecFromCy(*(const CY *)src, &dec);
+        break;
+    case DBTYPE_BSTR:
+        hr = VarDecFromStr(*(BSTR const *)src, LOCALE_USER_DEFAULT, 0, &dec);
+        break;
+    case DBTYPE_BOOL:
+        hr = VarDecFromBool(*(const VARIANT_BOOL *)src, &dec);
+        break;
+    case DBTYPE_DECIMAL:
+        dec = *(const DECIMAL *)src;
+        hr = S_OK;
+        break;
+    case DBTYPE_VARIANT:
+        VariantInit(&tmp);
+        hr = VariantChangeType(&tmp, src, 0, VT_DECIMAL);
+        if (hr == S_OK)
+            dec = V_DECIMAL(&tmp);
+        VariantClear(&tmp);
+        break;
+    default:
+        FIXME("Unimplemented conversion %04x -> DBTYPE_NUMERIC\n", src_type);
+        return E_NOTIMPL;
+    }
+
+    if (hr != S_OK)
+        return hr;
+
+    return decimal_to_numeric(&dec, precision, scale, dst);
+}
+
 static int get_length(DBTYPE type)
 {
     switch(type)
@@ -1176,8 +1322,8 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
     }
 
     case DBTYPE_NUMERIC:
-        FIXME("Unimplemented conversion %04x -> DBTYPE_NUMERIC\n", src_type);
-        return E_NOTIMPL;
+        hr = convert_to_numeric(src_type, src, precision, scale, dst);
+        break;
 
     default:
         FIXME("Unimplemented conversion %04x -> %04x\n", src_type, dst_type);

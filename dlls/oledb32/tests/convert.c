@@ -4094,40 +4094,40 @@ static void test_converttonumeric(void)
     dst.scale = 30;
     memset(dst.val, 0xfe, sizeof(dst.val));
     hr = IDataConvert_DataConvert(convert, DBTYPE_I4, DBTYPE_NUMERIC, 0, &dst_len, &i, &dst, sizeof(dst), 0, &dst_status, 10, 0, 0);
-    todo_wine ok(hr == S_OK, "got %08lx\n", hr);
-    todo_wine ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
-    todo_wine ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
-    todo_wine test_numeric_val(&dst, &result1);
+    ok(hr == S_OK, "got %08lx\n", hr);
+    ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+    ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+    test_numeric_val(&dst, &result1);
 
     i8.QuadPart = 12345;
     dst_len = 0x1234;
     dst.scale = 30;
     memset(dst.val, 0xfe, sizeof(dst.val));
     hr = IDataConvert_DataConvert(convert, DBTYPE_I8, DBTYPE_NUMERIC, sizeof(i8), &dst_len, &i8, &dst, sizeof(dst), 0, &dst_status, 10, 0, 0);
-    todo_wine ok(hr == S_OK, "got %08lx\n", hr);
-    todo_wine ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
-    todo_wine ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
-    todo_wine test_numeric_val(&dst, &result2);
+    ok(hr == S_OK, "got %08lx\n", hr);
+    ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+    ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+    test_numeric_val(&dst, &result2);
 
     dst_len = 0x1234;
     dst.scale = 30;
     dst.sign = 1;
     memset(dst.val, 0xfe, sizeof(dst.val));
     hr = IDataConvert_DataConvert(convert, DBTYPE_BOOL, DBTYPE_NUMERIC, sizeof(boolean), &dst_len, &boolean, &dst, sizeof(dst), 0, &dst_status, 10, 0, 0);
-    todo_wine ok(hr == S_OK, "got %08lx\n", hr);
-    todo_wine ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
-    todo_wine ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
-    todo_wine test_numeric_val(&dst, &result3);
+    ok(hr == S_OK, "got %08lx\n", hr);
+    ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+    ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+    test_numeric_val(&dst, &result3);
 
     dst_len = 0x1234;
     dst.scale = 30;
     dst.sign = 0;
     memset(dst.val, 0xfe, sizeof(dst.val));
     hr = IDataConvert_DataConvert(convert, DBTYPE_R4, DBTYPE_NUMERIC, sizeof(fvalue), &dst_len, &fvalue, &dst, sizeof(dst), 0, &dst_status, 10, 0, 0);
-    todo_wine ok(hr == S_OK, "got %08lx\n", hr);
-    todo_wine ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
-    todo_wine ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
-    todo_wine test_numeric_val(&dst, &result4);
+    ok(hr == S_OK, "got %08lx\n", hr);
+    ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+    ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+    test_numeric_val(&dst, &result4);
 
     dst_len = 0x1234;
     dst.scale = 30;
@@ -4143,10 +4143,10 @@ static void test_converttonumeric(void)
     dst.sign = 0;
     memset(dst.val, 0xfe, sizeof(dst.val));
     hr = IDataConvert_DataConvert(convert, DBTYPE_WSTR, DBTYPE_NUMERIC, sizeof(strW), &dst_len, strW, &dst, sizeof(dst), 0, &dst_status, 10, 0, 0);
-    todo_wine ok(hr == S_OK, "got %08lx\n", hr);
-    todo_wine ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
-    todo_wine ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
-    todo_wine test_numeric_val(&dst, &result5);
+    ok(hr == S_OK, "got %08lx\n", hr);
+    ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+    ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+    test_numeric_val(&dst, &result5);
 
     bstr = SysAllocString(strW);
     dst_status = 0;
@@ -4155,10 +4155,10 @@ static void test_converttonumeric(void)
     dst_len = sizeof(strW);
     memset(dst.val, 0xfe, sizeof(dst.val));
     hr = IDataConvert_DataConvert(convert, DBTYPE_BSTR, DBTYPE_NUMERIC, 0, &dst_len, &bstr, &dst, sizeof(dst), 0, &dst_status, 10, 0, 0);
-    todo_wine ok(hr == S_OK, "got %08lx\n", hr);
-    todo_wine ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
-    todo_wine ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
-    todo_wine test_numeric_val(&dst, &result5);
+    ok(hr == S_OK, "got %08lx\n", hr);
+    ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+    ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+    test_numeric_val(&dst, &result5);
     SysFreeString(bstr);
 
     bstr = SysAllocString(largeW);
@@ -4168,10 +4168,10 @@ static void test_converttonumeric(void)
     dst_len = sizeof(largeW);
     memset(dst.val, 0xfe, sizeof(dst.val));
     hr = IDataConvert_DataConvert(convert, DBTYPE_BSTR, DBTYPE_NUMERIC, 0, &dst_len, &bstr, &dst, sizeof(dst), 0, &dst_status, 10, 0, 0);
-    todo_wine ok(hr == S_OK, "got %08lx\n", hr);
-    todo_wine ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
-    todo_wine ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
-    todo_wine test_numeric_val(&dst, &result6);
+    ok(hr == S_OK, "got %08lx\n", hr);
+    ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+    ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+    test_numeric_val(&dst, &result6);
     SysFreeString(bstr);
 }
 
