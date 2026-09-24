@@ -120,4 +120,16 @@ library ShockwaveFlashObjects
         [default] interface IShockwaveFlash;
         [default, source] dispinterface DShockwaveFlashEvents;
     }
+
+    [
+        uuid(1171A62F-05D2-11D1-83FC-00A0C9089C5A),
+        helpstring("FlashProp Class"),
+        threading(apartment),
+        progid("FlashProp.FlashProp.1"),
+        vi_progid("FlashProp.FlashProp")
+    ]
+    coclass FlashProp
+    {
+        [default] interface IPropertyPage;
+    }
 }
