@@ -31,6 +31,23 @@ typedef struct tagCOMSTAT16
     UINT16 cbOutQue;
 } COMSTAT16,*LPCOMSTAT16;
 
+/* Win16 communication baud-rate indices. Win32 CBR_* values are literal rates. */
+#define CBR_110_16      0xFF10
+#define CBR_300_16      0xFF11
+#define CBR_600_16      0xFF12
+#define CBR_1200_16     0xFF13
+#define CBR_2400_16     0xFF14
+#define CBR_4800_16     0xFF15
+#define CBR_9600_16     0xFF16
+#define CBR_14400_16    0xFF17
+#define CBR_19200_16    0xFF18
+#define CBR_38400_16    0xFF1B
+#define CBR_56000_16    0xFF1F
+#define CBR_57600_16    0xFF20
+#define CBR_115200_16   0xFF21
+#define CBR_128000_16   0xFF23
+#define CBR_256000_16   0xFF27
+
 typedef struct tagDCB16
 {
     BYTE   Id;

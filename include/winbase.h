@@ -146,21 +146,21 @@ typedef struct _OFSTRUCT
 
 /* comm */
 
-#define CBR_110	0xFF10
-#define CBR_300	0xFF11
-#define CBR_600	0xFF12
-#define CBR_1200	0xFF13
-#define CBR_2400	0xFF14
-#define CBR_4800	0xFF15
-#define CBR_9600	0xFF16
-#define CBR_14400	0xFF17
-#define CBR_19200	0xFF18
-#define CBR_38400	0xFF1B
-#define CBR_56000	0xFF1F
-#define CBR_57600       0xFF20
-#define CBR_115200      0xFF21
-#define CBR_128000	0xFF23
-#define CBR_256000	0xFF27
+#define CBR_110         110
+#define CBR_300         300
+#define CBR_600         600
+#define CBR_1200        1200
+#define CBR_2400        2400
+#define CBR_4800        4800
+#define CBR_9600        9600
+#define CBR_14400       14400
+#define CBR_19200       19200
+#define CBR_38400       38400
+#define CBR_56000       56000
+#define CBR_57600       57600
+#define CBR_115200      115200
+#define CBR_128000      128000
+#define CBR_256000      256000
 
 #define NOPARITY	0
 #define ODDPARITY	1

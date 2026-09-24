@@ -529,33 +529,24 @@ static NTSTATUS set_baud_rate(int fd, const SERIAL_BAUD_RATE* sbr)
     case 0:         cfsetospeed( &port, B0 ); break;
     case 50:        cfsetospeed( &port, B50 ); break;
     case 75:        cfsetospeed( &port, B75 ); break;
-    case 110:
-    case CBR_110:   cfsetospeed( &port, B110 ); break;
+    case CBR_110:    cfsetospeed( &port, B110 ); break;
     case 134:       cfsetospeed( &port, B134 ); break;
     case 150:       cfsetospeed( &port, B150 ); break;
     case 200:       cfsetospeed( &port, B200 ); break;
-    case 300:
-    case CBR_300:   cfsetospeed( &port, B300 ); break;
-    case 600:
-    case CBR_600:   cfsetospeed( &port, B600 ); break;
-    case 1200:
-    case CBR_1200:  cfsetospeed( &port, B1200 ); break;
+    case CBR_300:    cfsetospeed( &port, B300 ); break;
+    case CBR_600:    cfsetospeed( &port, B600 ); break;
+    case CBR_1200:   cfsetospeed( &port, B1200 ); break;
     case 1800:      cfsetospeed( &port, B1800 ); break;
-    case 2400:
-    case CBR_2400:  cfsetospeed( &port, B2400 ); break;
-    case 4800:
-    case CBR_4800:  cfsetospeed( &port, B4800 ); break;
-    case 9600:
-    case CBR_9600:  cfsetospeed( &port, B9600 ); break;
-    case 19200:
+    case CBR_2400:   cfsetospeed( &port, B2400 ); break;
+    case CBR_4800:   cfsetospeed( &port, B4800 ); break;
+    case CBR_9600:   cfsetospeed( &port, B9600 ); break;
     case CBR_19200: cfsetospeed( &port, B19200 ); break;
-    case 38400:
     case CBR_38400: cfsetospeed( &port, B38400 ); break;
 #ifdef B57600
-    case 57600: cfsetospeed( &port, B57600 ); break;
+    case CBR_57600: cfsetospeed( &port, B57600 ); break;
 #endif
 #ifdef B115200
-    case 115200: cfsetospeed( &port, B115200 ); break;
+    case CBR_115200: cfsetospeed( &port, B115200 ); break;
 #endif
 #ifdef B230400
     case 230400: cfsetospeed( &port, B230400 ); break;

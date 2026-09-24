@@ -816,19 +816,19 @@ INT16 WINAPI SetCommState16(LPDCB16 lpdcb)
 	 */
 	switch(lpdcb->BaudRate)
 	{
-	case CBR_110:    dcb.BaudRate = 110;    break;
-	case CBR_300:    dcb.BaudRate = 300;    break;
-	case CBR_600:    dcb.BaudRate = 600;    break;
-	case CBR_1200:   dcb.BaudRate = 1200;   break;
-	case CBR_2400:   dcb.BaudRate = 2400;   break;
-	case CBR_4800:   dcb.BaudRate = 4800;   break;
-	case CBR_9600:   dcb.BaudRate = 9600;   break;
-	case CBR_14400:  dcb.BaudRate = 14400;  break;
-	case CBR_19200:  dcb.BaudRate = 19200;  break;
-	case CBR_38400:  dcb.BaudRate = 38400;  break;
-	case CBR_56000:  dcb.BaudRate = 56000;  break;
-	case CBR_128000: dcb.BaudRate = 128000; break;
-	case CBR_256000: dcb.BaudRate = 256000; break;
+	case CBR_110_16:    dcb.BaudRate = 110;    break;
+	case CBR_300_16:    dcb.BaudRate = 300;    break;
+	case CBR_600_16:    dcb.BaudRate = 600;    break;
+	case CBR_1200_16:   dcb.BaudRate = 1200;   break;
+	case CBR_2400_16:   dcb.BaudRate = 2400;   break;
+	case CBR_4800_16:   dcb.BaudRate = 4800;   break;
+	case CBR_9600_16:   dcb.BaudRate = 9600;   break;
+	case CBR_14400_16:  dcb.BaudRate = 14400;  break;
+	case CBR_19200_16:  dcb.BaudRate = 19200;  break;
+	case CBR_38400_16:  dcb.BaudRate = 38400;  break;
+	case CBR_56000_16:  dcb.BaudRate = 56000;  break;
+	case CBR_128000_16: dcb.BaudRate = 128000; break;
+	case CBR_256000_16: dcb.BaudRate = 256000; break;
 	default:
 		if(lpdcb->BaudRate>57600)
 		dcb.BaudRate = 115200;
