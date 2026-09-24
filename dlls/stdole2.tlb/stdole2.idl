@@ -38,6 +38,7 @@ typedef unsigned long SCODE;
 [
   uuid(00020430-0000-0000-C000-000000000046),
   version(2.0),
+  lcid(0),
   helpstring("OLE Automation")
 ]
 library stdole
@@ -423,7 +424,7 @@ library stdole
 
     [
      uuid(4EF6100A-AF88-11D0-9846-00C04FC29993),
-     helpstring("Event Interface for the Font Object"),
+     helpstring("Event interface for the Font object"),
      hidden
     ]
     dispinterface FontEvents {
