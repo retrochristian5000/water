@@ -132,7 +132,14 @@ HGLOBALLockBytesImpl16_Construct(HGLOBAL16 hGlobal,
    * This method will allocate a handle if one is not supplied.
    */
   if (newLockBytes->supportHandle == 0)
+  {
     newLockBytes->supportHandle = GlobalAlloc16(GMEM_MOVEABLE | GMEM_NODISCARD, 0);
+    if (!newLockBytes->supportHandle)
+    {
+      HeapFree(GetProcessHeap(), 0, newLockBytes);
+      return NULL;
+    }
+  }
 
   /*
    * Initialize the size of the array to the size of the handle.
