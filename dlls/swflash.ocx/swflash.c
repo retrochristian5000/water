@@ -65,6 +65,14 @@ struct swflash
 struct class_factory
 {
     IClassFactory IClassFactory_iface;
+    HRESULT (*create)(IUnknown *outer, REFIID iid, void **out);
+};
+
+struct flashprop
+{
+    IPropertyPage IPropertyPage_iface;
+    LONG ref;
+    IPropertyPageSite *site;
 };
 
 static HINSTANCE instance;
@@ -91,6 +99,16 @@ static inline struct swflash *impl_from_IPersistStreamInit(IPersistStreamInit *i
 static inline struct swflash *impl_from_IOleControl(IOleControl *iface)
 {
     return CONTAINING_RECORD(iface, struct swflash, IOleControl_iface);
+}
+
+static inline struct class_factory *impl_from_IClassFactory(IClassFactory *iface)
+{
+    return CONTAINING_RECORD(iface, struct class_factory, IClassFactory_iface);
+}
+
+static inline struct flashprop *impl_from_IPropertyPage(IPropertyPage *iface)
+{
+    return CONTAINING_RECORD(iface, struct flashprop, IPropertyPage_iface);
 }
 
 static HRESULT get_shockwave_typeinfo(ITypeInfo **out)
@@ -979,6 +997,150 @@ static HRESULT swflash_create(IUnknown *outer, REFIID iid, void **out)
     return hr;
 }
 
+/* FlashProp property page */
+
+static HRESULT WINAPI FlashProp_QueryInterface(IPropertyPage *iface, REFIID iid, void **out)
+{
+    if (!out) return E_POINTER;
+    *out = NULL;
+
+    if (IsEqualIID(iid, &IID_IUnknown) || IsEqualIID(iid, &IID_IPropertyPage))
+    {
+        *out = iface;
+        IPropertyPage_AddRef(iface);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI FlashProp_AddRef(IPropertyPage *iface)
+{
+    return InterlockedIncrement(&impl_from_IPropertyPage(iface)->ref);
+}
+
+static ULONG WINAPI FlashProp_Release(IPropertyPage *iface)
+{
+    struct flashprop *This = impl_from_IPropertyPage(iface);
+    ULONG ref = InterlockedDecrement(&This->ref);
+
+    if (!ref)
+    {
+        if (This->site) IPropertyPageSite_Release(This->site);
+        HeapFree(GetProcessHeap(), 0, This);
+        InterlockedDecrement(&object_count);
+    }
+    return ref;
+}
+
+static HRESULT WINAPI FlashProp_SetPageSite(IPropertyPage *iface, IPropertyPageSite *site)
+{
+    struct flashprop *This = impl_from_IPropertyPage(iface);
+
+    if (site) IPropertyPageSite_AddRef(site);
+    if (This->site) IPropertyPageSite_Release(This->site);
+    This->site = site;
+    return S_OK;
+}
+
+static HRESULT WINAPI FlashProp_Activate(IPropertyPage *iface, HWND parent, LPCRECT rect, BOOL modal)
+{
+    FIXME("(%p, %p, %p, %d): property-page UI is not implemented\n", iface, parent, rect, modal);
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI FlashProp_Deactivate(IPropertyPage *iface)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI FlashProp_GetPageInfo(IPropertyPage *iface, PROPPAGEINFO *info)
+{
+    static const WCHAR title[] = L"Shockwave Flash";
+
+    if (!info) return E_POINTER;
+    memset(info, 0, sizeof(*info));
+    info->cb = sizeof(*info);
+    info->size.cx = 250;
+    info->size.cy = 150;
+    if (!(info->pszTitle = CoTaskMemAlloc(sizeof(title)))) return E_OUTOFMEMORY;
+    memcpy(info->pszTitle, title, sizeof(title));
+    return S_OK;
+}
+
+static HRESULT WINAPI FlashProp_SetObjects(IPropertyPage *iface, ULONG count, IUnknown **objects)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI FlashProp_Show(IPropertyPage *iface, UINT command)
+{
+    return command == SW_HIDE ? S_OK : E_NOTIMPL;
+}
+
+static HRESULT WINAPI FlashProp_Move(IPropertyPage *iface, LPCRECT rect)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI FlashProp_IsPageDirty(IPropertyPage *iface)
+{
+    return S_FALSE;
+}
+
+static HRESULT WINAPI FlashProp_Apply(IPropertyPage *iface)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI FlashProp_Help(IPropertyPage *iface, LPCOLESTR help_dir)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI FlashProp_TranslateAccelerator(IPropertyPage *iface, MSG *msg)
+{
+    return S_FALSE;
+}
+
+static const IPropertyPageVtbl FlashPropVtbl =
+{
+    FlashProp_QueryInterface,
+    FlashProp_AddRef,
+    FlashProp_Release,
+    FlashProp_SetPageSite,
+    FlashProp_Activate,
+    FlashProp_Deactivate,
+    FlashProp_GetPageInfo,
+    FlashProp_SetObjects,
+    FlashProp_Show,
+    FlashProp_Move,
+    FlashProp_IsPageDirty,
+    FlashProp_Apply,
+    FlashProp_Help,
+    FlashProp_TranslateAccelerator
+};
+
+static HRESULT flashprop_create(IUnknown *outer, REFIID iid, void **out)
+{
+    struct flashprop *object;
+    HRESULT hr;
+
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (outer) return CLASS_E_NOAGGREGATION;
+
+    if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object))))
+        return E_OUTOFMEMORY;
+
+    object->IPropertyPage_iface.lpVtbl = &FlashPropVtbl;
+    object->ref = 1;
+    InterlockedIncrement(&object_count);
+
+    hr = IPropertyPage_QueryInterface(&object->IPropertyPage_iface, iid, out);
+    IPropertyPage_Release(&object->IPropertyPage_iface);
+    return hr;
+}
+
 /* IClassFactory */
 
 static HRESULT WINAPI ClassFactory_QueryInterface(IClassFactory *iface, REFIID iid, void **out)
@@ -1015,7 +1177,7 @@ static ULONG WINAPI ClassFactory_Release(IClassFactory *iface)
 static HRESULT WINAPI ClassFactory_CreateInstance(IClassFactory *iface, IUnknown *outer,
                                                    REFIID iid, void **out)
 {
-    return swflash_create(outer, iid, out);
+    return impl_from_IClassFactory(iface)->create(outer, iid, out);
 }
 
 static HRESULT WINAPI ClassFactory_LockServer(IClassFactory *iface, BOOL lock)
@@ -1044,7 +1206,8 @@ static const IClassFactoryVtbl ClassFactoryVtbl =
     ClassFactory_LockServer
 };
 
-static struct class_factory class_factory = { { &ClassFactoryVtbl } };
+static struct class_factory shockwave_factory = { { &ClassFactoryVtbl }, swflash_create };
+static struct class_factory flashprop_factory = { { &ClassFactoryVtbl }, flashprop_create };
 
 BOOL WINAPI DllMain(HINSTANCE dll, DWORD reason, void *reserved)
 {
@@ -1067,10 +1230,12 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void **out)
 
     if (!out) return E_POINTER;
     *out = NULL;
-    if (!IsEqualGUID(clsid, &CLSID_ShockwaveFlash))
-        return CLASS_E_CLASSNOTAVAILABLE;
+    if (IsEqualGUID(clsid, &CLSID_ShockwaveFlash))
+        return IClassFactory_QueryInterface(&shockwave_factory.IClassFactory_iface, iid, out);
+    if (IsEqualGUID(clsid, &CLSID_FlashProp))
+        return IClassFactory_QueryInterface(&flashprop_factory.IClassFactory_iface, iid, out);
 
-    return IClassFactory_QueryInterface(&class_factory.IClassFactory_iface, iid, out);
+    return CLASS_E_CLASSNOTAVAILABLE;
 }
 
 HRESULT WINAPI DllCanUnloadNow(void)
