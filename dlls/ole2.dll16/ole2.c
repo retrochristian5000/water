@@ -433,6 +433,172 @@ HRESULT WINAPI WriteClassStm16(SEGPTR stream, REFCLSID clsid)
     return hres;
 }
 
+static HRESULT stream_write16(SEGPTR stream, const void *buffer, DWORD size)
+{
+    DWORD args[4];
+    HRESULT hres = E_FAIL;
+    SEGPTR buffer16;
+
+    if (!size) return S_OK;
+    if (!buffer) return E_INVALIDARG16;
+
+    if (!(buffer16 = MapLS(buffer)))
+        return E_OUTOFMEMORY;
+
+    args[0] = stream;
+    args[1] = buffer16;
+    args[2] = size;
+    args[3] = 0;
+
+    if (!WOWCallback16Ex(
+        GET_SEGPTR_METHOD_ADDR(IStream16, stream, Write),
+        WCB16_PASCAL,
+        4 * sizeof(DWORD),
+        args,
+        (DWORD *)&hres))
+    {
+        ERR("CallTo16 IStream16::Write() failed\n");
+        hres = E_FAIL;
+    }
+
+    UnMapLS(buffer16);
+    return hres;
+}
+
+static HRESULT stream_write_string16(SEGPTR stream, const char *string)
+{
+    DWORD len = string ? strlen(string) + 1 : 0;
+    HRESULT hres;
+
+    hres = stream_write16(stream, &len, sizeof(len));
+    if (SUCCEEDED(hres) && len)
+        hres = stream_write16(stream, string, len);
+
+    return hres;
+}
+
+static HRESULT storage_create_stream16(SEGPTR storage, const char *name, DWORD mode, SEGPTR *stream)
+{
+    HANDLE16 hstream;
+    DWORD args[6];
+    HRESULT hres = E_FAIL;
+    SEGPTR name16;
+
+    if (!storage || !name || !stream)
+        return E_INVALIDARG16;
+
+    *stream = 0;
+    if (!(name16 = MapLS(name)))
+        return E_OUTOFMEMORY;
+
+    args[0] = storage;
+    args[1] = name16;
+    args[2] = mode;
+    args[3] = 0;
+    args[4] = 0;
+    args[5] = WOWGlobalAllocLock16(0, sizeof(*stream), &hstream);
+    if (!args[5])
+    {
+        UnMapLS(name16);
+        return E_OUTOFMEMORY;
+    }
+    memset(MapSL(args[5]), 0, sizeof(*stream));
+
+    if (WOWCallback16Ex(
+        GET_SEGPTR_METHOD_ADDR(IStorage16, storage, CreateStream),
+        WCB16_PASCAL,
+        6 * sizeof(DWORD),
+        args,
+        (DWORD *)&hres))
+    {
+        if (SUCCEEDED(hres))
+            memcpy(stream, MapSL(args[5]), sizeof(*stream));
+    }
+    else
+    {
+        ERR("CallTo16 IStorage16::CreateStream() failed\n");
+        hres = E_FAIL;
+    }
+
+    WOWGlobalUnlockFree16(args[5]);
+    UnMapLS(name16);
+    return hres;
+}
+
+static void stream_release16(SEGPTR stream)
+{
+    DWORD args[1], ref = 0;
+
+    if (!stream) return;
+
+    args[0] = stream;
+    if (!WOWCallback16Ex(
+        GET_SEGPTR_METHOD_ADDR(IStream16, stream, Release),
+        WCB16_PASCAL,
+        sizeof(DWORD),
+        args,
+        &ref))
+        ERR("CallTo16 IStream16::Release() failed\n");
+}
+
+/***********************************************************************
+ *              WriteFmtUserTypeStg (OLE2.75)
+ */
+HRESULT WINAPI WriteFmtUserTypeStg16(SEGPTR storage, CLIPFORMAT format, LPCOLESTR16 user_type)
+{
+    static const BYTE header[12] =
+        {0x01, 0x00, 0xfe, 0xff, 0x03, 0x0a, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff};
+    static const BYTE trailer[16] =
+        {0xf4, 0x39, 0xb2, 0x71, 0x00, 0x00, 0x00, 0x00,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    static const char compobj_name[] = "\1CompObj";
+    char clip_name[0x40] = {0};
+    char *progid = NULL;
+    LPOLESTR wide_progid = NULL;
+    CLSID clsid = CLSID_NULL;
+    SEGPTR stream = 0;
+    HRESULT hres;
+    int len;
+
+    TRACE("(0x%lx,%#x,%s)\n", storage, format, debugstr_a(user_type));
+
+    if (!storage)
+        return E_INVALIDARG16;
+
+    if (FAILED(ReadClassStg16(storage, &clsid)))
+        clsid = CLSID_NULL;
+
+    if (format)
+        GetClipboardFormatNameA(format, clip_name, ARRAY_SIZE(clip_name));
+
+    if (SUCCEEDED(ProgIDFromCLSID(&clsid, &wide_progid)) && wide_progid)
+    {
+        len = WideCharToMultiByte(CP_ACP, 0, wide_progid, -1, NULL, 0, NULL, NULL);
+        if (len && (progid = HeapAlloc(GetProcessHeap(), 0, len)))
+            WideCharToMultiByte(CP_ACP, 0, wide_progid, -1, progid, len, NULL, NULL);
+    }
+
+    hres = storage_create_stream16(storage, compobj_name,
+            STGM_CREATE | STGM_WRITE | STGM_SHARE_EXCLUSIVE, &stream);
+    if (SUCCEEDED(hres))
+        hres = stream_write16(stream, header, sizeof(header));
+    if (SUCCEEDED(hres))
+        hres = WriteClassStm16(stream, &clsid);
+    if (SUCCEEDED(hres))
+        hres = stream_write_string16(stream, user_type);
+    if (SUCCEEDED(hres))
+        hres = stream_write_string16(stream, format ? clip_name : NULL);
+    if (SUCCEEDED(hres))
+        hres = stream_write_string16(stream, progid);
+    if (SUCCEEDED(hres))
+        hres = stream_write16(stream, trailer, sizeof(trailer));
+
+    stream_release16(stream);
+    HeapFree(GetProcessHeap(), 0, progid);
+    CoTaskMemFree(wide_progid);
+    return hres;
+}
+
 /***********************************************************************
  *              GetConvertStg (OLE2.82)
  */
