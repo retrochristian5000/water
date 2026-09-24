@@ -27,6 +27,30 @@
 WINE_DEFAULT_DEBUG_CHANNEL(mprapi);
 
 /***********************************************************************
+ *      MprAdminBufferFree (MPRAPI.@)
+ */
+DWORD APIENTRY MprAdminBufferFree(void *buffer)
+{
+    TRACE("(%p)\n", buffer);
+
+    if (!buffer) return ERROR_INVALID_PARAMETER;
+    HeapFree(GetProcessHeap(), 0, buffer);
+    return NO_ERROR;
+}
+
+/***********************************************************************
+ *      MprConfigBufferFree (MPRAPI.@)
+ */
+DWORD APIENTRY MprConfigBufferFree(void *buffer)
+{
+    TRACE("(%p)\n", buffer);
+
+    if (!buffer) return ERROR_INVALID_PARAMETER;
+    HeapFree(GetProcessHeap(), 0, buffer);
+    return NO_ERROR;
+}
+
+/***********************************************************************
  * MprAdminGetErrorString (MPRAPI.@)
  *
  * Return a unicode string for the given mpr errorcode
