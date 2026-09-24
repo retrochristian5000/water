@@ -150,6 +150,130 @@ OLESTATUS WINAPI OleCreateFromFile(LPCSTR protocol, LPOLECLIENT client,
 }
 
 /******************************************************************************
+ *              DefLoadFromStream      [OLECLI32.110]
+ */
+OLESTATUS WINAPI DefLoadFromStream(struct _OLESTREAM *stream, LPCSTR protocol,
+                                   LPOLECLIENT client, LHCLIENTDOC clientdoc,
+                                   LPCSTR object_name, _LPOLEOBJECT *object,
+                                   LONG object_type, ATOM class_atom,
+                                   OLECLIPFORMAT format)
+{
+    FIXME("(%p,%s,%p,%ld,%s,%p,%ld,%#x,%ld): stub\n", stream,
+          debugstr_a(protocol), client, clientdoc, debugstr_a(object_name),
+          object, object_type, class_atom, format);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              DefCreateFromClip      [OLECLI32.111]
+ */
+OLESTATUS WINAPI DefCreateFromClip(LPCSTR protocol, LPOLECLIENT client,
+                                   LHCLIENTDOC clientdoc, LPCSTR object_name,
+                                   _LPOLEOBJECT *object, OLEOPT_RENDER render,
+                                   OLECLIPFORMAT format, LONG object_type)
+{
+    FIXME("(%s,%p,%ld,%s,%p,%d,%ld,%ld): stub\n", debugstr_a(protocol),
+          client, clientdoc, debugstr_a(object_name), object, render, format,
+          object_type);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              DefCreateLinkFromClip  [OLECLI32.112]
+ */
+OLESTATUS WINAPI DefCreateLinkFromClip(LPCSTR protocol, LPOLECLIENT client,
+                                       LHCLIENTDOC clientdoc, LPCSTR object_name,
+                                       _LPOLEOBJECT *object, OLEOPT_RENDER render,
+                                       OLECLIPFORMAT format)
+{
+    FIXME("(%s,%p,%ld,%s,%p,%d,%ld): stub\n", debugstr_a(protocol), client,
+          clientdoc, debugstr_a(object_name), object, render, format);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              DefCreateFromTemplate  [OLECLI32.113]
+ */
+OLESTATUS WINAPI DefCreateFromTemplate(LPCSTR protocol, LPOLECLIENT client,
+                                       LPCSTR template_name, LHCLIENTDOC clientdoc,
+                                       LPCSTR object_name, _LPOLEOBJECT *object,
+                                       OLEOPT_RENDER render, OLECLIPFORMAT format)
+{
+    FIXME("(%s,%p,%s,%ld,%s,%p,%d,%ld): stub\n", debugstr_a(protocol), client,
+          debugstr_a(template_name), clientdoc, debugstr_a(object_name), object,
+          render, format);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              DefCreate              [OLECLI32.114]
+ */
+OLESTATUS WINAPI DefCreate(LPCSTR protocol, LPOLECLIENT client, LPCSTR class_name,
+                           LHCLIENTDOC clientdoc, LPCSTR object_name,
+                           _LPOLEOBJECT *object, OLEOPT_RENDER render,
+                           OLECLIPFORMAT format)
+{
+    FIXME("(%s,%p,%s,%ld,%s,%p,%d,%ld): stub\n", debugstr_a(protocol), client,
+          debugstr_a(class_name), clientdoc, debugstr_a(object_name), object,
+          render, format);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              DefCreateFromFile      [OLECLI32.115]
+ */
+OLESTATUS WINAPI DefCreateFromFile(LPCSTR protocol, LPOLECLIENT client,
+                                   LPCSTR class_name, LPCSTR filename,
+                                   LHCLIENTDOC clientdoc, LPCSTR object_name,
+                                   _LPOLEOBJECT *object, OLEOPT_RENDER render,
+                                   OLECLIPFORMAT format)
+{
+    FIXME("(%s,%p,%s,%s,%ld,%s,%p,%d,%ld): stub\n", debugstr_a(protocol),
+          client, debugstr_a(class_name), debugstr_a(filename), clientdoc,
+          debugstr_a(object_name), object, render, format);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              DefCreateLinkFromFile  [OLECLI32.116]
+ */
+OLESTATUS WINAPI DefCreateLinkFromFile(LPCSTR protocol, LPOLECLIENT client,
+                                       LPCSTR class_name, LPCSTR filename,
+                                       LPCSTR item_name, LHCLIENTDOC clientdoc,
+                                       LPCSTR object_name, _LPOLEOBJECT *object,
+                                       OLEOPT_RENDER render, OLECLIPFORMAT format)
+{
+    FIXME("(%s,%p,%s,%s,%s,%ld,%s,%p,%d,%ld): stub\n", debugstr_a(protocol),
+          client, debugstr_a(class_name), debugstr_a(filename),
+          debugstr_a(item_name), clientdoc, debugstr_a(object_name), object,
+          render, format);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
+ *              DefCreateInvisible     [OLECLI32.117]
+ */
+OLESTATUS WINAPI DefCreateInvisible(LPCSTR protocol, LPOLECLIENT client,
+                                    LPCSTR class_name, LHCLIENTDOC clientdoc,
+                                    LPCSTR object_name, _LPOLEOBJECT *object,
+                                    OLEOPT_RENDER render, OLECLIPFORMAT format,
+                                    BOOL activate)
+{
+    FIXME("(%s,%p,%s,%ld,%s,%p,%d,%ld,%d): stub\n", debugstr_a(protocol),
+          client, debugstr_a(class_name), clientdoc, debugstr_a(object_name),
+          object, render, format, activate);
+
+    return unsupported_object_creation(object);
+}
+
+/******************************************************************************
  *		OleSavedClientDoc	[OLECLI32.45]
  */
 OLESTATUS WINAPI OleSavedClientDoc(LHCLIENTDOC hDoc)

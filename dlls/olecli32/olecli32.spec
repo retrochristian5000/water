@@ -54,3 +54,11 @@
   58 stub OleCreateInvisible
   59 stub OleQueryClientVersion
   60 stdcall OleIsDcMeta(long)
+ 110 stdcall DefLoadFromStream(ptr str ptr long str ptr long long long)
+ 111 stdcall DefCreateFromClip(str ptr long str ptr long long long)
+ 112 stdcall DefCreateLinkFromClip(str ptr long str ptr long long)
+ 113 stdcall DefCreateFromTemplate(str ptr str long str ptr long long)
+ 114 stdcall DefCreate(str ptr str long str ptr long long)
+ 115 stdcall DefCreateFromFile(str ptr str str long str ptr long long)
+ 116 stdcall DefCreateLinkFromFile(str ptr str str str long str ptr long long)
+ 117 stdcall DefCreateInvisible(str ptr str long str ptr long long long)
