@@ -1,6 +1,9 @@
 PROGRAMS = widl
 PARENTSRC = ../wrc
 
+PCH = widl_pch.h
+PCH_EXCLUDE = hash.c wpp.c
+
 SOURCES = \
 	attribute.c \
 	client.c \
