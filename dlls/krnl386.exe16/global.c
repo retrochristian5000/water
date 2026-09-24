@@ -813,8 +813,10 @@ WORD WINAPI GlobalDOSFree16(
    {
        LPVOID lpBlock = DOSMEM_MapDosToLinear( dosaddr );
        if (DOSMEM_FreeBlock( lpBlock ))
+       {
            GLOBAL_FreeBlock( sel );
-       sel = 0;
+           sel = 0;
+       }
    }
    return sel;
 }
