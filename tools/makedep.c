@@ -4495,10 +4495,13 @@ static void output_pch( struct makefile *make )
     strarray_addall( &cflags, extra_cflags[0] );
     strarray_addall( &cflags, cpp_flags );
 
-    output( "%s: %s\n", wrapper, make->pch_file->filename );
+    output( "%s: %s", wrapper, make->pch_file->filename );
+    output_filename( src_dir_path( make, "Makefile.in" ));
+    output( "\n" );
     output( "\t%sprintf '#include \"%s\"\\n' >$@\n", cmd_prefix( "GEN" ), make->pch );
 
     output( "%s: %s", pch, wrapper );
+    output_filename( "Makefile" );
     output_filenames( make->pch_file->dependencies );
     output( "\n" );
     output( "\t%s$(CC) -x c-header -o $@ %s", cmd_prefix( "PCH" ), wrapper );
