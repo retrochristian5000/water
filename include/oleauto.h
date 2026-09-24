@@ -19,6 +19,11 @@
 #ifndef __WINE_OLEAUTO_H
 #define __WINE_OLEAUTO_H
 
+/* Match the native Windows SDK guard for source compatibility. */
+#ifndef _OLEAUTO_H_
+#define _OLEAUTO_H_
+#endif
+
 #ifndef RC_INVOKED
 #include <pshpack8.h>
 #endif
@@ -44,6 +49,14 @@ DEFINE_OLEGUID(IID_StdOle, 0x00020430,0,0);
 #define WINOLEAUTAPI
 #else
 #define WINOLEAUTAPI DECLSPEC_IMPORT
+#endif
+#endif
+
+#ifndef WINOLEAUTAPI_
+#ifdef _OLEAUT32_
+#define WINOLEAUTAPI_(type) EXTERN_C type WINAPI
+#else
+#define WINOLEAUTAPI_(type) EXTERN_C DECLSPEC_IMPORT type WINAPI
 #endif
 #endif
 
