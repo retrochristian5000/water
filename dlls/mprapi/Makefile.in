@@ -1,5 +1,6 @@
 MODULE    = mprapi.dll
 IMPORTLIB = mprapi
+IMPORTS   = advapi32
 
 EXTRADLLFLAGS = -Wb,--prefer-native
 
