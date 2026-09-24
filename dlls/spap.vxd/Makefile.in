@@ -1,0 +1,4 @@
+MODULE    = spap.vxd
+
+SOURCES = \
+	spap.c
