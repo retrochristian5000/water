@@ -819,6 +819,7 @@ SOURCES = \
 	pshpack2.h \
 	pshpack4.h \
 	pshpack8.h \
+	pshpck16.h \
 	pstore.idl \
 	qedit.idl \
 	qos2.h \
