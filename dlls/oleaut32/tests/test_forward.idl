@@ -1,0 +1,53 @@
+/*
+ * Test forward coclass references in generated type libraries.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ */
+
+#pragma makedep ident
+#pragma makedep typelib
+
+import "oaidl.idl";
+
+[
+    uuid(8484d86a-09a4-46d6-a465-93e45bdcab05),
+    id(5)
+]
+library forward_test
+{
+    importlib("stdole2.tlb");
+
+    dispinterface LaterEvents;
+
+    [
+        uuid(4989e526-a71e-4d71-8311-0ea4ec172b0a)
+    ]
+    dispinterface DefaultIface
+    {
+    properties:
+    methods:
+        [id(1)] void Method();
+    }
+
+    [
+        uuid(51090f2b-00eb-4b01-8e7e-3cfdb98c025c)
+    ]
+    coclass ForwardClass
+    {
+        [default] dispinterface DefaultIface;
+        [default, source] dispinterface LaterEvents;
+    }
+
+    [
+        uuid(c436c986-b942-44f6-9528-561cf0da90e0)
+    ]
+    dispinterface LaterEvents
+    {
+    properties:
+    methods:
+        [id(1)] void Event();
+    }
+}

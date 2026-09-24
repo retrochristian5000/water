@@ -8810,6 +8810,98 @@ static void test_DeleteFuncDesc(void)
     DeleteFileW(filenameW);
 }
 
+static void test_forward_coclass_ref(void)
+{
+    static const WCHAR default_ifaceW[] = L"DefaultIface";
+    static const WCHAR forward_classW[] = L"ForwardClass";
+    static const WCHAR later_eventsW[] = L"LaterEvents";
+    const WCHAR *filename;
+    ITypeInfo *coclass = NULL, *ref_info = NULL;
+    ITypeLib *typelib = NULL;
+    TYPEATTR *attr;
+    HREFTYPE href;
+    BSTR name;
+    HRESULT hr;
+    INT flags;
+    UINT count;
+
+    filename = create_test_typelib(5);
+    hr = LoadTypeLibEx(filename, REGKIND_NONE, &typelib);
+    ok(hr == S_OK, "Failed to load forward-reference typelib, hr %#lx.\n", hr);
+    if (FAILED(hr))
+        goto done;
+
+    count = ITypeLib_GetTypeInfoCount(typelib);
+    ok(count == 3, "Unexpected typeinfo count %u.\n", count);
+
+    hr = ITypeLib_GetDocumentation(typelib, 0, &name, NULL, NULL, NULL);
+    ok(hr == S_OK, "GetDocumentation failed, hr %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(!lstrcmpW(name, default_ifaceW), "Unexpected typeinfo 0 name %s.\n", wine_dbgstr_w(name));
+        SysFreeString(name);
+    }
+
+    hr = ITypeLib_GetDocumentation(typelib, 1, &name, NULL, NULL, NULL);
+    ok(hr == S_OK, "GetDocumentation failed, hr %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(!lstrcmpW(name, forward_classW), "Unexpected typeinfo 1 name %s.\n", wine_dbgstr_w(name));
+        SysFreeString(name);
+    }
+
+    hr = ITypeLib_GetDocumentation(typelib, 2, &name, NULL, NULL, NULL);
+    ok(hr == S_OK, "GetDocumentation failed, hr %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(!lstrcmpW(name, later_eventsW), "Unexpected typeinfo 2 name %s.\n", wine_dbgstr_w(name));
+        SysFreeString(name);
+    }
+
+    hr = ITypeLib_GetTypeInfo(typelib, 1, &coclass);
+    ok(hr == S_OK, "GetTypeInfo failed, hr %#lx.\n", hr);
+    if (FAILED(hr))
+        goto done;
+
+    hr = ITypeInfo_GetTypeAttr(coclass, &attr);
+    ok(hr == S_OK, "GetTypeAttr failed, hr %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(attr->typekind == TKIND_COCLASS, "Unexpected typekind %d.\n", attr->typekind);
+        ok(attr->cImplTypes == 2, "Unexpected implemented interface count %u.\n", attr->cImplTypes);
+        ITypeInfo_ReleaseTypeAttr(coclass, attr);
+    }
+
+    hr = ITypeInfo_GetImplTypeFlags(coclass, 1, &flags);
+    ok(hr == S_OK, "GetImplTypeFlags failed, hr %#lx.\n", hr);
+    ok(flags == (IMPLTYPEFLAG_FDEFAULT | IMPLTYPEFLAG_FSOURCE),
+            "Unexpected source interface flags %#x.\n", flags);
+
+    hr = ITypeInfo_GetRefTypeOfImplType(coclass, 1, &href);
+    ok(hr == S_OK, "GetRefTypeOfImplType failed, hr %#lx.\n", hr);
+    if (FAILED(hr))
+        goto done;
+
+    hr = ITypeInfo_GetRefTypeInfo(coclass, href, &ref_info);
+    ok(hr == S_OK, "GetRefTypeInfo failed, hr %#lx.\n", hr);
+    if (FAILED(hr))
+        goto done;
+
+    hr = ITypeInfo_GetDocumentation(ref_info, MEMBERID_NIL, &name, NULL, NULL, NULL);
+    ok(hr == S_OK, "GetDocumentation failed, hr %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(!lstrcmpW(name, later_eventsW), "Unexpected source interface name %s.\n", wine_dbgstr_w(name));
+        SysFreeString(name);
+    }
+
+done:
+    if (ref_info) ITypeInfo_Release(ref_info);
+    if (coclass) ITypeInfo_Release(coclass);
+    if (typelib) ITypeLib_Release(typelib);
+    DeleteFileW(filename);
+}
+
 START_TEST(typelib)
 {
     const WCHAR *filename;
@@ -8835,6 +8927,7 @@ START_TEST(typelib)
     test_SetFuncAndParamNames();
     test_SetDocString();
     test_FindName();
+    test_forward_coclass_ref();
 
     if ((filename = create_test_typelib(2)))
     {

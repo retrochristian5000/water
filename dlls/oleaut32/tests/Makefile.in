@@ -6,6 +6,7 @@ SOURCES = \
 	olefont.c \
 	olepicture.c \
 	safearray.c \
+	test_forward.idl \
 	test_reg.idl \
 	test_simple.idl \
 	test_tlb.idl \
