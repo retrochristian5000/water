@@ -4012,7 +4012,6 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
         {
             LPSTR data = ldt_get_ptr( context->SegDs, context->Edx );
             LPSTR p = data;
-            DWORD w;
             /*
              * Do NOT use strchr() to calculate the string length,
              * as '\0' is valid string content, too!
@@ -4020,7 +4019,7 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
              */
             while (*p != '$') p++;
 
-            w = INT21_WriteStdout( data, p - data );
+            INT21_WriteStdout( data, p - data );
             SET_AL( context, '$' ); /* yes, '$' (0x24) gets returned in AL */
         }
         break;
