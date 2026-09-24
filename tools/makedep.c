@@ -167,6 +167,7 @@ static const char *make_xftmpl;
 static const char *sfnt2fon;
 static const char *winebuild;
 static const char *winegcc;
+static const char *compiler_cache;
 static const char *widl;
 static const char *wrc;
 static const char *wmc;
@@ -3749,7 +3750,13 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     }
 
     output( "%s: %s\n", obj_dir_path( make, obj_name ), source->filename );
-    output( "\t%s%s -c -o $@ %s", cmd_prefix( "CC" ), var_cc, source->filename );
+    output( "\t%s", cmd_prefix( "CC" ) );
+    if (compiler_cache && *compiler_cache)
+    {
+        output_filename( compiler_cache );
+        output( " " );
+    }
+    output( "%s -c -o $@ %s", var_cc, source->filename );
     output_filenames( defines );
     output_filenames( cflags );
     output_filename( var_cflags );
@@ -5576,6 +5583,7 @@ int main( int argc, char *argv[] )
     ln_s               = get_expanded_make_variable( top_makefile, "LN_S" );
     wayland_scanner    = get_expanded_make_variable( top_makefile, "WAYLAND_SCANNER" );
     sarif_converter    = get_expanded_make_variable( top_makefile, "SARIF_CONVERTER" );
+    compiler_cache     = get_expanded_make_variable( top_makefile, "COMPILER_CACHE" );
 
     if (root_src_dir && !strcmp( root_src_dir, "." )) root_src_dir = NULL;
     if (tools_dir && !strcmp( tools_dir, "." )) tools_dir = NULL;
