@@ -39,6 +39,9 @@ typedef DWORD           COLORREF, *LPCOLORREF;
 /* Handle types */
 
 typedef int HFILE;
+#ifndef _DPI_AWARENESS_CONTEXTS_
+#define _DPI_AWARENESS_CONTEXTS_
+#endif
 DECLARE_HANDLE(DPI_AWARENESS_CONTEXT);
 DECLARE_HANDLE(HACCEL);
 DECLARE_HANDLE(HBITMAP);
@@ -53,6 +56,10 @@ DECLARE_HANDLE(HHOOK);
 DECLARE_HANDLE(HICON);
 DECLARE_HANDLE(HMENU);
 DECLARE_HANDLE(HMONITOR);
+#ifndef HMONITOR_DECLARED
+#define HMONITOR_DECLARED 1
+#endif
+DECLARE_HANDLE(HUMPD);
 DECLARE_HANDLE(HPALETTE);
 DECLARE_HANDLE(HPEN);
 DECLARE_HANDLE(HWINEVENTHOOK);
@@ -122,7 +129,7 @@ typedef struct tagPOINT
 {
     LONG  x;
     LONG  y;
-} POINT, *PPOINT, *LPPOINT;
+} POINT, *PPOINT, *NPPOINT, *LPPOINT;
 
 typedef struct _POINTL
 {
@@ -145,7 +152,7 @@ typedef struct tagRECT
     LONG top;
     LONG right;
     LONG bottom;
-} RECT, *PRECT, *LPRECT;
+} RECT, *PRECT, *NPRECT, *LPRECT;
 typedef const RECT *LPCRECT;
 
 typedef struct _RECTL
@@ -158,9 +165,13 @@ typedef struct _RECTL
 
 typedef const RECTL *LPCRECTL;
 
+#ifndef APP_LOCAL_DEVICE_ID_SIZE
+#define APP_LOCAL_DEVICE_ID_SIZE 32
+#endif
+
 typedef struct APP_LOCAL_DEVICE_ID
 {
-    BYTE value[32];
+    BYTE value[APP_LOCAL_DEVICE_ID_SIZE];
 } APP_LOCAL_DEVICE_ID;
 
 /* DPI awareness */
