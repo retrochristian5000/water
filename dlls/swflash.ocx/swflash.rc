@@ -1,0 +1,6 @@
+/*
+ * Shockwave Flash compatibility registration metadata
+ */
+
+/* @makedep: swflash.rgs */
+1 WINE_REGISTRY swflash.rgs

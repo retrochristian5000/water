@@ -1,0 +1,15 @@
+HKCR
+{
+    NoRemove CLSID
+    {
+        '{D27CDB6E-AE6D-11CF-96B8-444553540000}' = s 'Shockwave Flash Object'
+        {
+            Control
+            Programmable
+            MiscStatus = s '0'
+            {
+                '1' = s '131473'
+            }
+        }
+    }
+}
