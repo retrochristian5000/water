@@ -158,6 +158,7 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
 
     for (i = 0; ; ++i)
     {
+        sizeOfSubKeyName = ARRAY_SIZE(subKeyName);
         status = RegEnumKeyExW(root, i, subKeyName, &sizeOfSubKeyName, NULL, NULL, NULL, NULL);
         if (status == ERROR_NO_MORE_ITEMS) break;
         if (status != ERROR_SUCCESS) continue;
@@ -196,7 +197,7 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
             else
             {
                 RegCloseKey(hkeyApp);
-                        continue;
+                continue;
             }
 
             info = calloc(1, sizeof(*info));
