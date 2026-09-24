@@ -302,7 +302,7 @@ HRESULT WINAPI ReadClassStg16(SEGPTR pstg, CLSID *pclsid)
 {
 	STATSTG16 statstg;
 	HANDLE16 hstatstg;
-	HRESULT	hres;
+	HRESULT	hres = E_FAIL;
 	DWORD args[3];
 
 	TRACE("(%lx, %p)\n", pstg, pclsid);
@@ -349,7 +349,7 @@ HRESULT WINAPI ReadClassStg16(SEGPTR pstg, CLSID *pclsid)
 HRESULT WINAPI ReadClassStm16(SEGPTR stream, CLSID *clsid)
 {
     HANDLE16 hclsid, hread;
-    HRESULT hres;
+    HRESULT hres = E_FAIL;
     DWORD args[4];
 
     TRACE("(0x%lx, %p)\n", stream, clsid);
@@ -396,6 +396,44 @@ HRESULT WINAPI ReadClassStm16(SEGPTR stream, CLSID *clsid)
 }
 
 /***********************************************************************
+ *    WriteClassStm (OLE2.21)
+ */
+HRESULT WINAPI WriteClassStm16(SEGPTR stream, REFCLSID clsid)
+{
+    HANDLE16 hclsid;
+    HRESULT hres = E_FAIL;
+    DWORD args[4];
+
+    TRACE("(0x%lx, %s)\n", stream, debugstr_guid(clsid));
+
+    if (!stream || !clsid)
+        return E_INVALIDARG16;
+
+    args[0] = stream;
+    args[1] = WOWGlobalAllocLock16(0, sizeof(*clsid), &hclsid);
+    if (!args[1])
+        return E_OUTOFMEMORY;
+
+    memcpy(MapSL(args[1]), clsid, sizeof(*clsid));
+    args[2] = sizeof(*clsid);
+    args[3] = 0;
+
+    if (!WOWCallback16Ex(
+        GET_SEGPTR_METHOD_ADDR(IStream16, stream, Write),
+        WCB16_PASCAL,
+        4 * sizeof(DWORD),
+        args,
+        (DWORD *)&hres))
+    {
+        ERR("CallTo16 IStream16::Write() failed\n");
+        hres = E_FAIL;
+    }
+
+    WOWGlobalUnlockFree16(args[1]);
+    return hres;
+}
+
+/***********************************************************************
  *              GetConvertStg (OLE2.82)
  */
 HRESULT WINAPI GetConvertStg16(LPSTORAGE stg)
@@ -415,8 +453,37 @@ VOID WINAPI ReleaseStgMedium16(LPSTGMEDIUM medium)
 /***********************************************************************
  *              WriteClassStg16 (OLE2.19)
  */
-HRESULT WINAPI WriteClassStg16(IStorage *stg, REFCLSID clsid)
+HRESULT WINAPI WriteClassStg16(SEGPTR stg, REFCLSID clsid)
 {
-    FIXME("stub:%p %s\n", stg, debugstr_guid(clsid));
-    return STG_E_MEDIUMFULL;
+    HANDLE16 hclsid;
+    HRESULT hres = E_FAIL;
+    DWORD args[2];
+
+    TRACE("(0x%lx, %s)\n", stg, debugstr_guid(clsid));
+
+    if (!stg)
+        return E_INVALIDARG16;
+    if (!clsid)
+        return STG_E_INVALIDPOINTER;
+
+    args[0] = stg;
+    args[1] = WOWGlobalAllocLock16(0, sizeof(*clsid), &hclsid);
+    if (!args[1])
+        return E_OUTOFMEMORY;
+
+    memcpy(MapSL(args[1]), clsid, sizeof(*clsid));
+
+    if (!WOWCallback16Ex(
+        GET_SEGPTR_METHOD_ADDR(IStorage16, stg, SetClass),
+        WCB16_PASCAL,
+        2 * sizeof(DWORD),
+        args,
+        (DWORD *)&hres))
+    {
+        ERR("CallTo16 IStorage16::SetClass() failed\n");
+        hres = E_FAIL;
+    }
+
+    WOWGlobalUnlockFree16(args[1]);
+    return hres;
 }
