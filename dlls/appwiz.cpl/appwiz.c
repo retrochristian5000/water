@@ -122,12 +122,16 @@ static void FreeAppInfo(APPINFO *info)
 
 static WCHAR *get_reg_str(HKEY hkey, const WCHAR *value)
 {
-    DWORD len, type;
-    WCHAR *ret = NULL;
-    if (!RegQueryValueExW(hkey, value, NULL, &type, NULL, &len) && type == REG_SZ)
+    DWORD len = 0;
+    WCHAR *ret;
+
+    if (RegGetValueW(hkey, NULL, value, RRF_RT_REG_SZ, NULL, NULL, &len))
+        return NULL;
+    if (!(ret = malloc(len))) return NULL;
+    if (RegGetValueW(hkey, NULL, value, RRF_RT_REG_SZ, NULL, ret, &len))
     {
-        if (!(ret = malloc(len))) return NULL;
-        RegQueryValueExW(hkey, value, 0, 0, (BYTE *)ret, &len);
+        free(ret);
+        return NULL;
     }
     return ret;
 }
@@ -146,35 +150,33 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
     static int id = 0;
     DWORD sizeOfSubKeyName, displen, uninstlen;
     DWORD dwNoModify, dwType, value, size;
+    LSTATUS status;
     WCHAR subKeyName[256];
     WCHAR *command;
     APPINFO *info = NULL;
     LPWSTR iconPtr;
 
-    sizeOfSubKeyName = ARRAY_SIZE(subKeyName);
-
-    for (i = 0; RegEnumKeyExW(root, i, subKeyName, &sizeOfSubKeyName, NULL,
-        NULL, NULL, NULL) != ERROR_NO_MORE_ITEMS; ++i)
+    for (i = 0; ; ++i)
     {
+        status = RegEnumKeyExW(root, i, subKeyName, &sizeOfSubKeyName, NULL, NULL, NULL, NULL);
+        if (status == ERROR_NO_MORE_ITEMS) break;
+        if (status != ERROR_SUCCESS) continue;
+
         info = NULL;
         command = NULL;
 
         if (RegOpenKeyExW(root, subKeyName, 0, KEY_READ, &hkeyApp))
-        {
-            sizeOfSubKeyName = ARRAY_SIZE(subKeyName);
             continue;
-        }
         size = sizeof(value);
         if (!RegQueryValueExW(hkeyApp, L"SystemComponent", NULL, &dwType, (BYTE *)&value, &size)
             && dwType == REG_DWORD && value == 1)
         {
             RegCloseKey(hkeyApp);
-            sizeOfSubKeyName = ARRAY_SIZE(subKeyName);
             continue;
         }
         displen = 0;
         uninstlen = 0;
-        if (!RegQueryValueExW(hkeyApp, L"DisplayName", 0, 0, NULL, &displen))
+        if (!RegGetValueW(hkeyApp, NULL, L"DisplayName", RRF_RT_REG_SZ, NULL, NULL, &displen))
         {
             size = sizeof(value);
             if (!RegQueryValueExW(hkeyApp, L"WindowsInstaller", NULL, &dwType, (BYTE *)&value, &size)
@@ -185,16 +187,16 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
                 if (!(command = malloc(len * sizeof(WCHAR)))) goto err;
                 wsprintfW(command, L"msiexec /x%s", subKeyName);
             }
-            else if (!RegQueryValueExW(hkeyApp, L"UninstallString", 0, 0, NULL, &uninstlen))
+            else if (!RegGetValueW(hkeyApp, NULL, L"UninstallString", RRF_RT_REG_SZ, NULL, NULL, &uninstlen))
             {
                 if (!(command = malloc(uninstlen))) goto err;
-                RegQueryValueExW(hkeyApp, L"UninstallString", 0, 0, (BYTE *)command, &uninstlen);
+                if (RegGetValueW(hkeyApp, NULL, L"UninstallString", RRF_RT_REG_SZ, NULL, command, &uninstlen))
+                    goto err;
             }
             else
             {
                 RegCloseKey(hkeyApp);
-                sizeOfSubKeyName = ARRAY_SIZE(subKeyName);
-                continue;
+                        continue;
             }
 
             info = calloc(1, sizeof(*info));
@@ -205,11 +207,12 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
             if (!info->title)
                 goto err;
 
-            RegQueryValueExW(hkeyApp, L"DisplayName", 0, 0, (BYTE *)info->title, &displen);
+            if (RegGetValueW(hkeyApp, NULL, L"DisplayName", RRF_RT_REG_SZ, NULL, info->title, &displen))
+                goto err;
 
             /* now get DisplayIcon */
             displen = 0;
-            RegQueryValueExW(hkeyApp, L"DisplayIcon", 0, 0, NULL, &displen);
+            RegGetValueW(hkeyApp, NULL, L"DisplayIcon", RRF_RT_REG_SZ, NULL, NULL, &displen);
 
             if (displen == 0)
                 info->icon = 0;
@@ -220,7 +223,8 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
                 if (!info->icon)
                     goto err;
 
-                RegQueryValueExW(hkeyApp, L"DisplayIcon", 0, 0, (BYTE *)info->icon, &displen);
+                if (RegGetValueW(hkeyApp, NULL, L"DisplayIcon", RRF_RT_REG_SZ, NULL, info->icon, &displen))
+                    goto err;
 
                 /* separate the index from the icon name, if supplied */
                 iconPtr = wcschr(info->icon, ',');
@@ -268,10 +272,12 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
                     if (!(info->path_modify = malloc(len * sizeof(WCHAR)))) goto err;
                     wsprintfW(info->path_modify, L"msiexec /i%s", subKeyName);
                 }
-                else if (!RegQueryValueExW(hkeyApp, L"ModifyPath", 0, 0, NULL, &displen))
+                else if (!RegGetValueW(hkeyApp, NULL, L"ModifyPath", RRF_RT_REG_SZ, NULL, NULL, &displen))
                 {
                     if (!(info->path_modify = malloc(displen))) goto err;
-                    RegQueryValueExW(hkeyApp, L"ModifyPath", 0, 0, (BYTE *)info->path_modify, &displen);
+                    if (RegGetValueW(hkeyApp, NULL, L"ModifyPath", RRF_RT_REG_SZ, NULL,
+                                     info->path_modify, &displen))
+                        goto err;
                 }
             }
 
@@ -289,7 +295,6 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
         }
 
         RegCloseKey(hkeyApp);
-        sizeOfSubKeyName = ARRAY_SIZE(subKeyName);
     }
 
     return TRUE;
