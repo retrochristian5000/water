@@ -23,6 +23,42 @@
 
 static const CLSID CLSID_ShockwaveFlash =
     {0xd27cdb6e,0xae6d,0x11cf,{0x96,0xb8,0x44,0x45,0x53,0x54,0x00,0x00}};
+static const CLSID CLSID_FlashProp =
+    {0x1171a62f,0x05d2,0x11d1,{0x83,0xfc,0x00,0xa0,0xc9,0x08,0x9c,0x5a}};
+
+static void test_property_page(HRESULT (WINAPI *get_class_object)(REFCLSID, REFIID, void **))
+{
+    IClassFactory *factory;
+    IPropertyPage *page;
+    PROPPAGEINFO info;
+    HRESULT hr;
+
+    hr = get_class_object(&CLSID_FlashProp, &IID_IClassFactory, (void **)&factory);
+    ok(hr == S_OK, "FlashProp DllGetClassObject failed, hr %#lx.\n", hr);
+    if (FAILED(hr)) return;
+
+    hr = IClassFactory_CreateInstance(factory, NULL, &IID_IPropertyPage, (void **)&page);
+    ok(hr == S_OK, "Failed to create FlashProp IPropertyPage, hr %#lx.\n", hr);
+    IClassFactory_Release(factory);
+    if (FAILED(hr)) return;
+
+    memset(&info, 0xcc, sizeof(info));
+    hr = IPropertyPage_GetPageInfo(page, &info);
+    ok(hr == S_OK, "FlashProp GetPageInfo failed, hr %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(info.cb == sizeof(info), "Unexpected PROPPAGEINFO size %lu.\n", info.cb);
+        ok(info.pszTitle != NULL, "FlashProp title is missing.\n");
+        CoTaskMemFree(info.pszTitle);
+        CoTaskMemFree(info.pszDocString);
+        CoTaskMemFree(info.pszHelpFile);
+    }
+
+    hr = IPropertyPage_Activate(page, NULL, NULL, FALSE);
+    ok(hr == E_NOTIMPL, "Expected unimplemented property-page UI, got %#lx.\n", hr);
+
+    IPropertyPage_Release(page);
+}
 
 static void test_control(void)
 {
@@ -158,6 +194,8 @@ static void test_control(void)
     }
 
     IDispatch_Release(dispatch);
+
+    test_property_page(get_class_object);
 
     hr = can_unload();
     ok(hr == S_OK, "Expected S_OK after releasing all objects, got %#lx.\n", hr);
