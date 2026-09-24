@@ -17,14 +17,17 @@
  */
 
 #if !(defined(lint) || defined(RC_INVOKED))
-# if defined(_MSC_VER) && ((_MSC_VER < 800) || defined(_M_I86)) && !defined(_PUSHPOP_SUPPORTED)
-#  pragma pack(2)
-# elif defined(MIDL_PASS) && !defined(__midl)
-#  pragma pack(2)
-# else
+# if (defined(_MSC_VER) && (_MSC_VER >= 800) && !defined(_M_I86)) || \
+     defined(_PUSHPOP_SUPPORTED) || defined(__GNUC__) || defined(__clang__)
 #  ifdef _MSC_VER
 #   pragma warning(disable:4103)
 #  endif
-#  pragma pack(push,2)
+#  if defined(MIDL_PASS) && !defined(__midl)
+#   pragma pack(2)
+#  else
+#   pragma pack(push,2)
+#  endif
+# else
+#  pragma pack(2)
 # endif
 #endif
