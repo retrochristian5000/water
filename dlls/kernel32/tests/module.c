@@ -2076,6 +2076,33 @@ static void test_known_dlls_load(void)
     DeleteFileA( dll );
 }
 
+static void test_nt3_compat_exports(void)
+{
+    static const char * const exports[] =
+    {
+        "BaseAttachCompleteThunk",
+        "BasepDebugDump",
+        "GetVDMCurrentDirectories",
+        "SetVDMCurrentDirectories",
+        "VDMConsoleOperation",
+    };
+    HMODULE module = GetModuleHandleA( "kernel32.dll" );
+    unsigned int i;
+
+    if (!winetest_platform_is_wine)
+    {
+        win_skip( "NT 3.x compatibility exports are Water-specific on newer Windows.\n" );
+        return;
+    }
+
+    ok( module != NULL, "kernel32.dll is not loaded.\n" );
+    if (!module) return;
+
+    for (i = 0; i < ARRAY_SIZE(exports); i++)
+        ok( GetProcAddress( module, exports[i] ) != NULL, "%s is not exported.\n", exports[i] );
+}
+
+
 START_TEST(module)
 {
     WCHAR filenameW[MAX_PATH];
@@ -2092,6 +2119,7 @@ START_TEST(module)
 
     init_pointers();
 
+    test_nt3_compat_exports();
     testGetModuleFileName(NULL);
     testGetModuleFileName("kernel32.dll");
     testGetModuleFileName_Wrong();
