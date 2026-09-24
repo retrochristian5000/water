@@ -2163,18 +2163,22 @@ void *create_startup_info( const UNICODE_STRING *nt_image, ULONG process_flags,
 
     if (!(info = calloc( size, 1 ))) return NULL;
 
+    BOOL cui = pe_info->subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI ||
+               pe_info->subsystem == IMAGE_SUBSYSTEM_OS2_CUI ||
+               pe_info->subsystem == IMAGE_SUBSYSTEM_POSIX_CUI;
+
     info->debug_flags   = params->DebugFlags;
     info->console_flags = params->ConsoleFlags;
-    if (pe_info->subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI)
+    if (cui)
         info->console   = wine_server_obj_handle( params->ConsoleHandle );
     if ((process_flags & PROCESS_CREATE_FLAGS_INHERIT_HANDLES) ||
-        (pe_info->subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI && !(params->dwFlags & STARTF_USESTDHANDLES)))
+        (cui && !(params->dwFlags & STARTF_USESTDHANDLES)))
     {
-        if (pe_info->subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI || !is_console_handle( params->hStdInput ))
+        if (cui || !is_console_handle( params->hStdInput ))
             info->hstdin    = wine_server_obj_handle( params->hStdInput );
-        if (pe_info->subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI || !is_console_handle( params->hStdOutput ))
+        if (cui || !is_console_handle( params->hStdOutput ))
             info->hstdout   = wine_server_obj_handle( params->hStdOutput );
-        if (pe_info->subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI || !is_console_handle( params->hStdError ))
+        if (cui || !is_console_handle( params->hStdError ))
             info->hstderr   = wine_server_obj_handle( params->hStdError );
     }
     info->x             = params->dwX;
