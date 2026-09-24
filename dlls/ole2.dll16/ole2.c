@@ -320,6 +320,8 @@ HRESULT WINAPI ReadClassStg16(SEGPTR pstg, CLSID *pclsid)
 	 */
 	args[0] = pstg; /* iface */
 	args[1] = WOWGlobalAllocLock16( 0, sizeof(STATSTG16), &hstatstg );
+	if (!args[1])
+	    return E_OUTOFMEMORY;
 	args[2] = STATFLAG_DEFAULT;
 
 	if (!WOWCallback16Ex(
@@ -364,8 +366,16 @@ HRESULT WINAPI ReadClassStm16(SEGPTR stream, CLSID *clsid)
 
     args[0] = stream; /* iface */
     args[1] = WOWGlobalAllocLock16( 0, sizeof(CLSID), &hclsid );
+    if (!args[1])
+        return E_OUTOFMEMORY;
+
     args[2] = sizeof(CLSID);
     args[3] = WOWGlobalAllocLock16( 0, sizeof(ULONG), &hread );
+    if (!args[3])
+    {
+        WOWGlobalUnlockFree16(args[1]);
+        return E_OUTOFMEMORY;
+    }
 
     if (WOWCallback16Ex(
         GET_SEGPTR_METHOD_ADDR(IStream16, stream, Read),
@@ -442,7 +452,7 @@ static HRESULT stream_write16(SEGPTR stream, const void *buffer, DWORD size)
     if (!size) return S_OK;
     if (!buffer) return E_INVALIDARG16;
 
-    if (!(buffer16 = MapLS(buffer)))
+    if (!(buffer16 = MapLS((void *)buffer)))
         return E_OUTOFMEMORY;
 
     args[0] = stream;
@@ -467,8 +477,13 @@ static HRESULT stream_write16(SEGPTR stream, const void *buffer, DWORD size)
 
 static HRESULT stream_write_string16(SEGPTR stream, const char *string)
 {
-    DWORD len = string ? strlen(string) + 1 : 0;
+    size_t length = string ? strlen(string) + 1 : 0;
+    DWORD len;
     HRESULT hres;
+
+    if (length > ~(DWORD)0)
+        return E_INVALIDARG16;
+    len = (DWORD)length;
 
     hres = stream_write16(stream, &len, sizeof(len));
     if (SUCCEEDED(hres) && len)
@@ -488,7 +503,7 @@ static HRESULT storage_create_stream16(SEGPTR storage, const char *name, DWORD m
         return E_INVALIDARG16;
 
     *stream = 0;
-    if (!(name16 = MapLS(name)))
+    if (!(name16 = MapLS((void *)name)))
         return E_OUTOFMEMORY;
 
     args[0] = storage;
