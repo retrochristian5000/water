@@ -166,6 +166,8 @@
 @ stdcall BackupSeek(ptr long long ptr ptr ptr)
 @ stdcall BackupWrite(ptr ptr long ptr long long ptr)
 @ stub BaseAttachCompleteThunk
+# Early NT 3.x compatibility export; absent from the Win9x ordinal-only kernel32 lineage.
+@ stub BasepDebugDump
 @ stub BaseCheckAppcompatCache
 # @ stub BaseCheckAppcompatCacheEx
 # @ stub BaseCheckRunApp
