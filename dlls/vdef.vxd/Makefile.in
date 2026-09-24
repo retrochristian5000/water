@@ -1,0 +1,4 @@
+MODULE    = vdef.vxd
+
+SOURCES = \
+	vdef.c
