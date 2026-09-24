@@ -205,6 +205,7 @@ extern BOOL   DOSMEM_MapDosLayout(void);
 extern LPVOID DOSMEM_AllocBlock(UINT size, WORD* p);
 extern LPVOID DOSMEM_AllocBlockStrategy(UINT size, WORD *p, BYTE strategy);
 extern LPVOID DOSMEM_AllocBlockHigh(UINT size, WORD *p, BYTE strategy);
+extern BOOL   DOSMEM_ReserveUMB(WORD segment, UINT paragraphs);
 extern BOOL   DOSMEM_FreeBlock(void* ptr);
 extern UINT   DOSMEM_ResizeBlock(void* ptr, UINT size, BOOL exact);
 extern UINT   DOSMEM_Available(void);
