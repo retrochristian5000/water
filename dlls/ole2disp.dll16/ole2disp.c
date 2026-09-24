@@ -305,7 +305,12 @@ static BSTR16 BSTR_AllocBytes(int n)
  */
 static void BSTR_Free(BSTR16 in)
 {
-    void *ptr = MapSL( (SEGPTR)in );
+    void *ptr;
+
+    if (!in)
+        return;
+
+    ptr = MapSL( (SEGPTR)in );
     UnMapLS( (SEGPTR)in );
     HeapFree( GetProcessHeap(), 0, ptr );
 }
@@ -384,20 +389,29 @@ INT16 WINAPI SysReAllocString16(LPBSTR16 pbstr,LPCOLESTR16 oleStr)
  */
 BSTR16 WINAPI SysAllocStringLen16(const char *oleStr, int len)
 {
-    BSTR16 out=BSTR_AllocBytes(len+1);
+    char *dst;
+    BSTR16 out;
 
+    if (len < 0)
+        return 0;
+
+    out = BSTR_AllocBytes(len + 1);
     if (!out)
         return 0;
 
+    dst = BSTR_GetAddr(out);
+
     /*
-    * Copy the information in the buffer.
-    * Since it is valid to pass a NULL pointer here, we'll initialize the
-    * buffer to nul if it is the case.
-    */
-    if (oleStr != 0)
-        strcpy(BSTR_GetAddr(out),oleStr);
+     * Copy exactly len characters. The source may contain embedded NULs
+     * and does not have to be NUL-terminated.
+     */
+    if (oleStr)
+    {
+        memcpy(dst, oleStr, len);
+        dst[len] = 0;
+    }
     else
-        memset(BSTR_GetAddr(out), 0, len+1);
+        memset(dst, 0, len + 1);
 
     return out;
 }
@@ -420,13 +434,20 @@ BSTR16 WINAPI SysAllocStringLen16(const char *oleStr, int len)
  *  See SysAllocStringByteLen16().
  *  *pbstr may be changed by this function.
  */
-int WINAPI SysReAllocStringLen16(BSTR16 *old,const char *in,int len)
+int WINAPI SysReAllocStringLen16(BSTR16 *old, const char *in, int len)
 {
-	/* FIXME: Check input length */
-	BSTR16 new=SysAllocStringLen16(in,len);
-	BSTR_Free(*old);
-	*old=new;
-	return 1;
+    BSTR16 new;
+
+    if (len < 0)
+        return 0;
+
+    new = SysAllocStringLen16(in, len);
+    if (!new)
+        return 0;
+
+    BSTR_Free(*old);
+    *old = new;
+    return 1;
 }
 
 /******************************************************************************
@@ -458,7 +479,7 @@ void WINAPI SysFreeString16(BSTR16 str)
  */
 int WINAPI SysStringLen16(BSTR16 str)
 {
-	return strlen(BSTR_GetAddr(str));
+    return str ? strlen(BSTR_GetAddr(str)) : 0;
 }
 
 /******************************************************************************
@@ -494,7 +515,11 @@ HRESULT WINAPI CreateStdDispatch16(
 {
 	FIXME("(%p,%p,%p,%p),stub\n",punkOuter, pvThis, ptinfo,
                ppunkStdDisp);
-	return 0;
+
+	if (ppunkStdDisp)
+	    *ppunkStdDisp = NULL;
+
+	return E_NOTIMPL;
 }
 
 /******************************************************************************
