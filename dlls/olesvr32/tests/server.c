@@ -98,7 +98,7 @@ static void test_registration(void)
 
     status = pOleRegisterServerDoc(server_handle + 0x10000, "bad", &document, &doc_handle);
     ok(status == OLE_ERROR_HANDLE, "got status %d.\n", status);
-    ok(!doc_handle, "unexpected document handle %Ix.\n", doc_handle);
+    ok(!doc_handle, "unexpected document handle %Ix.\n", (ULONG_PTR)doc_handle);
 
     status = pOleRegisterServerDoc(server_handle, "Document", &document, &doc_handle);
     ok(status == OLE_OK, "got status %d.\n", status);
