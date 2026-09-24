@@ -1,0 +1,11 @@
+MODULE    = nsplayer.exe
+
+IMPORTS   = ole32 oleaut32 uuid
+
+EXTRADLLFLAGS = -mwindows -municode
+
+VER_FILEDESCRIPTION_STR = "NetShow Player"
+VER_PRODUCTVERSION      = 2,0,0,912
+
+SOURCES = \
+	main.c

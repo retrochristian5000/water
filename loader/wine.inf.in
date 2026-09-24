@@ -237,6 +237,7 @@ HKCR,.rtf,,2,"rtffile"
 HKCR,.wri,,2,"wrifile"
 HKCR,*\shellex\ContextMenuHandlers,,16
 HKCR,AppID\{B8C54A54-355E-11D3-83EB-00A0C92A2F2D},,2,"Windows Media Player"
+HKCR,Applications\nsplayer.exe,,2,"NetShow Player"
 HKCR,Applications\wmplayer.exe,,2,"Windows Media Player"
 HKCR,CERfile,,2,"Security Certificate"
 HKCR,CERfile\shell\open\command,,2,"%11%\rundll32.exe cryptext.dll,CryptExtOpenCER %1"
@@ -787,6 +788,7 @@ HKLM,SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86,"Version",2,"14.42.344
 11,,msxml6.dll
 11,,shdocvw.dll
 16422,Internet Explorer,iexplore.exe
+16422,Microsoft NetShow\Player,nsplayer.exe
 16422,Windows Media Player,wmplayer.exe
 16422,Windows NT\Accessories,wordpad.exe
 16427,Microsoft Shared\Ink,inkobj.dll
@@ -857,6 +859,7 @@ HKLM,SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86,"Version",2,"14.42.344
 16410,Microsoft,
 16412,Microsoft,
 16422,Internet Explorer,iexplore.exe
+16422,Microsoft NetShow\Player,nsplayer.exe
 16422,Windows Media Player,wmplayer.exe
 16422,Windows NT\Accessories,wordpad.exe
 16427,Microsoft Shared\TextConv,
