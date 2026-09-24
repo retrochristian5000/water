@@ -164,7 +164,7 @@ DWORD WINAPI CancelMibChangeNotify2(HANDLE handle)
  *  Failure: error code from winerror.h
  *
  * FIXME
- *  Stub, always returns NO_ERROR.
+ *  Stub, returns ERROR_NOT_SUPPORTED until Water has a safe routing backend.
  */
 DWORD WINAPI CreateIpForwardEntry(PMIB_IPFORWARDROW pRoute)
 {
@@ -392,7 +392,7 @@ DWORD WINAPI DeleteIPAddress(ULONG NTEContext)
  *  Failure: error code from winerror.h
  *
  * FIXME
- *  Stub, returns NO_ERROR.
+ *  Stub, returns ERROR_NOT_SUPPORTED until Water has a safe routing backend.
  */
 DWORD WINAPI DeleteIpForwardEntry(PMIB_IPFORWARDROW pRoute)
 {
@@ -4087,7 +4087,7 @@ DWORD WINAPI SetIfEntry(PMIB_IFROW pIfRow)
  *  Failure: error code from winerror.h
  *
  * FIXME
- *  Stub, returns NO_ERROR.
+ *  Stub, returns ERROR_NOT_SUPPORTED until Water has a safe routing backend.
  */
 DWORD WINAPI SetIpForwardEntry(PMIB_IPFORWARDROW pRoute)
 {
