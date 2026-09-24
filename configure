@@ -1858,6 +1858,7 @@ LIBS
 CPPFLAGS
 CXX
 CXXFLAGS
+COMPILER_CACHE
 CCC
 OBJC
 OBJCFLAGS
@@ -2683,6 +2684,8 @@ Some influential environment variables:
               you have headers in a nonstandard directory <include dir>
   CXX         C++ compiler command
   CXXFLAGS    C++ compiler flags
+  COMPILER_CACHE
+              compiler cache launcher (sccache, ccache, or compatible wrapper)
   OBJC        Objective C compiler command
   OBJCFLAGS   Objective C compiler flags
   CAPSTONE_PE_CFLAGS
