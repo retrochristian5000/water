@@ -315,21 +315,35 @@ void WINAPI OutputDebugString16( LPCSTR str )
     OutputDebugStringA( str );
 }
 
+BYTE DOSVM_GetX86ProcessorLevel(void)
+{
+    SYSTEM_INFO si;
+
+    GetSystemInfo( &si );
+
+    /* KRNL386 is an enhanced-mode 386+ guest.  Do not leak a non-x86
+       host processor level into Win16 or DPMI compatibility APIs. */
+    if (si.wProcessorArchitecture != PROCESSOR_ARCHITECTURE_INTEL)
+        return 3;
+    if (si.wProcessorLevel < 3)
+        return 3;
+    return min( si.wProcessorLevel, 4 );
+}
+
+
 /***********************************************************************
  *          GetWinFlags   (KERNEL.132)
  */
 DWORD WINAPI GetWinFlags16(void)
 {
     static const long cpuflags[5] = { WF_CPU086, WF_CPU186, WF_CPU286, WF_CPU386, WF_CPU486 };
-    SYSTEM_INFO si;
+    BYTE processor_level = DOSVM_GetX86ProcessorLevel();
     OSVERSIONINFOA ovi;
     DWORD result;
 
-    GetSystemInfo(&si);
-
     /* There doesn't seem to be any Pentium flag.  */
-    result = cpuflags[min(si.wProcessorLevel, 4)] | WF_ENHANCED | WF_PMODE | WF_80x87 | WF_PAGING;
-    if (si.wProcessorLevel >= 4) result |= WF_HASCPUID;
+    result = cpuflags[processor_level] | WF_ENHANCED | WF_PMODE | WF_80x87 | WF_PAGING;
+    if (processor_level >= 4) result |= WF_HASCPUID;
     ovi.dwOSVersionInfoSize = sizeof(ovi);
     GetVersionExA(&ovi);
     if (ovi.dwPlatformId == VER_PLATFORM_WIN32_NT)
