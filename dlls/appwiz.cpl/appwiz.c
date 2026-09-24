@@ -513,7 +513,6 @@ static HANDLE run_uninstaller(int id, DWORD button)
                 {
                     /* delete the application's uninstall entry */
                     RegDeleteKeyW(iter->regroot, iter->regkey);
-                    RegCloseKey(iter->regroot);
                 }
             }
 
