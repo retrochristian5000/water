@@ -19,6 +19,10 @@
 #ifndef __WINE_OLEAUTO_H
 #define __WINE_OLEAUTO_H
 
+#ifndef RC_INVOKED
+#include <pshpack8.h>
+#endif
+
 #include <oaidl.h>
 
 #ifdef __cplusplus
@@ -479,6 +483,9 @@ WINOLEAUTAPI HRESULT WINAPI VarDecFromDisp(IDispatch*,LCID,DECIMAL*);
 #define VarUI4FromUI4( in,pOut ) ( *(pOut) =  (in) )
 #define VarI4FromI4( in,pOut )   ( *(pOut) =  (in) )
 
+#define VarUI8FromUI8( in,pOut ) ( *(pOut) =  (in) )
+#define VarI8FromI8( in,pOut )   ( *(pOut) =  (in) )
+
 #define VarUI1FromInt   VarUI1FromI4
 #define VarUI1FromUint  VarUI1FromUI4
 #define VarI2FromInt    VarI2FromI4
@@ -738,7 +745,7 @@ WINOLEAUTAPI ULONG WINAPI LHashValOfNameSys(SYSKIND,LCID,LPCOLESTR);
 
 #define LHashValOfName(lcid,name) LHashValOfNameSys(SYS_WIN32,lcid,name)
 #define WHashValOfLHashVal(hash) ((USHORT)((hash) & 0xffff))
-#define IsHashValCompatible(hash1,hash2) ((hash1) & 0xff0000 == (hash2) & 0xff0000)
+#define IsHashValCompatible(hash1,hash2) ((BOOL)(((hash1) & 0x00ff0000) == ((hash2) & 0x00ff0000)))
 
 #define MEMBERID_NIL   DISPID_UNKNOWN
 #define ID_DEFAULTINST -2
@@ -769,5 +776,8 @@ WINOLEAUTAPI void WINAPI ClearCustData(LPCUSTDATA);
 } /* extern "C" */
 #endif
 
+#ifndef RC_INVOKED
+#include <poppack.h>
+#endif
 
 #endif /*__WINE_OLEAUTO_H*/
