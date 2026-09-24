@@ -173,6 +173,12 @@ typedef struct _INT21_LIST_OF_LISTS
     WORD  extended_mem_kb;
 } INT21_LIST_OF_LISTS;
 
+typedef struct _INT21_SYSVARS
+{
+    INT21_LIST_OF_LISTS lol;
+    DOS_DEVICE_HEADER con_dev;
+} INT21_SYSVARS;
+
 
 struct FCB {
     BYTE  drive_number;
@@ -659,39 +665,50 @@ static BOOL INT21_FillDrivePB( BYTE drive )
  * Build the DOS system-variable block used by INT 21h/AH=52h.
  *
  * Water no longer carries the old Wine DOS device-driver engine, so the
- * NUL header is exposed but no executable block-device driver is claimed.
- * The DPB list is nevertheless linked and points at the drive data Water
- * already emulates.  A future DBLBUFF/real-mode block-driver layer can
- * attach its device header through INT21_DPB.driver_header.
+ * standard NUL and CON headers are exposed for discovery but no executable
+ * strategy/interrupt entry points are claimed yet.  The DPB list is linked
+ * and points at the drive data Water already emulates.  Future ANSI.SYS and
+ * DBLBUFF.SYS support can attach replacement character/block drivers to
+ * these chains without changing the public List-of-Lists layout.
  */
 static SEGPTR INT21_GetListOfLists(void)
 {
     static HGLOBAL16 handle;
-    static INT21_LIST_OF_LISTS *lol;
+    static INT21_SYSVARS *sysvars;
+    INT21_LIST_OF_LISTS *lol;
     INT21_HEAP *heap = INT21_GetHeapPointer();
     WORD first_drive = 0xffff, previous_drive = 0xffff;
     WORD max_sector = 512;
     unsigned int drive;
 
-    if (!lol)
+    if (!sysvars)
     {
-        handle = GlobalAlloc16( GMEM_FIXED | GMEM_ZEROINIT, sizeof(*lol) );
+        handle = GlobalAlloc16( GMEM_FIXED | GMEM_ZEROINIT, sizeof(*sysvars) );
         if (!handle) return 0;
-        if (!(lol = GlobalLock16( handle ))) return 0;
+        if (!(sysvars = GlobalLock16( handle ))) return 0;
 
+        lol = &sysvars->lol;
         lol->oem_func_handler = ~0u;
         lol->sharing_retry_count = 3;
         lol->sharing_retry_delay = 1;
         lol->nr_drive_letters = MAX_DOS_DRIVES;
-        lol->nul_dev.next_dev = ~0u;
+
+        lol->nul_dev.next_dev = MAKESEGPTR( handle, offsetof(INT21_SYSVARS, con_dev) );
         lol->nul_dev.attr = 0x8084;  /* character + NUL + device */
         memcpy( lol->nul_dev.name, "NUL     ", sizeof(lol->nul_dev.name) );
+
+        sysvars->con_dev.next_dev = ~0u;
+        sysvars->con_dev.attr = 0x80d3;  /* character + stdin/out + fast CON + no EOF + device */
+        memcpy( sysvars->con_dev.name, "CON     ", sizeof(sysvars->con_dev.name) );
+        lol->ptr_con_dev_hdr = MAKESEGPTR( handle, offsetof(INT21_SYSVARS, con_dev) );
+
         lol->buffers_count = 99;
         lol->buffers_lookahead = 8;
         lol->boot_drive = 3;         /* C: */
         lol->dword_moves = 1;        /* 386+ */
         lol->extended_mem_kb = 0xf000;
     }
+    else lol = &sysvars->lol;
 
     lol->ptr_first_dpb = 0;
     lol->nr_block_dev = 0;
