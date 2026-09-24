@@ -1437,7 +1437,9 @@ DECL_HANDLER(init_process_done)
     generate_startup_debug_events( process );
     set_process_startup_state( process, STARTUP_DONE );
 
-    if (process->image_info.subsystem != IMAGE_SUBSYSTEM_WINDOWS_CUI)
+    if (process->image_info.subsystem != IMAGE_SUBSYSTEM_WINDOWS_CUI &&
+        process->image_info.subsystem != IMAGE_SUBSYSTEM_OS2_CUI &&
+        process->image_info.subsystem != IMAGE_SUBSYSTEM_POSIX_CUI)
         process->idle_event = create_event( NULL, empty_str, 0, 1, 0, NULL );
     if (process->debug_obj) set_process_debug_flag( process, 1 );
     reply->suspend = (current->suspend || process->suspend);
