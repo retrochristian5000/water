@@ -3015,6 +3015,48 @@ static void test_OpenPrinter_defaults(void)
     ClosePrinter( printer );
 }
 
+static void test_IsValidDevmodeA(void)
+{
+    static const struct
+    {
+        DWORD dmFields;
+        WORD dmSize;
+        BOOL ret;
+    } test[] =
+    {
+        { 0, FIELD_OFFSET(DEVMODEA, dmFields) + 3, FALSE },
+        { 0, FIELD_OFFSET(DEVMODEA, dmFields) + 4, TRUE },
+        { DM_ORIENTATION, FIELD_OFFSET(DEVMODEA, dmOrientation) + 1, FALSE },
+        { DM_ORIENTATION, FIELD_OFFSET(DEVMODEA, dmOrientation) + 2, TRUE },
+        { DM_NUP, FIELD_OFFSET(DEVMODEA, dmNup) + 3, FALSE },
+        { DM_NUP, FIELD_OFFSET(DEVMODEA, dmNup) + 4, TRUE },
+    };
+    DEVMODEA dm;
+    unsigned int i;
+    BOOL ret;
+
+    ret = IsValidDevmodeA(NULL, 0);
+    ok(!ret, "got %d\n", ret);
+
+    memset(&dm, 0, sizeof(dm));
+    for (i = 0; i < ARRAY_SIZE(test); i++)
+    {
+        dm.dmSize = test[i].dmSize;
+        dm.dmFields = test[i].dmFields;
+        dm.dmDriverExtra = 0;
+
+        ret = IsValidDevmodeA(&dm, dm.dmSize);
+        ok(ret == test[i].ret, "%u: got %d\n", i, ret);
+    }
+
+    dm.dmFields = 0;
+    dm.dmSize = FIELD_OFFSET(DEVMODEA, dmFields) + sizeof(dm.dmFields);
+    dm.dmDriverExtra = 5;
+    ret = IsValidDevmodeA(&dm, dm.dmSize + 4);
+    ok(!ret, "driver extra exceeds buffer: got %d\n", ret);
+}
+
+
 static void test_IsValidDevmodeW(void)
 {
     static const struct
@@ -3128,6 +3170,7 @@ START_TEST(info)
     test_GetDefaultPrinter();
     test_GetPrinterDriverDirectory();
     test_GetPrintProcessorDirectory();
+    test_IsValidDevmodeA();
     test_IsValidDevmodeW();
     test_OpenPrinter();
     test_OpenPrinter_defaults();
