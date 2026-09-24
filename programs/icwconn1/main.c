@@ -110,7 +110,6 @@ static BOOL remove_desktop_link(void)
 static BOOL launch_connections(void)
 {
     SHELLEXECUTEINFOW info = {sizeof(info)};
-    DWORD result;
 
     info.fMask = SEE_MASK_NOCLOSEPROCESS;
     info.lpFile = L"control.exe";
@@ -125,8 +124,7 @@ static BOOL launch_connections(void)
         CloseHandle(info.hProcess);
     }
 
-    result = (DWORD_PTR)info.hInstApp;
-    return result > 32;
+    return TRUE;
 }
 
 static BOOL launch_shell_next(int argc, WCHAR **argv, int index)
