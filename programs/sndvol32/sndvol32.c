@@ -365,6 +365,8 @@ int WINAPI WinMain( HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show 
     BOOL have_device = FALSE;
     const char *title;
 
+    (void)prev;
+
     memset( &state, 0, sizeof(state) );
     parse_command_line( cmdline, &state.record, &device_id, &have_device );
 
@@ -421,5 +423,5 @@ int WINAPI WinMain( HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show 
         DispatchMessageA( &msg );
     }
 
-    return msg.wParam;
+    return (int)msg.wParam;
 }
