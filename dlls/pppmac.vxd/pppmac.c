@@ -39,7 +39,8 @@ BOOL WINAPI PPPMAC_DeviceIoControl( DWORD code, void *in_buffer, DWORD in_size,
                                     DWORD *bytes_returned, OVERLAPPED *overlapped )
 {
     FIXME("code %lu, in %p/%lu, out %p/%lu, returned %p, overlapped %p: unsupported\n",
-          code, in_buffer, in_size, out_buffer, out_size, bytes_returned, overlapped);
+          (unsigned long)code, in_buffer, (unsigned long)in_size,
+          out_buffer, (unsigned long)out_size, bytes_returned, overlapped);
 
     if (bytes_returned) *bytes_returned = 0;
     SetLastError( ERROR_NOT_SUPPORTED );
@@ -51,6 +52,8 @@ BOOL WINAPI PPPMAC_DeviceIoControl( DWORD code, void *in_buffer, DWORD in_size,
  */
 DWORD WINAPI PPPMAC_VxDCall( DWORD service, CONTEXT *context )
 {
+    (void)context;
+
     switch (LOWORD(service))
     {
     case 0x0000: /* PPP_Get_Version */
@@ -58,7 +61,7 @@ DWORD WINAPI PPPMAC_VxDCall( DWORD service, CONTEXT *context )
         return PPPMAC_VERSION;
 
     default:
-        FIXME("service %08lx not implemented\n", service);
+        FIXME("service %08lx not implemented\n", (unsigned long)service);
         return 0xffffffff;
     }
 }
