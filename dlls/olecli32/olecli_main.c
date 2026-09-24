@@ -160,7 +160,7 @@ OLESTATUS WINAPI DefLoadFromStream(struct _OLESTREAM *stream, LPCSTR protocol,
 {
     FIXME("(%p,%s,%p,%ld,%s,%p,%ld,%#x,%ld): stub\n", stream,
           debugstr_a(protocol), client, clientdoc, debugstr_a(object_name),
-          object, object_type, class_atom, format);
+          object, object_type, (unsigned int)class_atom, format);
 
     return unsupported_object_creation(object);
 }
