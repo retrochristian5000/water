@@ -300,6 +300,8 @@ typedef struct
 #define KEY_PPAGE       0x51
 
 static int brk_flag;
+static BYTE mem_alloc_strategy;
+static BOOL umb_linked;
 
 static LONG INT21_WriteStdout( const void *buffer, DWORD size )
 {
@@ -4619,22 +4621,47 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
         break;
 
     case 0x48: /* ALLOCATE MEMORY */
-        TRACE( "ALLOCATE MEMORY for %d paragraphs\n", BX_reg(context) );
+        TRACE( "ALLOCATE MEMORY for %d paragraphs, strategy %02x, UMB %s\n",
+               BX_reg(context), mem_alloc_strategy, umb_linked ? "linked" : "unlinked" );
         {
             DWORD bytes = (DWORD)BX_reg(context) << 4;
-            DWORD rv = GlobalDOSAlloc16( bytes );
-            WORD selector = LOWORD( rv );
+            BYTE fit = mem_alloc_strategy & 0x03;
+            DWORD rv = 0;
+            UINT available;
 
-            if (selector)
+            if ((mem_alloc_strategy & 0xc0) == 0x40)
             {
-                SET_AX( context, selector );
+                if (umb_linked)
+                    rv = GlobalDOSAllocStrategy16( bytes, fit, TRUE );
+                available = umb_linked ? DOSMEM_AvailableHigh() : 0;
+            }
+            else if ((mem_alloc_strategy & 0xc0) == 0x80)
+            {
+                if (umb_linked)
+                    rv = GlobalDOSAllocStrategy16( bytes, fit, TRUE );
+                if (!rv)
+                    rv = GlobalDOSAllocStrategy16( bytes, fit, FALSE );
+
+                available = DOSMEM_Available();
+                if (umb_linked && DOSMEM_AvailableHigh() > available)
+                    available = DOSMEM_AvailableHigh();
+            }
+            else
+            {
+                rv = GlobalDOSAllocStrategy16( bytes, fit, FALSE );
+                available = DOSMEM_Available();
+            }
+
+            if (LOWORD(rv))
+            {
+                SET_AX( context, LOWORD(rv) );
                 RESET_CFLAG(context);
             }
             else
             {
                 SET_CFLAG(context);
                 SET_AX( context, 0x0008 ); /* insufficient memory */
-                SET_BX( context, DOSMEM_Available() >> 4 );
+                SET_BX( context, available >> 4 );
             }
         }
 	break;
@@ -4750,27 +4777,54 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
         switch (AL_reg(context))
         {
         case 0x00: /* GET MEMORY ALLOCATION STRATEGY */
-            TRACE( "GET MEMORY ALLOCATION STRATEGY\n" );
-            SET_AX( context, 0 ); /* low memory first fit */
+            TRACE( "GET MEMORY ALLOCATION STRATEGY -> %02x\n", mem_alloc_strategy );
+            SET_AX( context, mem_alloc_strategy );
+            RESET_CFLAG(context);
             break;
 
         case 0x01: /* SET ALLOCATION STRATEGY */
-            TRACE( "SET MEMORY ALLOCATION STRATEGY to %d - ignored\n",
-                   BL_reg(context) );
+            switch (BL_reg(context))
+            {
+            case 0x00: case 0x01: case 0x02:
+            case 0x40: case 0x41: case 0x42:
+            case 0x80: case 0x81: case 0x82:
+                mem_alloc_strategy = BL_reg(context);
+                TRACE( "SET MEMORY ALLOCATION STRATEGY to %02x\n", mem_alloc_strategy );
+                RESET_CFLAG(context);
+                break;
+            default:
+                TRACE( "invalid memory allocation strategy %02x\n", BL_reg(context) );
+                SET_AX( context, 0x0001 ); /* invalid function */
+                SET_CFLAG(context);
+                break;
+            }
             break;
 
         case 0x02: /* GET UMB LINK STATE */
-            TRACE( "GET UMB LINK STATE\n" );
-            SET_AL( context, 0 ); /* UMBs not part of DOS memory chain */
+            TRACE( "GET UMB LINK STATE -> %u\n", umb_linked );
+            SET_AL( context, umb_linked );
+            RESET_CFLAG(context);
             break;
 
         case 0x03: /* SET UMB LINK STATE */
-            TRACE( "SET UMB LINK STATE to %d - ignored\n",
-                   BX_reg(context) );
+            if (BX_reg(context) > 1)
+            {
+                TRACE( "invalid UMB link state %04x\n", BX_reg(context) );
+                SET_AX( context, 0x0001 ); /* invalid function */
+                SET_CFLAG(context);
+            }
+            else
+            {
+                umb_linked = BX_reg(context);
+                TRACE( "SET UMB LINK STATE to %u\n", umb_linked );
+                RESET_CFLAG(context);
+            }
             break;
 
         default:
             INT_BARF( context, 0x21 );
+            SET_AX( context, 0x0001 );
+            SET_CFLAG(context);
         }
         break;
 
