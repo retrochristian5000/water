@@ -40,6 +40,11 @@ typedef struct
 #define NB_SYS_TIMERS   8
 #define SYS_TIMER_RATE  54925
 
+typedef struct
+{
+    BYTE data[94];
+} SYSTEM_FPU_STATE;
+
 static SYSTEM_TIMER SYS_Timers[NB_SYS_TIMERS];
 static int SYS_NbTimers = 0;
 static HANDLE SYS_timer;
@@ -223,7 +228,7 @@ DWORD WINAPI GetSystemMSecCount16(void)
  */
 WORD WINAPI Get80x87SaveSize16(void)
 {
-    return 94;
+    return sizeof(SYSTEM_FPU_STATE);
 }
 
 
@@ -232,7 +237,9 @@ WORD WINAPI Get80x87SaveSize16(void)
  */
 void WINAPI Save80x87State16( char *ptr )
 {
-    __asm__(".byte 0x66; fsave %0; fwait" : "=m" (ptr) );
+    SYSTEM_FPU_STATE *state = (SYSTEM_FPU_STATE *)ptr;
+
+    __asm__(".byte 0x66; fsave %0; fwait" : "=m" (*state) );
 }
 
 
@@ -241,7 +248,9 @@ void WINAPI Save80x87State16( char *ptr )
  */
 void WINAPI Restore80x87State16( const char *ptr )
 {
-    __asm__(".byte 0x66; frstor %0" : : "m" (ptr) );
+    const SYSTEM_FPU_STATE *state = (const SYSTEM_FPU_STATE *)ptr;
+
+    __asm__(".byte 0x66; frstor %0" : : "m" (*state) );
 }
 
 
