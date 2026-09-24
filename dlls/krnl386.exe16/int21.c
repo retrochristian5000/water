@@ -301,11 +301,12 @@ typedef struct
 
 static int brk_flag;
 
-static DWORD INT21_WriteStdout( const void *buffer, DWORD size )
+static LONG INT21_WriteStdout( const void *buffer, DWORD size )
 {
-    DWORD written = 0;
+    DWORD written;
 
-    WriteFile( DosFileHandleToWin32Handle( 1 ), buffer, size, &written, NULL );
+    if (!WriteFile( DosFileHandleToWin32Handle( 1 ), buffer, size, &written, NULL ))
+        return HFILE_ERROR;
     return written;
 }
 
