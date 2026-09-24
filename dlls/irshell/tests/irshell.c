@@ -36,6 +36,7 @@ static void test_class_object(void)
     LPITEMIDLIST item = (void *)0xdeadbeef;
     CLSID clsid;
     ULONG fetched = 0xdeadbeef;
+    SFGAOF attributes = SFGAO_FILESYSTEM | SFGAO_DROPTARGET;
     HMODULE module;
     HRESULT hr;
     void *obj = (void *)0xdeadbeef;
@@ -93,6 +94,10 @@ static void test_class_object(void)
         hr = IShellFolder_QueryInterface(folder, &IID_IShellExtInit, (void **)&init);
         ok(hr == S_OK, "IShellExtInit query failed, hr %#lx.\n", hr);
         if (SUCCEEDED(hr)) IShellExtInit_Release(init);
+
+        hr = IShellFolder_GetAttributesOf(folder, 0, NULL, &attributes);
+        ok(hr == S_OK, "GetAttributesOf failed, hr %#lx.\n", hr);
+        ok(attributes == SFGAO_FILESYSTEM, "Unexpected root attributes %#lx.\n", attributes);
 
         hr = IShellFolder_EnumObjects(folder, NULL, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, &enumerator);
         ok(hr == S_OK, "EnumObjects failed, hr %#lx.\n", hr);
