@@ -8,6 +8,7 @@ SOURCES = \
 	brsfolder.c \
 	ebrowser.c \
 	generated.c \
+	pifmgr.c \
 	progman_dde.c \
 	recyclebin.c \
 	rsrc.rc \
