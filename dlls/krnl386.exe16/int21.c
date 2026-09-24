@@ -703,11 +703,13 @@ static SEGPTR INT21_GetListOfLists(void)
         {
             first_drive = drive;
             lol->ptr_first_dpb = MAKESEGPTR( heap->misc_selector,
-                                              offsetof(INT21_HEAP, misc_dpb_list[drive]) );
+                                              offsetof(INT21_HEAP, misc_dpb_list) +
+                                              drive * sizeof(INT21_DPB) );
         }
         if (previous_drive != 0xffff)
             heap->misc_dpb_list[previous_drive].next =
-                MAKESEGPTR( heap->misc_selector, offsetof(INT21_HEAP, misc_dpb_list[drive]) );
+                MAKESEGPTR( heap->misc_selector, offsetof(INT21_HEAP, misc_dpb_list) +
+                            drive * sizeof(INT21_DPB) );
 
         previous_drive = drive;
         lol->nr_block_dev++;
