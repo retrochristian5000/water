@@ -8,10 +8,10 @@
    4 stdcall -ordinal SHChangeNotifyDeregister(long)
    5 stdcall -noname SHChangeNotifyUpdateEntryList(long long long long)
    6 stdcall SHDefExtractIconW(wstr long long ptr ptr long)
-   9 stub -ordinal PifMgr_OpenProperties
-  10 stub -ordinal PifMgr_GetProperties
+   9 stdcall -ordinal PifMgr_OpenProperties(wstr wstr long long)
+  10 stdcall -ordinal PifMgr_GetProperties(ptr ptr ptr long long)
   11 stub -ordinal PifMgr_SetProperties
-  13 stub -ordinal PifMgr_CloseProperties
+  13 stdcall -ordinal PifMgr_CloseProperties(ptr long)
   15 stdcall -noname ILGetDisplayName(ptr ptr)
   16 stdcall -ordinal ILFindLastID(ptr)
   17 stdcall -ordinal ILRemoveLastID(ptr)
