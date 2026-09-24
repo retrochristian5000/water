@@ -3712,7 +3712,7 @@ static bool source_uses_pch( struct makefile *make, struct incl_file *source,
 
     if (!make->pch_file || arch || get_pch_compiler() == PCH_COMPILER_NONE) return false;
     if (!make->programs.count || make->module || make->testdll || make->staticlib || make->unixlib) return false;
-    if (source->file->flags & (FLAG_C_CXX | FLAG_C_ASM | FLAG_C_UNIX)) return false;
+    if (source->file->flags & (FLAG_C_CXX | FLAG_C_ASM | FLAG_C_UNIX | FLAG_GENERATED)) return false;
     if (source->use_msvcrt != make->pch_file->use_msvcrt) return false;
     if (strarray_exists( make->pch_exclude, source->name )) return false;
     if (source->sourcename && strarray_exists( make->pch_exclude, source->sourcename )) return false;
