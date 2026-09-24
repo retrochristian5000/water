@@ -89,9 +89,22 @@ typedef struct {
 #define VM_STUB(x) (0x90CF00CD|(x<<8)) /* INT x; IRET; NOP */
 #define VM_STUB_SEGMENT 0xf000         /* BIOS segment */
 
-/* FIXME: these should be moved to the LOL */
+/* FIXME: the conventional-memory root should be moved to the LOL. */
 static MCB *DOSMEM_root_block;
-static MCB *DOSMEM_umb_block;
+
+#define DOSMEM_UMB_MAX_BLOCKS 64
+#define DOSMEM_UMB_RESERVED   0xffff
+
+typedef struct
+{
+    WORD segment;
+    WORD size;     /* paragraphs */
+    WORD psp;      /* 0 = free, 0xffff = reserved */
+} UMB_BLOCK;
+
+static UMB_BLOCK DOSMEM_umb_blocks[DOSMEM_UMB_MAX_BLOCKS];
+static unsigned int DOSMEM_umb_count;
+static BOOL DOSMEM_umb_initialized;
 
 /* when looking at DOS and real mode memory, we activate in three different
  * modes, depending the situation.
@@ -374,10 +387,11 @@ BOOL DOSMEM_InitDosMemory(void)
             DOSMEM_root_block->psp = MCB_PSP_FREE;
             DOSMEM_root_block->size = (DOSMEM_dosmem + 0x9fffc  - ((char*)DOSMEM_root_block)) >> 4;
 
-            DOSMEM_umb_block = (MCB *)(DOSMEM_dosmem + DOSMEM_UMB_BOTTOM);
-            DOSMEM_umb_block->type = MCB_TYPE_LAST;
-            DOSMEM_umb_block->psp = MCB_PSP_FREE;
-            DOSMEM_umb_block->size = ((DOSMEM_UMB_TOP + 1 - DOSMEM_UMB_BOTTOM) >> 4) - 1;
+            DOSMEM_umb_blocks[0].segment = DOSMEM_UMB_BOTTOM >> 4;
+            DOSMEM_umb_blocks[0].size = (DOSMEM_UMB_TOP + 1 - DOSMEM_UMB_BOTTOM) >> 4;
+            DOSMEM_umb_blocks[0].psp = MCB_PSP_FREE;
+            DOSMEM_umb_count = 1;
+            DOSMEM_umb_initialized = TRUE;
 
             TRACE("DOS conventional memory initialized, %d bytes free, %d bytes UMB free.\n",
                   DOSMEM_Available(), DOSMEM_AvailableHigh());
@@ -588,14 +602,186 @@ LPVOID DOSMEM_AllocBlockStrategy(UINT size, UINT16 *pseg, BYTE strategy)
 }
 
 
+static BOOL DOSMEM_UMBInsert(unsigned int index, UMB_BLOCK block)
+{
+    if (DOSMEM_umb_count >= DOSMEM_UMB_MAX_BLOCKS || index > DOSMEM_umb_count)
+        return FALSE;
+
+    memmove(&DOSMEM_umb_blocks[index + 1], &DOSMEM_umb_blocks[index],
+            (DOSMEM_umb_count - index) * sizeof(DOSMEM_umb_blocks[0]));
+    DOSMEM_umb_blocks[index] = block;
+    DOSMEM_umb_count++;
+    return TRUE;
+}
+
+static void DOSMEM_UMBRemove(unsigned int index)
+{
+    if (index >= DOSMEM_umb_count) return;
+
+    memmove(&DOSMEM_umb_blocks[index], &DOSMEM_umb_blocks[index + 1],
+            (DOSMEM_umb_count - index - 1) * sizeof(DOSMEM_umb_blocks[0]));
+    DOSMEM_umb_count--;
+}
+
+static void DOSMEM_UMBCollapse(unsigned int index)
+{
+    if (index >= DOSMEM_umb_count || DOSMEM_umb_blocks[index].psp != MCB_PSP_FREE)
+        return;
+
+    if (index && DOSMEM_umb_blocks[index - 1].psp == MCB_PSP_FREE)
+    {
+        DOSMEM_umb_blocks[index - 1].size += DOSMEM_umb_blocks[index].size;
+        DOSMEM_UMBRemove(index);
+        index--;
+    }
+
+    if (index + 1 < DOSMEM_umb_count && DOSMEM_umb_blocks[index + 1].psp == MCB_PSP_FREE)
+    {
+        DOSMEM_umb_blocks[index].size += DOSMEM_umb_blocks[index + 1].size;
+        DOSMEM_UMBRemove(index + 1);
+    }
+}
+
 /***********************************************************************
  *           DOSMEM_AllocBlockHigh
+ *
+ * Allocate from the upper-memory address range.  UMB bookkeeping is kept
+ * outside the emulated UMA so an EMS page frame can reserve and own every
+ * byte of its physical window.
  */
 LPVOID DOSMEM_AllocBlockHigh(UINT size, UINT16 *pseg, BYTE strategy)
 {
+    unsigned int i, chosen = DOSMEM_UMB_MAX_BLOCKS;
+    UINT paragraphs = (size + 15) >> 4;
+    WORD psp = DOSVM_psp ? DOSVM_psp : MCB_PSP_DOS;
+    UMB_BLOCK block;
+
     DOSMEM_InitDosMemory();
+    strategy &= 3;
+    if (pseg) *pseg = 0;
+
     TRACE("(high,%04xh,strategy=%02x)\n", size, strategy);
-    return DOSMEM_AllocFromChain(DOSMEM_umb_block, size, pseg, strategy);
+
+    for (i = 0; i < DOSMEM_umb_count; i++)
+    {
+        if (DOSMEM_umb_blocks[i].psp != MCB_PSP_FREE ||
+            DOSMEM_umb_blocks[i].size < paragraphs)
+            continue;
+
+        if (chosen == DOSMEM_UMB_MAX_BLOCKS || strategy == 0 ||
+            (strategy == 1 && DOSMEM_umb_blocks[i].size < DOSMEM_umb_blocks[chosen].size) ||
+            strategy == 2)
+            chosen = i;
+
+        if (strategy == 0) break;
+    }
+
+    if (chosen == DOSMEM_UMB_MAX_BLOCKS) return NULL;
+
+    block = DOSMEM_umb_blocks[chosen];
+    if (block.size == paragraphs)
+    {
+        DOSMEM_umb_blocks[chosen].psp = psp;
+    }
+    else if (strategy == 2)
+    {
+        UMB_BLOCK allocated;
+
+        DOSMEM_umb_blocks[chosen].size -= paragraphs;
+        allocated.segment = DOSMEM_umb_blocks[chosen].segment + DOSMEM_umb_blocks[chosen].size;
+        allocated.size = paragraphs;
+        allocated.psp = psp;
+        if (!DOSMEM_UMBInsert(chosen + 1, allocated))
+        {
+            DOSMEM_umb_blocks[chosen] = block;
+            return NULL;
+        }
+        chosen++;
+    }
+    else
+    {
+        UMB_BLOCK remainder;
+
+        DOSMEM_umb_blocks[chosen].size = paragraphs;
+        DOSMEM_umb_blocks[chosen].psp = psp;
+        remainder.segment = block.segment + paragraphs;
+        remainder.size = block.size - paragraphs;
+        remainder.psp = MCB_PSP_FREE;
+        if (!DOSMEM_UMBInsert(chosen + 1, remainder))
+        {
+            DOSMEM_umb_blocks[chosen] = block;
+            return NULL;
+        }
+    }
+
+    if (pseg) *pseg = DOSMEM_umb_blocks[chosen].segment;
+    return DOSMEM_dosmem + ((UINT)DOSMEM_umb_blocks[chosen].segment << 4);
+}
+
+BOOL DOSMEM_ReserveUMB(WORD segment, UINT paragraphs)
+{
+    unsigned int i;
+    UINT end = (UINT)segment + paragraphs;
+
+    DOSMEM_InitDosMemory();
+
+    if (!paragraphs || segment < (DOSMEM_UMB_BOTTOM >> 4) ||
+        end > ((DOSMEM_UMB_TOP + 1) >> 4))
+        return FALSE;
+
+    for (i = 0; i < DOSMEM_umb_count; i++)
+    {
+        UMB_BLOCK old = DOSMEM_umb_blocks[i];
+        UINT old_end = (UINT)old.segment + old.size;
+        UINT before, after;
+
+        if (old.psp != MCB_PSP_FREE || segment < old.segment || end > old_end)
+            continue;
+
+        before = segment - old.segment;
+        after = old_end - end;
+        if (DOSMEM_umb_count + (before != 0) + (after != 0) - 1 > DOSMEM_UMB_MAX_BLOCKS)
+            return FALSE;
+
+        if (before)
+        {
+            DOSMEM_umb_blocks[i].size = before;
+            if (!DOSMEM_UMBInsert(i + 1, (UMB_BLOCK){ segment, paragraphs, DOSMEM_UMB_RESERVED }))
+                return FALSE;
+            i++;
+        }
+        else
+        {
+            DOSMEM_umb_blocks[i].segment = segment;
+            DOSMEM_umb_blocks[i].size = paragraphs;
+            DOSMEM_umb_blocks[i].psp = DOSMEM_UMB_RESERVED;
+        }
+
+        if (after)
+            return DOSMEM_UMBInsert(i + 1, (UMB_BLOCK){ (WORD)end, after, MCB_PSP_FREE });
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOL DOSMEM_FreeBlockHigh(void *ptr)
+{
+    UINT dosaddr = (char *)ptr - DOSMEM_dosmem;
+    WORD segment = dosaddr >> 4;
+    unsigned int i;
+
+    for (i = 0; i < DOSMEM_umb_count; i++)
+    {
+        if (DOSMEM_umb_blocks[i].segment != segment ||
+            DOSMEM_umb_blocks[i].psp == MCB_PSP_FREE ||
+            DOSMEM_umb_blocks[i].psp == DOSMEM_UMB_RESERVED)
+            continue;
+
+        DOSMEM_umb_blocks[i].psp = MCB_PSP_FREE;
+        DOSMEM_UMBCollapse(i);
+        return TRUE;
+    }
+    return FALSE;
 }
 
 /***********************************************************************
@@ -603,9 +789,15 @@ LPVOID DOSMEM_AllocBlockHigh(UINT size, UINT16 *pseg, BYTE strategy)
  */
 BOOL DOSMEM_FreeBlock(void* ptr)
 {
-    MCB* mcb = (MCB*) ((char*)ptr - 16);
+    MCB* mcb;
 
     TRACE( "(%p)\n", ptr );
+
+    if ((char *)ptr >= DOSMEM_dosmem + DOSMEM_UMB_BOTTOM &&
+        (char *)ptr <= DOSMEM_dosmem + DOSMEM_UMB_TOP)
+        return DOSMEM_FreeBlockHigh(ptr);
+
+    mcb = (MCB*) ((char*)ptr - 16);
 
 #ifdef __DOSMEM_DEBUG__
     DOSMEM_Available();
@@ -720,12 +912,18 @@ UINT DOSMEM_Available(void)
 
 UINT DOSMEM_AvailableHigh(void)
 {
-    UINT available;
+    UINT available = 0;
+    unsigned int i;
 
-    if (!DOSMEM_umb_block) DOSMEM_InitDosMemory();
-    available = DOSMEM_AvailableInChain(DOSMEM_umb_block);
-    TRACE("%04xh paragraphs upper memory available\n", available >> 4);
-    return available;
+    if (!DOSMEM_umb_initialized) DOSMEM_InitDosMemory();
+
+    for (i = 0; i < DOSMEM_umb_count; i++)
+        if (DOSMEM_umb_blocks[i].psp == MCB_PSP_FREE &&
+            DOSMEM_umb_blocks[i].size > available)
+            available = DOSMEM_umb_blocks[i].size;
+
+    TRACE("%04xh paragraphs upper memory available\n", available);
+    return available << 4;
 }
 
 /******************************************************************
