@@ -428,24 +428,34 @@ static void testAddCTLToStore(void)
 }
 
 static unsigned int verify_usage_called;
+static BOOL verify_usage_result;
+static DWORD verify_usage_error;
 
 static BOOL WINAPI verify_usage_callback(DWORD encoding, DWORD subject_type, void *subject,
                                          PCTL_USAGE usage, DWORD flags,
                                          PCTL_VERIFY_USAGE_PARA para,
                                          PCTL_VERIFY_USAGE_STATUS status)
 {
+    (void)encoding;
+    (void)subject_type;
+    (void)subject;
+    (void)usage;
+    (void)flags;
+    (void)para;
+
     verify_usage_called++;
-    status->dwError = ERROR_SUCCESS;
-    return TRUE;
+    status->dwError = verify_usage_error;
+    return verify_usage_result;
 }
 
 static void testVerifyCTLUsageDispatch(void)
 {
     static char oid[] = "1.2.3.4.5.6.7.8.9";
-    CRYPT_OID_FUNC_ENTRY entry = { oid, verify_usage_callback };
+    char *usage_oids[] = { oid };
+    CRYPT_OID_FUNC_ENTRY entry = { oid, (void *)verify_usage_callback };
     HCRYPTOIDFUNCSET set;
     CTL_VERIFY_USAGE_STATUS status = { sizeof(status) };
-    CTL_USAGE usage = { 1, &entry.pszOID };
+    CTL_USAGE usage = { 1, usage_oids };
     BOOL ret;
 
     set = CryptInitOIDFunctionSet(CRYPT_OID_VERIFY_CTL_USAGE_FUNC, 0);
@@ -456,10 +466,23 @@ static void testVerifyCTLUsageDispatch(void)
     ok(ret, "CryptInstallOIDFunctionAddress failed: %08lx\n", GetLastError());
 
     verify_usage_called = 0;
+    verify_usage_result = TRUE;
+    verify_usage_error = ERROR_SUCCESS;
     ret = CertVerifyCTLUsage(X509_ASN_ENCODING, CTL_ANY_SUBJECT_TYPE, &usage,
                              &usage, 0, NULL, &status);
     ok(ret, "CertVerifyCTLUsage failed: %08lx\n", GetLastError());
     ok(verify_usage_called == 1, "callback called %u times\n", verify_usage_called);
+    ok(status.dwError == ERROR_SUCCESS, "got status error %08lx\n", status.dwError);
+
+    verify_usage_result = FALSE;
+    verify_usage_error = CRYPT_E_NOT_IN_CTL;
+    status.cbSize = sizeof(status);
+    status.dwError = ERROR_SUCCESS;
+    ret = CertVerifyCTLUsage(X509_ASN_ENCODING, CTL_ANY_SUBJECT_TYPE, &usage,
+                             &usage, 0, NULL, &status);
+    ok(!ret, "unexpected success\n");
+    ok(verify_usage_called == 2, "callback called %u times\n", verify_usage_called);
+    ok(status.dwError == CRYPT_E_NOT_IN_CTL, "got status error %08lx\n", status.dwError);
 
     status.cbSize = sizeof(status) - 1;
     SetLastError(0xdeadbeef);
