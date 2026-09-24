@@ -1234,6 +1234,7 @@ enable_iphlpapi
 enable_iprop
 enable_ir50_32
 enable_irprops_cpl
+enable_irshell
 enable_itircl
 enable_itss
 enable_iyuv_32
@@ -22907,6 +22908,8 @@ wine_fn_config_makefile dlls/iprop enable_iprop
 wine_fn_config_makefile dlls/ir50_32 enable_ir50_32
 wine_fn_config_makefile dlls/ir50_32/tests enable_tests
 wine_fn_config_makefile dlls/irprops.cpl enable_irprops_cpl
+wine_fn_config_makefile dlls/irshell enable_irshell
+wine_fn_config_makefile dlls/irshell/tests enable_tests
 wine_fn_config_makefile dlls/itircl enable_itircl
 wine_fn_config_makefile dlls/itss enable_itss
 wine_fn_config_makefile dlls/itss/tests enable_tests

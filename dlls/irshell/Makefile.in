@@ -1,0 +1,5 @@
+MODULE  = irshell.dll
+IMPORTS = uuid shell32
+
+SOURCES = \
+	irshell.c

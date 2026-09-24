@@ -1,0 +1,5 @@
+TESTDLL = irshell.dll
+IMPORTS = uuid
+
+SOURCES = \
+	irshell.c
