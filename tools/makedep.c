@@ -5291,7 +5291,8 @@ static void output_top_makefile( struct makefile *make )
         const char *base = strrchr( compiler_cache, '/' );
 
         base = base ? base + 1 : compiler_cache;
-        if (!strcmp( base, "ccache" ) || !strcmp( base, "sccache" ))
+        if (!strcmp( base, "ccache" ) || !strcmp( base, "sccache" ) ||
+            !strcmp( base, "ccache.exe" ) || !strcmp( base, "sccache.exe" ))
         {
             output( "cache-stats:\n\t" );
             output_filename( compiler_cache );
