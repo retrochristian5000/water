@@ -88,6 +88,7 @@ AC_ARG_WITH(xxf86vm,   AS_HELP_STRING([--without-xxf86vm],[do not use XFree vide
 
 AC_ARG_WITH(system-dllpath,AS_HELP_STRING([--with-system-dllpath=PATH],[load external PE dependencies from colon-separated path PATH]),
             AC_SUBST(system_dllpath,[$withval]))
+AC_ARG_WITH(compiler-cache,AS_HELP_STRING([--with-compiler-cache@<:@=PROGRAM@:>@],[use compiler cache launcher (auto-detect sccache or ccache by default)]))
 AC_ARG_WITH(wine-tools,AS_HELP_STRING([--with-wine-tools=DIR],[use Wine tools from directory DIR]))
 AC_ARG_WITH(wine64,    AS_HELP_STRING([--with-wine64=DIR],[use the 64-bit Wine in DIR for a Wow64 build]))
 
@@ -120,6 +121,19 @@ dnl **** Check for some programs ****
 
 AC_PROG_CC
 AC_PROG_CXX
+
+case "x$with_compiler_cache" in
+  xno) COMPILER_CACHE= ;;
+  x|xyes|xauto)
+    AC_CHECK_PROGS(COMPILER_CACHE,[sccache ccache],[])
+    ;;
+  *)
+    AC_PATH_PROG(COMPILER_CACHE,[$with_compiler_cache],[])
+    test -n "$COMPILER_CACHE" || AC_MSG_ERROR([compiler cache '$with_compiler_cache' not found])
+    ;;
+esac
+AC_SUBST(COMPILER_CACHE)
+
 AC_CHECK_PROGS(NINJA,[ninja ninja-build],[false])
 if test "x$enable_ninja" != xno
 then
