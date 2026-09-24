@@ -42,6 +42,7 @@ static NTSTATUS  (WINAPI *pNtQueueApcThreadEx)(HANDLE handle, HANDLE reserve_han
                                                ULONG_PTR arg1, ULONG_PTR arg2, ULONG_PTR arg3);
 static NTSTATUS  (WINAPI *pNtQueueApcThreadEx2)(HANDLE handle, HANDLE reserve_handle, ULONG flags, PNTAPCFUNC func,
                                                 ULONG_PTR arg1, ULONG_PTR arg2, ULONG_PTR arg3);
+static NTSTATUS  (WINAPI *pRtlQueueApcWow64Thread)(HANDLE, PNTAPCFUNC, ULONG_PTR, ULONG_PTR, ULONG_PTR);
 static NTSTATUS  (WINAPI *pRtlWow64GetProcessMachines)(HANDLE, WORD*, WORD*);
 
 #ifdef __x86_64__
@@ -64,6 +65,7 @@ static void init_function_pointers(void)
     GET_FUNC( NtQueueApcThreadEx );
     GET_FUNC( NtQueueApcThreadEx2 );
     GET_FUNC( NtResumeProcess );
+    GET_FUNC( RtlQueueApcWow64Thread );
     GET_FUNC( RtlWow64GetProcessMachines );
     GET_FUNC( _errno );
 
@@ -78,6 +80,18 @@ static void init_function_pointers(void)
 
 static void CALLBACK test_NtCreateThreadEx_proc(void *param)
 {
+}
+
+static void test_RtlQueueApcWow64Thread(void)
+{
+    NTSTATUS expected, status;
+    HANDLE invalid = (HANDLE)(LONG_PTR)0xdeadbeef;
+
+    if (sizeof(void *) != 4 || !pRtlQueueApcWow64Thread) return;
+
+    expected = NtQueueApcThread( invalid, NULL, 0, 0, 0 );
+    status = pRtlQueueApcWow64Thread( invalid, NULL, 0, 0, 0 );
+    ok( status == expected, "got %#lx, expected %#lx\n", status, expected );
 }
 
 static void test_dbg_hidden_thread_creation(void)
@@ -541,6 +555,7 @@ START_TEST(thread)
         if (is_arm64_native_machine) test_arm64_skip_loader_init();
     }
 
+    test_RtlQueueApcWow64Thread();
     test_dbg_hidden_thread_creation();
     test_unique_teb();
     test_errno();

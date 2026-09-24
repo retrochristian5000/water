@@ -970,7 +970,8 @@
 @ stub RtlQueryTagHeap
 @ stdcall RtlQueryTimeZoneInformation(ptr)
 @ stdcall RtlQueryUnbiasedInterruptTime(ptr)
-@ stub RtlQueueApcWow64Thread
+@ stdcall -arch=win32 RtlQueueApcWow64Thread(long ptr long long long)
+@ stub -arch=win64 RtlQueueApcWow64Thread
 @ stdcall RtlQueueWorkItem(ptr ptr long)
 @ stdcall -norelay RtlRaiseException(ptr)
 @ stdcall RtlRaiseStatus(long)

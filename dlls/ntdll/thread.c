@@ -298,6 +298,18 @@ NTSTATUS WINAPI RtlCreateUserThread( HANDLE process, SECURITY_DESCRIPTOR *descr,
 }
 
 
+#ifndef _WIN64
+/***********************************************************************
+ *              RtlQueueApcWow64Thread   (NTDLL.@)
+ */
+NTSTATUS WINAPI RtlQueueApcWow64Thread( HANDLE thread, PNTAPCFUNC apc,
+                                        ULONG_PTR arg1, ULONG_PTR arg2, ULONG_PTR arg3 )
+{
+    return NtQueueApcThread( thread, apc, arg1, arg2, arg3 );
+}
+#endif
+
+
 /**********************************************************************
  *           RtlCreateUserStack (NTDLL.@)
  */
