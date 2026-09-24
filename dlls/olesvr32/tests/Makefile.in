@@ -1,0 +1,4 @@
+TESTDLL = olesvr32.dll
+
+SOURCES = \
+	server.c
