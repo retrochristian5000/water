@@ -245,6 +245,12 @@ for a graphical executable,
 .B native
 for a native-mode dll,
 .br
+.B os2
+for an OS/2 character-mode executable,
+.br
+.B posix
+for a POSIX character-mode executable,
+.br
 .B wince
 for a ce dll.
 .br
