@@ -18,18 +18,35 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <stdio.h>
+
 #include "windows.h"
 #include "commctrl.h"
 #include "shellapi.h"
 
 int PASCAL WinMain (HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 {
-    char name[128] = "Wine ";
+    char name[128] = "Wine";
+    char os_version[128] = "";
     const char * (CDECL *wine_get_version)(void);
+    OSVERSIONINFOEXA version = {0};
+    HMODULE ntdll;
+    DWORD build;
 
     InitCommonControls();
 
-    wine_get_version = (void *)GetProcAddress( GetModuleHandleA("ntdll.dll"), "wine_get_version" );
-    if (wine_get_version) strcat( name, wine_get_version() );
-    return !ShellAboutA( NULL, name, NULL, 0 );
+    ntdll = GetModuleHandleA("ntdll.dll");
+    wine_get_version = ntdll ? (void *)GetProcAddress( ntdll, "wine_get_version" ) : NULL;
+    if (wine_get_version) snprintf( name, sizeof(name), "Wine %s", wine_get_version() );
+
+    version.dwOSVersionInfoSize = sizeof(version);
+    if (GetVersionExA( (OSVERSIONINFOA *)&version ))
+    {
+        build = version.dwBuildNumber;
+        if (version.dwPlatformId != VER_PLATFORM_WIN32_NT) build = LOWORD(build);
+        snprintf( os_version, sizeof(os_version), "Windows %lu.%lu (Build %lu)",
+                  version.dwMajorVersion, version.dwMinorVersion, build );
+    }
+
+    return !ShellAboutA( NULL, name, os_version[0] ? os_version : NULL, 0 );
 }
