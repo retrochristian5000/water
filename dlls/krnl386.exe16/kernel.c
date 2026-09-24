@@ -39,6 +39,21 @@ void *dummy = RaiseException;  /* force importing it from kernel32 */
 
 static DWORD process_dword;
 
+static void load_boot_driver( const char *key )
+{
+    char name[MAX_PATH];
+
+    GetPrivateProfileStringA( "boot", key, key, name, sizeof(name), "SYSTEM.INI" );
+    if (LoadLibrary16( name ) >= 32) return;
+
+    if (stricmp( name, key ))
+    {
+        WARN( "failed to load configured %s driver %s, falling back to %s\n",
+              key, debugstr_a(name), key );
+        LoadLibrary16( key );
+    }
+}
+
 /***********************************************************************
  *           KERNEL thread initialisation routine
  */
@@ -139,9 +154,9 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     SET_ENTRY_POINT( 190, 0xe0000 );  /* KERNEL.190: __E000H */
 #undef SET_ENTRY_POINT
 
-    /* Force loading of some dlls */
-    LoadLibrary16( "system.drv" );
-    LoadLibrary16( "comm.drv" );
+    /* Load the machine drivers selected by SYSTEM.INI. */
+    load_boot_driver( "system.drv" );
+    load_boot_driver( "comm.drv" );
 
     return TRUE;
 }
