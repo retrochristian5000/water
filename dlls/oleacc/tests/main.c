@@ -1207,9 +1207,9 @@ static void test_default_client_accessible_object(void)
     V_VT(&vid) = VT_I4;
     V_I4(&vid) = CHILDID_SELF;
     hr = IAccessible_get_accRole(win, vid, &v);
-    todo_wine ok(hr == S_OK, "got %lx\n", hr);
-    todo_wine ok(V_VT(&v) == VT_I4, "V_VT(&v) = %d\n", V_VT(&v));
-    todo_wine ok(V_I4(&v) == ROLE_SYSTEM_WINDOW, "V_I4(&v) = %ld\n", V_I4(&v));
+    ok(hr == S_OK, "got %lx\n", hr);
+    ok(V_VT(&v) == VT_I4, "V_VT(&v) = %d\n", V_VT(&v));
+    ok(V_I4(&v) == ROLE_SYSTEM_WINDOW, "V_I4(&v) = %ld\n", V_I4(&v));
     IAccessible_Release(win);
 
     SetFocus(chld);
@@ -1224,9 +1224,9 @@ static void test_default_client_accessible_object(void)
     IDispatch_Release(V_DISPATCH(&v));
 
     hr = IAccessible_get_accRole(win, vid, &v);
-    todo_wine ok(hr == S_OK, "got %lx\n", hr);
-    todo_wine ok(V_VT(&v) == VT_I4, "V_VT(&v) = %d\n", V_VT(&v));
-    todo_wine ok(V_I4(&v) == ROLE_SYSTEM_WINDOW, "V_I4(&v) = %ld\n", V_I4(&v));
+    ok(hr == S_OK, "got %lx\n", hr);
+    ok(V_VT(&v) == VT_I4, "V_VT(&v) = %d\n", V_VT(&v));
+    ok(V_I4(&v) == ROLE_SYSTEM_WINDOW, "V_I4(&v) = %ld\n", V_I4(&v));
     IAccessible_Release(win);
 
     /* Child of a child, still works on parent HWND. */
@@ -1242,9 +1242,9 @@ static void test_default_client_accessible_object(void)
     IDispatch_Release(V_DISPATCH(&v));
 
     hr = IAccessible_get_accRole(win, vid, &v);
-    todo_wine ok(hr == S_OK, "got %lx\n", hr);
-    todo_wine ok(V_VT(&v) == VT_I4, "V_VT(&v) = %d\n", V_VT(&v));
-    todo_wine ok(V_I4(&v) == ROLE_SYSTEM_WINDOW, "V_I4(&v) = %ld\n", V_I4(&v));
+    ok(hr == S_OK, "got %lx\n", hr);
+    ok(V_VT(&v) == VT_I4, "V_VT(&v) = %d\n", V_VT(&v));
+    ok(V_I4(&v) == ROLE_SYSTEM_WINDOW, "V_I4(&v) = %ld\n", V_I4(&v));
     IAccessible_Release(win);
 
     ShowWindow(hwnd, SW_HIDE);
