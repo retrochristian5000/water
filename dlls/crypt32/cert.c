@@ -3999,7 +3999,7 @@ BOOL WINAPI CertVerifyCTLUsage(DWORD dwEncodingType, DWORD dwSubjectType,
             {
                 WCHAR *dll;
 
-                for (dll = dlls; ret && *dll; dll += lstrlenW(dll) + 1)
+                for (dll = dlls; *dll; dll += lstrlenW(dll) + 1)
                 {
                     if (CryptGetDefaultOIDFunctionAddress(set, dwEncodingType, dll, 0,
                                                           (void **)&func, &hfunc))
@@ -4007,14 +4007,12 @@ BOOL WINAPI CertVerifyCTLUsage(DWORD dwEncodingType, DWORD dwSubjectType,
                         ret = func(dwEncodingType, dwSubjectType, pvSubject, pSubjectUsage,
                                    dwFlags, pVerifyUsagePara, pVerifyUsageStatus);
                         CryptFreeOIDFunctionAddress(hfunc, 0);
-                        hfunc = NULL;
+                        CryptMemFree(dlls);
+                        return ret;
                     }
-                    else
-                        ret = FALSE;
                 }
             }
             CryptMemFree(dlls);
-            if (ret) return TRUE;
         }
     }
 
