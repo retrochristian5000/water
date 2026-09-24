@@ -22,6 +22,7 @@
  */
 
 #include <stdarg.h>
+#include <string.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -128,93 +129,345 @@ typedef struct _OLESERVER
 } OLESERVER;
 
 static LONG OLE_current_handle;
+static SRWLOCK server_lock = SRWLOCK_INIT;
+
+struct server_entry
+{
+    struct server_entry *next;
+    LHSERVER handle;
+    char *name;
+    LPOLESERVER server;
+    HINSTANCE instance;
+    OLE_SERVER_USE use;
+    BOOL blocked;
+};
+
+struct document_entry
+{
+    struct document_entry *next;
+    LHSERVERDOC handle;
+    LHSERVER server;
+    char *name;
+    LPOLESERVERDOC document;
+    BOOL saved;
+};
+
+static struct server_entry *servers;
+static struct document_entry *documents;
+
+static char *heap_strdupA(const char *str)
+{
+    SIZE_T size;
+    char *ret;
+
+    if (!str) return NULL;
+
+    size = strlen(str) + 1;
+    if (!(ret = HeapAlloc(GetProcessHeap(), 0, size))) return NULL;
+    memcpy(ret, str, size);
+    return ret;
+}
+
+static LONG next_handle(void)
+{
+    LONG handle;
+
+    do
+        handle = InterlockedIncrement(&OLE_current_handle);
+    while (!handle);
+
+    return handle;
+}
+
+static struct server_entry *find_server(LHSERVER handle)
+{
+    struct server_entry *server;
+
+    for (server = servers; server; server = server->next)
+        if (server->handle == handle) return server;
+
+    return NULL;
+}
+
+static struct document_entry *find_document(LHSERVERDOC handle)
+{
+    struct document_entry *document;
+
+    for (document = documents; document; document = document->next)
+        if (document->handle == handle) return document;
+
+    return NULL;
+}
 
 /******************************************************************************
- *		OleBlockServer	[OLESVR32.4]
+ *              OleBlockServer  [OLESVR32.4]
  */
 OLESTATUS WINAPI OleBlockServer(LHSERVER hServer)
 {
-    FIXME("(%ld): stub\n",hServer);
-    return OLE_OK;
+    struct server_entry *server;
+    OLESTATUS status = OLE_OK;
+
+    TRACE("(%ld)\n", hServer);
+
+    AcquireSRWLockExclusive(&server_lock);
+    if (!(server = find_server(hServer)))
+        status = OLE_ERROR_HANDLE;
+    else
+        server->blocked = TRUE;
+    ReleaseSRWLockExclusive(&server_lock);
+
+    return status;
 }
 
 /******************************************************************************
- *		OleUnblockServer	[OLESVR32.5]
+ *              OleUnblockServer        [OLESVR32.5]
  */
 OLESTATUS WINAPI OleUnblockServer(LHSERVER hServer, BOOL *block)
 {
-    FIXME("(%ld): stub\n",hServer);
-    /* no more blocked messages :) */
-    *block=FALSE;
-    return OLE_OK;
+    struct server_entry *server;
+    OLESTATUS status = OLE_OK;
+
+    TRACE("(%ld,%p)\n", hServer, block);
+
+    if (!block) return OLE_ERROR_ADDRESS;
+
+    AcquireSRWLockExclusive(&server_lock);
+    if (!(server = find_server(hServer)))
+    {
+        *block = FALSE;
+        status = OLE_ERROR_HANDLE;
+    }
+    else
+    {
+        server->blocked = FALSE;
+        *block = FALSE;
+    }
+    ReleaseSRWLockExclusive(&server_lock);
+
+    return status;
 }
 
 /******************************************************************************
- *		OleRevokeServerDoc	[OLESVR32.7]
+ *              OleRevokeServerDoc      [OLESVR32.7]
  */
 OLESTATUS WINAPI OleRevokeServerDoc(LHSERVERDOC hServerDoc)
 {
-    FIXME("(%ld): stub\n",hServerDoc);
-    return OLE_OK;
+    struct document_entry **cursor, *document;
+
+    TRACE("(%ld)\n", hServerDoc);
+
+    AcquireSRWLockExclusive(&server_lock);
+    for (cursor = &documents; (document = *cursor); cursor = &document->next)
+    {
+        if (document->handle != hServerDoc) continue;
+
+        *cursor = document->next;
+        ReleaseSRWLockExclusive(&server_lock);
+        HeapFree(GetProcessHeap(), 0, document->name);
+        HeapFree(GetProcessHeap(), 0, document);
+        return OLE_OK;
+    }
+    ReleaseSRWLockExclusive(&server_lock);
+
+    return OLE_ERROR_HANDLE;
 }
 
 /******************************************************************************
- * OleRegisterServer [OLESVR32.2]
+ *              OleRegisterServer       [OLESVR32.2]
  */
-OLESTATUS WINAPI OleRegisterServer(LPCSTR svrname,LPOLESERVER olesvr,LHSERVER* hRet,HINSTANCE hinst,OLE_SERVER_USE osu) {
-	FIXME("(%s,%p,%p,%p,%d): stub!\n",svrname,olesvr,hRet,hinst,osu);
-    	*hRet=++OLE_current_handle;
-	return OLE_OK;
-}
-
-/******************************************************************************
- * OleRegisterServerDoc [OLESVR32.6]
- */
-OLESTATUS WINAPI OleRegisterServerDoc( LHSERVER hServer, LPCSTR docname,
-                                         LPOLESERVERDOC document,
-                                         LHSERVERDOC *hRet)
+OLESTATUS WINAPI OleRegisterServer(LPCSTR svrname, LPOLESERVER olesvr, LHSERVER *hRet,
+        HINSTANCE hinst, OLE_SERVER_USE use)
 {
-    FIXME("(%ld,%s): stub\n", hServer, docname);
-    *hRet=++OLE_current_handle;
+    struct server_entry *server;
+
+    TRACE("(%s,%p,%p,%p,%d)\n", debugstr_a(svrname), olesvr, hRet, hinst, use);
+
+    if (!svrname || !olesvr || !olesvr->lpvtbl || !hRet)
+        return OLE_ERROR_ADDRESS;
+    if (use != OLE_SERVER_MULTI && use != OLE_SERVER_SINGLE)
+        return OLE_ERROR_OPTION;
+
+    *hRet = 0;
+    if (!(server = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*server))))
+        return OLE_ERROR_MEMORY;
+    if (!(server->name = heap_strdupA(svrname)))
+    {
+        HeapFree(GetProcessHeap(), 0, server);
+        return OLE_ERROR_MEMORY;
+    }
+
+    server->handle = next_handle();
+    server->server = olesvr;
+    server->instance = hinst;
+    server->use = use;
+
+    AcquireSRWLockExclusive(&server_lock);
+    server->next = servers;
+    servers = server;
+    ReleaseSRWLockExclusive(&server_lock);
+
+    *hRet = server->handle;
     return OLE_OK;
 }
 
 /******************************************************************************
- *		OleRenameServerDoc	[OLESVR32.8]
- *
+ *              OleRegisterServerDoc    [OLESVR32.6]
+ */
+OLESTATUS WINAPI OleRegisterServerDoc(LHSERVER hServer, LPCSTR docname,
+        LPOLESERVERDOC document, LHSERVERDOC *hRet)
+{
+    struct document_entry *entry;
+
+    TRACE("(%ld,%s,%p,%p)\n", hServer, debugstr_a(docname), document, hRet);
+
+    if (!docname || !document || !document->lpvtbl || !hRet)
+        return OLE_ERROR_ADDRESS;
+
+    *hRet = 0;
+
+    AcquireSRWLockExclusive(&server_lock);
+    if (!find_server(hServer))
+    {
+        ReleaseSRWLockExclusive(&server_lock);
+        return OLE_ERROR_HANDLE;
+    }
+    ReleaseSRWLockExclusive(&server_lock);
+
+    if (!(entry = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*entry))))
+        return OLE_ERROR_MEMORY;
+    if (!(entry->name = heap_strdupA(docname)))
+    {
+        HeapFree(GetProcessHeap(), 0, entry);
+        return OLE_ERROR_MEMORY;
+    }
+
+    entry->handle = next_handle();
+    entry->server = hServer;
+    entry->document = document;
+    entry->saved = TRUE;
+
+    AcquireSRWLockExclusive(&server_lock);
+    if (!find_server(hServer))
+    {
+        ReleaseSRWLockExclusive(&server_lock);
+        HeapFree(GetProcessHeap(), 0, entry->name);
+        HeapFree(GetProcessHeap(), 0, entry);
+        return OLE_ERROR_HANDLE;
+    }
+    entry->next = documents;
+    documents = entry;
+    ReleaseSRWLockExclusive(&server_lock);
+
+    *hRet = entry->handle;
+    return OLE_OK;
+}
+
+/******************************************************************************
+ *              OleRenameServerDoc      [OLESVR32.8]
  */
 OLESTATUS WINAPI OleRenameServerDoc(LHSERVERDOC hDoc, LPCSTR newName)
 {
-    FIXME("(%ld,%s): stub.\n",hDoc, newName);
+    struct document_entry *document;
+    char *name;
+
+    TRACE("(%ld,%s)\n", hDoc, debugstr_a(newName));
+
+    if (!newName) return OLE_ERROR_ADDRESS;
+    if (!(name = heap_strdupA(newName))) return OLE_ERROR_MEMORY;
+
+    AcquireSRWLockExclusive(&server_lock);
+    if (!(document = find_document(hDoc)))
+    {
+        ReleaseSRWLockExclusive(&server_lock);
+        HeapFree(GetProcessHeap(), 0, name);
+        return OLE_ERROR_HANDLE;
+    }
+
+    HeapFree(GetProcessHeap(), 0, document->name);
+    document->name = name;
+    document->saved = FALSE;
+    ReleaseSRWLockExclusive(&server_lock);
+
     return OLE_OK;
 }
 
 /******************************************************************************
- *		OleRevertServerDoc	[OLESVR32.9]
- *
+ *              OleRevertServerDoc      [OLESVR32.9]
  */
 OLESTATUS WINAPI OleRevertServerDoc(LHSERVERDOC hDoc)
 {
-    FIXME("(%ld): stub.\n", hDoc);
-    return OLE_OK;
+    struct document_entry *document;
+    OLESTATUS status = OLE_OK;
+
+    TRACE("(%ld)\n", hDoc);
+
+    AcquireSRWLockExclusive(&server_lock);
+    if (!(document = find_document(hDoc)))
+        status = OLE_ERROR_HANDLE;
+    else
+        document->saved = TRUE;
+    ReleaseSRWLockExclusive(&server_lock);
+
+    return status;
 }
 
 /******************************************************************************
- *		OleSavedServerDoc	[OLESVR32.10]
- *
+ *              OleSavedServerDoc       [OLESVR32.10]
  */
 OLESTATUS WINAPI OleSavedServerDoc(LHSERVERDOC hDoc)
 {
-    FIXME("(%ld): stub.\n", hDoc);
-    return OLE_OK;
+    struct document_entry *document;
+    OLESTATUS status = OLE_OK;
+
+    TRACE("(%ld)\n", hDoc);
+
+    AcquireSRWLockExclusive(&server_lock);
+    if (!(document = find_document(hDoc)))
+        status = OLE_ERROR_HANDLE;
+    else
+        document->saved = TRUE;
+    ReleaseSRWLockExclusive(&server_lock);
+
+    return status;
 }
 
 /******************************************************************************
- *		OleRevokeServer	[OLESVR32.3]
- *
+ *              OleRevokeServer [OLESVR32.3]
  */
 OLESTATUS WINAPI OleRevokeServer(LHSERVER hServer)
 {
-    FIXME("(%ld): stub.\n", hServer);
-    return OLE_OK;
+    struct document_entry **doc_cursor, *document;
+    struct server_entry **cursor, *server;
+
+    TRACE("(%ld)\n", hServer);
+
+    AcquireSRWLockExclusive(&server_lock);
+    for (cursor = &servers; (server = *cursor); cursor = &server->next)
+    {
+        if (server->handle != hServer) continue;
+
+        *cursor = server->next;
+
+        doc_cursor = &documents;
+        while ((document = *doc_cursor))
+        {
+            if (document->server != hServer)
+            {
+                doc_cursor = &document->next;
+                continue;
+            }
+
+            *doc_cursor = document->next;
+            HeapFree(GetProcessHeap(), 0, document->name);
+            HeapFree(GetProcessHeap(), 0, document);
+        }
+
+        ReleaseSRWLockExclusive(&server_lock);
+        HeapFree(GetProcessHeap(), 0, server->name);
+        HeapFree(GetProcessHeap(), 0, server);
+        return OLE_OK;
+    }
+    ReleaseSRWLockExclusive(&server_lock);
+
+    return OLE_ERROR_HANDLE;
 }
