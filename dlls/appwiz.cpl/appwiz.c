@@ -46,6 +46,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(appwizcpl);
 
 /* define a maximum length for various buffers we use */
 #define MAX_STRING_LEN    1024
+#define REG_STRING_FLAGS  (RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND)
 
 typedef struct APPINFO
 {
@@ -125,10 +126,10 @@ static WCHAR *get_reg_str(HKEY hkey, const WCHAR *value)
     DWORD len = 0;
     WCHAR *ret;
 
-    if (RegGetValueW(hkey, NULL, value, RRF_RT_REG_SZ, NULL, NULL, &len))
+    if (RegGetValueW(hkey, NULL, value, REG_STRING_FLAGS, NULL, NULL, &len))
         return NULL;
     if (!(ret = malloc(len))) return NULL;
-    if (RegGetValueW(hkey, NULL, value, RRF_RT_REG_SZ, NULL, ret, &len))
+    if (RegGetValueW(hkey, NULL, value, REG_STRING_FLAGS, NULL, ret, &len))
     {
         free(ret);
         return NULL;
@@ -177,7 +178,7 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
         }
         displen = 0;
         uninstlen = 0;
-        if (!RegGetValueW(hkeyApp, NULL, L"DisplayName", RRF_RT_REG_SZ, NULL, NULL, &displen))
+        if (!RegGetValueW(hkeyApp, NULL, L"DisplayName", REG_STRING_FLAGS, NULL, NULL, &displen))
         {
             size = sizeof(value);
             if (!RegQueryValueExW(hkeyApp, L"WindowsInstaller", NULL, &dwType, (BYTE *)&value, &size)
@@ -188,10 +189,10 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
                 if (!(command = malloc(len * sizeof(WCHAR)))) goto err;
                 wsprintfW(command, L"msiexec /x%s", subKeyName);
             }
-            else if (!RegGetValueW(hkeyApp, NULL, L"UninstallString", RRF_RT_REG_SZ, NULL, NULL, &uninstlen))
+            else if (!RegGetValueW(hkeyApp, NULL, L"UninstallString", REG_STRING_FLAGS, NULL, NULL, &uninstlen))
             {
                 if (!(command = malloc(uninstlen))) goto err;
-                if (RegGetValueW(hkeyApp, NULL, L"UninstallString", RRF_RT_REG_SZ, NULL, command, &uninstlen))
+                if (RegGetValueW(hkeyApp, NULL, L"UninstallString", REG_STRING_FLAGS, NULL, command, &uninstlen))
                     goto err;
             }
             else
@@ -208,12 +209,12 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
             if (!info->title)
                 goto err;
 
-            if (RegGetValueW(hkeyApp, NULL, L"DisplayName", RRF_RT_REG_SZ, NULL, info->title, &displen))
+            if (RegGetValueW(hkeyApp, NULL, L"DisplayName", REG_STRING_FLAGS, NULL, info->title, &displen))
                 goto err;
 
             /* now get DisplayIcon */
             displen = 0;
-            RegGetValueW(hkeyApp, NULL, L"DisplayIcon", RRF_RT_REG_SZ, NULL, NULL, &displen);
+            RegGetValueW(hkeyApp, NULL, L"DisplayIcon", REG_STRING_FLAGS, NULL, NULL, &displen);
 
             if (displen == 0)
                 info->icon = 0;
@@ -224,7 +225,7 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
                 if (!info->icon)
                     goto err;
 
-                if (RegGetValueW(hkeyApp, NULL, L"DisplayIcon", RRF_RT_REG_SZ, NULL, info->icon, &displen))
+                if (RegGetValueW(hkeyApp, NULL, L"DisplayIcon", REG_STRING_FLAGS, NULL, info->icon, &displen))
                     goto err;
 
                 /* separate the index from the icon name, if supplied */
@@ -273,10 +274,10 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
                     if (!(info->path_modify = malloc(len * sizeof(WCHAR)))) goto err;
                     wsprintfW(info->path_modify, L"msiexec /i%s", subKeyName);
                 }
-                else if (!RegGetValueW(hkeyApp, NULL, L"ModifyPath", RRF_RT_REG_SZ, NULL, NULL, &displen))
+                else if (!RegGetValueW(hkeyApp, NULL, L"ModifyPath", REG_STRING_FLAGS, NULL, NULL, &displen))
                 {
                     if (!(info->path_modify = malloc(displen))) goto err;
-                    if (RegGetValueW(hkeyApp, NULL, L"ModifyPath", RRF_RT_REG_SZ, NULL,
+                    if (RegGetValueW(hkeyApp, NULL, L"ModifyPath", REG_STRING_FLAGS, NULL,
                                      info->path_modify, &displen))
                         goto err;
                 }
