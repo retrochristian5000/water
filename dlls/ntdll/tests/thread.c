@@ -82,16 +82,47 @@ static void CALLBACK test_NtCreateThreadEx_proc(void *param)
 {
 }
 
+static LONG rtl_queue_apc_count;
+static ULONG_PTR rtl_queue_apc_args[3];
+
+static void CALLBACK rtl_queue_apc_func( ULONG_PTR arg1, ULONG_PTR arg2, ULONG_PTR arg3 )
+{
+    rtl_queue_apc_count++;
+    rtl_queue_apc_args[0] = arg1;
+    rtl_queue_apc_args[1] = arg2;
+    rtl_queue_apc_args[2] = arg3;
+}
+
 static void test_RtlQueueApcWow64Thread(void)
 {
     NTSTATUS expected, status;
     HANDLE invalid = (HANDLE)(LONG_PTR)0xdeadbeef;
+    DWORD ret;
 
-    if (sizeof(void *) != 4 || !pRtlQueueApcWow64Thread) return;
+    if (sizeof(void *) != 4) return;
+    if (!pRtlQueueApcWow64Thread)
+    {
+        win_skip( "RtlQueueApcWow64Thread is not available.\n" );
+        return;
+    }
 
     expected = NtQueueApcThread( invalid, NULL, 0, 0, 0 );
     status = pRtlQueueApcWow64Thread( invalid, NULL, 0, 0, 0 );
     ok( status == expected, "got %#lx, expected %#lx\n", status, expected );
+
+    rtl_queue_apc_count = 0;
+    memset( rtl_queue_apc_args, 0, sizeof(rtl_queue_apc_args) );
+    status = pRtlQueueApcWow64Thread( GetCurrentThread(), rtl_queue_apc_func,
+                                     0x1234, 0x5678, 0xdeadbeef );
+    ok( !status, "RtlQueueApcWow64Thread failed %#lx\n", status );
+    ok( !rtl_queue_apc_count, "APC ran before an alertable wait\n" );
+
+    ret = SleepEx( 0, TRUE );
+    ok( ret == WAIT_IO_COMPLETION, "SleepEx returned %#lx\n", ret );
+    ok( rtl_queue_apc_count == 1, "APC called %ld times\n", rtl_queue_apc_count );
+    ok( rtl_queue_apc_args[0] == 0x1234, "wrong arg1 %#Ix\n", rtl_queue_apc_args[0] );
+    ok( rtl_queue_apc_args[1] == 0x5678, "wrong arg2 %#Ix\n", rtl_queue_apc_args[1] );
+    ok( rtl_queue_apc_args[2] == 0xdeadbeef, "wrong arg3 %#Ix\n", rtl_queue_apc_args[2] );
 }
 
 static void test_dbg_hidden_thread_creation(void)
