@@ -438,6 +438,15 @@ NTSTATUS WINAPI BTCpuResetToConsistentState( EXCEPTION_POINTERS *ptrs )
 
 
 /**********************************************************************
+ *           BTCpuSuspendLocalThread  (wow64cpu.@)
+ */
+NTSTATUS WINAPI BTCpuSuspendLocalThread( HANDLE thread, ULONG *count )
+{
+    return NtSuspendThread( thread, count );
+}
+
+
+/**********************************************************************
  *           BTCpuTurboThunkControl  (wow64cpu.@)
  */
 NTSTATUS WINAPI BTCpuTurboThunkControl( ULONG enable )

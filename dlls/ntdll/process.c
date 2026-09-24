@@ -469,7 +469,15 @@ BOOLEAN WINAPI RtlWow64RequestCrossProcessHeavyFlush( CROSS_PROCESS_WORK_HDR *li
  */
 NTSTATUS WINAPI RtlWow64SuspendThread( HANDLE thread, ULONG *count )
 {
-    /* FIXME: Use Wow64SuspendLocalThread when available */
+    THREAD_BASIC_INFORMATION info;
+    NTSTATUS status;
+
+    status = NtQueryInformationThread( thread, ThreadBasicInformation, &info, sizeof(info), NULL );
+    if (status) return status;
+
+    if (info.ClientId.UniqueProcess == NtCurrentTeb()->ClientId.UniqueProcess && pWow64SuspendLocalThread)
+        return pWow64SuspendLocalThread( thread, count );
+
     return NtSuspendThread( thread, count );
 }
 

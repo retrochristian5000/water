@@ -4,6 +4,7 @@
 @ stdcall BTCpuProcessInit()
 @ stdcall BTCpuResetToConsistentState(ptr)
 @ stdcall BTCpuSetContext(long long ptr ptr)
+@ stdcall BTCpuSuspendLocalThread(long ptr)
 @ stdcall -norelay BTCpuSimulate()
 @ stdcall BTCpuTurboThunkControl(long)
 #@ stub TurboDispatchJumpAddressEnd
