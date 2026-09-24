@@ -168,9 +168,8 @@ DWORD WINAPI CancelMibChangeNotify2(HANDLE handle)
  */
 DWORD WINAPI CreateIpForwardEntry(PMIB_IPFORWARDROW pRoute)
 {
-  FIXME("(pRoute %p): stub\n", pRoute);
-  /* could use SIOCADDRT, not sure I want to */
-  return 0;
+  FIXME("(pRoute %p): route mutation is not supported\n", pRoute);
+  return ERROR_NOT_SUPPORTED;
 }
 
 
@@ -397,9 +396,8 @@ DWORD WINAPI DeleteIPAddress(ULONG NTEContext)
  */
 DWORD WINAPI DeleteIpForwardEntry(PMIB_IPFORWARDROW pRoute)
 {
-  FIXME("(pRoute %p): stub\n", pRoute);
-  /* could use SIOCDELRT, not sure I want to */
-  return 0;
+  FIXME("(pRoute %p): route mutation is not supported\n", pRoute);
+  return ERROR_NOT_SUPPORTED;
 }
 
 
@@ -4093,11 +4091,8 @@ DWORD WINAPI SetIfEntry(PMIB_IFROW pIfRow)
  */
 DWORD WINAPI SetIpForwardEntry(PMIB_IPFORWARDROW pRoute)
 {
-  FIXME("(pRoute %p): stub\n", pRoute);
-  /* this is to add a route entry, how's it distinguishable from
-     CreateIpForwardEntry?
-     could use SIOCADDRT, not sure I want to */
-  return 0;
+  FIXME("(pRoute %p): route mutation is not supported\n", pRoute);
+  return ERROR_NOT_SUPPORTED;
 }
 
 
