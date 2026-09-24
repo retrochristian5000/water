@@ -289,14 +289,14 @@ library stdole
 
     typedef [public] Font IFontDisp;
 
+    dispinterface FontEvents;
+
     [
      uuid(0BE35203-8F91-11CE-9DE3-00AA004BB851)
     ]
     coclass StdFont {
         [default] dispinterface Font;
-        /* FIXME: We can't reference dispinterface FontEvents here because we need it to
-           appear at the end of the typelib. */
-/*      [default, source] dispinterface FontEvents;*/
+        [default, source] dispinterface FontEvents;
         interface IFont;
     }
 
@@ -407,9 +407,9 @@ library stdole
          helpcontext(0x2775)
         ]
         HRESULT LoadPicture([in, optional] VARIANT filename,
-                            [in, defaultvalue(0)] int widthDesired,
-                            [in, defaultvalue(0)] int heightDesired,
-                            [in, defaultvalue(Default)] enum LoadPictureConstants flags,
+                            [in, optional, defaultvalue(0)] int widthDesired,
+                            [in, optional, defaultvalue(0)] int heightDesired,
+                            [in, optional, defaultvalue(Default)] enum LoadPictureConstants flags,
                             [out, retval] IPictureDisp **retval);
         [
          entry("OleSavePictureFile"),
