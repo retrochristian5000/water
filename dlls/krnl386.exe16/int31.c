@@ -471,12 +471,9 @@ void WINAPI DOSVM_Int31Handler( CONTEXT *context )
     case 0x0400:  /* Get DPMI version */
         TRACE("get DPMI version\n");
         {
-            SYSTEM_INFO si;
-
-            GetSystemInfo(&si);
             SET_AX( context, 0x005a );  /* DPMI version 0.90 */
             SET_BX( context, 0x0001 );  /* Flags: 32-bit host, no virtual memory */
-            SET_CL( context, si.wProcessorLevel );
+            SET_CL( context, DOSVM_GetX86ProcessorLevel() );
             SET_DX( context, 0x0870 );  /* Interrupt controller base */
         }
         break;
