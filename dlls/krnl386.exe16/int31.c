@@ -475,7 +475,7 @@ void WINAPI DOSVM_Int31Handler( CONTEXT *context )
 
             GetSystemInfo(&si);
             SET_AX( context, 0x005a );  /* DPMI version 0.90 */
-            SET_BX( context, 0x0005 );  /* Flags: 32-bit, virtual memory */
+            SET_BX( context, 0x0001 );  /* Flags: 32-bit host, no virtual memory */
             SET_CL( context, si.wProcessorLevel );
             SET_DX( context, 0x0870 );  /* Interrupt controller base */
         }
@@ -489,38 +489,17 @@ void WINAPI DOSVM_Int31Handler( CONTEXT *context )
         TRACE("get free memory information\n");
         {
             MEMORYSTATUS status;
-            SYSTEM_BASIC_INFORMATION sbi;
+            DWORD *info = ldt_get_ptr( context->SegEs, context->Edi );
 
-            /* the layout is just the same as MEMMANINFO, but without
-             * the dwSize entry.
+            /*
+             * This host does not advertise DPMI virtual memory.  DPMI 0.9
+             * requires the largest allocatable block at offset 00h and
+             * unsupported fields to be returned as ffffffffh.
              */
-            struct
-            {
-                DWORD dwLargestFreeBlock;
-                DWORD dwMaxPagesAvailable;
-                DWORD dwMaxPagesLockable;
-                DWORD dwTotalLinearSpace;
-                DWORD dwTotalUnlockedPages;
-                DWORD dwFreePages;
-                DWORD dwTotalPages;
-                DWORD dwFreeLinearSpace;
-                DWORD dwSwapFilePages;
-                WORD  wPageSize;
-            } *info = ldt_get_ptr( context->SegEs, context->Edi );
-
             GlobalMemoryStatus( &status );
-            NtQuerySystemInformation( SystemBasicInformation, &sbi, sizeof(sbi), NULL );
-
-            info->wPageSize            = sbi.PageSize;
-            info->dwLargestFreeBlock   = status.dwAvailVirtual;
-            info->dwMaxPagesAvailable  = info->dwLargestFreeBlock / info->wPageSize;
-            info->dwMaxPagesLockable   = info->dwMaxPagesAvailable;
-            info->dwTotalLinearSpace   = status.dwTotalVirtual / info->wPageSize;
-            info->dwTotalUnlockedPages = info->dwTotalLinearSpace;
-            info->dwFreePages          = info->dwMaxPagesAvailable;
-            info->dwTotalPages         = info->dwTotalLinearSpace;
-            info->dwFreeLinearSpace    = info->dwMaxPagesAvailable;
-            info->dwSwapFilePages      = status.dwTotalPageFile / info->wPageSize;
+            memset( info, 0xff, 0x30 );
+            info[0] = status.dwAvailVirtual;
+            RESET_CFLAG( context );
             break;
         }
 
