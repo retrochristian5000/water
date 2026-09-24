@@ -116,6 +116,7 @@ static void FreeAppInfo(APPINFO *info)
     free(info->readme);
     free(info->urlupdateinfo);
     free(info->comments);
+    if (info->regroot) RegCloseKey(info->regroot);
     free(info);
 }
 
@@ -155,7 +156,14 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
     for (i = 0; RegEnumKeyExW(root, i, subKeyName, &sizeOfSubKeyName, NULL,
         NULL, NULL, NULL) != ERROR_NO_MORE_ITEMS; ++i)
     {
-        RegOpenKeyExW(root, subKeyName, 0, KEY_READ, &hkeyApp);
+        info = NULL;
+        command = NULL;
+
+        if (RegOpenKeyExW(root, subKeyName, 0, KEY_READ, &hkeyApp))
+        {
+            sizeOfSubKeyName = ARRAY_SIZE(subKeyName);
+            continue;
+        }
         size = sizeof(value);
         if (!RegQueryValueExW(hkeyApp, L"SystemComponent", NULL, &dwType, (BYTE *)&value, &size)
             && dwType == REG_DWORD && value == 1)
@@ -268,12 +276,16 @@ static BOOL ReadApplicationsFromRegistry(HKEY root)
             }
 
             /* registry key */
-            RegOpenKeyExW(root, NULL, 0, KEY_READ, &info->regroot);
+            if (RegOpenKeyExW(root, NULL, 0, KEY_READ, &info->regroot)) goto err;
             lstrcpyW(info->regkey, subKeyName);
             info->path = command;
 
             info->id = id++;
             list_add_tail( &app_list, &info->entry );
+
+            /* Ownership has moved to app_list. */
+            info = NULL;
+            command = NULL;
         }
 
         RegCloseKey(hkeyApp);
@@ -459,6 +471,8 @@ static HANDLE run_uninstaller(int id, DWORD button)
     PROCESS_INFORMATION info;
     WCHAR errormsg[MAX_STRING_LEN];
     WCHAR sUninstallFailed[MAX_STRING_LEN];
+    const WCHAR *command;
+    WCHAR *cmdline;
     BOOL res;
 
     LoadStringW(hInst, IDS_UNINSTALL_FAILED, sUninstallFailed,
@@ -475,8 +489,15 @@ static HANDLE run_uninstaller(int id, DWORD button)
             si.cb = sizeof(STARTUPINFOW);
             si.wShowWindow = SW_NORMAL;
 
-            res = CreateProcessW(NULL, (button == IDC_MODIFY) ? iter->path_modify : iter->path,
-                NULL, NULL, FALSE, 0, NULL, NULL, &si, &info);
+            command = (button == IDC_MODIFY) ? iter->path_modify : iter->path;
+            if (!command || !(cmdline = wcsdup(command))) return NULL;
+
+            /*
+             * CreateProcessW is allowed to modify its command-line buffer.
+             * Keep the command stored in APPINFO immutable across launches.
+             */
+            res = CreateProcessW(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &info);
+            free(cmdline);
 
             if (res)
             {
@@ -485,7 +506,7 @@ static HANDLE run_uninstaller(int id, DWORD button)
             }
             else
             {
-                wsprintfW(errormsg, sUninstallFailed, iter->path);
+                swprintf(errormsg, ARRAY_SIZE(errormsg), sUninstallFailed, command);
 
                 if (MessageBoxW(0, errormsg, iter->title, MB_YESNO |
                     MB_ICONQUESTION) == IDYES)
@@ -507,40 +528,16 @@ static HANDLE run_uninstaller(int id, DWORD button)
  * Name       : SetInfoDialogText
  * Description: Sets the text of a label in a window, based upon a registry entry
  *              or string passed to the function.
- * Parameters : hKey         - registry entry to read from, NULL if not reading
- *                             from registry
- *              lpKeyName    - key to read from, or string to check if hKey is NULL
- *              lpAltMessage - alternative message if entry not found
- *              hWnd         - handle of dialog box
- *              iDlgItem     - ID of label in dialog box
+ * Parameters : text         - string to display
+ *              alt_message  - alternative message if text is empty
+ *              hwnd         - handle of dialog box
+ *              item         - ID of label in dialog box
  */
-static void SetInfoDialogText(HKEY hKey, LPCWSTR lpKeyName, LPCWSTR lpAltMessage,
-  HWND hWnd, int iDlgItem)
+static void SetInfoDialogText(LPCWSTR text, LPCWSTR alt_message, HWND hwnd, int item)
 {
-    WCHAR buf[MAX_STRING_LEN];
-    DWORD buflen;
-    HWND hWndDlgItem;
+    HWND control = GetDlgItem(hwnd, item);
 
-    hWndDlgItem = GetDlgItem(hWnd, iDlgItem);
-
-    /* if hKey is null, lpKeyName contains the string we want to check */
-    if (hKey == NULL)
-    {
-        if (lpKeyName && lpKeyName[0])
-            SetWindowTextW(hWndDlgItem, lpKeyName);
-        else
-            SetWindowTextW(hWndDlgItem, lpAltMessage);
-    }
-    else
-    {
-        buflen = sizeof(buf);
-
-        if ((RegQueryValueExW(hKey, lpKeyName, 0, 0, (LPBYTE) buf, &buflen) ==
-           ERROR_SUCCESS) && buf[0])
-            SetWindowTextW(hWndDlgItem, buf);
-        else
-            SetWindowTextW(hWndDlgItem, lpAltMessage);
-    }
+    SetWindowTextW(control, text && text[0] ? text : alt_message);
 }
 
 /******************************************************************************
@@ -555,10 +552,8 @@ static void SetInfoDialogText(HKEY hKey, LPCWSTR lpKeyName, LPCWSTR lpAltMessage
 static INT_PTR CALLBACK SupportInfoDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     APPINFO *iter;
-    HKEY hkey;
     WCHAR oldtitle[MAX_STRING_LEN];
     WCHAR buf[MAX_STRING_LEN];
-    WCHAR key[MAX_STRING_LEN];
     WCHAR notfound[MAX_STRING_LEN];
 
     switch(msg)
@@ -568,24 +563,17 @@ static INT_PTR CALLBACK SupportInfoDlgProc(HWND hWnd, UINT msg, WPARAM wParam, L
             {
                 if (iter->id == (int) lParam)
                 {
-                    lstrcpyW(key, PathUninstallW);
-                    lstrcatW(key, L"\\");
-                    lstrcatW(key, iter->regkey);
-
-                    /* check the application's registry entries */
-                    RegOpenKeyExW(iter->regroot, key, 0, KEY_READ, &hkey);
-
                     /* Load our "not specified" string */
                     LoadStringW(hInst, IDS_NOT_SPECIFIED, notfound, ARRAY_SIZE(notfound));
 
-                    SetInfoDialogText(NULL, iter->publisher, notfound, hWnd, IDC_INFO_PUBLISHER);
-                    SetInfoDialogText(NULL, iter->version, notfound, hWnd, IDC_INFO_VERSION);
-                    SetInfoDialogText(hkey, iter->contact, notfound, hWnd, IDC_INFO_CONTACT);
-                    SetInfoDialogText(hkey, iter->helplink, notfound, hWnd, IDC_INFO_SUPPORT);
-                    SetInfoDialogText(hkey, iter->helptelephone, notfound, hWnd, IDC_INFO_PHONE);
-                    SetInfoDialogText(hkey, iter->readme, notfound, hWnd, IDC_INFO_README);
-                    SetInfoDialogText(hkey, iter->urlupdateinfo, notfound, hWnd, IDC_INFO_UPDATES);
-                    SetInfoDialogText(hkey, iter->comments, notfound, hWnd, IDC_INFO_COMMENTS);
+                    SetInfoDialogText(iter->publisher, notfound, hWnd, IDC_INFO_PUBLISHER);
+                    SetInfoDialogText(iter->version, notfound, hWnd, IDC_INFO_VERSION);
+                    SetInfoDialogText(iter->contact, notfound, hWnd, IDC_INFO_CONTACT);
+                    SetInfoDialogText(iter->helplink, notfound, hWnd, IDC_INFO_SUPPORT);
+                    SetInfoDialogText(iter->helptelephone, notfound, hWnd, IDC_INFO_PHONE);
+                    SetInfoDialogText(iter->readme, notfound, hWnd, IDC_INFO_README);
+                    SetInfoDialogText(iter->urlupdateinfo, notfound, hWnd, IDC_INFO_UPDATES);
+                    SetInfoDialogText(iter->comments, notfound, hWnd, IDC_INFO_COMMENTS);
 
                     /* Update the main label with the app name */
                     if (GetWindowTextW(GetDlgItem(hWnd, IDC_INFO_LABEL), oldtitle,
@@ -594,8 +582,6 @@ static INT_PTR CALLBACK SupportInfoDlgProc(HWND hWnd, UINT msg, WPARAM wParam, L
                         wsprintfW(buf, oldtitle, iter->title);
                         SetWindowTextW(GetDlgItem(hWnd, IDC_INFO_LABEL), buf);
                     }
-
-                    RegCloseKey(hkey);
 
                     break;
                 }
@@ -700,7 +686,6 @@ static HIMAGELIST AddListViewImageList(HWND hWnd)
     /* Add default icon to image list */
     hDefaultIcon = LoadIconW(hInst, MAKEINTRESOURCEW(ICO_MAIN));
     ImageList_AddIcon(hSmall, hDefaultIcon);
-    DestroyIcon(hDefaultIcon);
 
     SendMessageW(hWnd, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)hSmall);
 
@@ -850,18 +835,21 @@ static INT_PTR CALLBACK MainDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
                         if (SendDlgItemMessageW(hWnd, IDL_PROGRAMS, LVM_GETITEMW, 0, (LPARAM)&lvItem))
                         {
                             uninstaller = run_uninstaller(lvItem.lParam, LOWORD(wParam));
-                            while (MsgWaitForMultipleObjects(1, &uninstaller, FALSE, INFINITE, QS_ALLINPUT) == 1)
+                            if (uninstaller)
                             {
-                                MSG message;
-
-                                while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
+                                while (MsgWaitForMultipleObjects(1, &uninstaller, FALSE, INFINITE, QS_ALLINPUT) == 1)
                                 {
-                                    TranslateMessage(&message);
-                                    DispatchMessageW(&message);
+                                    MSG message;
+
+                                    while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
+                                    {
+                                        TranslateMessage(&message);
+                                        DispatchMessageW(&message);
+                                    }
                                 }
+                                CloseHandle(uninstaller);
+                                uninstaller = NULL;
                             }
-                            CloseHandle(uninstaller);
-                            uninstaller = NULL;
                         }
                     }
 
@@ -919,6 +907,9 @@ static void StartApplet(HWND hWnd)
     LoadStringW(hInst, IDS_CPL_TITLE, app_title, ARRAY_SIZE(app_title));
     LoadStringW(hInst, IDS_REMOVE, btnRemove, ARRAY_SIZE(btnRemove));
     LoadStringW(hInst, IDS_MODIFY_REMOVE, btnModifyRemove, ARRAY_SIZE(btnModifyRemove));
+
+    memset(&psp, 0, sizeof(psp));
+    memset(&psh, 0, sizeof(psh));
 
     /* Fill out the PROPSHEETPAGE */
     psp.dwSize = sizeof (PROPSHEETPAGEW);
