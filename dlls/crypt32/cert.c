@@ -3977,6 +3977,8 @@ BOOL WINAPI CertVerifyCTLUsage(DWORD dwEncodingType, DWORD dwSubjectType,
         ret = func(dwEncodingType, dwSubjectType, pvSubject, pSubjectUsage,
                    dwFlags, pVerifyUsagePara, pVerifyUsageStatus);
         CryptFreeOIDFunctionAddress(hfunc, 0);
+        if (!ret && pVerifyUsageStatus->dwError)
+            SetLastError(pVerifyUsageStatus->dwError);
         return ret;
     }
 
@@ -4008,6 +4010,8 @@ BOOL WINAPI CertVerifyCTLUsage(DWORD dwEncodingType, DWORD dwSubjectType,
                                    dwFlags, pVerifyUsagePara, pVerifyUsageStatus);
                         CryptFreeOIDFunctionAddress(hfunc, 0);
                         CryptMemFree(dlls);
+                        if (!ret && pVerifyUsageStatus->dwError)
+                            SetLastError(pVerifyUsageStatus->dwError);
                         return ret;
                     }
                 }
