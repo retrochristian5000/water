@@ -16,8 +16,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#ifdef _MSC_VER
-# pragma warning(disable:4103)
+#if !(defined(lint) || defined(RC_INVOKED))
+# if defined(_MSC_VER) && ((_MSC_VER < 800) || defined(_M_I86)) && !defined(_PUSHPOP_SUPPORTED)
+#  pragma pack(2)
+# elif defined(MIDL_PASS) && !defined(__midl)
+#  pragma pack(2)
+# else
+#  ifdef _MSC_VER
+#   pragma warning(disable:4103)
+#  endif
+#  pragma pack(push,2)
+# endif
 #endif
-
-#pragma pack(push,2)
