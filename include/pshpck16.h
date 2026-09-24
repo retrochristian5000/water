@@ -13,7 +13,7 @@
  */
 
 #if !(defined(lint) || defined(RC_INVOKED))
-# if defined(_MSC_VER) && (_MSC_VER < 800) && !defined(_PUSHPOP_SUPPORTED)
+# if defined(_MSC_VER) && ((_MSC_VER < 800) || defined(_M_I86)) && !defined(_PUSHPOP_SUPPORTED)
 #  pragma pack(16)
 # elif defined(MIDL_PASS) && !defined(__midl)
 #  pragma pack(16)
