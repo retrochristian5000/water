@@ -3634,7 +3634,7 @@ UINT WINAPI mixerGetDevCapsW(UINT_PTR uDeviceID, LPMIXERCAPSW lpCaps, UINT uSize
     caps.fdwSupport = 0;
     caps.cDestinations = 1;
 
-    memcpy(lpCaps, &caps, uSize);
+    memcpy(lpCaps, &caps, min(uSize, sizeof(caps)));
 
     return MMSYSERR_NOERROR;
 }
