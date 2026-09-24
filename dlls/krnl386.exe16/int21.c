@@ -131,6 +131,48 @@ typedef struct _INT21_HEAP {
 
 } INT21_HEAP;
 
+/*
+ * DOS 4+ "List of Lists" layout returned by INT 21h/AH=52h.
+ * The public pointer starts at ptr_first_DPB; fields before it are
+ * intentionally kept so callers using the documented negative offsets
+ * see a compatible layout.
+ */
+typedef struct _INT21_LIST_OF_LISTS
+{
+    WORD  cx_int21_5e01;
+    WORD  lru_fcb_cache;
+    WORD  lru_fcb_open;
+    DWORD oem_func_handler;
+    WORD  int21_offset;
+    WORD  sharing_retry_count;
+    WORD  sharing_retry_delay;
+    DWORD ptr_disk_buf;
+    WORD  offs_unread_con;
+    WORD  seg_first_mcb;
+    DWORD ptr_first_dpb;             /* public offset 00h */
+    DWORD ptr_first_sft;
+    DWORD ptr_clock_dev_hdr;
+    DWORD ptr_con_dev_hdr;
+    WORD  max_bytes_per_sector;
+    DWORD ptr_disk_buf_info;
+    DWORD ptr_array_cds;
+    DWORD ptr_sys_fcb;
+    WORD  nr_protected_fcb;
+    BYTE  nr_block_dev;
+    BYTE  nr_drive_letters;
+    DOS_DEVICE_HEADER nul_dev;
+    BYTE  nr_joined_drives;
+    WORD  ptr_special_names;
+    DWORD ptr_setver_list;
+    WORD  dos_high_a20_func;
+    WORD  psp_last_exec;
+    WORD  buffers_count;
+    WORD  buffers_lookahead;
+    BYTE  boot_drive;
+    BYTE  dword_moves;
+    WORD  extended_mem_kb;
+} INT21_LIST_OF_LISTS;
+
 
 struct FCB {
     BYTE  drive_number;
@@ -582,6 +624,8 @@ static BOOL INT21_FillDrivePB( BYTE drive )
     dpb->num_clusters1        = total_clusters;
     dpb->sectors_per_FAT      = 1;
     dpb->first_dir_sector     = 1;
+    /* No real-mode block-driver chain is installed yet.  DBLBUFF.SYS and
+       similar DOS 7 drivers will need to populate this with their device header. */
     dpb->driver_header        = 0;
     dpb->media_ID             = (drivetype == DRIVE_FIXED) ? 0xF8 : 0xF0;
     dpb->access_flag          = 0;
@@ -599,6 +643,79 @@ static BOOL INT21_FillDrivePB( BYTE drive )
     dpb->search_cluster2      = 0;
 
     return TRUE;
+}
+
+
+/***********************************************************************
+ *           INT21_GetListOfLists
+ *
+ * Build the DOS system-variable block used by INT 21h/AH=52h.
+ *
+ * Water no longer carries the old Wine DOS device-driver engine, so the
+ * NUL header is exposed but no executable block-device driver is claimed.
+ * The DPB list is nevertheless linked and points at the drive data Water
+ * already emulates.  A future DBLBUFF/real-mode block-driver layer can
+ * attach its device header through INT21_DPB.driver_header.
+ */
+static SEGPTR INT21_GetListOfLists(void)
+{
+    static HGLOBAL16 handle;
+    static INT21_LIST_OF_LISTS *lol;
+    INT21_HEAP *heap = INT21_GetHeapPointer();
+    WORD first_drive = 0xffff, previous_drive = 0xffff;
+    WORD max_sector = 512;
+    unsigned int drive;
+
+    if (!lol)
+    {
+        handle = GlobalAlloc16( GMEM_FIXED | GMEM_ZEROINIT, sizeof(*lol) );
+        if (!handle) return 0;
+        if (!(lol = GlobalLock16( handle ))) return 0;
+
+        lol->oem_func_handler = ~0u;
+        lol->sharing_retry_count = 3;
+        lol->sharing_retry_delay = 1;
+        lol->nr_drive_letters = MAX_DOS_DRIVES;
+        lol->nul_dev.next_dev = ~0u;
+        lol->nul_dev.attr = 0x8084;  /* character + NUL + device */
+        memcpy( lol->nul_dev.name, "NUL     ", sizeof(lol->nul_dev.name) );
+        lol->buffers_count = 99;
+        lol->buffers_lookahead = 8;
+        lol->boot_drive = 3;         /* C: */
+        lol->dword_moves = 1;        /* 386+ */
+        lol->extended_mem_kb = 0xf000;
+    }
+
+    lol->ptr_first_dpb = 0;
+    lol->nr_block_dev = 0;
+
+    for (drive = 0; drive < MAX_DOS_DRIVES; drive++)
+    {
+        INT21_DPB *dpb;
+
+        if (!INT21_FillDrivePB( drive )) continue;
+        dpb = &heap->misc_dpb_list[drive];
+
+        if (dpb->sector_bytes > max_sector) max_sector = dpb->sector_bytes;
+        dpb->next = 0;
+
+        if (first_drive == 0xffff)
+        {
+            first_drive = drive;
+            lol->ptr_first_dpb = MAKESEGPTR( heap->misc_selector,
+                                              offsetof(INT21_HEAP, misc_dpb_list[drive]) );
+        }
+        if (previous_drive != 0xffff)
+            heap->misc_dpb_list[previous_drive].next =
+                MAKESEGPTR( heap->misc_selector, offsetof(INT21_HEAP, misc_dpb_list[drive]) );
+
+        previous_drive = drive;
+        lol->nr_block_dev++;
+    }
+
+    lol->max_bytes_per_sector = max_sector;
+
+    return MAKESEGPTR( handle, offsetof(INT21_LIST_OF_LISTS, ptr_first_dpb) );
 }
 
 
@@ -4559,9 +4676,13 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
         break;
 
     case 0x52: /* "SYSVARS" - GET LIST OF LISTS */
-        TRACE("Get List of Lists - not supported\n");
-        context->SegEs = 0;
-        SET_BX( context, 0 );
+        {
+            SEGPTR ptr = INT21_GetListOfLists();
+
+            TRACE("Get List of Lists -> %04x:%04x\n", SELECTOROF(ptr), OFFSETOF(ptr));
+            context->SegEs = SELECTOROF(ptr);
+            SET_BX( context, OFFSETOF(ptr) );
+        }
         break;
 
     case 0x54: /* Get Verify Flag */
