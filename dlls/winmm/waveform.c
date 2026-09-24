@@ -3721,14 +3721,15 @@ UINT WINAPI mixerGetControlDetailsW(HMIXEROBJ hmix, LPMIXERCONTROLDETAILS lpmcdW
 				    DWORD fdwDetails)
 {
     WINMM_ControlDetails details;
+    UINT ret;
 
     TRACE("(%p, %p, %lx)\n", hmix, lpmcdW, fdwDetails);
 
-    if(!WINMM_StartDevicesThread())
-        return MMSYSERR_NODRIVER;
-
     if(!lpmcdW || !lpmcdW->paDetails)
         return MMSYSERR_INVALPARAM;
+
+    if(!WINMM_StartDevicesThread())
+        return MMSYSERR_NODRIVER;
 
     TRACE("dwControlID: %lu\n", lpmcdW->dwControlID);
 
@@ -3736,8 +3737,10 @@ UINT WINAPI mixerGetControlDetailsW(HMIXEROBJ hmix, LPMIXERCONTROLDETAILS lpmcdW
     details.details = lpmcdW;
     details.flags = fdwDetails;
 
-    return SendMessageW(g_devices_hwnd, MXDM_GETCONTROLDETAILS,
+    ret = SendMessageW(g_devices_hwnd, MXDM_GETCONTROLDETAILS,
             (DWORD_PTR)&details, 0);
+    InterlockedDecrement(&g_devthread_token);
+    return ret;
 }
 
 /**************************************************************************
