@@ -1664,6 +1664,25 @@ HRESULT CDECL IStorage16_fnStat(IStorage16 *iface, STATSTG16 *pstatstg, DWORD gr
 }
 
 /******************************************************************************
+ *              IStorage16_SetClass      [STORAGE.515]
+ */
+HRESULT CDECL IStorage16_fnSetClass(IStorage16 *iface, REFCLSID clsid)
+{
+        IStorage16Impl *This = impl_from_IStorage16(iface);
+
+        TRACE("(%p)->(%s)\n", This, debugstr_guid(clsid));
+
+        if (!clsid)
+                return STG_E_INVALIDPOINTER;
+
+        This->stde.pps_guid = *clsid;
+        if (!STORAGE_put_pps_entry(&This->str, This->ppsent, &This->stde))
+                return STG_E_WRITEFAULT;
+
+        return S_OK;
+}
+
+/******************************************************************************
  *		IStorage16_Commit	[STORAGE.509]
  */
 HRESULT CDECL IStorage16_fnCommit(IStorage16 *iface, DWORD commitflags)
@@ -1949,6 +1968,7 @@ static void _create_istorage16(LPSTORAGE16 *stg) {
 			VTENT(OpenStorage)
 			VTENT(CopyTo)
 			VTENT(Commit)
+			VTENT(SetClass)
 	/*  not (yet) implemented ...
 			VTENT(MoveElementTo)
 			VTENT(Revert)
@@ -1956,7 +1976,6 @@ static void _create_istorage16(LPSTORAGE16 *stg) {
 			VTENT(DestroyElement)
 			VTENT(RenameElement)
 			VTENT(SetElementTimes)
-			VTENT(SetClass)
 			VTENT(SetStateBits)
 			VTENT(Stat)
 	*/
