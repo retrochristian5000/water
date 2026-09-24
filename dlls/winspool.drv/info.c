@@ -3213,40 +3213,57 @@ BOOL WINAPI EndPagePrinter(HANDLE printer)
 /*****************************************************************************
  *          StartDocPrinterA  [WINSPOOL.@]
  */
-DWORD WINAPI StartDocPrinterA(HANDLE hPrinter, DWORD Level, LPBYTE pDocInfo)
+DWORD WINAPI StartDocPrinterA(HANDLE printer, DWORD level, BYTE *doc_info)
 {
-    UNICODE_STRING usBuffer;
-    DOC_INFO_2W doc2W;
-    DOC_INFO_2A *doc2 = (DOC_INFO_2A*)pDocInfo;
+    union
+    {
+        DOC_INFO_1W info1;
+        DOC_INFO_2W info2;
+        DOC_INFO_3W info3;
+    } docW;
+    DOC_INFO_1A *info1 = (DOC_INFO_1A *)doc_info;
+    UNICODE_STRING nameW = {0}, outputW = {0}, datatypeW = {0};
     DWORD ret;
 
-    /* DOC_INFO_1, 2 and 3 all have the strings in the same place with either two (DOC_INFO_2)
-       or one (DOC_INFO_3) extra DWORDs */
+    TRACE("(%p, %ld, %p)\n", printer, level, doc_info);
 
-    switch(Level) {
-    case 2:
-        doc2W.JobId = doc2->JobId;
-        /* fall through */
-    case 3:
-        doc2W.dwMode = doc2->dwMode;
-        /* fall through */
-    case 1:
-        doc2W.pDocName = asciitounicode(&usBuffer, doc2->pDocName);
-        doc2W.pOutputFile = asciitounicode(&usBuffer, doc2->pOutputFile);
-        doc2W.pDatatype = asciitounicode(&usBuffer, doc2->pDatatype);
-        break;
-
-    default:
-        SetLastError(ERROR_INVALID_LEVEL);
-        return FALSE;
+    if (!doc_info)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
     }
 
-    ret = StartDocPrinterW(hPrinter, Level, (LPBYTE)&doc2W);
+    memset(&docW, 0, sizeof(docW));
+    docW.info1.pDocName = asciitounicode(&nameW, info1->pDocName);
+    docW.info1.pOutputFile = asciitounicode(&outputW, info1->pOutputFile);
+    docW.info1.pDatatype = asciitounicode(&datatypeW, info1->pDatatype);
 
-    free(doc2W.pDatatype);
-    free(doc2W.pOutputFile);
-    free(doc2W.pDocName);
+    switch (level)
+    {
+    case 1:
+        break;
+    case 2:
+    {
+        DOC_INFO_2A *info2 = (DOC_INFO_2A *)doc_info;
+        docW.info2.dwMode = info2->dwMode;
+        docW.info2.JobId = info2->JobId;
+        break;
+    }
+    case 3:
+        docW.info3.dwFlags = ((DOC_INFO_3A *)doc_info)->dwFlags;
+        break;
+    default:
+        SetLastError(ERROR_INVALID_LEVEL);
+        ret = 0;
+        goto done;
+    }
 
+    ret = StartDocPrinterW(printer, level, (BYTE *)&docW);
+
+done:
+    RtlFreeUnicodeString(&datatypeW);
+    RtlFreeUnicodeString(&outputW);
+    RtlFreeUnicodeString(&nameW);
     return ret;
 }
 
