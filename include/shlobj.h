@@ -1054,6 +1054,18 @@ typedef struct _QCMINFO
     QCMINFO_IDMAP const* pIdMap;
 } QCMINFO, *LPQCMINFO;
 
+#define OPENPROPS_NONE        0x0000
+#define OPENPROPS_INHIBITPIF  0x8000
+#define GETPROPS_NONE         0x0000
+#define SETPROPS_NONE         0x0000
+#define CLOSEPROPS_NONE       0x0000
+#define CLOSEPROPS_DISCARD    0x0001
+
+WINSHELLAPI HANDLE WINAPI PifMgr_OpenProperties(LPCWSTR, LPCWSTR, UINT, UINT);
+WINSHELLAPI int WINAPI PifMgr_GetProperties(HANDLE, LPCSTR, void *, int, UINT);
+WINSHELLAPI int WINAPI PifMgr_SetProperties(HANDLE, LPCSTR, const void *, int, UINT);
+WINSHELLAPI HANDLE WINAPI PifMgr_CloseProperties(HANDLE, UINT);
+
 #define TBIF_DEFAULT           0x00000000
 #define TBIF_APPEND            0x00000000
 #define TBIF_PREPEND           0x00000001
