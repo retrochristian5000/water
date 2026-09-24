@@ -2669,7 +2669,7 @@ Optional Packages:
                           path PATH
   --with-compiler-cache[=PROGRAM]
                           use compiler cache launcher (auto-detect sccache or
-                          ccache by default)
+                          ccache when enabled)
   --with-wine-tools=DIR   use Wine tools from directory DIR
   --with-wine64=DIR       use the 64-bit Wine in DIR for a Wow64 build
   --with-x                use the X Window System
@@ -6204,7 +6204,9 @@ case "x$with_compiler_cache" in
   xno)
     COMPILER_CACHE=
     ;;
-  x|xyes|xauto)
+  x)
+    ;;
+  xyes|xauto)
     { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for compiler cache" >&5
 printf %s "checking for compiler cache... " >&6; }
     if test -z "$COMPILER_CACHE"
