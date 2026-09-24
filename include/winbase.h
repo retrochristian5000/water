@@ -1176,10 +1176,11 @@ DECL_WINELIB_TYPE_AW(HW_PROFILE_INFO)
 DECL_WINELIB_TYPE_AW(LPHW_PROFILE_INFO)
 
 typedef enum _DEP_SYSTEM_POLICY_TYPE {
-    AlwaysOff = 0,
-    AlwaysOn = 1,
-    OptIn = 2,
-    OptOut = 3
+    DEPPolicyAlwaysOff = 0,
+    DEPPolicyAlwaysOn,
+    DEPPolicyOptIn,
+    DEPPolicyOptOut,
+    DEPTotalPolicyCount
 } DEP_SYSTEM_POLICY_TYPE;
 
 #define PROCESS_DEP_ENABLE 1
