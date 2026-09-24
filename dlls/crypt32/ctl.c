@@ -216,6 +216,109 @@ PCCTL_CONTEXT WINAPI CertEnumCTLsInStore(HCERTSTORE hCertStore, PCCTL_CONTEXT pP
     return ret ? &ret->ctx : NULL;
 }
 
+static PCTL_ENTRY find_ctl_entry(PCCTL_CONTEXT ctl, const CRYPT_DATA_BLOB *subject)
+{
+    DWORD i;
+
+    for (i = 0; i < ctl->pCtlInfo->cCTLEntry; i++)
+    {
+        PCTL_ENTRY entry = &ctl->pCtlInfo->rgCTLEntry[i];
+
+        if (entry->SubjectIdentifier.cbData == subject->cbData &&
+            (!subject->cbData || !memcmp(entry->SubjectIdentifier.pbData,
+                                         subject->pbData, subject->cbData)))
+            return entry;
+    }
+
+    SetLastError(CRYPT_E_NOT_FOUND);
+    return NULL;
+}
+
+PCTL_ENTRY WINAPI CertFindSubjectInCTL(DWORD encoding, DWORD subject_type,
+                                      void *subject, PCCTL_CONTEXT ctl, DWORD flags)
+{
+    CRYPT_DATA_BLOB key;
+    BYTE hash[20];
+    DWORD size;
+    const char *algorithm;
+
+    TRACE("(%08lx, %08lx, %p, %p, %08lx)\n",
+          encoding, subject_type, subject, ctl, flags);
+
+    if (!subject || !ctl || !ctl->pCtlInfo || !ctl->pCtlInfo->SubjectAlgorithm.pszObjId)
+    {
+        SetLastError(E_INVALIDARG);
+        return NULL;
+    }
+
+    algorithm = ctl->pCtlInfo->SubjectAlgorithm.pszObjId;
+
+    switch (subject_type)
+    {
+    case CTL_ANY_SUBJECT_TYPE:
+    {
+        CTL_ANY_SUBJECT_INFO *info = subject;
+
+        if (!info->SubjectAlgorithm.pszObjId ||
+            strcmp(info->SubjectAlgorithm.pszObjId, algorithm))
+        {
+            SetLastError(CRYPT_E_NOT_FOUND);
+            return NULL;
+        }
+        key = info->SubjectIdentifier;
+        break;
+    }
+
+    case CTL_CERT_SUBJECT_TYPE:
+        if (!strcmp(algorithm, szOID_OIWSEC_sha1))
+            size = sizeof(hash);
+        else if (!strcmp(algorithm, szOID_RSA_MD5))
+            size = 16;
+        else
+        {
+            SetLastError(NTE_BAD_ALGID);
+            return NULL;
+        }
+
+        if (!CertGetCertificateContextProperty(subject,
+                !strcmp(algorithm, szOID_OIWSEC_sha1) ? CERT_SHA1_HASH_PROP_ID :
+                                                       CERT_MD5_HASH_PROP_ID,
+                hash, &size))
+            return NULL;
+
+        key.pbData = hash;
+        key.cbData = size;
+        break;
+
+    default:
+        SetLastError(E_INVALIDARG);
+        return NULL;
+    }
+
+    return find_ctl_entry(ctl, &key);
+}
+
+static BOOL compare_ctl_by_subject(PCCTL_CONTEXT ctl, DWORD type,
+                                   DWORD flags, const void *para)
+{
+    const CTL_FIND_SUBJECT_PARA *subject = para;
+
+    if (!subject || subject->cbSize < sizeof(*subject))
+        return FALSE;
+
+    /* Usage filtering is a separate CTL_FIND_USAGE contract.  Do not
+     * silently ignore it here.
+     */
+    if (subject->pUsagePara)
+    {
+        FIXME("CTL_FIND_SUBJECT usage filtering not implemented\n");
+        return FALSE;
+    }
+
+    return CertFindSubjectInCTL(0, subject->dwSubjectType, subject->pvSubject,
+                                ctl, flags) != NULL;
+}
+
 typedef BOOL (*CtlCompareFunc)(PCCTL_CONTEXT pCtlContext, DWORD dwType,
  DWORD dwFlags, const void *pvPara);
 
@@ -312,6 +415,9 @@ PCCTL_CONTEXT WINAPI CertFindCTLInStore(HCERTSTORE hCertStore,
         break;
     case CTL_FIND_MD5_HASH:
         compare = compare_ctl_by_md5_hash;
+        break;
+    case CTL_FIND_SUBJECT:
+        compare = compare_ctl_by_subject;
         break;
     case CTL_FIND_EXISTING:
         compare = compare_ctl_existing;
