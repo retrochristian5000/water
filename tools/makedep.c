@@ -5286,6 +5286,20 @@ static void output_top_makefile( struct makefile *make )
             silent_rules ? " -S" : "" );
     strarray_add( &make->phony_targets, "depend" );
 
+    if (compiler_cache && *compiler_cache)
+    {
+        const char *base = strrchr( compiler_cache, '/' );
+
+        base = base ? base + 1 : compiler_cache;
+        if (!strcmp( base, "ccache" ) || !strcmp( base, "sccache" ))
+        {
+            output( "cache-stats:\n\t" );
+            output_filename( compiler_cache );
+            output( " --show-stats\n" );
+            strarray_add( &make->phony_targets, "cache-stats" );
+        }
+    }
+
     if (!strarray_exists( disabled_dirs[0], "tools/wine" ))
     {
         const char *loader = "tools/wine/wine";
