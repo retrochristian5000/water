@@ -1,0 +1,3 @@
+[submodule "libs/fluidsynth"]
+	path = libs/fluidsynth
+	url = https://github.com/retrochristian5000/Fsynth.git
