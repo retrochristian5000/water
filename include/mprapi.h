@@ -33,11 +33,23 @@
 #define MAX_TRANSPORT_NAME_LEN           40
 
 
+typedef HANDLE RAS_SERVER_HANDLE;
+typedef HANDLE MPR_SERVER_HANDLE;
+typedef HANDLE MIB_SERVER_HANDLE;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 BOOL APIENTRY MprAdminIsServiceRunning(LPWSTR);
+DWORD APIENTRY MprAdminServerConnect(LPWSTR, MPR_SERVER_HANDLE *);
+VOID APIENTRY MprAdminServerDisconnect(MPR_SERVER_HANDLE);
+DWORD APIENTRY MprAdminBufferFree(LPVOID);
+DWORD APIENTRY MprAdminGetErrorString(DWORD, LPWSTR *);
+
+DWORD APIENTRY MprConfigServerConnect(LPWSTR, HANDLE *);
+VOID APIENTRY MprConfigServerDisconnect(HANDLE);
+DWORD APIENTRY MprConfigBufferFree(LPVOID);
 
 #ifdef __cplusplus
 }
