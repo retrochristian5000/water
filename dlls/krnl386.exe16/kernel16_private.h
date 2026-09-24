@@ -196,6 +196,7 @@ static inline void stack16_pop( int size )
 }
 
 /* dosmem.c */
+extern BYTE   DOSVM_GetX86ProcessorLevel(void);
 extern BOOL   DOSMEM_Init(void);
 extern BOOL   DOSMEM_InitDosMemory(void);
 extern LPVOID DOSMEM_MapRealToLinear(DWORD); /* real-mode to linear */
