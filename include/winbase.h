@@ -1089,9 +1089,9 @@ typedef struct tagCOMMPROP {
 #define PST_NETWORK_BRIDGE ((DWORD)0x100)
 #define PST_PARALLELPORT   ((DWORD)0x02)
 #define PST_RS232          ((DWORD)0x01)
-#define PST_RS442          ((DWORD)0x03)
+#define PST_RS422          ((DWORD)0x03)
 #define PST_RS423          ((DWORD)0x04)
-#define PST_RS449          ((DWORD)0x06)
+#define PST_RS449          ((DWORD)0x05)
 #define PST_SCANNER        ((DWORD)0x22)
 #define PST_TCPIP_TELNET   ((DWORD)0x102)
 #define PST_UNSPECIFIED    ((DWORD)0x00)
@@ -2089,7 +2089,7 @@ WINBASEAPI BOOL        WINAPI MoveFileExW(LPCWSTR,LPCWSTR,DWORD);
 #define                       MoveFileEx WINELIB_NAME_AW(MoveFileEx)
 WINBASEAPI BOOL        WINAPI MoveFileTransactedA(const char*,const char*,LPPROGRESS_ROUTINE,void*,DWORD,HANDLE);
 WINBASEAPI BOOL        WINAPI MoveFileTransactedW(const WCHAR*,const WCHAR*,LPPROGRESS_ROUTINE,void*,DWORD,HANDLE);
-#define                       MoveFileTransacted WINELIB_NAME_AW(MoveFiletransacted)
+#define                       MoveFileTransacted WINELIB_NAME_AW(MoveFileTransacted)
 WINBASEAPI BOOL        WINAPI MoveFileWithProgressA(LPCSTR,LPCSTR,LPPROGRESS_ROUTINE,LPVOID,DWORD);
 WINBASEAPI BOOL        WINAPI MoveFileWithProgressW(LPCWSTR,LPCWSTR,LPPROGRESS_ROUTINE,LPVOID,DWORD);
 #define                       MoveFileWithProgress WINELIB_NAME_AW(MoveFileWithProgress)
@@ -2373,7 +2373,7 @@ WINBASEAPI BOOL        WINAPI WritePrivateProfileStructW(LPCWSTR,LPCWSTR,LPVOID,
 WINBASEAPI BOOL        WINAPI WriteProcessMemory(HANDLE,LPVOID,LPCVOID,SIZE_T,SIZE_T*);
 WINBASEAPI BOOL        WINAPI WriteProfileSectionA(LPCSTR,LPCSTR);
 WINBASEAPI BOOL        WINAPI WriteProfileSectionW(LPCWSTR,LPCWSTR);
-#define                       WritePrivateProfileSection WINELIB_NAME_AW(WritePrivateProfileSection)
+#define                       WriteProfileSection WINELIB_NAME_AW(WriteProfileSection)
 WINBASEAPI BOOL        WINAPI WriteProfileStringA(LPCSTR,LPCSTR,LPCSTR);
 WINBASEAPI BOOL        WINAPI WriteProfileStringW(LPCWSTR,LPCWSTR,LPCWSTR);
 #define                       WriteProfileString WINELIB_NAME_AW(WriteProfileString)
