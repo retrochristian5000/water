@@ -130,6 +130,7 @@ case "x$with_compiler_cache" in
     AS_IF([test -z "$COMPILER_CACHE"],[AC_CHECK_PROGS(COMPILER_CACHE,[sccache ccache],[])])
     ;;
   *)
+    COMPILER_CACHE=
     AC_PATH_PROG(COMPILER_CACHE,[$with_compiler_cache],[])
     test -n "$COMPILER_CACHE" || AC_MSG_ERROR([compiler cache '$with_compiler_cache' not found])
     ;;
