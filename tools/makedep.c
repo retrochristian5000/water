@@ -125,7 +125,7 @@ enum install_rules { INSTALL_LIB, INSTALL_DEV, INSTALL_UNIXLIB, INSTALL_TEST, NB
 static const char *install_targets[NB_INSTALL_RULES] = { "install-lib", "install-dev", "install-unixlib", "install-test" };
 static const char *install_variables[NB_INSTALL_RULES] = { "INSTALL_LIB", "INSTALL_DEV", "INSTALL_UNIXLIB", "INSTALL_TEST" };
 
-#define MAX_ARCHS 6
+#define MAX_ARCHS 7
 
 /* variables common to all makefiles */
 static struct strarray archs;

@@ -16,7 +16,7 @@ AC_PREREQ([2.69d],[AC_CONFIG_AUX_DIR(tools)],
 
 dnl **** Command-line arguments ****
 
-AC_ARG_ENABLE(archs, AS_HELP_STRING([--enable-archs={i386,x86_64,arm,aarch64,arm64ec,none}],[enable multiple architectures for PE compilation]))
+AC_ARG_ENABLE(archs, AS_HELP_STRING([--enable-archs={i386,x86_64,arm,aarch64,arm64ec,powerpc,none}],[enable multiple architectures for PE compilation]))
 AC_ARG_ENABLE(win16, AS_HELP_STRING([--disable-win16],[do not include Win16 support]))
 AC_ARG_ENABLE(win64, AS_HELP_STRING([--enable-win64],[build a Win64 emulator on AMD64 (won't run Win32 binaries)]))
 AC_ARG_ENABLE(tests, AS_HELP_STRING([--disable-tests],[do not build the regression tests]))
@@ -220,7 +220,7 @@ case "$host_cpu" in
   i[[3456789]]86*) HOST_ARCH=i386 ;;
   x86_64)          HOST_ARCH=x86_64 ;;
 esac
-m4_set_add_all([_AC_SUBST_VARS],[HOST_ARCH]m4_foreach([cpu],[aarch64,arm,arm64ec,i386,x86_64],
+m4_set_add_all([_AC_SUBST_VARS],[HOST_ARCH]m4_foreach([cpu],[aarch64,arm,arm64ec,i386,powerpc,x86_64],
                                 [m4_foreach([var],[CC,CXX,CFLAGS,CXXFLAGS,EXTRACFLAGS,EXTRACXXFLAGS,LDFLAGS,DEBUG,TARGET,STRIP,DELAYLOADFLAG,DISABLED_SUBDIRS],[,cpu[_]var])]))
 
 dnl Some special cases for the Windows platform
@@ -435,7 +435,7 @@ AS_VAR_SET_IF([enable_archs],
      for arch
      do
          case $arch in
-           i386|x86_64|arm|aarch64|arm64ec) cross_archs="$cross_archs $arch" ;;
+           i386|x86_64|arm|aarch64|arm64ec|powerpc) cross_archs="$cross_archs $arch" ;;
            no|none) PE_ARCHS=none ;;
            *) AC_MSG_ERROR([Unknown cross-compilation architecture '$arch']) ;;
          esac
@@ -479,9 +479,10 @@ This is an error since --enable-archs=$wine_arch was requested.])],
 for wine_arch in $cross_archs $extra_arch
 do
     case $wine_arch in
-      i386) mingw_cpu=i686 ;;
-      arm)  mingw_cpu=armv7 ;;
-      *)    mingw_cpu=$wine_arch ;;
+      i386)    mingw_cpu=i686 ;;
+      arm)     mingw_cpu=armv7 ;;
+      powerpc) mingw_cpu=powerpcle ;;
+      *)       mingw_cpu=$wine_arch ;;
     esac
     case "x$with_mingw" in
       xclang|x*/clang) AS_VAR_SET(${wine_arch}_CC,$with_mingw) ;;
@@ -501,6 +502,9 @@ do
           i386)
             ac_prefix_list="m4_foreach([cc],[gcc,clang],m4_foreach([cpu],[i686,i586,i486,i386],[cpu-w64-mingw32-cc ]))"
             AC_CHECK_PROGS(i386_CC,[$ac_prefix_list clang],[false])
+            ;;
+          powerpc)
+            AC_CHECK_PROGS(powerpc_CC,[powerpcle-w64-mingw32-clang powerpcle-w64-mingw32-gcc powerpc-w64-mingw32-clang powerpc-w64-mingw32-gcc clang],[false])
             ;;
           x86_64)
             ac_prefix_list="m4_foreach([cc],[gcc,clang],m4_foreach([cpu],[x86_64,amd64],[cpu-w64-mingw32-cc ]))"
@@ -623,6 +627,7 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
     WINE_NO_PE_ERROR([test "x$res" = xno],[The $wine_arch PE compiler doesn't support C99.])
 
     AS_VAR_IF([wine_arch],[i386],[],
+              [AS_VAR_IF([wine_arch],[powerpc],[],
               [AS_VAR_PUSHDEF([wine_cv_seh_support],[ac_cv_${wine_arch}_seh_support])
                AC_CACHE_CHECK([whether $CC supports SEH directives], wine_cv_seh_support,
                    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[asm(".text\nac_test:\t.seh_proc ac_test\n\tnop\n\t.seh_stackalloc 16\n\t.seh_endprologue\n\t.seh_endproc");]])],
@@ -630,7 +635,7 @@ Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
                AS_VAR_COPY([res],[wine_cv_seh_support])
                AS_VAR_POPDEF([wine_cv_seh_support])
                WINE_NO_PE_ERROR([test "x$res" != xyes],
-                                [The $wine_arch PE compiler doesn't support SEH directives.])])
+                                [The $wine_arch PE compiler doesn't support SEH directives.])])])
 
     AS_VAR_IF([wine_arch],[$extra_arch],[],[AS_VAR_APPEND([PE_ARCHS],[" $wine_arch"])])
 
