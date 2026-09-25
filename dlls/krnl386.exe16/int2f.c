@@ -184,32 +184,14 @@ void WINAPI DOSVM_Int2fHandler( CONTEXT *context )
             break;  /* not installed */
         case 0x12:  /* realtime compression interface */
             break;  /* not installed */
-        case 0x32:  /* Windows 9x boot-logo services */
-            switch (BL_reg(context))
-            {
-            case 0x00:  /* query logo session and checksum */
-                /*
-                 * IO.SYS owns the real Windows 9x boot-logo session.  Wine
-                 * does not run that real-mode boot path, so report that no
-                 * logo session is active.  DX is only meaningful when a
-                 * session exists.
-                 */
-                SET_AX( context, 0xffff );
-                SET_DX( context, 0 );
-                break;
-            case 0x01:  /* resume logo session */
-            case 0x02:  /* pause logo session */
-            case 0x03:  /* restore previous video mode */
-            case 0x04:  /* enter logo session */
-            case 0x05:  /* leave logo session */
-            case 0x06:  /* redisplay logo and enter session */
-                TRACE("Windows 9x boot-logo service %02x ignored (no IO.SYS logo session)\n",
-                      BL_reg(context));
-                break;
-            default:
-                INT_BARF( context, 0x2f );
-                break;
-            }
+        case 0x32:  /* undocumented Windows 95 IO.SYS patch hook */
+            /*
+             * LOGO= is an MSDOS.SYS option consumed by IO.SYS while setting
+             * up the Windows 9x boot screen.  Water does not execute that
+             * real-mode boot path.  INT 2Fh/AX=4A32h is only documented by
+             * reverse-engineering as an unknown IO.SYS patch service; do not
+             * invent logo-session subfunctions or register results here.
+             */
             break;
         case 0x33:  /* Windows 95 - check for MS-DOS 7+ */
             if (HIBYTE(HIWORD(GetVersion16())) >= 7)
