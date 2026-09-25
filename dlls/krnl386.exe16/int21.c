@@ -379,7 +379,7 @@ static BYTE INT21_GetBootDrive(void)
     UINT len;
 
     len = GetWindowsDirectoryW( windows_directory, MAX_PATH );
-    if (len && len < MAX_PATH && windows_directory[1] == ':' &&
+    if (len >= 2 && len < MAX_PATH && windows_directory[1] == ':' &&
         (drive = drive_number( windows_directory[0] )) != MAX_DOS_DRIVES)
         return drive + 1;
 
