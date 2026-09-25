@@ -1265,6 +1265,8 @@ static void build_dlltool_import_lib( const char *lib_name, DLLSPEC *spec, struc
     {
         if (target.cpu == CPU_ARM64EC)
             fatal_error( "cannot find the 'dlltool' tool required for ARM64EC import libraries\n" );
+        if (target.cpu == CPU_POWERPC)
+            fatal_error( "cannot find a PowerPC-capable 'dlltool' required for PowerPC import libraries\n" );
         build_windows_import_lib( lib_name, spec, files );
         return;
     }
@@ -1314,6 +1316,10 @@ static void build_dlltool_import_lib( const char *lib_name, DLLSPEC *spec, struc
         case CPU_ARM64EC:
             strarray_add( &args, "-m" );
             strarray_add( &args, "arm64ec" );
+            break;
+        case CPU_POWERPC:
+            strarray_add( &args, "-m" );
+            strarray_add( &args, "ppc" );
             break;
         default:
             break;
@@ -1682,5 +1688,7 @@ void output_import_lib( DLLSPEC *spec, struct strarray files )
 {
     if (!is_pe()) build_unix_import_lib( spec, files );
     else if (use_dlltool) build_dlltool_import_lib( output_file_name, spec, files );
+    else if (target.cpu == CPU_POWERPC)
+        fatal_error( "PowerPC import libraries require a PowerPC-capable 'dlltool'\n" );
     else build_windows_import_lib( output_file_name, spec, files );
 }
