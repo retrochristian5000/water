@@ -295,7 +295,8 @@ extern void flush_registry(void);
 
 static inline int is_machine_32bit( unsigned short machine )
 {
-    return machine == IMAGE_FILE_MACHINE_I386 || machine == IMAGE_FILE_MACHINE_ARMNT;
+    return machine == IMAGE_FILE_MACHINE_I386 || machine == IMAGE_FILE_MACHINE_ARMNT ||
+           machine == IMAGE_FILE_MACHINE_POWERPC || machine == IMAGE_FILE_MACHINE_POWERPCFP;
 }
 static inline int is_machine_64bit( unsigned short machine )
 {
