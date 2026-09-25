@@ -324,10 +324,26 @@ static TDB *TASK_Create( NE_MODULE *pModule, UINT16 cmdShow, LPCSTR cmdline, BYT
         while ((*cmdline == ' ') || (*cmdline == '\t')) cmdline++;
         len = strlen(cmdline);
     }
-    if (len >= sizeof(pTask->pdb.cmdLine)) len = sizeof(pTask->pdb.cmdLine)-1;
+    if (len > sizeof(pTask->pdb.cmdLine) - 2) len = sizeof(pTask->pdb.cmdLine) - 2;
     pTask->pdb.cmdLine[0] = len;
     memcpy( pTask->pdb.cmdLine + 1, cmdline, len );
-    /* pTask->pdb.cmdLine[len+1] = 0; */
+    pTask->pdb.cmdLine[len + 1] = '\r';
+
+    /*
+     * DOS parses the first two command-tail parameters into the default
+     * unopened FCBs at PSP:5ch and PSP:6ch using the AH=29h rules.
+     */
+    {
+        char tail[sizeof(pTask->pdb.cmdLine)];
+        const char *next;
+
+        memcpy( tail, cmdline, len );
+        tail[len] = 0;
+
+        next = tail;
+        DOSVM_ParseFCBName( next, 0x01, pTask->pdb.fcb1, &next );
+        DOSVM_ParseFCBName( next, 0x01, pTask->pdb.fcb2, &next );
+    }
 
     TRACE("cmdline='%.*s' task=%04x\n", len, cmdline, hTask );
 

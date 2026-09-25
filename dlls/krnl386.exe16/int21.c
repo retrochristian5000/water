@@ -3907,42 +3907,123 @@ static BOOL INT21_FindNextFCB( CONTEXT *context )
 }
 
 
+static BOOL INT21_IsFCBSeparator( char ch )
+{
+    if ((unsigned char)ch <= ' ') return TRUE;
+    return strchr( "\"+,/:;<=>[\\]|\"", ch ) != NULL;
+}
+
 /******************************************************************
- *		INT21_ParseFileNameIntoFCB
+ *              DOSVM_ParseFCBName
+ *
+ * Parse one DOS filename into an unopened FCB.  This is shared by
+ * INT 21h/AH=29h and by PSP creation for the two default FCBs.
+ */
+BYTE DOSVM_ParseFCBName( const char *filename, BYTE options, BYTE *fcb,
+                         const char **endptr )
+{
+    const char *p = filename, *end, *dot;
+    WCHAR *buffer, fcbW[12];
+    BYTE drive, result = 0;
+    INT buffer_len, len;
+    BOOL have_name, have_ext;
+
+    if (options & 0x01)
+        while (*p && INT21_IsFCBSeparator( *p )) p++;
+
+    if (p[0] && p[1] == ':' &&
+        (drive = drive_number( (unsigned char)p[0] )) != MAX_DOS_DRIVES)
+    {
+        if (INT21_MapDrive( drive + 1 ) == MAX_DOS_DRIVES)
+        {
+            if (endptr) *endptr = p + 2;
+            return 0xff;
+        }
+        fcb[0] = drive + 1;
+        p += 2;
+    }
+    else if (p[0] && p[1] == ':')
+    {
+        if (endptr) *endptr = p + 2;
+        return 0xff;
+    }
+    else if (!(options & 0x02))
+        fcb[0] = 0;
+
+    end = p;
+    while (*end && !INT21_IsFCBSeparator( *end )) end++;
+    if (endptr) *endptr = end;
+
+    len = end - p;
+    dot = memchr( p, '.', len );
+    have_name = len && (!dot || dot != p);
+    have_ext = dot && dot + 1 < end;
+
+    if (!len)
+    {
+        if (!(options & 0x04)) memset( fcb + 1, ' ', 8 );
+        if (!(options & 0x08)) memset( fcb + 9, ' ', 3 );
+        return 0;
+    }
+
+    buffer_len = MultiByteToWideChar( CP_OEMCP, 0, p, len, NULL, 0 );
+    if (!buffer_len || !(buffer = HeapAlloc( GetProcessHeap(), 0,
+                                             (buffer_len + 1) * sizeof(WCHAR) )))
+    {
+        if (!(options & 0x04)) memset( fcb + 1, ' ', 8 );
+        if (!(options & 0x08)) memset( fcb + 9, ' ', 3 );
+        return 0;
+    }
+
+    MultiByteToWideChar( CP_OEMCP, 0, p, len, buffer, buffer_len );
+    buffer[buffer_len] = 0;
+
+    if (INT21_ToDosFCBFormat( buffer, fcbW ))
+    {
+        char formatted[12];
+
+        WideCharToMultiByte( CP_OEMCP, 0, fcbW, 12, formatted, sizeof(formatted),
+                             NULL, NULL );
+        if (have_name || !(options & 0x04)) memcpy( fcb + 1, formatted, 8 );
+        if (have_ext || !(options & 0x08)) memcpy( fcb + 9, formatted + 8, 3 );
+    }
+    else
+    {
+        if (!(options & 0x04)) memset( fcb + 1, ' ', 8 );
+        if (!(options & 0x08)) memset( fcb + 9, ' ', 3 );
+    }
+
+    HeapFree( GetProcessHeap(), 0, buffer );
+
+    while (p < end)
+    {
+        if (*p == '*' || *p == '?') result = 1;
+        p++;
+    }
+    return result;
+}
+
+/******************************************************************
+ *              INT21_ParseFileNameIntoFCB
  *
  */
 static void INT21_ParseFileNameIntoFCB( CONTEXT *context )
 {
     char *filename = ldt_get_ptr( context->SegDs, context->Esi );
-    char *fcb = ldt_get_ptr( context->SegEs, context->Edi );
-    char *s;
-    WCHAR *buffer;
-    WCHAR fcbW[12];
-    INT buffer_len, len;
-
-    SET_AL( context, 0xff ); /* failed */
+    BYTE *fcb = ldt_get_ptr( context->SegEs, context->Edi );
+    const char *end;
+    BYTE result;
 
     TRACE("filename: '%s'\n", filename);
 
-    s = filename;
-    while (*s && (*s != ' ') && (*s != '\r') && (*s != '\n'))
-        s++;
-    len = filename - s;
+    result = DOSVM_ParseFCBName( filename, AL_reg(context), fcb, &end );
+    SET_AL( context, result );
 
-    buffer_len = MultiByteToWideChar(CP_OEMCP, 0, filename, len, NULL, 0);
-    buffer = HeapAlloc( GetProcessHeap(), 0, (buffer_len + 1) * sizeof(WCHAR));
-    len = MultiByteToWideChar(CP_OEMCP, 0, filename, len, buffer, buffer_len);
-    buffer[len] = 0;
-    INT21_ToDosFCBFormat(buffer, fcbW);
-    HeapFree(GetProcessHeap(), 0, buffer);
-    WideCharToMultiByte(CP_OEMCP, 0, fcbW, 12, fcb + 1, 12, NULL, NULL);
-    *fcb = 0;
-    TRACE("FCB: '%s'\n", fcb + 1);
-
-    SET_AL( context, ((strchr(filename, '*')) || (strchr(filename, '$'))) != 0 );
+    TRACE("FCB drive=%u name='%.8s' ext='%.3s' result=%02x\n",
+          fcb[0], fcb + 1, fcb + 9, result );
 
     /* point DS:SI to first unparsed character */
-    SET_SI( context, context->Esi + (int)s - (int)filename );
+    SET_SI( context, context->Esi + (end - filename) );
 }
 
 static BOOL     INT21_Dup2(HFILE16 hFile1, HFILE16 hFile2)
