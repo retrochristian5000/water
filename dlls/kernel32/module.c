@@ -161,6 +161,41 @@ BOOL WINAPI SetDllDirectoryW( LPCWSTR dir )
  *  ".com" and ".pif" files are only recognized by their file name extension,
  *  as per native Windows.
  */
+static BOOL get_unsupported_pe_binary_type( HANDLE file, LPDWORD type )
+{
+    struct
+    {
+        DWORD Signature;
+        IMAGE_FILE_HEADER FileHeader;
+        WORD OptionalMagic;
+    } nt;
+    IMAGE_DOS_HEADER dos;
+    DWORD read;
+    LARGE_INTEGER pos;
+
+    pos.QuadPart = 0;
+    if (!SetFilePointerEx( file, pos, NULL, FILE_BEGIN )) return FALSE;
+    if (!ReadFile( file, &dos, sizeof(dos), &read, NULL ) || read != sizeof(dos)) return FALSE;
+    if (dos.e_magic != IMAGE_DOS_SIGNATURE || dos.e_lfanew < 0) return FALSE;
+
+    pos.QuadPart = dos.e_lfanew;
+    if (!SetFilePointerEx( file, pos, NULL, FILE_BEGIN )) return FALSE;
+    if (!ReadFile( file, &nt, sizeof(nt), &read, NULL ) || read != sizeof(nt)) return FALSE;
+    if (nt.Signature != IMAGE_NT_SIGNATURE || nt.OptionalMagic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return FALSE;
+
+    switch (nt.FileHeader.Machine)
+    {
+    case IMAGE_FILE_MACHINE_POWERPC:
+    case IMAGE_FILE_MACHINE_POWERPCFP:
+        *type = SCS_32BIT_BINARY;
+        return TRUE;
+    default:
+        break;
+    }
+    CloseHandle( hfile );
+    return FALSE;
+}
+
 BOOL WINAPI GetBinaryTypeW( LPCWSTR name, LPDWORD type )
 {
     HANDLE hfile, mapping;
@@ -177,7 +212,6 @@ BOOL WINAPI GetBinaryTypeW( LPCWSTR name, LPDWORD type )
 
     status = NtCreateSection( &mapping, STANDARD_RIGHTS_REQUIRED | SECTION_QUERY,
                               NULL, NULL, PAGE_READONLY, SEC_IMAGE, hfile );
-    CloseHandle( hfile );
 
     switch (status)
     {
@@ -187,6 +221,7 @@ BOOL WINAPI GetBinaryTypeW( LPCWSTR name, LPDWORD type )
 
             status = NtQuerySection( mapping, SectionImageInformation, &info, sizeof(info), NULL );
             CloseHandle( mapping );
+            CloseHandle( hfile );
             if (status) return FALSE;
             if (info.ImageCharacteristics & IMAGE_FILE_DLL) return FALSE;
             switch (info.Machine)
@@ -204,22 +239,35 @@ BOOL WINAPI GetBinaryTypeW( LPCWSTR name, LPDWORD type )
             }
             return FALSE;
         }
+    case STATUS_INVALID_IMAGE_FORMAT:
+        if (get_unsupported_pe_binary_type( hfile, type ))
+        {
+            CloseHandle( hfile );
+            return TRUE;
+        }
+        break;
     case STATUS_INVALID_IMAGE_WIN_16:
+        CloseHandle( hfile );
         *type = SCS_WOW_BINARY;
         return TRUE;
     case STATUS_INVALID_IMAGE_WIN_32:
+        CloseHandle( hfile );
         *type = SCS_32BIT_BINARY;
         return TRUE;
     case STATUS_INVALID_IMAGE_WIN_64:
+        CloseHandle( hfile );
         *type = SCS_64BIT_BINARY;
         return TRUE;
     case STATUS_INVALID_IMAGE_NE_FORMAT:
+        CloseHandle( hfile );
         *type = SCS_OS216_BINARY;
         return TRUE;
     case STATUS_INVALID_IMAGE_PROTECT:
+        CloseHandle( hfile );
         *type = SCS_DOS_BINARY;
         return TRUE;
     case STATUS_INVALID_IMAGE_NOT_MZ:
+        CloseHandle( hfile );
         if ((ptr = wcsrchr( name, '.' )))
         {
             if (!wcsicmp( ptr, L".com" ))
