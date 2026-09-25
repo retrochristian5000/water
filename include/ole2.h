@@ -27,7 +27,7 @@
 #endif
 
 #ifndef RC_INVOKED
-#include <pshpack8.h>
+#pragma pack(push,8)
 #endif
 
 #include <winerror.h>
@@ -178,7 +178,7 @@ WINOLE32API HRESULT     WINAPI OleSetAutoConvert( REFCLSID clsidOld, REFCLSID cl
 #endif /* defined(__cplusplus) */
 
 #ifndef RC_INVOKED
-#include <poppack.h>
+#pragma pack(pop)
 #endif
 
 #endif  /* __WINE_OLE2_H */

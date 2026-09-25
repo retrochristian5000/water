@@ -25,7 +25,7 @@
 #endif
 
 #ifndef RC_INVOKED
-#include <pshpack8.h>
+#pragma pack(push,8)
 #endif
 
 #include <oaidl.h>
@@ -790,7 +790,7 @@ WINOLEAUTAPI void WINAPI ClearCustData(LPCUSTDATA);
 #endif
 
 #ifndef RC_INVOKED
-#include <poppack.h>
+#pragma pack(pop)
 #endif
 
 #endif /*__WINE_OLEAUTO_H*/
