@@ -688,6 +688,7 @@ static const char *get_multiarch_dir( struct target target )
    case CPU_x86_64:  return "/x86_64-linux-gnu";
    case CPU_ARM:     return "/arm-linux-gnueabi";
    case CPU_ARM64:   return "/aarch64-linux-gnu";
+   case CPU_POWERPC: return "/powerpc-linux-gnu";
    default:
        assert(0);
    }
@@ -851,6 +852,11 @@ static struct strarray get_compat_defines( int gcc_defs )
             strarray_add(&args, "-D__fastcall=__stdcall");
             break;
         case CPU_ARM64EC:
+            break;
+        case CPU_POWERPC:
+            strarray_add(&args, "-D__stdcall=");
+            strarray_add(&args, "-D__cdecl=");
+            strarray_add(&args, "-D__fastcall=");
             break;
         }
         strarray_add(&args, "-D_stdcall=__stdcall");
@@ -2024,8 +2030,12 @@ int main(int argc, char **argv)
     if (!file_align) file_align = section_align;
 
     if (!is_pe && target.cpu != CPU_i386 && target.cpu != CPU_x86_64)
+    {
+        const char *cpu = target.cpu == CPU_ARM ? "arm" :
+                          target.cpu == CPU_POWERPC ? "powerpc" : "aarch64";
         error( "Non-PE builds are not supported on this platform. You need to use something like '--target=%s-windows'.\n",
-               target.cpu == CPU_ARM ? "arm" : "aarch64" );
+               cpu );
+    }
 
     if (!subsystem) subsystem = is_gui_app ? "windows" : "console";
     if (!strcmp( subsystem, "windows" ) || !strcmp( subsystem, "console" ))

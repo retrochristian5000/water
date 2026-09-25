@@ -98,7 +98,7 @@ static int has_relays( struct exports *exports )
 {
     int i;
 
-    if (target.cpu == CPU_ARM64EC) return 0;
+    if (target.cpu == CPU_ARM64EC || target.cpu == CPU_POWERPC) return 0;
 
     for (i = exports->base; i <= exports->limit; i++)
     {
@@ -789,6 +789,7 @@ void output_module( DLLSPEC *spec )
     case CPU_x86_64:  machine = IMAGE_FILE_MACHINE_AMD64; break;
     case CPU_ARM:     machine = IMAGE_FILE_MACHINE_ARMNT; break;
     case CPU_ARM64:   machine = IMAGE_FILE_MACHINE_ARM64; break;
+    case CPU_POWERPC: machine = IMAGE_FILE_MACHINE_POWERPC; break;
     }
     output( "\t.short 0x%04x\n",          /* Machine */
              machine );
@@ -1208,6 +1209,7 @@ static void output_pe_file( DLLSPEC *spec, const char signature[32] )
     case CPU_x86_64:  put_word( IMAGE_FILE_MACHINE_AMD64 ); break;
     case CPU_ARM:     put_word( IMAGE_FILE_MACHINE_ARMNT ); break;
     case CPU_ARM64:   put_word( IMAGE_FILE_MACHINE_ARM64 ); break;
+    case CPU_POWERPC: put_word( IMAGE_FILE_MACHINE_POWERPC ); break;
     }
     put_word( pe.sec_count );                        /* NumberOfSections */
     put_dword( hash_filename(spec->file_name) );     /* TimeDateStamp */

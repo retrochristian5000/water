@@ -1583,6 +1583,7 @@ static void build_windows_import_lib( const char *lib_name, DLLSPEC *spec, struc
                 }
                 break;
             case CPU_ARM64EC:
+            case CPU_POWERPC:
                 assert( 0 );
                 break;
             }
