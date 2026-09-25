@@ -27,13 +27,13 @@ configures an out-of-tree build, and invokes Ninja or Make. Use
 Then either install Wine:
 
 ```
-make install
+./build.sh install
 ```
 
 Or run Wine directly from the build directory:
 
 ```
-./wine notepad
+./build/wine notepad
 ```
 
 Run programs as `wine program`. For more information and problem
