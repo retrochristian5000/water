@@ -243,7 +243,8 @@ BOOL WINAPI GetBinaryTypeW( LPCWSTR name, LPDWORD type )
             CloseHandle( hfile );
             return TRUE;
         }
-        break;
+        CloseHandle( hfile );
+        return FALSE;
     case STATUS_INVALID_IMAGE_WIN_16:
         CloseHandle( hfile );
         *type = SCS_WOW_BINARY;
@@ -281,6 +282,7 @@ BOOL WINAPI GetBinaryTypeW( LPCWSTR name, LPDWORD type )
         }
         return FALSE;
     default:
+        CloseHandle( hfile );
         return FALSE;
     }
 }
