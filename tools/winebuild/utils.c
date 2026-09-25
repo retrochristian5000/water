@@ -353,7 +353,15 @@ struct strarray get_as_command(void)
             strarray_add( &args, (force_pointer_size == 8) ? "x86_64" : "i386" );
             break;
         default:
-            strarray_add( &args, (force_pointer_size == 8) ? "--64" : "--32" );
+            switch (target.cpu)
+            {
+            case CPU_POWERPC:
+                strarray_add( &args, (force_pointer_size == 8) ? "-a64" : "-a32" );
+                break;
+            default:
+                strarray_add( &args, (force_pointer_size == 8) ? "--64" : "--32" );
+                break;
+            }
             break;
         }
     }
@@ -385,17 +393,26 @@ struct strarray get_ld_command(void)
             break;
         case PLATFORM_FREEBSD:
             strarray_add( &args, "-m" );
-            strarray_add( &args, (force_pointer_size == 8) ? "elf_x86_64_fbsd" : "elf_i386_fbsd" );
+            if (target.cpu == CPU_POWERPC)
+                strarray_add( &args, (force_pointer_size == 8) ? "elf64ppc_fbsd" : "elf32ppc_fbsd" );
+            else
+                strarray_add( &args, (force_pointer_size == 8) ? "elf_x86_64_fbsd" : "elf_i386_fbsd" );
             break;
         case PLATFORM_MINGW:
         case PLATFORM_WINDOWS:
         case PLATFORM_WINDOWS_GNU:
             strarray_add( &args, "-m" );
-            strarray_add( &args, (force_pointer_size == 8) ? "i386pep" : "i386pe" );
+            if (target.cpu == CPU_POWERPC)
+                strarray_add( &args, "ppcpe" );
+            else
+                strarray_add( &args, (force_pointer_size == 8) ? "i386pep" : "i386pe" );
             break;
         default:
             strarray_add( &args, "-m" );
-            strarray_add( &args, (force_pointer_size == 8) ? "elf_x86_64" : "elf_i386" );
+            if (target.cpu == CPU_POWERPC)
+                strarray_add( &args, (force_pointer_size == 8) ? "elf64ppc" : "elf32ppc" );
+            else
+                strarray_add( &args, (force_pointer_size == 8) ? "elf_x86_64" : "elf_i386" );
             break;
         }
     }

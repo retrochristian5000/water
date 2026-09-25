@@ -766,7 +766,19 @@ void output_module( DLLSPEC *spec )
         break;
     default:
         output( "\n\t.section \".init\",\"ax\"\n" );
-        output( "\tjmp 1f\n" );
+        switch (target.cpu)
+        {
+        case CPU_i386:
+        case CPU_x86_64:
+            output( "\tjmp 1f\n" );
+            break;
+        case CPU_ARM:
+        case CPU_ARM64:
+        case CPU_ARM64EC:
+        case CPU_POWERPC:
+            output( "\tb 1f\n" );
+            break;
+        }
         output( "__wine_spec_pe_header:\n" );
         output( "\t.skip %u\n", 65536 + page_size );
         output( "1:\n" );

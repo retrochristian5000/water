@@ -153,6 +153,20 @@ static struct strarray as_files;
 static const char import_func_prefix[] = "__wine$func$";
 static const char import_ord_prefix[]  = "__wine$ord$";
 
+static inline const char *ppc_reg( int reg )
+{
+    static const char * const ppc_regs[32] =
+    {
+        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+        "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
+        "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31"
+    };
+
+    if (target.platform == PLATFORM_APPLE) return ppc_regs[reg];
+    return ppc_regs[reg] + 1;  /* GNU PowerPC syntax uses numeric register names by default. */
+}
+
 /* compare function names; helper for resolve_imports */
 static int name_cmp( const char **name, const char **entry )
 {
@@ -656,6 +670,23 @@ static void output_import_thunk( const char *name, const char *table, int pos )
     case CPU_x86_64:
         output( "\tjmpq *%s+%d(%%rip)\n", table, pos );
         break;
+    case CPU_POWERPC:
+        output( "\tmr %s, %s\n", ppc_reg(0), ppc_reg(31) );
+        if (target.platform == PLATFORM_APPLE)
+        {
+            output( "\tlis %s, ha16(%s+%d+32768)\n", ppc_reg(31), table, pos );
+            output( "\tla  %s, lo16(%s+%d)(%s)\n", ppc_reg(31), table, pos, ppc_reg(31) );
+        }
+        else
+        {
+            output( "\tlis %s, (%s+%d+32768)@h\n", ppc_reg(31), table, pos );
+            output( "\tla  %s, (%s+%d)@l(%s)\n", ppc_reg(31), table, pos, ppc_reg(31) );
+        }
+        output( "\tlwz   %s, 0(%s)\n", ppc_reg(31), ppc_reg(31) );
+        output( "\tmtctr %s\n", ppc_reg(31) );
+        output( "\tmr    %s, %s\n", ppc_reg(31), ppc_reg(0) );
+        output( "\tbctr\n" );
+        break;
     default:
         assert( 0 );
         break;
@@ -1141,6 +1172,10 @@ void output_stubs( DLLSPEC *spec )
             output( "\tb %s\n", arm64_name("__wine_spec_unimplemented_stub") );
             output( "\t.seh_endproc\n" );
             break;
+        case CPU_POWERPC:
+            fatal_error( "PowerPC stub generation is not implemented; refusing to emit an empty stub for %s\n",
+                         exp_name ? exp_name : name );
+            break;
         }
         output_function_size( name );
     }
@@ -1202,16 +1237,17 @@ static void assemble_files( const char *prefix )
 
 static const char *get_target_machine(void)
 {
-    static const char *machine_names[] =
+    switch (target.cpu)
     {
-        [CPU_i386]    = "x86",
-        [CPU_x86_64]  = "x64",
-        [CPU_ARM]     = "arm",
-        [CPU_ARM64]   = "arm64",
-        [CPU_ARM64EC] = "arm64ec",
-    };
-
-    return machine_names[target.cpu];
+    case CPU_i386:    return "x86";
+    case CPU_x86_64:  return "x64";
+    case CPU_ARM:     return "arm";
+    case CPU_ARM64:   return "arm64";
+    case CPU_ARM64EC: return "arm64ec";
+    case CPU_POWERPC:
+        fatal_error( "PowerPC archives must use ar mode; lld-link has no PowerPC COFF backend\n" );
+    }
+    fatal_error( "unsupported target CPU for lld-link library mode\n" );
 }
 
 /* build a library from the current asm files and any additional object files in argv */
@@ -1221,7 +1257,7 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
     struct strarray args;
     int use_ar = 0, use_llvm_ar = 0;
 
-    if (!create || !is_llvm_pe_target( target ))
+    if (!create || !is_llvm_pe_target( target ) || target.cpu == CPU_POWERPC)
     {
         const char *ar_name;
 
