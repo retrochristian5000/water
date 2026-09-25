@@ -12,18 +12,8 @@
  * Lesser General Public License for more details.
  */
 
-#if !(defined(lint) || defined(RC_INVOKED))
-# if (defined(_MSC_VER) && (_MSC_VER >= 800) && !defined(_M_I86)) || \
-     defined(_PUSHPOP_SUPPORTED) || defined(__GNUC__) || defined(__clang__)
-#  ifdef _MSC_VER
-#   pragma warning(disable:4103)
-#  endif
-#  if defined(MIDL_PASS) && !defined(__midl)
-#   pragma pack(16)
-#  else
-#   pragma pack(push,16)
-#  endif
-# else
-#  pragma pack(16)
-# endif
+#ifdef _MSC_VER
+# pragma warning(disable:4103)
 #endif
+
+#pragma pack(push,16)
