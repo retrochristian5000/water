@@ -190,10 +190,8 @@ static BOOL get_unsupported_pe_binary_type( HANDLE file, LPDWORD type )
         *type = SCS_32BIT_BINARY;
         return TRUE;
     default:
-        break;
+        return FALSE;
     }
-    CloseHandle( hfile );
-    return FALSE;
 }
 
 BOOL WINAPI GetBinaryTypeW( LPCWSTR name, LPDWORD type )
