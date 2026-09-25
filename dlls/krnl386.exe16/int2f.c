@@ -55,6 +55,24 @@ typedef struct
 static void do_int2f_16( CONTEXT *context );
 static void MSCDEX_Handler( CONTEXT *context );
 
+/*
+ * INT 2Fh/16xx reports the loader/multiplex Windows version, which is not
+ * always the same value returned by the Win16 GetVersion API.  In particular,
+ * GetVersion16 deliberately presents Win9x as 3.95 for application
+ * compatibility, while DOS-side Windows detection expects the real 4.x
+ * generation.
+ */
+static WORD get_windows_mux_version(void)
+{
+    RTL_OSVERSIONINFOEXW info;
+
+    info.dwOSVersionInfoSize = sizeof(info);
+    if (!RtlGetVersion( &info ) && info.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
+        return MAKEWORD( info.dwMajorVersion, info.dwMinorVersion );
+
+    return LOWORD( GetVersion16() );
+}
+
 /**********************************************************************
  *          DOSVM_Int2fHandler
  *
@@ -330,13 +348,32 @@ static void do_int2f_16( CONTEXT *context )
     switch(LOBYTE(context->Eax))
     {
     case 0x00:  /* Windows enhanced mode installation check */
-        SET_AX( context, LOWORD(GetVersion16()) );
+        SET_AX( context, get_windows_mux_version() );
+        break;
+
+    case 0x05:  /* Windows enhanced mode / 286 DOSX init broadcast */
+        /*
+         * Water has no resident real-mode TSR chain to contribute startup
+         * information.  Preserve the caller-supplied pointers and leave CX
+         * at zero to accept enhanced-mode startup.
+         */
+        SET_CX( context, 0 );
+        break;
+
+    case 0x06:  /* Windows enhanced mode / 286 DOSX exit broadcast */
+    case 0x08:  /* Windows enhanced mode initialization complete broadcast */
+    case 0x09:  /* Windows enhanced mode begin-exit broadcast */
+        /* Nothing resident needs notification in Water yet. */
         break;
 
     case 0x0a:  /* Get Windows version and type */
-        SET_AX( context, 0 );
-        SET_BX( context, (LOWORD(GetVersion16()) << 8) | (LOWORD(GetVersion16()) >> 8) );
-        SET_CX( context, 3 );
+        {
+            WORD version = get_windows_mux_version();
+
+            SET_AX( context, 0 );
+            SET_BX( context, MAKEWORD( HIBYTE(version), LOBYTE(version) ) );
+            SET_CX( context, 3 );  /* enhanced mode */
+        }
         break;
 
     case 0x0b:  /* Identify Windows-aware TSRs */
