@@ -15,6 +15,7 @@ WHP_CONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/config.py"
 WHP_MENUCONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/menuconfig.py"
 WHP_MENUCONFIG_SHELL="$SOURCE_DIR/scripts/whp-config/menuconfig.sh"
 WHP_MENU_SCHEMA="$SOURCE_DIR/scripts/whp-config/menu-options.def"
+NINJA_BOOTSTRAP_TOOL="$SOURCE_DIR/scripts/ensure-ninja.py"
 CONFIGURE_USER_ARGS_FILE="$BUILD_DIR/.whp-configure-args"
 PROFILE_FILE="$BUILD_DIR/.whp-profile"
 WHP_CONFIGURE_ARCHS=
@@ -66,6 +67,8 @@ Environment:
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
+  NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
+  BOOTSTRAP_NINJA        Pinned WHP Ninja policy: auto, y, or n
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
   AUTOCONF              Autoconf program used to generate ./configure
@@ -153,6 +156,7 @@ validate_profile()
     WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}
     WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
+    BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
 
     case "$WATER_ARCHS_MODE" in
         auto|custom|none) ;;
@@ -184,6 +188,10 @@ validate_profile()
     case "$WATER_COMPILER_CACHE" in
         auto|sccache|ccache|none) ;;
         *) die "WATER_COMPILER_CACHE must be auto, sccache, ccache, or none" ;;
+    esac
+    case "$BOOTSTRAP_NINJA" in
+        auto|y|n|0|1) ;;
+        *) die "BOOTSTRAP_NINJA must be auto, y, or n" ;;
     esac
 
     for var in \
@@ -277,6 +285,77 @@ detect_jobs()
         ''|*[!0-9]*|0) die "WHP_BUILD_JOBS must be a positive integer" ;;
     esac
     printf '%s\n' "$jobs"
+}
+
+prepare_ninja()
+{
+    ninja_cmd=
+    ninja_required=0
+    case "${WATER_NINJA:-auto}" in
+        y|1) ninja_required=1 ;;
+    esac
+
+    if [ -n "${NINJA_CMD:-}" ]; then
+        ninja_cmd=$NINJA_CMD
+    elif [ -n "${NINJA:-}" ]; then
+        ninja_cmd=$NINJA
+    else
+        case "$BOOTSTRAP_NINJA" in
+            y|1)
+                python=$(find_python || true)
+                [ -n "$python" ] ||
+                    die "BOOTSTRAP_NINJA=y requires Python 3 to bootstrap the pinned Ninja fork"
+                ninja_cmd=$(WATER_COMPILER_CACHE="$WATER_COMPILER_CACHE" WHP_SUBMODULES="$WHP_SUBMODULES" \
+                    "$python" "$NINJA_BOOTSTRAP_TOOL" --build-dir "$BUILD_DIR") ||
+                    die "pinned WHP Ninja bootstrap failed"
+                ;;
+            n|0)
+                ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+                ;;
+            auto)
+                python=$(find_python || true)
+                case "$(uname -s 2>/dev/null || true)" in
+                    Darwin)
+                        if [ -n "$python" ]; then
+                            ninja_cmd=$(WATER_COMPILER_CACHE="$WATER_COMPILER_CACHE" WHP_SUBMODULES="$WHP_SUBMODULES" \
+                                "$python" "$NINJA_BOOTSTRAP_TOOL" --build-dir "$BUILD_DIR" || true)
+                        fi
+                        [ -n "$ninja_cmd" ] ||
+                            ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+                        ;;
+                    *)
+                        ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+                        if [ -z "$ninja_cmd" ] && [ -n "$python" ]; then
+                            ninja_cmd=$(WATER_COMPILER_CACHE="$WATER_COMPILER_CACHE" WHP_SUBMODULES="$WHP_SUBMODULES" \
+                                "$python" "$NINJA_BOOTSTRAP_TOOL" --build-dir "$BUILD_DIR" || true)
+                        fi
+                        ;;
+                esac
+                ;;
+        esac
+    fi
+
+    if [ -z "$ninja_cmd" ]; then
+        [ "$ninja_required" = 0 ] ||
+            die "Water Ninja output was requested but no usable Ninja executable is available"
+        printf 'WHP Ninja: unavailable; Make remains available\n' >&2
+        return 0
+    fi
+
+    "$ninja_cmd" --version >/dev/null 2>&1 ||
+        die "selected Ninja executable is not usable: $ninja_cmd"
+
+    NINJA_CMD=$ninja_cmd
+    NINJA=$ninja_cmd
+    case "$NINJA_CMD" in
+        */*)
+            ninja_dir=$(dirname -- "$NINJA_CMD")
+            PATH="$ninja_dir:$PATH"
+            unset ninja_dir
+            ;;
+    esac
+    export NINJA_CMD NINJA PATH
+    printf 'WHP Ninja: %s\n' "$NINJA_CMD" >&2
 }
 
 llvm_add_target()
@@ -473,7 +552,10 @@ bootstrap_llvm()
     esac
 
     if [ ! -f "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" ]; then
-        ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+        ninja_cmd=${NINJA_CMD:-${NINJA:-}}
+        if [ -z "$ninja_cmd" ]; then
+            ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+        fi
         if [ -n "$ninja_cmd" ]; then
             set -- "$@" -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
         fi
@@ -595,6 +677,8 @@ profile_signature()
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
+        "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
+        "NINJA_CMD=${NINJA_CMD:-}" \
         "WATER_SYSTEM_DLLPATH=${WATER_SYSTEM_DLLPATH:-auto}" \
         "WATER_WINE_TOOLS=${WATER_WINE_TOOLS:-auto}" \
         "WATER_WINE64=${WATER_WINE64:-auto}" \
@@ -814,7 +898,7 @@ run_build()
     jobs=$(detect_jobs)
 
     if [ -f "$BUILD_DIR/build.ninja" ]; then
-        ninja_cmd=${NINJA:-}
+        ninja_cmd=${NINJA_CMD:-${NINJA:-}}
         if [ -z "$ninja_cmd" ]; then
             ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
         fi
@@ -845,6 +929,7 @@ load_whp_config
 validate_profile
 generate_configure
 init_submodules
+prepare_ninja
 prepare_llvm_toolchain
 setup_toolchain
 

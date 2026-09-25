@@ -1,3 +1,5 @@
 /build/
 /configure
 /.whpconfig
+/.whp-host-tools/
+/.whp-compiler-cache/
