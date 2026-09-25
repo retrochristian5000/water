@@ -25,6 +25,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "windef.h"
@@ -54,6 +55,8 @@
  * Forward declarations.
  */
 static BOOL INT21_RenameFile( CONTEXT *context );
+static BYTE INT21_GetBootDrive(void);
+static void INT21_LoadBootConfig(void);
 
 WINE_DEFAULT_DEBUG_CHANNEL(int21);
 
@@ -300,10 +303,20 @@ typedef struct
 #define KEY_NPAGE       0x49
 #define KEY_PPAGE       0x51
 
+typedef struct
+{
+    BOOL initialized;
+    WORD buffers_count;
+    WORD buffers_lookahead;
+    BYTE last_drive;
+    INT umb_linked;
+} INT21_BOOT_CONFIG;
+
 static int brk_flag;
 static BYTE mem_alloc_strategy;
 static BOOL umb_linked;
 static BOOL memory_config_initialized;
+static INT21_BOOT_CONFIG boot_config;
 
 /***********************************************************************
  *           INT21_InitMemoryConfig
@@ -320,6 +333,15 @@ static void INT21_InitMemoryConfig(void)
 
     if (memory_config_initialized) return;
     memory_config_initialized = TRUE;
+    INT21_LoadBootConfig();
+
+    if (boot_config.umb_linked >= 0)
+    {
+        umb_linked = boot_config.umb_linked;
+        TRACE( "CONFIG.SYS DOS=%sUMB: UMB chain %s\n",
+               umb_linked ? "" : "NO", umb_linked ? "linked" : "unlinked" );
+        return;
+    }
 
     info.dwOSVersionInfoSize = sizeof(info);
     if (!RtlGetVersion( &info ) && info.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
@@ -411,6 +433,187 @@ static BYTE INT21_GetBootDrive(void)
 
     if ((drive = INT21_GetCurrentDrive()) != MAX_DOS_DRIVES) return drive + 1;
     return 3;
+}
+
+
+/***********************************************************************
+ *           INT21_LoadBootConfig
+ *
+ * Read the CONFIG.SYS directives for which Water already has real backing
+ * state.  Do not pretend to install DEVICE drivers or implement FILES,
+ * FCBS, STACKS, COUNTRY, or SHELL here.  For DOS 6+ multi-config files,
+ * only global lines and [common] are unconditionally safe to apply.
+ */
+static void INT21_LoadBootConfig(void)
+{
+    static const DWORD max_config_size = 64 * 1024;
+    char path[] = "C:\\CONFIG.SYS";
+    HANDLE file;
+    DWORD size, read;
+    char *buffer, *line;
+    BYTE boot_drive;
+    BOOL active = TRUE;
+
+    if (boot_config.initialized) return;
+    boot_config.initialized = TRUE;
+    boot_config.buffers_count = 15;
+    boot_config.buffers_lookahead = 1;
+    boot_config.last_drive = 0;
+    boot_config.umb_linked = -1;
+
+    boot_drive = INT21_GetBootDrive();
+    if (!boot_drive || boot_drive > MAX_DOS_DRIVES) return;
+    path[0] = 'A' + boot_drive - 1;
+
+    file = CreateFileA( path, GENERIC_READ,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        TRACE( "No %s; using DOS configuration defaults\n", path );
+        return;
+    }
+
+    size = GetFileSize( file, NULL );
+    if (size == INVALID_FILE_SIZE || size > max_config_size)
+    {
+        WARN( "Ignoring invalid or oversized %s\n", path );
+        CloseHandle( file );
+        return;
+    }
+
+    buffer = HeapAlloc( GetProcessHeap(), 0, size + 1 );
+    if (!buffer)
+    {
+        CloseHandle( file );
+        return;
+    }
+
+    if (!ReadFile( file, buffer, size, &read, NULL ))
+    {
+        HeapFree( GetProcessHeap(), 0, buffer );
+        CloseHandle( file );
+        return;
+    }
+    CloseHandle( file );
+    buffer[read] = 0;
+
+    line = buffer;
+    while (*line)
+    {
+        char *next = strpbrk( line, "\r\n" );
+        char *p = line, *name, *value, *end;
+        long first, second;
+
+        if (next)
+        {
+            *next++ = 0;
+            while (*next == '\r' || *next == '\n') next++;
+        }
+        else next = line + strlen(line);
+
+        while (*p == ' ' || *p == '\t') p++;
+        end = p + strlen(p);
+        while (end > p && (end[-1] == ' ' || end[-1] == '\t')) *--end = 0;
+
+        if (!*p || *p == ';')
+        {
+            line = next;
+            continue;
+        }
+
+        if (*p == '[')
+        {
+            end = strchr( p + 1, ']' );
+            if (end)
+            {
+                char *section_end = end;
+
+                while (section_end > p + 1 &&
+                       (section_end[-1] == ' ' || section_end[-1] == '\t'))
+                    section_end--;
+                *section_end = 0;
+                active = !_stricmp( p + 1, "common" );
+            }
+            else active = FALSE;
+            line = next;
+            continue;
+        }
+
+        if (!active)
+        {
+            line = next;
+            continue;
+        }
+
+        name = p;
+        while (*p && *p != '=' && *p != ';' && *p != ' ' && *p != '\t') p++;
+        if (*p) *p++ = 0;
+        while (*p == '=' || *p == ';' || *p == ' ' || *p == '\t') p++;
+        value = p;
+
+        if (!_stricmp( name, "REM" ))
+        {
+            line = next;
+            continue;
+        }
+
+        if (!_stricmp( name, "BREAK" ))
+        {
+            if (!_stricmp( value, "ON" )) brk_flag = 1;
+            else if (!_stricmp( value, "OFF" )) brk_flag = 0;
+        }
+        else if (!_stricmp( name, "BUFFERS" ) || !_stricmp( name, "BUFFERSHIGH" ))
+        {
+            first = strtol( value, &end, 10 );
+            if (first >= 1 && first <= 99)
+            {
+                boot_config.buffers_count = first;
+                while (*end == ' ' || *end == '\t') end++;
+                if (*end == ',')
+                {
+                    second = strtol( end + 1, &end, 10 );
+                    if (second >= 0 && second <= 8)
+                        boot_config.buffers_lookahead = second;
+                }
+            }
+        }
+        else if (!_stricmp( name, "LASTDRIVE" ))
+        {
+            while (*value == ' ' || *value == '\t') value++;
+            if ((value[0] >= 'A' && value[0] <= 'Z') ||
+                (value[0] >= 'a' && value[0] <= 'z'))
+                boot_config.last_drive = (value[0] & ~0x20) - 'A' + 1;
+        }
+        else if (!_stricmp( name, "DOS" ))
+        {
+            char *token = value;
+
+            while (*token)
+            {
+                char *token_end;
+
+                while (*token == ' ' || *token == '\t' || *token == ',') token++;
+                token_end = token;
+                while (*token_end && *token_end != ',' &&
+                       *token_end != ' ' && *token_end != '\t') token_end++;
+
+                if ((token_end - token) == 3 && !_strnicmp( token, "UMB", 3 ))
+                    boot_config.umb_linked = TRUE;
+                else if ((token_end - token) == 5 && !_strnicmp( token, "NOUMB", 5 ))
+                    boot_config.umb_linked = FALSE;
+
+                token = token_end;
+            }
+        }
+
+        line = next;
+    }
+
+    TRACE( "CONFIG.SYS: BUFFERS=%u,%u LASTDRIVE=%u UMB=%d BREAK=%d\n",
+           boot_config.buffers_count, boot_config.buffers_lookahead,
+           boot_config.last_drive, boot_config.umb_linked, brk_flag );
+    HeapFree( GetProcessHeap(), 0, buffer );
 }
 
 
@@ -742,7 +945,10 @@ static SEGPTR INT21_GetListOfLists(void)
     INT21_HEAP *heap = INT21_GetHeapPointer();
     WORD first_drive = 0xffff, previous_drive = 0xffff;
     WORD max_sector = 512;
+    BYTE drive_count = 0;
     unsigned int drive;
+
+    INT21_LoadBootConfig();
 
     if (!sysvars)
     {
@@ -755,7 +961,6 @@ static SEGPTR INT21_GetListOfLists(void)
         lol->sharing_retry_count = 3;
         lol->sharing_retry_delay = 1;
         lol->seg_first_mcb = DOSMEM_GetRootMCBSegment();
-        lol->nr_drive_letters = MAX_DOS_DRIVES;
 
         lol->nul_dev.next_dev = MAKESEGPTR( handle, offsetof(INT21_SYSVARS, con_dev) );
         lol->nul_dev.attr = 0x8084;  /* character + NUL + device */
@@ -766,8 +971,8 @@ static SEGPTR INT21_GetListOfLists(void)
         memcpy( sysvars->con_dev.name, "CON     ", sizeof(sysvars->con_dev.name) );
         lol->ptr_con_dev_hdr = MAKESEGPTR( handle, offsetof(INT21_SYSVARS, con_dev) );
 
-        lol->buffers_count = 99;
-        lol->buffers_lookahead = 8;
+        lol->buffers_count = boot_config.buffers_count;
+        lol->buffers_lookahead = boot_config.buffers_lookahead;
         lol->boot_drive = INT21_GetBootDrive();
         lol->dword_moves = 1;        /* 386+ */
         lol->extended_mem_kb = 0xf000;
@@ -783,6 +988,7 @@ static SEGPTR INT21_GetListOfLists(void)
 
         if (!INT21_FillDrivePB( drive )) continue;
         dpb = &heap->misc_dpb_list[drive];
+        drive_count = drive + 1;
 
         if (dpb->sector_bytes > max_sector) max_sector = dpb->sector_bytes;
         dpb->next = 0;
@@ -803,6 +1009,9 @@ static SEGPTR INT21_GetListOfLists(void)
         lol->nr_block_dev++;
     }
 
+    if (boot_config.last_drive > drive_count) drive_count = boot_config.last_drive;
+    if (INT21_GetBootDrive() > drive_count) drive_count = INT21_GetBootDrive();
+    lol->nr_drive_letters = drive_count;
     lol->max_bytes_per_sector = max_sector;
 
     return MAKESEGPTR( handle, offsetof(INT21_LIST_OF_LISTS, ptr_first_dpb) );
@@ -4452,6 +4661,7 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
         break;
 
     case 0x33: /* MULTIPLEXED */
+        INT21_LoadBootConfig();
         switch (AL_reg(context))
         {
         case 0x00: /* GET CURRENT EXTENDED BREAK STATE */
