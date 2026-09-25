@@ -25,6 +25,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
 #include "windef.h"
 #include "winbase.h"
 #include "wintrust.h"
@@ -1239,6 +1241,7 @@ struct cdf_attribute
     WCHAR *source;
     char *slot;
     DWORD offset;
+    DWORD parse_error;
     BOOL valid;
 };
 
@@ -1347,7 +1350,9 @@ static WCHAR *cdf_directory_from_path(const WCHAR *path)
     if (!path) return NULL;
     slash = wcsrchr(path, '\\');
     slash2 = wcsrchr(path, '/');
-    end = slash > slash2 ? slash : slash2;
+    if (!slash) end = slash2;
+    else if (!slash2) end = slash;
+    else end = slash > slash2 ? slash : slash2;
     if (!end) return cdf_strdupW(L".");
 
     len = end - path;
@@ -1388,75 +1393,87 @@ static BOOL cdf_append_attribute(struct cdf_context *ctx, const char *slot,
     struct cdf_attribute *entry, *new_attrs;
     const char *first, *second;
     char *type_str = NULL, *tag_str = NULL;
+    WCHAR *sourceW = NULL, *tagW = NULL, *valueW = NULL;
+    char *slot_copy = NULL, *end;
     SIZE_T len;
-    char *end;
-    ULONG type;
+    ULONG type = 0;
+    DWORD parse_error = ERROR_SUCCESS;
 
     if (cdf_attr_slot_exists(ctx, slot)) return TRUE;
 
     first = strchr(spec, ':');
     second = first ? strchr(first + 1, ':') : NULL;
-
     if (!first || !second || first == spec || second == first + 1)
+        parse_error = CRYPTCAT_E_CDF_ATTR_TOOFEWVALUES;
+
+    if (!parse_error)
     {
-        if (!(new_attrs = realloc(ctx->attrs, (ctx->attr_count + 1) * sizeof(*ctx->attrs))))
+        len = first - spec;
+        if (!(type_str = malloc(len + 1))) return FALSE;
+        memcpy(type_str, spec, len);
+        type_str[len] = 0;
+
+        len = second - first - 1;
+        if (!(tag_str = malloc(len + 1)))
+        {
+            free(type_str);
             return FALSE;
-        ctx->attrs = new_attrs;
-        entry = &ctx->attrs[ctx->attr_count++];
-        memset(entry, 0, sizeof(*entry));
-        if (!(entry->slot = strdup(slot))) return FALSE;
-        entry->source = cdf_widen(source);
-        entry->offset = offset;
-        entry->valid = FALSE;
-        return TRUE;
+        }
+        memcpy(tag_str, first + 1, len);
+        tag_str[len] = 0;
+
+        type = strtoul(type_str, &end, 0);
+        if (*end) parse_error = CRYPTCAT_E_CDF_ATTR_TYPECOMBO;
     }
 
-    len = first - spec;
-    if (!(type_str = malloc(len + 1))) return FALSE;
-    memcpy(type_str, spec, len);
-    type_str[len] = 0;
-
-    len = second - first - 1;
-    if (!(tag_str = malloc(len + 1)))
+    slot_copy = strdup(slot);
+    sourceW = cdf_widen(source);
+    if (!parse_error)
     {
-        free(type_str);
-        return FALSE;
+        tagW = cdf_widen(tag_str);
+        valueW = cdf_widen(second + 1);
     }
-    memcpy(tag_str, first + 1, len);
-    tag_str[len] = 0;
 
-    type = strtoul(type_str, &end, 0);
     free(type_str);
-    if (*end)
+    free(tag_str);
+
+    if (!slot_copy || !sourceW || (!parse_error && (!tagW || !valueW)))
     {
-        free(tag_str);
+        free(slot_copy);
+        free(sourceW);
+        free(tagW);
+        free(valueW);
         return FALSE;
     }
 
     if (!(new_attrs = realloc(ctx->attrs, (ctx->attr_count + 1) * sizeof(*ctx->attrs))))
     {
-        free(tag_str);
+        free(slot_copy);
+        free(sourceW);
+        free(tagW);
+        free(valueW);
         return FALSE;
     }
+
     ctx->attrs = new_attrs;
     entry = &ctx->attrs[ctx->attr_count++];
     memset(entry, 0, sizeof(*entry));
-
-    entry->slot = strdup(slot);
-    entry->tag = cdf_widen(tag_str);
-    entry->value = cdf_widen(second + 1);
-    entry->source = cdf_widen(source);
-    free(tag_str);
-
-    if (!entry->slot || !entry->tag || !entry->value || !entry->source) return FALSE;
-
-    entry->attr.cbStruct = sizeof(entry->attr);
-    entry->attr.pwszReferenceTag = entry->tag;
-    entry->attr.dwAttrTypeAndAction = type;
-    entry->attr.cbValue = (lstrlenW(entry->value) + 1) * sizeof(WCHAR);
-    entry->attr.pbValue = (BYTE *)entry->value;
+    entry->slot = slot_copy;
+    entry->source = sourceW;
+    entry->tag = tagW;
+    entry->value = valueW;
     entry->offset = offset;
-    entry->valid = TRUE;
+    entry->parse_error = parse_error;
+    entry->valid = !parse_error;
+
+    if (entry->valid)
+    {
+        entry->attr.cbStruct = sizeof(entry->attr);
+        entry->attr.pwszReferenceTag = entry->tag;
+        entry->attr.dwAttrTypeAndAction = type;
+        entry->attr.cbValue = (lstrlenW(entry->value) + 1) * sizeof(WCHAR);
+        entry->attr.pbValue = (BYTE *)entry->value;
+    }
     return TRUE;
 }
 
@@ -1606,7 +1623,7 @@ CRYPTCATATTRIBUTE * WINAPI CryptCATCDFEnumCatAttributes(CRYPTCATCDF *pCDF,
         if (!ctx->attrs[i].valid)
         {
             cdf_report(pfnParseError ? pfnParseError : ctx->parse_error,
-                       CRYPTCAT_E_AREA_ATTRIBUTE, CRYPTCAT_E_CDF_ATTR_TOOFEWVALUES,
+                       CRYPTCAT_E_AREA_ATTRIBUTE, ctx->attrs[i].parse_error,
                        ctx->attrs[i].source);
             continue;
         }
@@ -1705,8 +1722,13 @@ CRYPTCATCDF * WINAPI CryptCATCDFOpen(LPWSTR pwszFilePath,
         return NULL;
     }
 
-    if (!GetFullPathNameW(pwszFilePath, ARRAY_SIZE(fullpath), fullpath, NULL))
+    size = GetFullPathNameW(pwszFilePath, ARRAY_SIZE(fullpath), fullpath, NULL);
+    if (!size) return NULL;
+    if (size >= ARRAY_SIZE(fullpath))
+    {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
         return NULL;
+    }
 
     file = CreateFileW(fullpath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
                        FILE_ATTRIBUTE_NORMAL, NULL);
@@ -1716,6 +1738,12 @@ CRYPTCATCDF * WINAPI CryptCATCDFOpen(LPWSTR pwszFilePath,
     if (size == INVALID_FILE_SIZE && GetLastError() != ERROR_SUCCESS)
     {
         CloseHandle(file);
+        return NULL;
+    }
+    if (size > 16 * 1024 * 1024)
+    {
+        CloseHandle(file);
+        SetLastError(ERROR_FILE_TOO_LARGE);
         return NULL;
     }
 
