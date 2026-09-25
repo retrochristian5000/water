@@ -522,7 +522,6 @@ bootstrap_llvm()
         "-DLLVM_ENABLE_PROJECTS=clang;lld" \
         "-DLLVM_TARGETS_TO_BUILD=$llvm_targets" \
         "-DLLD_ENABLE_BACKENDS=$llvm_lld_backends" \
-        "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS" \
         -DLLVM_APPEND_VC_REV=OFF \
         -DLLVM_ENABLE_LTO=OFF \
         -DLLVM_ENABLE_FATLTO=OFF \
@@ -546,19 +545,28 @@ bootstrap_llvm()
                 -DLLVM_ENABLE_TELEMETRY=OFF \
                 -DCLANG_BUILD_TOOLS=OFF \
                 -DCLANG_INCLUDE_TESTS=OFF \
-                -DCLANG_ENABLE_STATIC_ANALYZER=ON \
-                -DLLD_INCLUDE_TESTS=OFF
+                -DCLANG_ENABLE_STATIC_ANALYZER=ON
             ;;
     esac
 
-    if [ ! -f "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" ]; then
+    llvm_ninja_generator=0
+    if [ -f "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" ]; then
+        if grep -q '^CMAKE_GENERATOR:INTERNAL=Ninja' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt"; then
+            llvm_ninja_generator=1
+        fi
+    else
         ninja_cmd=${NINJA_CMD:-${NINJA:-}}
         if [ -z "$ninja_cmd" ]; then
             ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
         fi
         if [ -n "$ninja_cmd" ]; then
             set -- "$@" -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
+            llvm_ninja_generator=1
         fi
+    fi
+
+    if [ "$llvm_ninja_generator" = 1 ]; then
+        set -- "$@" "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
     fi
 
     printf 'WHP LLVM targets: %s\n' "$llvm_targets" >&2
