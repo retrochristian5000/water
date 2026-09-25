@@ -25,7 +25,10 @@ The build funnel regenerates the ignored `./configure` script from
 LLVM toolchain, configures an out-of-tree build, and invokes Ninja or Make.
 Use `./build.sh menuconfig` to edit the persistent ignored `.whpconfig`
 profile. The menu controls PE architectures, the WHP LLVM bootstrap policy,
-build behavior, and optional Wine components. It uses the same curses UI as
+build behavior, and optional Wine components. The LLVM menu also defaults to
+a lean Water-only graph: unused tests, docs, examples, benchmarks, utilities,
+runtimes, bindings, and default tool sweeps are excluded while required Clang,
+LLD, archive, symbol, and strip tools remain available. It uses the same curses UI as
 the QEMU funnel when Python is available and falls back to a POSIX-shell menu
 otherwise.
 

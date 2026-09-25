@@ -6,6 +6,7 @@ SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
+LLVM_LINK_JOBS=${WHP_LLVM_LINK_JOBS:-2}
 WHP_SUBMODULES=${WHP_SUBMODULES:-1}
 WHP_RECONFIGURE=${WHP_RECONFIGURE:-0}
 AUTOCONF=${AUTOCONF:-autoconf}
@@ -43,6 +44,7 @@ Environment:
   WHP_BUILD_JOBS        Parallel build jobs (default: detected CPU count)
   WHP_LLVM_SOURCE_DIR   LLVM source tree (default: ./toolchains/llvm-project)
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
+  WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
@@ -128,6 +130,8 @@ validate_profile()
     WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}
     WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}
     WATER_LLVM_ASSERTIONS=${WATER_LLVM_ASSERTIONS:-n}
+    WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}
+    WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
 
     case "$WATER_ARCHS_MODE" in
@@ -145,6 +149,17 @@ validate_profile()
     case "$WATER_LLVM_ASSERTIONS" in
         y|n|0|1) ;;
         *) die "WATER_LLVM_ASSERTIONS must be y or n" ;;
+    esac
+    case "$WATER_LLVM_LEAN" in
+        y|n|0|1) ;;
+        *) die "WATER_LLVM_LEAN must be y or n" ;;
+    esac
+    case "$WATER_LLVM_PCH" in
+        y|n|0|1) ;;
+        *) die "WATER_LLVM_PCH must be y or n" ;;
+    esac
+    case "$LLVM_LINK_JOBS" in
+        ''|*[!0-9]*|0) die "WHP_LLVM_LINK_JOBS must be a positive integer" ;;
     esac
     case "$WATER_COMPILER_CACHE" in
         auto|sccache|ccache|none) ;;
@@ -244,6 +259,81 @@ detect_jobs()
     printf '%s\n' "$jobs"
 }
 
+llvm_add_target()
+{
+    target=$1
+    case ";$llvm_targets;" in
+        *";$target;"*) ;;
+        *)
+            if [ -n "$llvm_targets" ]; then
+                llvm_targets="$llvm_targets;$target"
+            else
+                llvm_targets=$target
+            fi
+            ;;
+    esac
+}
+
+select_llvm_targets()
+{
+    llvm_targets=
+    host_arch=$(uname -m 2>/dev/null || true)
+    case "$host_arch" in
+        i386|i486|i586|i686|x86_64|amd64) llvm_add_target X86 ;;
+        arm|armv6*|armv7*)                llvm_add_target ARM ;;
+        arm64|aarch64)                    llvm_add_target AArch64 ;;
+        ppc|ppc64|ppc64le|powerpc*)       llvm_add_target PowerPC ;;
+        *)
+            llvm_add_target X86
+            llvm_add_target ARM
+            llvm_add_target AArch64
+            llvm_add_target PowerPC
+            ;;
+    esac
+
+    if [ "$WATER_ARCHS_MODE" = custom ]; then
+        for item in \
+            WATER_ARCH_I386:X86 WATER_ARCH_X86_64:X86 WATER_ARCH_ARM:ARM \
+            WATER_ARCH_AARCH64:AArch64 WATER_ARCH_POWERPC:PowerPC
+        do
+            var=${item%%:*}
+            backend=${item#*:}
+            eval "enabled=\${$var:-y}"
+            case "$enabled" in y|1) llvm_add_target "$backend" ;; esac
+        done
+
+        eval "arm64ec_enabled=\${WATER_ARCH_ARM64EC:-y}"
+        case "$arm64ec_enabled" in
+            y|1)
+                llvm_add_target AArch64
+                # Water configure adds an x86_64 companion PE architecture
+                # when ARM64EC is selected.
+                llvm_add_target X86
+                ;;
+        esac
+    fi
+
+    printf '%s\n' "$llvm_targets"
+}
+
+select_llvm_cache()
+{
+    llvm_cache=
+    case "$WATER_COMPILER_CACHE" in
+        auto)
+            llvm_cache=$(command -v sccache 2>/dev/null || true)
+            [ -n "$llvm_cache" ] || llvm_cache=$(command -v ccache 2>/dev/null || true)
+            ;;
+        sccache|ccache)
+            llvm_cache=$(command -v "$WATER_COMPILER_CACHE" 2>/dev/null || true)
+            [ -n "$llvm_cache" ] ||
+                die "requested compiler cache is not installed: $WATER_COMPILER_CACHE"
+            ;;
+        none) ;;
+    esac
+    printf '%s\n' "$llvm_cache"
+}
+
 bootstrap_llvm()
 {
     [ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ] ||
@@ -256,40 +346,82 @@ bootstrap_llvm()
         y|1) llvm_assertions=ON ;;
         *) llvm_assertions=OFF ;;
     esac
+    case "$WATER_LLVM_PCH" in
+        y|1) llvm_disable_pch=OFF ;;
+        *) llvm_disable_pch=ON ;;
+    esac
+
+    llvm_targets=$(select_llvm_targets)
+    llvm_cache=$(select_llvm_cache)
+    llvm_lld_backends="COFF;MinGW"
 
     mkdir -p "$LLVM_BOOTSTRAP_DIR"
+
+    set -- \
+        -S "$LLVM_SOURCE_DIR/llvm" \
+        -B "$LLVM_BOOTSTRAP_DIR" \
+        "-DCMAKE_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
+        "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$llvm_disable_pch" \
+        "-DCMAKE_C_COMPILER_LAUNCHER=$llvm_cache" \
+        "-DCMAKE_CXX_COMPILER_LAUNCHER=$llvm_cache" \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF \
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+        "-DLLVM_ENABLE_ASSERTIONS=$llvm_assertions" \
+        "-DLLVM_ENABLE_PROJECTS=clang;lld" \
+        "-DLLVM_TARGETS_TO_BUILD=$llvm_targets" \
+        "-DLLD_ENABLE_BACKENDS=$llvm_lld_backends" \
+        "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS" \
+        -DLLVM_APPEND_VC_REV=OFF \
+        -DLLVM_ENABLE_LTO=OFF \
+        -DLLVM_ENABLE_FATLTO=OFF \
+        -DLLVM_BUILD_INSTRUMENTED=OFF \
+        -DLLVM_ENABLE_MODULES=OFF \
+        -DLLVM_ENABLE_PLUGINS=OFF
+
+    case "$WATER_LLVM_LEAN" in
+        y|1)
+            set -- "$@" \
+                -DLLVM_BUILD_TOOLS=OFF \
+                -DLLVM_BUILD_UTILS=OFF \
+                -DLLVM_BUILD_RUNTIMES=OFF \
+                -DLLVM_INCLUDE_TESTS=OFF \
+                -DLLVM_INCLUDE_EXAMPLES=OFF \
+                -DLLVM_INCLUDE_BENCHMARKS=OFF \
+                -DLLVM_INCLUDE_DOCS=OFF \
+                -DLLVM_INCLUDE_UTILS=OFF \
+                -DLLVM_INCLUDE_RUNTIMES=OFF \
+                -DLLVM_ENABLE_BINDINGS=OFF \
+                -DLLVM_ENABLE_TELEMETRY=OFF \
+                -DCLANG_BUILD_TOOLS=OFF \
+                -DCLANG_INCLUDE_TESTS=OFF \
+                -DCLANG_ENABLE_STATIC_ANALYZER=ON \
+                -DLLD_INCLUDE_TESTS=OFF
+            ;;
+    esac
 
     if [ ! -f "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" ]; then
         ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
         if [ -n "$ninja_cmd" ]; then
-            "$cmake_cmd" -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BOOTSTRAP_DIR" \
-                -G Ninja \
-                "-DCMAKE_MAKE_PROGRAM=$ninja_cmd" \
-                "-DCMAKE_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
-                "-DLLVM_ENABLE_ASSERTIONS=$llvm_assertions" \
-                "-DLLVM_ENABLE_PROJECTS=clang;lld" \
-                "-DLLVM_TARGETS_TO_BUILD=X86;ARM;AArch64;PowerPC"
-        else
-            "$cmake_cmd" -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BOOTSTRAP_DIR" \
-                "-DCMAKE_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
-                "-DLLVM_ENABLE_ASSERTIONS=$llvm_assertions" \
-                "-DLLVM_ENABLE_PROJECTS=clang;lld" \
-                "-DLLVM_TARGETS_TO_BUILD=X86;ARM;AArch64;PowerPC"
+            set -- "$@" -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
         fi
-    else
-        "$cmake_cmd" -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BOOTSTRAP_DIR" \
-            "-DCMAKE_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
-            "-DLLVM_ENABLE_ASSERTIONS=$llvm_assertions" \
-            "-DLLVM_ENABLE_PROJECTS=clang;lld" \
-            "-DLLVM_TARGETS_TO_BUILD=X86;ARM;AArch64;PowerPC"
     fi
+
+    printf 'WHP LLVM targets: %s\n' "$llvm_targets" >&2
+    printf 'WHP LLVM LLD backends: %s\n' "$llvm_lld_backends" >&2
+    if [ -n "$llvm_cache" ]; then
+        printf 'WHP LLVM compiler cache: %s\n' "$llvm_cache" >&2
+    else
+        printf 'WHP LLVM compiler cache: disabled\n' >&2
+    fi
+    printf 'WHP LLVM lean profile: %s\n' "$WATER_LLVM_LEAN" >&2
+
+    "$cmake_cmd" "$@"
 
     jobs=$(detect_jobs)
     printf 'WHP LLVM bootstrap: %s\n' "$LLVM_BOOTSTRAP_DIR" >&2
     "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-        --target clang lld llvm-ar llvm-nm llvm-ranlib
+        --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
 }
-
 prepare_llvm_toolchain()
 {
     if [ -n "${WHP_LLVM_PREFIX:-}" ]; then
@@ -386,6 +518,9 @@ profile_signature()
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
         "WATER_LLVM_ASSERTIONS=${WATER_LLVM_ASSERTIONS:-n}" \
+        "WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}" \
+        "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
+        "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
         "WATER_SYSTEM_DLLPATH=${WATER_SYSTEM_DLLPATH:-auto}" \
         "WATER_WINE_TOOLS=${WATER_WINE_TOOLS:-auto}" \
