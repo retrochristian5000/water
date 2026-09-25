@@ -1122,7 +1122,7 @@ HANDLE WINAPI CryptCATOpen(WCHAR *filename, DWORD flags, HCRYPTPROV hProv,
     if (file == INVALID_HANDLE_VALUE) return INVALID_HANDLE_VALUE;
 
     size = GetFileSize(file, NULL);
-    if (!(buffer = malloc(size)))
+    if (size && !(buffer = malloc(size)))
     {
         CloseHandle(file);
         SetLastError(ERROR_OUTOFMEMORY);
@@ -1300,6 +1300,18 @@ static WCHAR *cdf_strdupW(const WCHAR *str)
     return ret;
 }
 
+static char *cdf_strdupA(const char *str)
+{
+    char *ret;
+    SIZE_T len;
+
+    if (!str) return NULL;
+    len = strlen(str) + 1;
+    if (!(ret = malloc(len))) return NULL;
+    memcpy(ret, str, len);
+    return ret;
+}
+
 static WCHAR *cdf_widen(const char *str)
 {
     WCHAR *ret;
@@ -1374,7 +1386,7 @@ static BOOL cdf_attr_slot_exists(const struct cdf_context *ctx, const char *slot
     DWORD i;
 
     for (i = 0; i < ctx->attr_count; i++)
-        if (!strcmp(ctx->attrs[i].slot, slot)) return TRUE;
+        if (!_stricmp(ctx->attrs[i].slot, slot)) return TRUE;
     return FALSE;
 }
 
@@ -1426,7 +1438,7 @@ static BOOL cdf_append_attribute(struct cdf_context *ctx, const char *slot,
         if (*end) parse_error = CRYPTCAT_E_CDF_ATTR_TYPECOMBO;
     }
 
-    slot_copy = strdup(slot);
+    slot_copy = cdf_strdupA(slot);
     sourceW = cdf_widen(source);
     if (!parse_error)
     {
@@ -1665,7 +1677,7 @@ LPWSTR WINAPI CryptCATCDFEnumMembersByCDFTagEx(CRYPTCATCDF *pCDF, LPWSTR pwszPre
     if (pwszPrevCDFTag)
     {
         for (i = 0; i < ctx->member_count; i++)
-            if (!lstrcmpW(ctx->members[i].tag, pwszPrevCDFTag)) break;
+            if (!lstrcmpiW(ctx->members[i].tag, pwszPrevCDFTag)) break;
         if (i == ctx->member_count) return NULL;
         i++;
     }
@@ -1805,7 +1817,7 @@ CRYPTCATCDF * WINAPI CryptCATCDFOpen(LPWSTR pwszFilePath,
             continue;
         }
 
-        if (!(line_copy = strdup(p)))
+        if (!(line_copy = cdf_strdupA(p)))
         {
             free(base_dir);
             free(buffer);
