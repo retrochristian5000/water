@@ -578,7 +578,7 @@ static void INT21_LoadBootConfig(void)
                 }
             }
         }
-        else if (!_stricmp( name, "LASTDRIVE" ))
+        else if (!_stricmp( name, "LASTDRIVE" ) || !_stricmp( name, "LASTDRIVEHIGH" ))
         {
             while (*value == ' ' || *value == '\t') value++;
             if ((value[0] >= 'A' && value[0] <= 'Z') ||
@@ -1011,6 +1011,17 @@ static SEGPTR INT21_GetListOfLists(void)
 
     if (boot_config.last_drive > drive_count) drive_count = boot_config.last_drive;
     if (INT21_GetBootDrive() > drive_count) drive_count = INT21_GetBootDrive();
+
+    /*
+     * DOS 3/4/5/6 keeps at least five CDS slots.  DOS 7.x instead uses
+     * 32 slots when LASTDRIVE/LASTDRIVEHIGH was not specified.
+     */
+    if (HIBYTE(HIWORD(GetVersion16())) >= 7)
+    {
+        if (!boot_config.last_drive && drive_count < 32) drive_count = 32;
+    }
+    else if (drive_count < 5) drive_count = 5;
+
     lol->nr_drive_letters = drive_count;
     lol->max_bytes_per_sector = max_sector;
 
