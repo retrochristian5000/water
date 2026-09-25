@@ -244,6 +244,23 @@ struct strarray find_optional_tool( const char *name, const char * const *names 
     return ret;
 }
 
+struct strarray find_optional_target_tool( const char *name, const char * const *prefixes )
+{
+    struct strarray ret = empty_strarray;
+    const char *file = NULL;
+
+    if (target_alias) file = find_binary( target_alias, name );
+    while (!file && prefixes && *prefixes)
+    {
+        if ((file = find_binary( *prefixes, name ))) break;
+        prefixes++;
+    }
+    if (!file) file = find_binary( NULL, name );
+
+    if (file) strarray_add( &ret, file );
+    return ret;
+}
+
 struct strarray find_tool( const char *name, const char * const *names )
 {
     struct strarray ret = find_optional_tool( name, names );

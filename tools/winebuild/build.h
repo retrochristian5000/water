@@ -255,6 +255,7 @@ extern void output_thunk_rva( int ordinal, const char *format, ... )
    __attribute__ ((__format__ (__printf__, 2, 3)));
 extern void spawn( struct strarray array );
 extern struct strarray find_optional_tool( const char *name, const char * const *names );
+extern struct strarray find_optional_target_tool( const char *name, const char * const *prefixes );
 extern struct strarray find_tool( const char *name, const char * const *names );
 extern struct strarray find_link_tool(void);
 extern struct strarray get_as_command(void);

@@ -1258,8 +1258,16 @@ static void build_windows_import_lib( const char *lib_name, DLLSPEC *spec, struc
 /* create a Windows-style import library using dlltool */
 static void build_dlltool_import_lib( const char *lib_name, DLLSPEC *spec, struct strarray files )
 {
+    static const char * const powerpc_prefixes[] =
+    {
+        "powerpcle-w64-mingw32",
+        "powerpc-w64-mingw32",
+        NULL
+    };
     const char *def_file, *native_def_file = NULL;
-    struct strarray args = find_optional_tool( "dlltool", NULL );
+    struct strarray args = target.cpu == CPU_POWERPC ?
+                           find_optional_target_tool( "dlltool", powerpc_prefixes ) :
+                           find_optional_tool( "dlltool", NULL );
 
     if (!args.count)
     {
