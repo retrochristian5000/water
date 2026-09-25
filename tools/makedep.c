@@ -4139,7 +4139,8 @@ static void output_import_lib( struct makefile *make, unsigned int arch )
     output( "\n" );
     output( "\t%s%s -w --implib -o $@", cmd_prefix( "BUILD" ), winebuild );
     if (cc_cmds[arch]) output_filename( cc_cmds[arch] );
-    if (!delay_load_flags[arch]) output_filename( "--without-dlltool" );
+    if (!delay_load_flags[arch] && strcmp( archs.str[arch], "powerpc" ))
+        output_filename( "--without-dlltool" );
     output_filenames( target_flags[hybrid_arch ? hybrid_arch : arch] );
     if (make->is_win16) output_filename( "-m16" );
     if (hybrid_arch) output_filenames( hybrid_target_flags[hybrid_arch] );
