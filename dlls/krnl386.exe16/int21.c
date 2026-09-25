@@ -125,6 +125,7 @@ typedef struct _INT21_HEAP {
     WORD dbcs_size;                  /* Number of valid ranges in the following table */
     BYTE dbcs_table[16];             /* Start/end bytes for N ranges and 00/00 as terminator */
 
+    BYTE      misc_criterr;                  /* DOS 3+ critical-error flag (immediately before InDOS) */
     BYTE      misc_indos;                    /* Interrupt 21 nesting flag */
     WORD      misc_selector;                 /* Protected mode selector for INT21_HEAP */
     INT21_DPB misc_dpb_list[MAX_DOS_DRIVES]; /* Drive parameter blocks for all drives */
@@ -587,8 +588,10 @@ static void INT21_FillHeap( INT21_HEAP *heap )
     memset( heap->dbcs_table, 0, sizeof(heap->dbcs_table) );
 
     /*
-     * Initialize InDos flag.
+     * Initialize DOS reentrancy flags.  DOS 3+ exposes the critical-error
+     * flag immediately before the InDOS byte returned by INT 21h/AH=34h.
      */
+    heap->misc_criterr = 0;
     heap->misc_indos = 0;
 
     /*
@@ -3987,7 +3990,10 @@ static BOOL     INT21_Dup2(HFILE16 hFile1, HFILE16 hFile2)
  */
 void WINAPI DOSVM_Int21Handler( CONTEXT *context )
 {
+    INT21_HEAP *heap = INT21_GetHeapPointer();
     BOOL bSetDOSExtendedError = FALSE;
+
+    heap->misc_indos++;
 
     TRACE( "AX=%04x BX=%04x CX=%04x DX=%04x "
            "SI=%04x DI=%04x DS=%04x ES=%04x EFL=%08lx\n",
@@ -4394,8 +4400,7 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
 
         case 0x05: /* GET BOOT DRIVE */
             TRACE("GET BOOT DRIVE\n");
-            SET_DL( context, 3 );
-            /* c: is Wine's bootdrive (a: is 1)*/
+            SET_DL( context, INT21_GetBootDrive() );
             break;
 
         case 0x06: /* GET TRUE VERSION NUMBER */
@@ -5111,4 +5116,6 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
            SI_reg(context), DI_reg(context),
            (WORD)context->SegDs, (WORD)context->SegEs,
            context->EFlags );
+
+    if (heap->misc_indos) heap->misc_indos--;
 }

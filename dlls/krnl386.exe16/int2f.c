@@ -401,12 +401,12 @@ static void do_int2f_16( CONTEXT *context )
        SET_AL( context, 0 );
         break;
 
-    case 0x81: /* Begin critical section.  */
-        /* FIXME? */
+    case 0x81: /* Begin critical section. */
+        _EnterWin16Lock();
         break;
 
-    case 0x82: /* End critical section.  */
-        /* FIXME? */
+    case 0x82: /* End critical section. */
+        _LeaveWin16Lock();
         break;
 
     case 0x83:  /* Return Current Virtual Machine ID */
