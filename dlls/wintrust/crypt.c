@@ -24,6 +24,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "windef.h"
 #include "winbase.h"
 #include "wintrust.h"
@@ -40,6 +41,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(wintrust);
 #define CATADMIN_MAGIC 0x43415441 /* 'CATA' */
 #define CRYPTCAT_MAGIC 0x43415443 /* 'CATC' */
 #define CATINFO_MAGIC  0x43415449 /* 'CATI' */
+#define CDF_MAGIC      0x43444643 /* 'CDFC' */
 
 struct cryptcat
 {
@@ -1228,14 +1230,348 @@ BOOL WINAPI CryptSIPCreateIndirectData(SIP_SUBJECTINFO* pSubjectInfo, DWORD* pcb
 }
 
 
+
+struct cdf_attribute
+{
+    CRYPTCATATTRIBUTE attr;
+    WCHAR *tag;
+    WCHAR *value;
+    WCHAR *source;
+    char *slot;
+    DWORD offset;
+    BOOL valid;
+};
+
+struct cdf_member
+{
+    CRYPTCATMEMBER member;
+    WCHAR *tag;
+    WCHAR *filename;
+    WCHAR *resolved;
+    WCHAR *source;
+    DWORD offset;
+};
+
+struct cdf_context
+{
+    CRYPTCATCDF cdf;
+    DWORD magic;
+    WCHAR *path;
+    WCHAR *catalog_path;
+    PFN_CDF_PARSE_ERROR_CALLBACK parse_error;
+    struct cdf_attribute *attrs;
+    DWORD attr_count;
+    struct cdf_member *members;
+    DWORD member_count;
+};
+
+static struct cdf_context *cdf_impl_from_public(CRYPTCATCDF *cdf)
+{
+    struct cdf_context *ctx;
+
+    if (!cdf) return NULL;
+    ctx = CONTAINING_RECORD(cdf, struct cdf_context, cdf);
+    if (ctx->magic != CDF_MAGIC) return NULL;
+    return ctx;
+}
+
+static char *cdf_trim(char *str)
+{
+    char *end;
+
+    while (*str == ' ' || *str == '\t') str++;
+    end = str + strlen(str);
+    while (end > str && (end[-1] == ' ' || end[-1] == '\t')) *--end = 0;
+    return str;
+}
+
+static WCHAR *cdf_strdupW(const WCHAR *str)
+{
+    WCHAR *ret;
+    SIZE_T len;
+
+    if (!str) return NULL;
+    len = (lstrlenW(str) + 1) * sizeof(WCHAR);
+    if (!(ret = malloc(len))) return NULL;
+    memcpy(ret, str, len);
+    return ret;
+}
+
+static WCHAR *cdf_widen(const char *str)
+{
+    WCHAR *ret;
+    int len;
+
+    if (!str) return NULL;
+    if (!(len = MultiByteToWideChar(CP_ACP, 0, str, -1, NULL, 0))) return NULL;
+    if (!(ret = malloc(len * sizeof(WCHAR)))) return NULL;
+    if (!MultiByteToWideChar(CP_ACP, 0, str, -1, ret, len))
+    {
+        free(ret);
+        return NULL;
+    }
+    return ret;
+}
+
+static BOOL cdf_is_absolute_path(const WCHAR *path)
+{
+    return path && ((path[0] && path[1] == ':') || (path[0] == '\\' && path[1] == '\\'));
+}
+
+static WCHAR *cdf_combine_path(const WCHAR *dir, const WCHAR *name)
+{
+    WCHAR *ret;
+    SIZE_T dir_len, name_len;
+    BOOL slash;
+
+    if (!name) return NULL;
+    if (!dir || !*dir || cdf_is_absolute_path(name)) return cdf_strdupW(name);
+
+    dir_len = lstrlenW(dir);
+    name_len = lstrlenW(name);
+    slash = dir_len && dir[dir_len - 1] != '\\' && dir[dir_len - 1] != '/';
+
+    if (!(ret = malloc((dir_len + slash + name_len + 1) * sizeof(WCHAR)))) return NULL;
+    memcpy(ret, dir, dir_len * sizeof(WCHAR));
+    if (slash) ret[dir_len++] = '\\';
+    memcpy(ret + dir_len, name, (name_len + 1) * sizeof(WCHAR));
+    return ret;
+}
+
+static WCHAR *cdf_directory_from_path(const WCHAR *path)
+{
+    const WCHAR *slash, *slash2, *end;
+    WCHAR *ret;
+    SIZE_T len;
+
+    if (!path) return NULL;
+    slash = wcsrchr(path, '\\');
+    slash2 = wcsrchr(path, '/');
+    end = slash > slash2 ? slash : slash2;
+    if (!end) return cdf_strdupW(L".");
+
+    len = end - path;
+    if (!len) len = 1;
+    if (!(ret = malloc((len + 1) * sizeof(WCHAR)))) return NULL;
+    memcpy(ret, path, len * sizeof(WCHAR));
+    ret[len] = 0;
+    return ret;
+}
+
+static void cdf_report(PFN_CDF_PARSE_ERROR_CALLBACK callback, DWORD area, DWORD error,
+                       const WCHAR *line)
+{
+    if (callback) callback(area, error, (WCHAR *)line);
+}
+
+static BOOL cdf_attr_slot_exists(const struct cdf_context *ctx, const char *slot)
+{
+    DWORD i;
+
+    for (i = 0; i < ctx->attr_count; i++)
+        if (!strcmp(ctx->attrs[i].slot, slot)) return TRUE;
+    return FALSE;
+}
+
+static BOOL cdf_member_tag_exists(const struct cdf_context *ctx, const WCHAR *tag)
+{
+    DWORD i;
+
+    for (i = 0; i < ctx->member_count; i++)
+        if (!lstrcmpiW(ctx->members[i].tag, tag)) return TRUE;
+    return FALSE;
+}
+
+static BOOL cdf_append_attribute(struct cdf_context *ctx, const char *slot,
+                                 const char *spec, const char *source, DWORD offset)
+{
+    struct cdf_attribute *entry, *new_attrs;
+    const char *first, *second;
+    char *type_str = NULL, *tag_str = NULL;
+    SIZE_T len;
+    char *end;
+    ULONG type;
+
+    if (cdf_attr_slot_exists(ctx, slot)) return TRUE;
+
+    first = strchr(spec, ':');
+    second = first ? strchr(first + 1, ':') : NULL;
+
+    if (!first || !second || first == spec || second == first + 1)
+    {
+        if (!(new_attrs = realloc(ctx->attrs, (ctx->attr_count + 1) * sizeof(*ctx->attrs))))
+            return FALSE;
+        ctx->attrs = new_attrs;
+        entry = &ctx->attrs[ctx->attr_count++];
+        memset(entry, 0, sizeof(*entry));
+        if (!(entry->slot = strdup(slot))) return FALSE;
+        entry->source = cdf_widen(source);
+        entry->offset = offset;
+        entry->valid = FALSE;
+        return TRUE;
+    }
+
+    len = first - spec;
+    if (!(type_str = malloc(len + 1))) return FALSE;
+    memcpy(type_str, spec, len);
+    type_str[len] = 0;
+
+    len = second - first - 1;
+    if (!(tag_str = malloc(len + 1)))
+    {
+        free(type_str);
+        return FALSE;
+    }
+    memcpy(tag_str, first + 1, len);
+    tag_str[len] = 0;
+
+    type = strtoul(type_str, &end, 0);
+    free(type_str);
+    if (*end)
+    {
+        free(tag_str);
+        return FALSE;
+    }
+
+    if (!(new_attrs = realloc(ctx->attrs, (ctx->attr_count + 1) * sizeof(*ctx->attrs))))
+    {
+        free(tag_str);
+        return FALSE;
+    }
+    ctx->attrs = new_attrs;
+    entry = &ctx->attrs[ctx->attr_count++];
+    memset(entry, 0, sizeof(*entry));
+
+    entry->slot = strdup(slot);
+    entry->tag = cdf_widen(tag_str);
+    entry->value = cdf_widen(second + 1);
+    entry->source = cdf_widen(source);
+    free(tag_str);
+
+    if (!entry->slot || !entry->tag || !entry->value || !entry->source) return FALSE;
+
+    entry->attr.cbStruct = sizeof(entry->attr);
+    entry->attr.pwszReferenceTag = entry->tag;
+    entry->attr.dwAttrTypeAndAction = type;
+    entry->attr.cbValue = (lstrlenW(entry->value) + 1) * sizeof(WCHAR);
+    entry->attr.pbValue = (BYTE *)entry->value;
+    entry->offset = offset;
+    entry->valid = TRUE;
+    return TRUE;
+}
+
+static BOOL cdf_is_member_metadata(const char *tag)
+{
+    const char *p;
+    SIZE_T len;
+
+    if (!tag) return FALSE;
+    len = strlen(tag);
+    if (len >= 8 && !_stricmp(tag + len - 8, "ALTSIPID")) return TRUE;
+
+    p = tag + len;
+    while (p > tag && p[-1] >= '0' && p[-1] <= '9') p--;
+    if (p < tag + len && p - tag >= 4 && !_strnicmp(p - 4, "ATTR", 4)) return TRUE;
+    return FALSE;
+}
+
+static BOOL cdf_append_member(struct cdf_context *ctx, const char *tag,
+                              const char *filename, const char *source, DWORD offset,
+                              const WCHAR *base_dir)
+{
+    struct cdf_member *entry, *new_members;
+    WCHAR *tagW = NULL, *fileW = NULL;
+
+    if (!(tagW = cdf_widen(tag)) || !(fileW = cdf_widen(filename)))
+    {
+        free(tagW);
+        free(fileW);
+        return FALSE;
+    }
+
+    if (cdf_member_tag_exists(ctx, tagW))
+    {
+        free(tagW);
+        free(fileW);
+        return TRUE;
+    }
+
+    if (!(new_members = realloc(ctx->members, (ctx->member_count + 1) * sizeof(*ctx->members))))
+    {
+        free(tagW);
+        free(fileW);
+        return FALSE;
+    }
+    ctx->members = new_members;
+    entry = &ctx->members[ctx->member_count++];
+    memset(entry, 0, sizeof(*entry));
+
+    entry->tag = tagW;
+    entry->filename = fileW;
+    entry->resolved = cdf_combine_path(base_dir, fileW);
+    entry->source = cdf_widen(source);
+    entry->offset = offset;
+    if (!entry->resolved || !entry->source) return FALSE;
+
+    entry->member.cbStruct = sizeof(entry->member);
+    entry->member.pwszReferenceTag = entry->tag;
+    entry->member.pwszFileName = entry->filename;
+    return TRUE;
+}
+
+static void cdf_free_context(struct cdf_context *ctx)
+{
+    DWORD i;
+
+    if (!ctx) return;
+
+    if (ctx->cdf.hCATStore && ctx->cdf.hCATStore != INVALID_HANDLE_VALUE)
+        CryptCATClose(ctx->cdf.hCATStore);
+    if (ctx->cdf.hFile && ctx->cdf.hFile != INVALID_HANDLE_VALUE)
+        CloseHandle(ctx->cdf.hFile);
+
+    for (i = 0; i < ctx->attr_count; i++)
+    {
+        free(ctx->attrs[i].slot);
+        free(ctx->attrs[i].tag);
+        free(ctx->attrs[i].value);
+        free(ctx->attrs[i].source);
+    }
+    for (i = 0; i < ctx->member_count; i++)
+    {
+        free(ctx->members[i].tag);
+        free(ctx->members[i].filename);
+        free(ctx->members[i].resolved);
+        free(ctx->members[i].source);
+    }
+
+    free(ctx->attrs);
+    free(ctx->members);
+    free(ctx->path);
+    free(ctx->catalog_path);
+    free(ctx->cdf.pwszResultDir);
+    ctx->magic = 0;
+    free(ctx);
+}
+
 /***********************************************************************
  *      CryptCATCDFClose  (WINTRUST.@)
  */
 BOOL WINAPI CryptCATCDFClose(CRYPTCATCDF *pCDF)
 {
-    FIXME("(%p) stub\n", pCDF);
+    struct cdf_context *ctx = cdf_impl_from_public(pCDF);
 
-    return FALSE;
+    TRACE("(%p)\n", pCDF);
+
+    if (!ctx)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    cdf_free_context(ctx);
+    SetLastError(ERROR_SUCCESS);
+    return TRUE;
 }
 
 /***********************************************************************
@@ -1245,8 +1581,42 @@ CRYPTCATATTRIBUTE * WINAPI CryptCATCDFEnumCatAttributes(CRYPTCATCDF *pCDF,
                                                         CRYPTCATATTRIBUTE *pPrevAttr,
                                                         PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError)
 {
-    FIXME("(%p %p %p) stub\n", pCDF, pPrevAttr, pfnParseError);
+    struct cdf_context *ctx = cdf_impl_from_public(pCDF);
+    DWORD i = 0;
 
+    TRACE("(%p %p %p)\n", pCDF, pPrevAttr, pfnParseError);
+
+    if (!ctx)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return NULL;
+    }
+
+    if (pPrevAttr)
+    {
+        for (i = 0; i < ctx->attr_count; i++)
+            if (&ctx->attrs[i].attr == pPrevAttr) break;
+        if (i == ctx->attr_count) return NULL;
+        i++;
+    }
+
+    for (; i < ctx->attr_count; i++)
+    {
+        pCDF->dwCurFilePos = ctx->attrs[i].offset;
+        if (!ctx->attrs[i].valid)
+        {
+            cdf_report(pfnParseError ? pfnParseError : ctx->parse_error,
+                       CRYPTCAT_E_AREA_ATTRIBUTE, CRYPTCAT_E_CDF_ATTR_TOOFEWVALUES,
+                       ctx->attrs[i].source);
+            continue;
+        }
+
+        SetLastError(ERROR_SUCCESS);
+        return &ctx->attrs[i].attr;
+    }
+
+    pCDF->fEOF = TRUE;
+    SetLastError(ERROR_SUCCESS);
     return NULL;
 }
 
@@ -1258,9 +1628,56 @@ LPWSTR WINAPI CryptCATCDFEnumMembersByCDFTagEx(CRYPTCATCDF *pCDF, LPWSTR pwszPre
                                                CRYPTCATMEMBER **ppMember, BOOL fContinueOnError,
                                                LPVOID pvReserved)
 {
-    FIXME("(%p %s %p %p %d %p) stub\n", pCDF, debugstr_w(pwszPrevCDFTag), pfnParseError,
+    struct cdf_context *ctx = cdf_impl_from_public(pCDF);
+    PFN_CDF_PARSE_ERROR_CALLBACK callback;
+    DWORD i = 0;
+    DWORD attr;
+
+    TRACE("(%p %s %p %p %d %p)\n", pCDF, debugstr_w(pwszPrevCDFTag), pfnParseError,
           ppMember, fContinueOnError, pvReserved);
 
+    if (ppMember) *ppMember = NULL;
+    if (!ctx || !ppMember || pvReserved)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return NULL;
+    }
+
+    callback = pfnParseError ? pfnParseError : ctx->parse_error;
+
+    if (pwszPrevCDFTag)
+    {
+        for (i = 0; i < ctx->member_count; i++)
+            if (!lstrcmpW(ctx->members[i].tag, pwszPrevCDFTag)) break;
+        if (i == ctx->member_count) return NULL;
+        i++;
+    }
+
+    for (; i < ctx->member_count; i++)
+    {
+        pCDF->dwCurFilePos = ctx->members[i].offset;
+        pCDF->dwLastMemberOffset = ctx->members[i].offset;
+
+        attr = GetFileAttributesW(ctx->members[i].resolved);
+        if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY))
+        {
+            cdf_report(callback, CRYPTCAT_E_AREA_MEMBER, CRYPTCAT_E_CDF_MEMBER_FILENOTFOUND,
+                       ctx->members[i].source);
+            if (!fContinueOnError)
+            {
+                SetLastError(ERROR_FILE_NOT_FOUND);
+                return NULL;
+            }
+            continue;
+        }
+
+        *ppMember = &ctx->members[i].member;
+        SetLastError(ERROR_SUCCESS);
+        return ctx->members[i].tag;
+    }
+
+    pCDF->fEOF = TRUE;
+    SetLastError(ERROR_SUCCESS);
     return NULL;
 }
 
@@ -1270,9 +1687,238 @@ LPWSTR WINAPI CryptCATCDFEnumMembersByCDFTagEx(CRYPTCATCDF *pCDF, LPWSTR pwszPre
 CRYPTCATCDF * WINAPI CryptCATCDFOpen(LPWSTR pwszFilePath,
                                      PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError)
 {
-    FIXME("(%s %p) stub\n", debugstr_w(pwszFilePath), pfnParseError);
+    enum cdf_section { CDF_SECTION_NONE, CDF_SECTION_HEADER, CDF_SECTION_FILES };
+    struct cdf_context *ctx = NULL;
+    WCHAR fullpath[MAX_PATH], *base_dir = NULL, *nameW = NULL, *resultW = NULL;
+    char *buffer = NULL, *line;
+    DWORD size, read, offset, public_version = 1;
+    DWORD encoding = X509_ASN_ENCODING | PKCS_7_ASN_ENCODING;
+    BOOL header_found = FALSE;
+    enum cdf_section section = CDF_SECTION_NONE;
+    HANDLE file = INVALID_HANDLE_VALUE;
 
-    return NULL;
+    TRACE("(%s %p)\n", debugstr_w(pwszFilePath), pfnParseError);
+
+    if (!pwszFilePath)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return NULL;
+    }
+
+    if (!GetFullPathNameW(pwszFilePath, ARRAY_SIZE(fullpath), fullpath, NULL))
+        return NULL;
+
+    file = CreateFileW(fullpath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                       FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return NULL;
+
+    size = GetFileSize(file, NULL);
+    if (size == INVALID_FILE_SIZE && GetLastError() != ERROR_SUCCESS)
+    {
+        CloseHandle(file);
+        return NULL;
+    }
+
+    if (!(ctx = calloc(1, sizeof(*ctx))))
+    {
+        CloseHandle(file);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return NULL;
+    }
+
+    ctx->magic = CDF_MAGIC;
+    ctx->parse_error = pfnParseError;
+    ctx->cdf.cbStruct = sizeof(ctx->cdf);
+    ctx->cdf.hFile = file;
+    ctx->cdf.hCATStore = INVALID_HANDLE_VALUE;
+    ctx->path = cdf_strdupW(fullpath);
+    base_dir = cdf_directory_from_path(fullpath);
+
+    if (!ctx->path || !base_dir || !(buffer = malloc(size + 1)))
+    {
+        free(base_dir);
+        free(buffer);
+        cdf_free_context(ctx);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return NULL;
+    }
+
+    if (size && !ReadFile(file, buffer, size, &read, NULL))
+    {
+        free(base_dir);
+        free(buffer);
+        cdf_free_context(ctx);
+        return NULL;
+    }
+    if (!size) read = 0;
+    buffer[read] = 0;
+
+    line = buffer;
+    while ((DWORD)(line - buffer) < read)
+    {
+        char *next = line;
+        char *p, *key, *value, *eq;
+        char *line_copy;
+        DWORD line_offset = line - buffer;
+
+        while ((DWORD)(next - buffer) < read && *next != '\r' && *next != '\n') next++;
+        if ((DWORD)(next - buffer) < read)
+        {
+            *next++ = 0;
+            if ((DWORD)(next - buffer) < read &&
+                ((next[-1] == '\r' && *next == '\n') ||
+                 (next[-1] == '\n' && *next == '\r'))) next++;
+        }
+
+        p = cdf_trim(line);
+        if (!*p || *p == ';' || *p == '#')
+        {
+            line = next;
+            continue;
+        }
+
+        if (!(line_copy = strdup(p)))
+        {
+            free(base_dir);
+            free(buffer);
+            free(nameW);
+            free(resultW);
+            cdf_free_context(ctx);
+            SetLastError(ERROR_OUTOFMEMORY);
+            return NULL;
+        }
+
+        if (*p == '[')
+        {
+            char *end = strchr(p + 1, ']');
+
+            if (end)
+            {
+                *end = 0;
+                if (!_stricmp(cdf_trim(p + 1), "CatalogHeader"))
+                {
+                    section = CDF_SECTION_HEADER;
+                    header_found = TRUE;
+                }
+                else if (!_stricmp(cdf_trim(p + 1), "CatalogFiles"))
+                    section = CDF_SECTION_FILES;
+                else
+                    section = CDF_SECTION_NONE;
+            }
+            free(line_copy);
+            line = next;
+            continue;
+        }
+
+        if (!(eq = strchr(p, '=')))
+        {
+            free(line_copy);
+            line = next;
+            continue;
+        }
+
+        *eq++ = 0;
+        key = cdf_trim(p);
+        value = cdf_trim(eq);
+        offset = line_offset;
+
+        if (section == CDF_SECTION_HEADER)
+        {
+            if (!_stricmp(key, "Name"))
+            {
+                free(nameW);
+                nameW = cdf_widen(value);
+            }
+            else if (!_stricmp(key, "ResultDir"))
+            {
+                free(resultW);
+                resultW = cdf_widen(value);
+            }
+            else if (!_stricmp(key, "PublicVersion"))
+                public_version = strtoul(value, NULL, 0);
+            else if (!_stricmp(key, "EncodingType") && *value)
+                encoding = strtoul(value, NULL, 0);
+            else if (!_strnicmp(key, "CATATTR", 7))
+            {
+                if (!cdf_append_attribute(ctx, key, value, line_copy, offset))
+                {
+                    free(line_copy);
+                    free(base_dir);
+                    free(buffer);
+                    free(nameW);
+                    free(resultW);
+                    cdf_free_context(ctx);
+                    SetLastError(ERROR_OUTOFMEMORY);
+                    return NULL;
+                }
+            }
+        }
+        else if (section == CDF_SECTION_FILES && !cdf_is_member_metadata(key))
+        {
+            if (!cdf_append_member(ctx, key, value, line_copy, offset, base_dir))
+            {
+                free(line_copy);
+                free(base_dir);
+                free(buffer);
+                free(nameW);
+                free(resultW);
+                cdf_free_context(ctx);
+                SetLastError(ERROR_OUTOFMEMORY);
+                return NULL;
+            }
+        }
+
+        free(line_copy);
+        line = next;
+    }
+
+    free(base_dir);
+    free(buffer);
+
+    if (!header_found)
+    {
+        cdf_report(pfnParseError, CRYPTCAT_E_AREA_HEADER, CRYPTCAT_E_CDF_TAGNOTFOUND, L"");
+        free(nameW);
+        free(resultW);
+        cdf_free_context(ctx);
+        SetLastError(ERROR_SUCCESS);
+        return NULL;
+    }
+
+    if (!nameW || !*nameW)
+    {
+        free(nameW);
+        free(resultW);
+        cdf_free_context(ctx);
+        SetLastError(ERROR_SHARING_VIOLATION);
+        return NULL;
+    }
+
+    ctx->cdf.pwszResultDir = resultW ? cdf_strdupW(resultW) : cdf_strdupW(L"");
+    ctx->catalog_path = cdf_combine_path(resultW, nameW);
+    free(nameW);
+    free(resultW);
+
+    if (!ctx->cdf.pwszResultDir || !ctx->catalog_path)
+    {
+        cdf_free_context(ctx);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return NULL;
+    }
+
+    ctx->cdf.hCATStore = CryptCATOpen(ctx->catalog_path, CRYPTCAT_OPEN_CREATENEW, 0,
+                                     public_version, encoding);
+    if (ctx->cdf.hCATStore == INVALID_HANDLE_VALUE)
+    {
+        cdf_free_context(ctx);
+        return NULL;
+    }
+
+    ctx->cdf.dwCurFilePos = 0;
+    ctx->cdf.dwLastMemberOffset = 0;
+    ctx->cdf.fEOF = FALSE;
+    SetLastError(ERROR_SUCCESS);
+    return &ctx->cdf;
 }
 
 static BOOL WINTRUST_GetSignedMsgFromPEFile(SIP_SUBJECTINFO *pSubjectInfo,
