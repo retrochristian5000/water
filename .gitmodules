@@ -1,3 +1,9 @@
 [submodule "libs/fluidsynth"]
 	path = libs/fluidsynth
 	url = https://github.com/retrochristian5000/Fsynth.git
+
+[submodule "toolchains/llvm-project"]
+	path = toolchains/llvm-project
+	url = https://github.com/retrochristian5000/LLVM.git
+	branch = main
+	shallow = true

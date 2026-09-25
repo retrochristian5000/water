@@ -13,13 +13,16 @@ LICENSE for the details.
 
 ## QUICK START
 
-From the top-level directory of the Wine source (which contains this file),
+From the top-level directory of the Water source (which contains this file),
 run:
 
 ```
-./configure
-make
+./build.sh
 ```
+
+The build funnel initializes the pinned submodules, selects the LLVM toolchain,
+configures an out-of-tree build, and invokes Ninja or Make. Use
+`./build.sh configure [options]` when custom configure options are needed.
 
 Then either install Wine:
 
