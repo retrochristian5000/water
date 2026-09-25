@@ -1247,6 +1247,116 @@ typedef I386_CONTEXT CONTEXT, *PCONTEXT;
 
 #endif  /* __i386__ */
 
+/* PowerPC context definitions */
+#if defined(__powerpc__) || defined(__ppc__) || defined(_PPC_) || defined(_M_PPC)
+
+#define CONTEXT_CONTROL         0x0001
+#define CONTEXT_FLOATING_POINT  0x0002
+#define CONTEXT_INTEGER         0x0004
+#define CONTEXT_DEBUG_REGISTERS 0x0008
+#define CONTEXT_FULL (CONTEXT_CONTROL | CONTEXT_FLOATING_POINT | CONTEXT_INTEGER)
+
+typedef struct _PPC_FLOATING_SAVE_AREA
+{
+    double Fpr0;
+    double Fpr1;
+    double Fpr2;
+    double Fpr3;
+    double Fpr4;
+    double Fpr5;
+    double Fpr6;
+    double Fpr7;
+    double Fpr8;
+    double Fpr9;
+    double Fpr10;
+    double Fpr11;
+    double Fpr12;
+    double Fpr13;
+    double Fpr14;
+    double Fpr15;
+    double Fpr16;
+    double Fpr17;
+    double Fpr18;
+    double Fpr19;
+    double Fpr20;
+    double Fpr21;
+    double Fpr22;
+    double Fpr23;
+    double Fpr24;
+    double Fpr25;
+    double Fpr26;
+    double Fpr27;
+    double Fpr28;
+    double Fpr29;
+    double Fpr30;
+    double Fpr31;
+    double Fpscr;
+} PPC_FLOATING_SAVE_AREA, *PPPC_FLOATING_SAVE_AREA;
+
+typedef PPC_FLOATING_SAVE_AREA FLOATING_SAVE_AREA, *PFLOATING_SAVE_AREA;
+
+typedef struct _PPC_CONTEXT
+{
+    FLOATING_SAVE_AREA FloatSave;
+
+    DWORD Gpr0;
+    DWORD Gpr1;
+    DWORD Gpr2;
+    DWORD Gpr3;
+    DWORD Gpr4;
+    DWORD Gpr5;
+    DWORD Gpr6;
+    DWORD Gpr7;
+    DWORD Gpr8;
+    DWORD Gpr9;
+    DWORD Gpr10;
+    DWORD Gpr11;
+    DWORD Gpr12;
+    DWORD Gpr13;
+    DWORD Gpr14;
+    DWORD Gpr15;
+    DWORD Gpr16;
+    DWORD Gpr17;
+    DWORD Gpr18;
+    DWORD Gpr19;
+    DWORD Gpr20;
+    DWORD Gpr21;
+    DWORD Gpr22;
+    DWORD Gpr23;
+    DWORD Gpr24;
+    DWORD Gpr25;
+    DWORD Gpr26;
+    DWORD Gpr27;
+    DWORD Gpr28;
+    DWORD Gpr29;
+    DWORD Gpr30;
+    DWORD Gpr31;
+
+    DWORD Cr;
+    DWORD Xer;
+
+    DWORD Msr;
+    DWORD Iar;
+    DWORD Lr;
+    DWORD Ctr;
+
+    DWORD ContextFlags;
+    DWORD Fill[3];
+
+    DWORD Dr0;
+    DWORD Dr1;
+    DWORD Dr2;
+    DWORD Dr3;
+    DWORD Dr4;
+    DWORD Dr5;
+    DWORD Dr6;
+    DWORD Dr7;
+} PPC_CONTEXT, *PPPC_CONTEXT;
+
+typedef PPC_CONTEXT CONTEXT, *PCONTEXT;
+
+#endif  /* PowerPC */
+
 typedef struct _LDT_ENTRY {
     WORD	LimitLow;
     WORD	BaseLow;
