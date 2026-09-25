@@ -17,6 +17,26 @@ WHP_MENUCONFIG_SHELL="$SOURCE_DIR/scripts/whp-config/menuconfig.sh"
 WHP_MENU_SCHEMA="$SOURCE_DIR/scripts/whp-config/menu-options.def"
 CONFIGURE_USER_ARGS_FILE="$BUILD_DIR/.whp-configure-args"
 PROFILE_FILE="$BUILD_DIR/.whp-profile"
+WHP_CONFIGURE_ARCHS=
+WHP_CONFIGURE_ARCHS_SET=0
+
+case "${1:-}" in
+    configure|reconfigure)
+        for whp_arg in "$@"; do
+            case "$whp_arg" in
+                --enable-archs=*)
+                    WHP_CONFIGURE_ARCHS=${whp_arg#--enable-archs=}
+                    WHP_CONFIGURE_ARCHS_SET=1
+                    ;;
+                --disable-archs)
+                    WHP_CONFIGURE_ARCHS=none
+                    WHP_CONFIGURE_ARCHS_SET=1
+                    ;;
+            esac
+        done
+        ;;
+esac
+unset whp_arg
 
 die()
 {
@@ -274,6 +294,54 @@ llvm_add_target()
     esac
 }
 
+llvm_add_arch_list()
+{
+    arch_list=$1
+    old_ifs=$IFS
+    IFS=" ,"
+    set -- $arch_list
+    IFS=$old_ifs
+
+    for arch
+    do
+        case "$arch" in
+            ""|no|none) ;;
+            i386|x86_64) llvm_add_target X86 ;;
+            arm) llvm_add_target ARM ;;
+            aarch64) llvm_add_target AArch64 ;;
+            arm64ec)
+                llvm_add_target AArch64
+                # Water configure adds x86_64 as the ARM64EC companion PE arch.
+                llvm_add_target X86
+                ;;
+            powerpc) llvm_add_target PowerPC ;;
+            *) die "unknown architecture in --enable-archs: $arch" ;;
+        esac
+    done
+}
+
+select_saved_configure_archs()
+{
+    saved_archs=
+    saved_archs_set=0
+    [ -f "$CONFIGURE_USER_ARGS_FILE" ] || return 0
+
+    while IFS= read -r arg || [ -n "$arg" ]; do
+        case "$arg" in
+            --enable-archs=*)
+                saved_archs=${arg#--enable-archs=}
+                saved_archs_set=1
+                ;;
+            --disable-archs)
+                saved_archs=none
+                saved_archs_set=1
+                ;;
+        esac
+    done < "$CONFIGURE_USER_ARGS_FILE"
+
+    [ "$saved_archs_set" = 1 ] && printf '%s\n' "$saved_archs"
+}
+
 select_llvm_targets()
 {
     llvm_targets=
@@ -291,26 +359,31 @@ select_llvm_targets()
             ;;
     esac
 
-    if [ "$WATER_ARCHS_MODE" = custom ]; then
-        for item in \
-            WATER_ARCH_I386:X86 WATER_ARCH_X86_64:X86 WATER_ARCH_ARM:ARM \
-            WATER_ARCH_AARCH64:AArch64 WATER_ARCH_POWERPC:PowerPC
-        do
-            var=${item%%:*}
-            backend=${item#*:}
-            eval "enabled=\${$var:-y}"
-            case "$enabled" in y|1) llvm_add_target "$backend" ;; esac
-        done
+    if [ "$WHP_CONFIGURE_ARCHS_SET" = 1 ]; then
+        llvm_add_arch_list "$WHP_CONFIGURE_ARCHS"
+    else
+        saved_archs=$(select_saved_configure_archs || true)
+        if [ -n "$saved_archs" ]; then
+            llvm_add_arch_list "$saved_archs"
+        elif [ "$WATER_ARCHS_MODE" = custom ]; then
+            for item in \
+                WATER_ARCH_I386:X86 WATER_ARCH_X86_64:X86 WATER_ARCH_ARM:ARM \
+                WATER_ARCH_AARCH64:AArch64 WATER_ARCH_POWERPC:PowerPC
+            do
+                var=${item%%:*}
+                backend=${item#*:}
+                eval "enabled=\${$var:-y}"
+                case "$enabled" in y|1) llvm_add_target "$backend" ;; esac
+            done
 
-        eval "arm64ec_enabled=\${WATER_ARCH_ARM64EC:-y}"
-        case "$arm64ec_enabled" in
-            y|1)
-                llvm_add_target AArch64
-                # Water configure adds an x86_64 companion PE architecture
-                # when ARM64EC is selected.
-                llvm_add_target X86
-                ;;
-        esac
+            eval "arm64ec_enabled=\${WATER_ARCH_ARM64EC:-y}"
+            case "$arm64ec_enabled" in
+                y|1)
+                    llvm_add_target AArch64
+                    llvm_add_target X86
+                    ;;
+            esac
+        fi
     fi
 
     printf '%s\n' "$llvm_targets"
