@@ -302,6 +302,31 @@ typedef struct
 static int brk_flag;
 static BYTE mem_alloc_strategy;
 static BOOL umb_linked;
+static BOOL memory_config_initialized;
+
+/***********************************************************************
+ *           INT21_InitMemoryConfig
+ *
+ * Windows 9x IO.SYS incorporates DOS=HIGH,UMB defaults.  Water does not
+ * execute IO.SYS, but it does provide a native UMB allocator, so initialize
+ * the DOS-visible UMB link state for the Win9x personality.  DOS=HIGH is not
+ * claimed here: that requires the XMS/A20 service and a real HMA-resident DOS
+ * path, which Water does not yet provide.
+ */
+static void INT21_InitMemoryConfig(void)
+{
+    RTL_OSVERSIONINFOEXW info;
+
+    if (memory_config_initialized) return;
+    memory_config_initialized = TRUE;
+
+    info.dwOSVersionInfoSize = sizeof(info);
+    if (!RtlGetVersion( &info ) && info.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
+    {
+        umb_linked = TRUE;
+        TRACE( "Win9x DOS=UMB default: UMB chain linked\n" );
+    }
+}
 
 static LONG INT21_WriteStdout( const void *buffer, DWORD size )
 {
@@ -4648,6 +4673,7 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
         break;
 
     case 0x48: /* ALLOCATE MEMORY */
+        INT21_InitMemoryConfig();
         TRACE( "ALLOCATE MEMORY for %d paragraphs, strategy %02x, UMB %s\n",
                BX_reg(context), mem_alloc_strategy, umb_linked ? "linked" : "unlinked" );
         {
@@ -4801,6 +4827,7 @@ void WINAPI DOSVM_Int21Handler( CONTEXT *context )
         break;
 
     case 0x58: /* GET OR SET MEMORY ALLOCATION STRATEGY */
+        INT21_InitMemoryConfig();
         switch (AL_reg(context))
         {
         case 0x00: /* GET MEMORY ALLOCATION STRATEGY */
