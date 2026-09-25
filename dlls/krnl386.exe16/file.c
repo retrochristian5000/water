@@ -50,7 +50,7 @@ static HANDLE dos_handles[DOS_TABLE_SIZE];
  */
 static void FILE_InitProcessDosHandles( void )
 {
-    HANDLE hStdInput, hStdOutput, hStdError, hNull;
+    HANDLE hStdInput, hStdOutput, hStdError, hAux, hPrn, hNull;
     static BOOL init_done /* = FALSE */;
     HANDLE cp = GetCurrentProcess();
 
@@ -60,15 +60,26 @@ static void FILE_InitProcessDosHandles( void )
     hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     hStdError = GetStdHandle(STD_ERROR_HANDLE);
     hNull = CreateFileA("NUL", GENERIC_READ|GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, 0);
-    /* Invalid console handles need to translate to real DOS handles in a new process */
+    hAux = CreateFileA("AUX", GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE,
+                       NULL, OPEN_EXISTING, 0, 0);
+    hPrn = CreateFileA("PRN", GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE,
+                       NULL, OPEN_EXISTING, 0, 0);
+
+    /* Invalid console or legacy device handles still need valid DOS handles. */
     if (!hStdInput) hStdInput = hNull;
     if (!hStdOutput) hStdOutput = hNull;
     if (!hStdError) hStdError = hNull;
+    if (hAux == INVALID_HANDLE_VALUE) hAux = hNull;
+    if (hPrn == INVALID_HANDLE_VALUE) hPrn = hNull;
+
     DuplicateHandle(cp, hStdInput, cp, &dos_handles[0], 0, TRUE, DUPLICATE_SAME_ACCESS);
     DuplicateHandle(cp, hStdOutput, cp, &dos_handles[1], 0, TRUE, DUPLICATE_SAME_ACCESS);
     DuplicateHandle(cp, hStdError, cp, &dos_handles[2], 0, TRUE, DUPLICATE_SAME_ACCESS);
-    DuplicateHandle(cp, hStdError, cp, &dos_handles[3], 0, TRUE, DUPLICATE_SAME_ACCESS);
-    DuplicateHandle(cp, hStdError, cp, &dos_handles[4], 0, TRUE, DUPLICATE_SAME_ACCESS);
+    DuplicateHandle(cp, hAux, cp, &dos_handles[3], 0, TRUE, DUPLICATE_SAME_ACCESS);
+    DuplicateHandle(cp, hPrn, cp, &dos_handles[4], 0, TRUE, DUPLICATE_SAME_ACCESS);
+
+    if (hAux != hNull) CloseHandle(hAux);
+    if (hPrn != hNull) CloseHandle(hPrn);
     CloseHandle(hNull);
 }
 
