@@ -412,6 +412,19 @@ BOOL DOSMEM_InitDosMemory(void)
 }
 
 /******************************************************************
+ *              DOSMEM_GetRootMCBSegment
+ *
+ * Return the segment of the first DOS memory-control block.  DOS exposes
+ * this value at offset -2 from the INT 21h/AH=52h List-of-Lists pointer.
+ */
+WORD DOSMEM_GetRootMCBSegment(void)
+{
+    DOSMEM_InitDosMemory();
+    if (!DOSMEM_root_block) return 0;
+    return ((char *)DOSMEM_root_block - DOSMEM_dosmem) >> 4;
+}
+
+/******************************************************************
  *		dosmem_handler
  *
  * Handler to catch access to our 1MB address space reserved for real memory

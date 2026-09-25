@@ -365,6 +365,30 @@ static BYTE INT21_GetCurrentDrive(void)
 
 
 /***********************************************************************
+ *           INT21_GetBootDrive
+ *
+ * Return the DOS boot drive using the 1=A:, 2=B:, 3=C: convention used
+ * by the DOS 4+ List of Lists.  In a Water prefix the Windows directory
+ * is the closest equivalent to the drive from which IO.SYS handed control
+ * to Windows.
+ */
+static BYTE INT21_GetBootDrive(void)
+{
+    WCHAR windows_directory[MAX_PATH];
+    BYTE drive;
+    UINT len;
+
+    len = GetWindowsDirectoryW( windows_directory, MAX_PATH );
+    if (len && len < MAX_PATH && windows_directory[1] == ':' &&
+        (drive = drive_number( windows_directory[0] )) != MAX_DOS_DRIVES)
+        return drive + 1;
+
+    if ((drive = INT21_GetCurrentDrive()) != MAX_DOS_DRIVES) return drive + 1;
+    return 3;
+}
+
+
+/***********************************************************************
  *           INT21_MapDrive
  *
  * Convert drive number from scheme (0=default, 1=A:, 2=B:, ...) into
@@ -676,9 +700,11 @@ static BOOL INT21_FillDrivePB( BYTE drive )
  * Water no longer carries the old Wine DOS device-driver engine, so the
  * standard NUL and CON headers are exposed for discovery but no executable
  * strategy/interrupt entry points are claimed yet.  The DPB list is linked
- * and points at the drive data Water already emulates.  Future ANSI.SYS and
- * DBLBUFF.SYS support can attach replacement character/block drivers to
- * these chains without changing the public List-of-Lists layout.
+ * and points at the drive data Water already emulates.  IO.SYS-owned state
+ * that callers inspect directly, including the first MCB segment and boot
+ * drive, is synthesized from Water's DOS memory and Windows environment.
+ * Future ANSI.SYS and DBLBUFF.SYS support can attach replacement character
+ * or block drivers to these chains without changing the public layout.
  */
 static SEGPTR INT21_GetListOfLists(void)
 {
@@ -700,6 +726,7 @@ static SEGPTR INT21_GetListOfLists(void)
         lol->oem_func_handler = ~0u;
         lol->sharing_retry_count = 3;
         lol->sharing_retry_delay = 1;
+        lol->seg_first_mcb = DOSMEM_GetRootMCBSegment();
         lol->nr_drive_letters = MAX_DOS_DRIVES;
 
         lol->nul_dev.next_dev = MAKESEGPTR( handle, offsetof(INT21_SYSVARS, con_dev) );
@@ -713,7 +740,7 @@ static SEGPTR INT21_GetListOfLists(void)
 
         lol->buffers_count = 99;
         lol->buffers_lookahead = 8;
-        lol->boot_drive = 3;         /* C: */
+        lol->boot_drive = INT21_GetBootDrive();
         lol->dword_moves = 1;        /* 386+ */
         lol->extended_mem_kb = 0xf000;
     }

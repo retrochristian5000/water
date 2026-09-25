@@ -199,6 +199,7 @@ static inline void stack16_pop( int size )
 extern BYTE   DOSVM_GetX86ProcessorLevel(void);
 extern BOOL   DOSMEM_Init(void);
 extern BOOL   DOSMEM_InitDosMemory(void);
+extern WORD   DOSMEM_GetRootMCBSegment(void);
 extern LPVOID DOSMEM_MapRealToLinear(DWORD); /* real-mode to linear */
 extern LPVOID DOSMEM_MapDosToLinear(UINT);   /* linear DOS to Wine */
 extern UINT   DOSMEM_MapLinearToDos(LPVOID); /* linear Wine to DOS */
