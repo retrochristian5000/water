@@ -8043,6 +8043,50 @@ fi
      continue
 fi
 
+    if test "x$wine_arch" = xpowerpc
+then :
+  { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking for a PowerPC-capable dlltool" >&5
+printf %s "checking for a PowerPC-capable dlltool... " >&6; }
+         ppc_dlltool=
+         for tool in "$target-dlltool" powerpcle-w64-mingw32-dlltool powerpc-w64-mingw32-dlltool dlltool
+         do
+             test "x$tool" = x-dlltool && continue
+             if command -v "$tool" >/dev/null 2>&1
+             then
+                 ppc_dlltool=`command -v "$tool"`
+                 break
+             fi
+         done
+         ppc_dlltool_works=no
+         if test -n "$ppc_dlltool"
+         then
+             cat >conftest.def <<EOF
+LIBRARY conftest.dll
+EXPORTS
+    wine_ppc_test
+EOF
+             if "$ppc_dlltool" -m ppc -d conftest.def -l conftest.a >/dev/null 2>&1
+             then
+                 ppc_dlltool_works=yes
+             fi
+             rm -f conftest.def conftest.a
+         fi
+         { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: $ppc_dlltool_works" >&5
+printf '%s\n' "$ppc_dlltool_works" >&6; }
+         if test "x$ppc_dlltool_works" != xyes
+then :
+  if test ${enable_archs+y}
+then :
+  as_fn_error $? "A PowerPC-capable dlltool is required for PowerPC import libraries.
+This is an error since --enable-archs=$wine_arch was requested." "$LINENO" 5
+else case e in #(
+  e) as_fn_error $? "A PowerPC-capable dlltool is required for PowerPC import libraries.$mingw_notice" "$LINENO" 5 ;;
+esac
+fi
+     continue
+fi
+fi
+
     eval "${wine_arch}_TARGET=\$target"
     if eval test \${${wine_arch}_STRIP+y}
 then :

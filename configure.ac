@@ -579,6 +579,36 @@ do
     WINE_NO_PE_ERROR([test -z "$target"],[$wine_arch PE compiler not found.
 Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
 
+    AS_VAR_IF([wine_arch],[powerpc],
+        [AC_MSG_CHECKING([for a PowerPC-capable dlltool])
+         ppc_dlltool=
+         for tool in "$target-dlltool" powerpcle-w64-mingw32-dlltool powerpc-w64-mingw32-dlltool dlltool
+         do
+             test "x$tool" = x-dlltool && continue
+             if command -v "$tool" >/dev/null 2>&1
+             then
+                 ppc_dlltool=`command -v "$tool"`
+                 break
+             fi
+         done
+         ppc_dlltool_works=no
+         if test -n "$ppc_dlltool"
+         then
+             cat >conftest.def <<EOF
+LIBRARY conftest.dll
+EXPORTS
+    wine_ppc_test
+EOF
+             if "$ppc_dlltool" -m ppc -d conftest.def -l conftest.a >/dev/null 2>&1
+             then
+                 ppc_dlltool_works=yes
+             fi
+             rm -f conftest.def conftest.a
+         fi
+         AC_MSG_RESULT([$ppc_dlltool_works])
+         WINE_NO_PE_ERROR([test "x$ppc_dlltool_works" != xyes],
+                          [A PowerPC-capable dlltool is required for PowerPC import libraries.])])
+
     AS_VAR_SET([${wine_arch}_TARGET],[$target])
     AS_VAR_SET_IF([${wine_arch}_STRIP],[],
         [target_strip=`$CC -print-prog-name=llvm-strip 2>/dev/null`
