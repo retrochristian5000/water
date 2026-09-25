@@ -1,0 +1,69 @@
+# WHP Water menu fallback schema: key|section|label|kind|default|choices|group
+WATER_ARCHS_MODE|Architectures|PE architecture selection|choice|auto|auto,custom,none|
+WATER_ARCH_I386|Architectures|i386|bool|y||
+WATER_ARCH_X86_64|Architectures|x86_64|bool|y||
+WATER_ARCH_ARM|Architectures|ARM|bool|y||
+WATER_ARCH_AARCH64|Architectures|AArch64|bool|y||
+WATER_ARCH_ARM64EC|Architectures|ARM64EC|bool|y||
+WATER_ARCH_POWERPC|Architectures|PowerPC|bool|y||
+WATER_LLVM_BOOTSTRAP|LLVM toolchain|Bootstrap/use WHP LLVM|choice|auto|auto,y,n|
+WATER_LLVM_BUILD_TYPE|LLVM toolchain|LLVM build type|choice|Release|Release,RelWithDebInfo,Debug|
+WATER_LLVM_ASSERTIONS|LLVM toolchain|LLVM assertions|bool|n||
+WATER_WIN16|Build behavior|Win16 support|choice|auto|auto,y,n|
+WATER_WIN64|Build behavior|Win64-only build|choice|auto|auto,y,n|
+WATER_TESTS|Build behavior|Regression tests|choice|auto|auto,y,n|
+WATER_BUILD_ID|Build behavior|Build ID sections|choice|auto|auto,y,n|
+WATER_NINJA|Build behavior|Generate/prefer Ninja files|choice|auto|auto,y,n|
+WATER_MAINTAINER_MODE|Build behavior|Maintainer mode|choice|auto|auto,y,n|
+WATER_SAST|Build behavior|Clang static analysis / SAST|choice|auto|auto,y,n|
+WATER_SILENT_RULES|Build behavior|Silent build rules|choice|auto|auto,y,n|
+WATER_WERROR|Build behavior|Treat warnings as errors|choice|auto|auto,y,n|
+WATER_COMPILER_CACHE|Build behavior|Compiler cache|choice|auto|auto,sccache,ccache,none|
+WATER_WITH_ALSA|Optional components|ALSA audio|choice|auto|auto,y,n|
+WATER_WITH_CAPI|Optional components|CAPI / ISDN|choice|auto|auto,y,n|
+WATER_WITH_COREAUDIO|Optional components|CoreAudio|choice|auto|auto,y,n|
+WATER_WITH_CUPS|Optional components|CUPS printing|choice|auto|auto,y,n|
+WATER_WITH_DBUS|Optional components|D-Bus|choice|auto|auto,y,n|
+WATER_WITH_FFMPEG|Optional components|FFmpeg|choice|auto|auto,y,n|
+WATER_WITH_FONTCONFIG|Optional components|Fontconfig|choice|auto|auto,y,n|
+WATER_WITH_FREETYPE|Optional components|FreeType|choice|auto|auto,y,n|
+WATER_WITH_GETTEXT|Optional components|Gettext|choice|auto|auto,y,n|
+WATER_WITH_GETTEXTPO|Optional components|GettextPO|choice|auto|auto,y,n|
+WATER_WITH_GPHOTO|Optional components|gPhoto|choice|auto|auto,y,n|
+WATER_WITH_GNUTLS|Optional components|GnuTLS|choice|auto|auto,y,n|
+WATER_WITH_GSSAPI|Optional components|GSSAPI / Kerberos|choice|auto|auto,y,n|
+WATER_WITH_GSTREAMER|Optional components|GStreamer|choice|auto|auto,y,n|
+WATER_WITH_HWLOC|Optional components|hwloc|choice|auto|auto,y,n|
+WATER_WITH_INOTIFY|Optional components|inotify|choice|auto|auto,y,n|
+WATER_WITH_KRB5|Optional components|Kerberos 5|choice|auto|auto,y,n|
+WATER_WITH_MINGW|Optional components|MinGW / PE cross compiler|choice|auto|auto,y,n|
+WATER_WITH_NETAPI|Optional components|Samba NetAPI|choice|auto|auto,y,n|
+WATER_WITH_OPENCL|Optional components|OpenCL|choice|auto|auto,y,n|
+WATER_WITH_OPENGL|Optional components|OpenGL|choice|auto|auto,y,n|
+WATER_WITH_OSS|Optional components|OSS audio|choice|auto|auto,y,n|
+WATER_WITH_PCAP|Optional components|Packet capture|choice|auto|auto,y,n|
+WATER_WITH_PCSCLITE|Optional components|PC/SC Lite|choice|auto|auto,y,n|
+WATER_WITH_PTHREAD|Optional components|pthread|choice|auto|auto,y,n|
+WATER_WITH_PULSE|Optional components|PulseAudio|choice|auto|auto,y,n|
+WATER_WITH_SANE|Optional components|SANE scanners|choice|auto|auto,y,n|
+WATER_WITH_SDL|Optional components|SDL|choice|auto|auto,y,n|
+WATER_WITH_UDEV|Optional components|udev|choice|auto|auto,y,n|
+WATER_WITH_USB|Optional components|libusb|choice|auto|auto,y,n|
+WATER_WITH_V4L2|Optional components|Video4Linux2|choice|auto|auto,y,n|
+WATER_WITH_VA|Optional components|VA-API|choice|auto|auto,y,n|
+WATER_WITH_VULKAN|Optional components|Vulkan|choice|auto|auto,y,n|
+WATER_WITH_WAYLAND|Optional components|Wayland|choice|auto|auto,y,n|
+WATER_WITH_XCOMPOSITE|Optional components|XComposite|choice|auto|auto,y,n|
+WATER_WITH_XCURSOR|Optional components|Xcursor|choice|auto|auto,y,n|
+WATER_WITH_XFIXES|Optional components|Xfixes|choice|auto|auto,y,n|
+WATER_WITH_XINERAMA|Optional components|Xinerama|choice|auto|auto,y,n|
+WATER_WITH_XINPUT|Optional components|XInput|choice|auto|auto,y,n|
+WATER_WITH_XINPUT2|Optional components|XInput2|choice|auto|auto,y,n|
+WATER_WITH_XRANDR|Optional components|XRandR|choice|auto|auto,y,n|
+WATER_WITH_XRENDER|Optional components|XRender|choice|auto|auto,y,n|
+WATER_WITH_XSHAPE|Optional components|XShape|choice|auto|auto,y,n|
+WATER_WITH_XSHM|Optional components|XShm|choice|auto|auto,y,n|
+WATER_WITH_XXF86VM|Optional components|XFree86 VidMode|choice|auto|auto,y,n|
+WATER_SYSTEM_DLLPATH|Advanced paths|System DLL search path|string|auto||
+WATER_WINE_TOOLS|Advanced paths|External Wine tools directory|string|auto||
+WATER_WINE64|Advanced paths|External 64-bit Wine build directory|string|auto||
