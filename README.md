@@ -20,9 +20,10 @@ run:
 ./build.sh
 ```
 
-The build funnel initializes the pinned submodules, selects the LLVM toolchain,
-configures an out-of-tree build, and invokes Ninja or Make. Use
-`./build.sh configure [options]` when custom configure options are needed.
+The build funnel regenerates the ignored `./configure` script from
+`configure.ac` with Autoconf, initializes the pinned submodules, selects the
+LLVM toolchain, configures an out-of-tree build, and invokes Ninja or Make.
+Use `./build.sh configure [options]` when custom configure options are needed.
 
 Then either install Wine:
 

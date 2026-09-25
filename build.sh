@@ -7,6 +7,7 @@ BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 WHP_SUBMODULES=${WHP_SUBMODULES:-1}
 WHP_RECONFIGURE=${WHP_RECONFIGURE:-0}
+AUTOCONF=${AUTOCONF:-autoconf}
 
 die()
 {
@@ -36,9 +37,40 @@ Environment:
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
+  AUTOCONF              Autoconf program used to generate ./configure
 
 CC/CXX/AR/NM/RANLIB remain authoritative when explicitly set.
 EOF
+}
+
+generate_configure()
+{
+    command -v "$AUTOCONF" >/dev/null 2>&1 ||
+        die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
+
+    configure_tmp="$SOURCE_DIR/.configure.tmp.$$"
+    rm -f "$configure_tmp"
+
+    if ! (
+        cd "$SOURCE_DIR"
+        "$AUTOCONF" -o "$configure_tmp" configure.ac
+    )
+    then
+        rm -f "$configure_tmp"
+        die "failed to generate ./configure from configure.ac"
+    fi
+
+    chmod +x "$configure_tmp"
+
+    if [ -f "$SOURCE_DIR/configure" ] &&
+       cmp -s "$configure_tmp" "$SOURCE_DIR/configure"
+    then
+        rm -f "$configure_tmp"
+        printf 'WHP configure script: up to date\n' >&2
+    else
+        mv -f "$configure_tmp" "$SOURCE_DIR/configure"
+        printf 'WHP configure script: regenerated from configure.ac\n' >&2
+    fi
 }
 
 init_submodules()
@@ -149,11 +181,28 @@ configure_build()
     )
 }
 
+recheck_build()
+{
+    if [ -x "$BUILD_DIR/config.status" ]; then
+        printf 'WHP configure: rechecking existing build options\n' >&2
+        (
+            cd "$BUILD_DIR"
+            ./config.status --recheck
+        )
+    else
+        configure_build
+    fi
+}
+
 ensure_configured()
 {
-    if [ "$WHP_RECONFIGURE" = 1 ] ||
-       { [ ! -f "$BUILD_DIR/Makefile" ] && [ ! -f "$BUILD_DIR/build.ninja" ]; }; then
+    if [ ! -f "$BUILD_DIR/Makefile" ] && [ ! -f "$BUILD_DIR/build.ninja" ]; then
         configure_build
+    elif [ "$WHP_RECONFIGURE" = 1 ]; then
+        recheck_build
+    elif [ -f "$BUILD_DIR/config.status" ] &&
+         [ "$SOURCE_DIR/configure" -nt "$BUILD_DIR/config.status" ]; then
+        recheck_build
     fi
 }
 
@@ -188,6 +237,7 @@ case "${1:-build}" in
         ;;
 esac
 
+generate_configure
 init_submodules
 setup_toolchain
 
@@ -198,7 +248,11 @@ case "${1:-build}" in
         ;;
     reconfigure)
         shift
-        configure_build "$@"
+        if [ "$#" -gt 0 ]; then
+            configure_build "$@"
+        else
+            recheck_build
+        fi
         ;;
     build)
         if [ "$#" -gt 0 ]; then shift; fi
