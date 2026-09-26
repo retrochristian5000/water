@@ -222,6 +222,7 @@ struct makefile
     struct incl_file *pch_file;
     bool            data_only;
     bool            external;
+    bool            msvcrt_system_headers;
     bool            is_win16;
     bool            is_exe;
     bool            disabled[MAX_ARCHS];
@@ -2793,6 +2794,29 @@ static void install_data_symlink( struct makefile *make, const char *target, con
 
 
 /*******************************************************************
+ *         add_msvcrt_include_args
+ *
+ * Keep Water's CRT compatibility headers in the Windows ABI include path.
+ * Bundled third-party libraries may opt into system-header diagnostics for
+ * this directory without disabling warnings in their own source files.
+ */
+static void add_msvcrt_include_args( struct makefile *make, struct strarray *args )
+{
+    const char *msvcrt_dir = root_src_dir_path( "include/msvcrt" );
+
+    if (make->msvcrt_system_headers)
+    {
+        strarray_add( args, "-isystem" );
+        strarray_add( args, msvcrt_dir );
+    }
+    else strarray_add( args, strmake( "-I%s", msvcrt_dir ));
+
+    STRARRAY_FOR_EACH( path, &make->include_paths ) strarray_add( args, strmake( "-I%s", path ));
+    strarray_add( args, get_crt_define( make ));
+}
+
+
+/*******************************************************************
  *         get_source_defines
  */
 static struct strarray get_source_defines( struct makefile *make, struct incl_file *source,
@@ -2801,12 +2825,7 @@ static struct strarray get_source_defines( struct makefile *make, struct incl_fi
     struct strarray ret = empty_strarray;
 
     strarray_addall( &ret, make->include_args );
-    if (source->use_msvcrt)
-    {
-        strarray_add( &ret, strmake( "-I%s", root_src_dir_path( "include/msvcrt" )));
-        STRARRAY_FOR_EACH( path, &make->include_paths ) strarray_add( &ret, strmake( "-I%s", path ));
-        strarray_add( &ret, get_crt_define( make ));
-    }
+    if (source->use_msvcrt) add_msvcrt_include_args( make, &ret );
     strarray_addall( &ret, make->define_args );
     strarray_addall( &ret, get_expanded_file_local_var( make, obj, "EXTRADEFS" ));
     return ret;
@@ -4484,12 +4503,7 @@ static void output_pch( struct makefile *make )
     pch = obj_dir_path( make, ".wine-pch.h.gch" );
 
     strarray_addall( &defines, make->include_args );
-    if (make->pch_file->use_msvcrt)
-    {
-        strarray_add( &defines, strmake( "-I%s", root_src_dir_path( "include/msvcrt" )));
-        STRARRAY_FOR_EACH( path, &make->include_paths ) strarray_add( &defines, strmake( "-I%s", path ));
-        strarray_add( &defines, get_crt_define( make ));
-    }
+    if (make->pch_file->use_msvcrt) add_msvcrt_include_args( make, &defines );
     strarray_addall( &defines, make->define_args );
 
     if (!make->pch_file->use_msvcrt) strarray_addall( &cflags, make->unix_cflags );
@@ -5519,6 +5533,7 @@ static void output_dependencies( struct makefile *make )
  */
 static void load_sources( struct makefile *make )
 {
+    const char *msvcrt_system_headers;
     unsigned int i, arch;
     struct strarray value;
     struct incl_file *file;
@@ -5553,6 +5568,16 @@ static void load_sources( struct makefile *make )
             make->disabled[arch] = make->disabled[0] || strarray_exists( disabled_dirs[arch], make->obj_dir );
     }
     make->external   = make->obj_dir && strarray_exists( external_dirs, make->obj_dir );
+
+    msvcrt_system_headers = get_expanded_make_variable( make, "MSVCRT_SYSTEM_HEADERS" );
+    if (msvcrt_system_headers)
+    {
+        if (!strcmp( msvcrt_system_headers, "1" )) make->msvcrt_system_headers = true;
+        else if (strcmp( msvcrt_system_headers, "0" ))
+            fatal_error( "MSVCRT_SYSTEM_HEADERS must be 0 or 1 in %s\n",
+                         make->obj_dir ? make->obj_dir : "the top-level makefile" );
+    }
+
     make->is_win16   = strarray_exists( make->extradllflags, "-m16" );
     make->data_only  = strarray_exists( make->extradllflags, "-Wb,--data-only" );
     make->is_exe     = strarray_exists( make->extradllflags, "-mconsole" ) ||
