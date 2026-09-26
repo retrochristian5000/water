@@ -12,7 +12,7 @@ WATER_LLVM_ASSERTIONS|LLVM toolchain|LLVM assertions|bool|n||
 WATER_LLVM_LEAN|LLVM toolchain|Lean Water-only LLVM graph|bool|y||
 WATER_LLVM_PCH|LLVM toolchain|LLVM precompiled headers|bool|n||
 BOOTSTRAP_NINJA|Build behavior|Pinned WHP Ninja executor|choice|auto|auto,y,n|
-WATER_WIN16|Build behavior|Win16 support|choice|auto|auto,y,n|
+WATER_WIN16|Build behavior|Win16 support (i386 only)|choice|auto|auto,y,n|
 WATER_WIN64|Build behavior|Win64-only build|choice|auto|auto,y,n|
 WATER_TESTS|Build behavior|Regression tests|choice|auto|auto,y,n|
 WATER_BUILD_ID|Build behavior|Build ID sections|choice|auto|auto,y,n|

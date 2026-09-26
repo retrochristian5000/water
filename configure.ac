@@ -2563,6 +2563,14 @@ enable_regsvr32=${enable_regsvr32:-yes}
 enable_rundll32=${enable_rundll32:-yes}
 
 dnl Disable Win16-related modules
+dnl Win16/KRNL386 is an i386 guest ABI.  A bare --enable-win16 used to turn
+dnl these modules on for every PE architecture, which makes 64-bit/ARM64
+dnl builds try to compile x86 register frames and assembly.
+case "$enable_win16" in
+  yes) enable_win16=i386 ;;
+  no|i386|"") ;;
+  *) AC_MSG_ERROR([Win16 support is i386-only; use --enable-win16=i386 or --disable-win16]) ;;
+esac
 enable_win16=${enable_win16:-i386}
 enable_w32skrnl=${enable_w32skrnl:-$enable_win16}
 enable_wow32=${enable_wow32:-$enable_win16}

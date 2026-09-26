@@ -1041,8 +1041,14 @@ configure_build()
             ;;
     esac
 
+    value=${WATER_WIN16:-auto}
+    case "$value" in
+        y|1) set -- "--enable-win16=i386" "$@" ;;
+        n|0) set -- "--disable-win16" "$@" ;;
+    esac
+
     for item in \
-        WATER_WIN16:win16 WATER_WIN64:win64 WATER_TESTS:tests \
+        WATER_WIN64:win64 WATER_TESTS:tests \
         WATER_BUILD_ID:build-id WATER_NINJA:ninja \
         WATER_MAINTAINER_MODE:maintainer-mode WATER_SAST:sast \
         WATER_SILENT_RULES:silent-rules WATER_WERROR:werror
