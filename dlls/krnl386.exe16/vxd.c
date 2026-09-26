@@ -37,7 +37,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(vxd);
 
-typedef DWORD (WINAPI *VxDCallProc)(DWORD, CONTEXT *);
+typedef DWORD (WINAPI *VxDCallProc)(DWORD, I386_CONTEXT *);
 typedef BOOL (WINAPI *DeviceIoProc)(DWORD, LPVOID, DWORD, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
 
 struct vxd_module
@@ -233,7 +233,7 @@ done:
  *		VxDCall7 (KERNEL32.8)
  *		VxDCall8 (KERNEL32.9)
  */
-void WINAPI __regs_VxDCall( CONTEXT *context )
+void WINAPI __regs_VxDCall( I386_CONTEXT *context )
 {
     unsigned int i;
     VxDCallProc proc = NULL;
@@ -260,13 +260,31 @@ void WINAPI __regs_VxDCall( CONTEXT *context )
         context->Eax = 0xffffffff; /* FIXME */
     }
 }
+#ifdef __i386__
 DEFINE_REGS_ENTRYPOINT( VxDCall )
+#else
+void WINAPI VxDCall(void)
+{
+#ifdef _WIN64
+    USHORT machine = 0;
+    void *context = NULL, *context_ex = NULL;
+
+    if (!RtlWow64GetCurrentCpuArea( &machine, &context, &context_ex ) &&
+        machine == IMAGE_FILE_MACHINE_I386 && context)
+    {
+        __regs_VxDCall( context );
+        return;
+    }
+#endif
+    WARN( "VxDCall invoked without an active i386 CPU context\n" );
+}
+#endif
 
 
 /***********************************************************************
  *           __wine_vxd_vmm (WPROCS.401)
  */
-void WINAPI __wine_vxd_vmm ( CONTEXT *context )
+void WINAPI __wine_vxd_vmm ( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -300,7 +318,7 @@ void WINAPI __wine_vxd_vmm ( CONTEXT *context )
  * entry point, so only that service is exposed until the remaining
  * contracts are known.
  */
-void WINAPI __wine_vxd_pppmac( CONTEXT *context )
+void WINAPI __wine_vxd_pppmac( I386_CONTEXT *context )
 {
     unsigned int service = AX_reg(context);
 
@@ -325,7 +343,7 @@ void WINAPI __wine_vxd_pppmac( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_pagefile (WPROCS.433)
  */
-void WINAPI __wine_vxd_pagefile( CONTEXT *context )
+void WINAPI __wine_vxd_pagefile( I386_CONTEXT *context )
 {
     unsigned	service = AX_reg(context);
 
@@ -371,7 +389,7 @@ void WINAPI __wine_vxd_pagefile( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_reboot (WPROCS.409)
  */
-void WINAPI __wine_vxd_reboot( CONTEXT *context )
+void WINAPI __wine_vxd_reboot( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -392,7 +410,7 @@ void WINAPI __wine_vxd_reboot( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_vdd (WPROCS.410)
  */
-void WINAPI __wine_vxd_vdd( CONTEXT *context )
+void WINAPI __wine_vxd_vdd( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -413,7 +431,7 @@ void WINAPI __wine_vxd_vdd( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_vmd (WPROCS.412)
  */
-void WINAPI __wine_vxd_vmd( CONTEXT *context )
+void WINAPI __wine_vxd_vmd( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -434,7 +452,7 @@ void WINAPI __wine_vxd_vmd( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_vxdloader (WPROCS.439)
  */
-void WINAPI __wine_vxd_vxdloader( CONTEXT *context )
+void WINAPI __wine_vxd_vxdloader( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -476,7 +494,7 @@ void WINAPI __wine_vxd_vxdloader( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_shell (WPROCS.423)
  */
-void WINAPI __wine_vxd_shell( CONTEXT *context )
+void WINAPI __wine_vxd_shell( I386_CONTEXT *context )
 {
     unsigned	service = DX_reg(context);
 
@@ -569,7 +587,7 @@ void WINAPI __wine_vxd_shell( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_comm (WPROCS.414)
  */
-void WINAPI __wine_vxd_comm( CONTEXT *context )
+void WINAPI __wine_vxd_comm( I386_CONTEXT *context )
 {
     unsigned	service = AX_reg(context);
 
@@ -594,7 +612,7 @@ void WINAPI __wine_vxd_comm( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_timer (WPROCS.405)
  */
-void WINAPI __wine_vxd_timer( CONTEXT *context )
+void WINAPI __wine_vxd_timer( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -645,7 +663,7 @@ static DWORD CALLBACK timer_thread( void *arg )
 /***********************************************************************
  *           __wine_vxd_timerapi (WPROCS.1490)
  */
-void WINAPI __wine_vxd_timerapi( CONTEXT *context )
+void WINAPI __wine_vxd_timerapi( I386_CONTEXT *context )
 {
     static WORD System_Time_Selector;
 
@@ -679,7 +697,7 @@ void WINAPI __wine_vxd_timerapi( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_configmg (WPROCS.451)
  */
-void WINAPI __wine_vxd_configmg( CONTEXT *context )
+void WINAPI __wine_vxd_configmg( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -700,7 +718,7 @@ void WINAPI __wine_vxd_configmg( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_enable (WPROCS.455)
  */
-void WINAPI __wine_vxd_enable( CONTEXT *context )
+void WINAPI __wine_vxd_enable( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -721,7 +739,7 @@ void WINAPI __wine_vxd_enable( CONTEXT *context )
 /***********************************************************************
  *           __wine_vxd_apm (WPROCS.438)
  */
-void WINAPI __wine_vxd_apm( CONTEXT *context )
+void WINAPI __wine_vxd_apm( I386_CONTEXT *context )
 {
     unsigned service = AX_reg(context);
 
@@ -791,7 +809,7 @@ void WINAPI __wine_vxd_apm( CONTEXT *context )
  * service of the Win32s VxD. (Note that the offset is never reset.)
  *
  */
-void WINAPI __wine_vxd_win32s( CONTEXT *context )
+void WINAPI __wine_vxd_win32s( I386_CONTEXT *context )
 {
     switch (AX_reg(context))
     {
