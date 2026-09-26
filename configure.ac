@@ -848,12 +848,14 @@ EOF
     dnl don't bother testing flags, compilation will fail afterwards
     test "x$enable_build_id" != xno && AS_VAR_APPEND([${wine_arch}_LDFLAGS],[" -Wl,--build-id"])
 
+    dnl Keep async exception semantics in sync between C and C++.
+    WINE_TRY_PE_CFLAGS([-fasync-exceptions -DMIN_CLANG_VERSION=19], AS_VAR_APPEND([${wine_arch}_EXTRACFLAGS],[" -fasync-exceptions"]))
+
     dnl Options that differ between C and C++
     AS_VAR_COPY([${wine_arch}_EXTRACXXFLAGS],[${wine_arch}_EXTRACFLAGS])
     WINE_TRY_PE_CFLAGS([-Wdeclaration-after-statement])
     WINE_TRY_PE_CFLAGS([-Wstrict-prototypes])
     WINE_TRY_PE_CFLAGS([-Wabsolute-value])
-    WINE_TRY_PE_CFLAGS([-fasync-exceptions -DMIN_CLANG_VERSION=19], AS_VAR_APPEND([${wine_arch}_EXTRACFLAGS],[" -fasync-exceptions"]))
 
 done
 
