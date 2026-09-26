@@ -35,8 +35,8 @@
 /* amount of space reserved for relay stack */
 #define DOSVM_RELAY_DATA_SIZE 4096
 
-typedef void (*DOSRELAY)(CONTEXT*,void*);
-typedef void (WINAPI *INTPROC)(CONTEXT*);
+typedef void (*DOSRELAY)(I386_CONTEXT *, void *);
+typedef void (WINAPI *INTPROC)(I386_CONTEXT *);
 
 extern WORD DOSVM_psp;     /* psp of current DOS task */
 extern WORD int16_sel;
@@ -180,41 +180,41 @@ extern BIOSDATA *DOSVM_BiosData( void );
 extern void DOSVM_start_bios_timer(void);
 
 /* fpu.c */
-extern void WINAPI DOSVM_Int34Handler(CONTEXT*);
-extern void WINAPI DOSVM_Int35Handler(CONTEXT*);
-extern void WINAPI DOSVM_Int36Handler(CONTEXT*);
-extern void WINAPI DOSVM_Int37Handler(CONTEXT*);
-extern void WINAPI DOSVM_Int38Handler(CONTEXT*);
-extern void WINAPI DOSVM_Int39Handler(CONTEXT*);
-extern void WINAPI DOSVM_Int3aHandler(CONTEXT*);
-extern void WINAPI DOSVM_Int3bHandler(CONTEXT*);
-extern void WINAPI DOSVM_Int3cHandler(CONTEXT*);
-extern void WINAPI DOSVM_Int3dHandler(CONTEXT*);
-extern void WINAPI DOSVM_Int3eHandler(CONTEXT*);
+extern void WINAPI DOSVM_Int34Handler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int35Handler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int36Handler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int37Handler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int38Handler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int39Handler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int3aHandler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int3bHandler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int3cHandler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int3dHandler(I386_CONTEXT *);
+extern void WINAPI DOSVM_Int3eHandler(I386_CONTEXT *);
 
 /* int15.c */
-extern void WINAPI DOSVM_Int15Handler(CONTEXT*);
+extern void WINAPI DOSVM_Int15Handler(I386_CONTEXT *);
 
 /* int21.c */
-extern void WINAPI DOSVM_Int21Handler(CONTEXT*);
+extern void WINAPI DOSVM_Int21Handler(I386_CONTEXT *);
 
 /* int25.c */
 BOOL DOSVM_RawRead( BYTE, DWORD, DWORD, BYTE *, BOOL );
-void WINAPI DOSVM_Int25Handler( CONTEXT * );
+void WINAPI DOSVM_Int25Handler( I386_CONTEXT * );
 
 /* int26.c */
 BOOL DOSVM_RawWrite( BYTE, DWORD, DWORD, BYTE *, BOOL );
-void WINAPI DOSVM_Int26Handler( CONTEXT * );
+void WINAPI DOSVM_Int26Handler( I386_CONTEXT * );
 
 /* int2f.c */
-extern void WINAPI DOSVM_Int2fHandler(CONTEXT*);
+extern void WINAPI DOSVM_Int2fHandler(I386_CONTEXT *);
 
 /* int31.c */
-extern void WINAPI DOSVM_Int31Handler(CONTEXT*);
+extern void WINAPI DOSVM_Int31Handler(I386_CONTEXT *);
 
 /* interrupts.c */
-extern void WINAPI __wine_call_int_handler16( BYTE, CONTEXT * );
-extern BOOL        DOSVM_EmulateInterruptPM( CONTEXT *, BYTE );
+extern void WINAPI __wine_call_int_handler16( BYTE, I386_CONTEXT * );
+extern BOOL        DOSVM_EmulateInterruptPM( I386_CONTEXT *, BYTE );
 extern FARPROC16   DOSVM_GetPMHandler16( BYTE );
 extern FARPROC16   DOSVM_GetRMHandler( BYTE );
 extern void        DOSVM_SetPMHandler16( BYTE, FARPROC16 );
