@@ -384,6 +384,59 @@ static void check_fat32_fsinfo(HANDLE handle, const struct fat_layout *layout,
     HeapFree(GetProcessHeap(), 0, sector);
 }
 
+static void check_fat32_backup_boot(HANDLE handle, const struct fat_layout *layout,
+                                    const BYTE *primary, struct scan_result *result)
+{
+    BYTE backup[512];
+    ULONGLONG offset;
+
+    if (layout->kind != FAT_KIND_32) return;
+
+    if (layout->backup_boot_sector != 6)
+    {
+        wprintf(L"  FAT32 backup BPB: BPB_BkBootSec is %lu; Microsoft-compatible FAT32 expects sector 6.\n",
+                layout->backup_boot_sector);
+        result->problems++;
+    }
+
+    if (!layout->backup_boot_sector ||
+        layout->backup_boot_sector >= layout->reserved_sectors)
+    {
+        wprintf(L"  FAT32 backup BPB: sector is outside the reserved area.\n");
+        result->problems++;
+        return;
+    }
+
+    offset = (ULONGLONG)layout->backup_boot_sector * layout->bytes_per_sector;
+    if (!read_at(handle, offset, backup, sizeof(backup)))
+    {
+        wprintf(L"  FAT32 backup BPB: cannot read sector %lu (error %lu).\n",
+                layout->backup_boot_sector, GetLastError());
+        result->problems++;
+        return;
+    }
+
+    if (backup[510] != 0x55 || backup[511] != 0xaa)
+    {
+        wprintf(L"  FAT32 backup BPB: missing 55 AA signature.\n");
+        result->problems++;
+        return;
+    }
+
+    /*
+     * Compare the BPB and FAT32 extended-BPB fields, not bootstrap code.
+     * Offsets 0x0b..0x59 contain the common and FAT32 BPB structures.
+     */
+    if (memcmp(primary + 0x0b, backup + 0x0b, 0x5a - 0x0b))
+    {
+        wprintf(L"  FAT32 backup BPB: primary and backup BPB fields differ.\n");
+        result->problems++;
+        return;
+    }
+
+    wprintf(L"  FAT32 backup BPB: primary and backup BPB fields match.\n");
+}
+
 static void compare_fat_copies(HANDLE handle, const struct fat_layout *layout,
                                struct scan_result *result)
 {
@@ -601,6 +654,7 @@ static struct scan_result scan_drive(WCHAR drive, const struct scan_options *opt
         }
 
         check_fat32_fsinfo(handle, &layout, &result);
+        check_fat32_backup_boot(handle, &layout, boot, &result);
         compare_fat_copies(handle, &layout, &result);
         if (options->surface) surface_scan(handle, &layout, &result);
     }
