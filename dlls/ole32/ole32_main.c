@@ -159,6 +159,38 @@ HGLOBAL WINAPI OleMetafilePictFromIconAndLabel(HICON hIcon, LPOLESTR lpszLabel,
 }
 
 /******************************************************************************
+ *              IsValidPtrIn        [OLE32.@]
+ *
+ * Legacy OLE pointer validation.  A NULL input pointer is accepted, matching
+ * the historical OLE32 helper; non-NULL ranges are checked for readability.
+ */
+BOOL WINAPI IsValidPtrIn(const void *ptr, UINT size)
+{
+    return !ptr || !size || !IsBadReadPtr(ptr, size);
+}
+
+/******************************************************************************
+ *              IsValidPtrOut        [OLE32.@]
+ *
+ * NULL is accepted only for a zero-length output range.
+ */
+BOOL WINAPI IsValidPtrOut(void *ptr, UINT size)
+{
+    return !size || (ptr && !IsBadWritePtr(ptr, size));
+}
+
+/******************************************************************************
+ *              IsValidIid        [OLE32.@]
+ *
+ * Native retail OLE32 retained this compatibility export without performing
+ * IID memory validation.
+ */
+BOOL WINAPI IsValidIid(REFIID iid)
+{
+    return TRUE;
+}
+
+/******************************************************************************
  *		IsValidInterface	[OLE32.@]
  *
  * Determines whether a pointer is a valid interface.
