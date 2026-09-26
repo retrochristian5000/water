@@ -21,7 +21,7 @@ PROFILE_FILE="$BUILD_DIR/.whp-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
-LLVM_BOOTSTRAP_RECIPE=4
+LLVM_BOOTSTRAP_RECIPE=5
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -941,6 +941,7 @@ record_llvm_bootstrap_config()
 llvm_bootstrap_needs_update()
 {
     [ -x "$LLVM_BOOTSTRAP_DIR/bin/clang" ] || return 0
+    [ -x "$LLVM_BOOTSTRAP_DIR/bin/llvm-dlltool" ] || return 0
     [ -f "$LLVM_BOOTSTRAP_STATE_FILE" ] || return 0
 
     llvm_source_state_signature >/dev/null 2>&1 || return 0
@@ -1120,7 +1121,7 @@ bootstrap_llvm()
         previous=$(cat "$LLVM_BOOTSTRAP_CONFIG_FILE")
         if [ "$current" = "$previous" ]; then
             llvm_configure=0
-            for whp_required_target in clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+            for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
             do
                 if ! llvm_bootstrap_has_target "$whp_required_target"; then
                     printf 'WHP LLVM CMake: cached target %s is missing; regenerating\n' "$whp_required_target" >&2
@@ -1157,7 +1158,7 @@ bootstrap_llvm()
         printf 'WHP LLVM CMake: cached\n' >&2
     fi
 
-    for whp_required_target in clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+    for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
     do
         llvm_bootstrap_has_target "$whp_required_target" ||
             die "LLVM bootstrap target '$whp_required_target' is missing after CMake generation"
@@ -1171,20 +1172,20 @@ bootstrap_llvm()
         case "$llvm_generator" in
             Ninja*)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k 0
+                    --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip -- -k 0
                 ;;
             *Makefiles*)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k
+                    --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip -- -k
                 ;;
             *)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+                    --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
                 ;;
         esac
     else
         "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-            --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+            --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
     fi
     unset llvm_generator
     PATH=$llvm_bootstrap_saved_path
