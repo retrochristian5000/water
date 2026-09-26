@@ -1214,11 +1214,15 @@
 @ cdecl -arch=i386 _CItan() msvcrt._CItan
 @ cdecl -arch=i386 _CItanh() msvcrt._CItanh
 @ stdcall _CxxThrowException(ptr ptr) msvcrt._CxxThrowException
+# Original VC4/Win9x runtimes exported the stdcall-decorated exception names.
+# Keep these private so they do not collide with the normal import-library symbols.
+@ cdecl -arch=i386 -private _CxxThrowException@8(ptr ptr) msvcrt._CxxThrowException
 @ cdecl -arch=i386 -norelay _EH_prolog() msvcrt._EH_prolog
 @ extern _HUGE msvcrt._HUGE
 @ cdecl _XcptFilter(long ptr) msvcrt._XcptFilter
 @ cdecl -norelay __CxxFrameHandler(ptr ptr ptr ptr) msvcrt.__CxxFrameHandler
 @ stdcall -arch=i386 __CxxLongjmpUnwind(ptr) msvcrt.__CxxLongjmpUnwind
+@ cdecl -arch=i386 -private __CxxLongjmpUnwind@4(ptr) msvcrt.__CxxLongjmpUnwind
 @ cdecl __RTCastToVoid(ptr) msvcrt.__RTCastToVoid
 @ cdecl __RTDynamicCast(ptr long ptr ptr long) msvcrt.__RTDynamicCast
 @ cdecl __RTtypeid(ptr) msvcrt.__RTtypeid
@@ -1545,6 +1549,7 @@
 @ cdecl _scalb(double long) msvcrt._scalb
 @ cdecl _searchenv(str str ptr) msvcrt._searchenv
 @ stdcall -arch=i386 _seh_longjmp_unwind(ptr) msvcrt._seh_longjmp_unwind
+@ cdecl -arch=i386 -private _seh_longjmp_unwind@4(ptr) msvcrt._seh_longjmp_unwind
 @ cdecl _set_error_mode(long) msvcrt._set_error_mode
 @ cdecl _seterrormode(long) msvcrt._seterrormode
 @ cdecl -norelay _setjmp(ptr) msvcrt._setjmp
