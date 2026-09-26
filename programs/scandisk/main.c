@@ -1,7 +1,7 @@
 /*
  * ScanDisk-compatible diagnostic utility
  *
- * Copyright 2026 Vincent N.
+ * Copyright 2026 Water project contributors
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,7 @@
 #include <windows.h>
 #include <winioctl.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "wine/debug.h"
 
@@ -53,6 +54,7 @@ struct scan_options
     BOOL nosummary;
     BOOL surface;
     BOOL mono;
+    BOOL help;
 };
 
 struct scan_result
@@ -148,13 +150,21 @@ static BOOL parse_switch(const WCHAR *arg, struct scan_options *options)
     else if (!lstrcmpiW(name, L"surface")) options->surface = TRUE;
     else if (!lstrcmpiW(name, L"mono")) options->mono = TRUE;
     else if (!lstrcmpW(name, L"?"))
-    {
-        print_usage();
-        return TRUE;
-    }
+        options->help = TRUE;
     else return FALSE;
 
     return TRUE;
+}
+
+static BOOL is_fat_fsname(const WCHAR *name)
+{
+    return !lstrcmpiW(name, L"FAT") || !lstrcmpiW(name, L"FAT12") ||
+           !lstrcmpiW(name, L"FAT16") || !lstrcmpiW(name, L"FAT32");
+}
+
+static BOOL boot_has_fat_label(const BYTE *boot)
+{
+    return !memcmp(boot + 0x36, "FAT", 3) || !memcmp(boot + 0x52, "FAT", 3);
 }
 
 static BOOL parse_drive(const WCHAR *arg, WCHAR *drive)
@@ -505,7 +515,7 @@ static struct scan_result scan_drive(WCHAR drive, const struct scan_options *opt
     BYTE boot[512];
     HANDLE handle;
     UINT type;
-    BOOL have_fat = FALSE;
+    BOOL have_fat = FALSE, fs_known = FALSE, api_fat = FALSE;
 
     root[0] = drive;
     device[4] = drive;
@@ -521,8 +531,12 @@ static struct scan_result scan_drive(WCHAR drive, const struct scan_options *opt
 
     if (GetVolumeInformationW(root, label, ARRAY_SIZE(label), &serial, &max_component,
                               &fsflags, fsname, ARRAY_SIZE(fsname)))
+    {
+        fs_known = fsname[0] != 0;
+        api_fat = fs_known && is_fat_fsname(fsname);
         wprintf(L"  Volume: %s  File system: %s  Serial: %08lx\n",
-                label[0] ? label : L"(no label)", fsname[0] ? fsname : L"(unknown)", serial);
+                label[0] ? label : L"(no label)", fs_known ? fsname : L"(unknown)", serial);
+    }
     else
         wprintf(L"  Volume information unavailable (error %lu).\n", GetLastError());
 
@@ -544,7 +558,23 @@ static struct scan_result scan_drive(WCHAR drive, const struct scan_options *opt
     check_dirty_state(handle, &result);
 
     if (read_at(handle, 0, boot, sizeof(boot)))
-        have_fat = decode_fat_layout(boot, &layout, &result);
+    {
+        /*
+         * Do not interpret an NTFS/exFAT/etc. BPB as damaged FAT. If the
+         * filesystem API is unavailable, the legacy FAT type strings are only
+         * a detection hint; the cluster-count calculation remains authoritative
+         * once we decide to inspect the FAT layout.
+         */
+        if (api_fat || (!fs_known && boot_has_fat_label(boot)))
+            have_fat = decode_fat_layout(boot, &layout, &result);
+        else if (fs_known)
+            wprintf(L"  Structural FAT scan skipped for %s.\n", fsname);
+        else
+        {
+            wprintf(L"  No FAT identity could be established from the API or boot sector.\n");
+            result.incomplete++;
+        }
+    }
     else
     {
         wprintf(L"  Boot sector read failed (error %lu).\n", GetLastError());
@@ -574,8 +604,6 @@ static struct scan_result scan_drive(WCHAR drive, const struct scan_options *opt
         compare_fat_copies(handle, &layout, &result);
         if (options->surface) surface_scan(handle, &layout, &result);
     }
-    else if (fsname[0])
-        wprintf(L"  Structural FAT scan skipped for %s.\n", fsname);
 
     CloseHandle(handle);
 
@@ -625,6 +653,12 @@ int __cdecl wmain(int argc, WCHAR *argv[])
         }
     }
 
+    if (options.help)
+    {
+        print_usage();
+        return 0;
+    }
+
     if (options.autofix && options.checkonly)
     {
         wprintf(L"/autofix and /checkonly cannot be used together.\n");
@@ -649,14 +683,28 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     for (i = 0; i < 26; i++) if (drives[i]) break;
     if (i == 26)
     {
-        WCHAR current[MAX_PATH];
-        if (!GetCurrentDirectoryW(ARRAY_SIZE(current), current) ||
-            current[1] != L':' || !parse_drive(current, &current[0]))
+        WCHAR current[MAX_PATH], drive;
+
+        if (options.all)
+        {
+            wprintf(L"No local drives were found.\n");
+            return 3;
+        }
+
+        if (!GetCurrentDirectoryW(ARRAY_SIZE(current), current) || current[1] != L':')
         {
             wprintf(L"Cannot determine the current drive.\n");
             return 2;
         }
-        drives[current[0] - L'A'] = TRUE;
+
+        drive = current[0];
+        if (drive >= L'a' && drive <= L'z') drive -= L'a' - L'A';
+        if (drive < L'A' || drive > L'Z')
+        {
+            wprintf(L"Cannot determine the current drive.\n");
+            return 2;
+        }
+        drives[drive - L'A'] = TRUE;
     }
 
     for (i = 0; i < 26; i++)
