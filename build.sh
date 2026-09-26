@@ -407,6 +407,11 @@ darwin_sdkroot()
 
 select_llvm_lld_backends()
 {
+    if [ "$WATER_LLVM_LINKER" = system ]; then
+        printf '%s\n' 'COFF;MinGW'
+        return
+    fi
+
     case "$(uname -s 2>/dev/null || true)" in
         Darwin)
             printf '%s\n' 'COFF;MinGW;MachO'
@@ -483,7 +488,7 @@ probe_lld_linker()
     whp_probe_linker=$2
     whp_probe_language=$3
     whp_probe_sdkroot=${4:-}
-    whp_probe_output="$BUILD_DIR/.whp-linker-probe.$"
+    whp_probe_output="${TMPDIR:-/tmp}/whp-water-linker-probe.$"
     whp_probe_linker_dir=$(dirname -- "$whp_probe_linker")
 
     rm -f "$whp_probe_output"
@@ -1034,6 +1039,15 @@ bootstrap_llvm()
                 fi
             done
             unset whp_required_target
+
+            llvm_cached_linker=$(sed -n 's/^LLVM_USE_LINKER:STRING=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" |
+                sed -n '1p')
+            if [ "$llvm_cached_linker" != "$llvm_use_linker" ]; then
+                printf 'WHP LLVM CMake: linker changed (%s -> %s); regenerating\n' \
+                    "${llvm_cached_linker:-system}" "${llvm_use_linker:-system}" >&2
+                llvm_configure=1
+            fi
+            unset llvm_cached_linker
         fi
     fi
 
