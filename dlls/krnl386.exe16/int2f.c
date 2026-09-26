@@ -417,14 +417,12 @@ static void do_int2f_16( I386_CONTEXT *context )
 
     case 0x87: /* DPMI installation check */
         {
-           SYSTEM_INFO si;
-           GetSystemInfo(&si);
-           SET_AX( context, 0x0000 ); /* DPMI Installed */
-            SET_BX( context, 0x0001 ); /* 32bits available */
-            SET_CL( context, si.wProcessorLevel );
+            SET_AX( context, 0x0000 ); /* DPMI Installed */
+            SET_BX( context, 0x0000 ); /* 16-bit host */
+            SET_CL( context, DOSVM_GetX86ProcessorLevel() );
             SET_DX( context, 0x005a ); /* DPMI major/minor 0.90 */
             SET_SI( context, 0 );      /* # of para. of DOS extended private data */
-            context->SegEs = 0;  /* no DPMI switch */
+            context->SegEs = 0;        /* no DPMI switch */
             SET_DI( context, 0 );      /* ES:DI is DPMI switch entry point */
             break;
         }

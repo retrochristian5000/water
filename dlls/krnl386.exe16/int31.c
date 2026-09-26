@@ -480,7 +480,7 @@ void WINAPI DOSVM_Int31Handler( I386_CONTEXT *context )
         TRACE("get DPMI version\n");
         {
             SET_AX( context, 0x005a );  /* DPMI version 0.90 */
-            SET_BX( context, 0x0001 );  /* Flags: 32-bit host, no virtual memory */
+            SET_BX( context, 0x0000 );  /* Flags: 16-bit host, no virtual memory */
             SET_CL( context, DOSVM_GetX86ProcessorLevel() );
             SET_DX( context, 0x0870 );  /* Interrupt controller base */
         }
