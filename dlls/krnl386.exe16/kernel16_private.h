@@ -361,6 +361,9 @@ static inline DWORD stack32_pop( I386_CONTEXT *context )
     return ret;
 }
 
+C_ASSERT( sizeof(I386_CONTEXT) == 0x2cc );
+
+#ifdef __i386__
 #define DEFINE_REGS_ENTRYPOINT(name) \
     __ASM_STDCALL_FUNC( name, 0,                                        \
                         "pushl %ebp\n\t"                                \
@@ -368,7 +371,7 @@ static inline DWORD stack32_pop( I386_CONTEXT *context )
                         __ASM_CFI(".cfi_rel_offset %ebp,0\n\t")         \
                         "movl %esp,%ebp\n\t"                            \
                         __ASM_CFI(".cfi_def_cfa_register %ebp\n\t")     \
-                        "leal -0x2cc(%esp),%esp\n\t" /* sizeof(CONTEXT) */ \
+                        "leal -0x2cc(%esp),%esp\n\t" /* sizeof(I386_CONTEXT) */ \
                         "pushl %esp\n\t"             /* context */      \
                         "call " __ASM_STDCALL("RtlCaptureContext",4) "\n\t" \
                         "movl %esp,%esi\n\t"                            \
@@ -379,5 +382,18 @@ static inline DWORD stack32_pop( I386_CONTEXT *context )
                         "pushl %esi\n\t"             /* context */      \
                         "call " __ASM_STDCALL("NtContinue",8) "\n\t"    \
                         "ret" ) /* fake ret to make copy protections happy */
+#else
+/*
+ * Native non-i386 hosts cannot capture guest x86 registers with host assembly.
+ * Win16/WOW callers already execute with an i386 CPU area, so route register
+ * entry points through that explicit guest state.
+ */
+#define DEFINE_REGS_ENTRYPOINT(name) \
+    void WINAPI name(void) \
+    { \
+        I386_CONTEXT *context = kernel_get_i386_cpu_context( NULL ); \
+        if (context) __regs_ ## name( context ); \
+    }
+#endif
 
 #endif  /* __WINE_KERNEL16_PRIVATE_H */

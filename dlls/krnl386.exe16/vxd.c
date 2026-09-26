@@ -260,25 +260,7 @@ void WINAPI __regs_VxDCall( I386_CONTEXT *context )
         context->Eax = 0xffffffff; /* FIXME */
     }
 }
-#ifdef __i386__
 DEFINE_REGS_ENTRYPOINT( VxDCall )
-#else
-void WINAPI VxDCall(void)
-{
-#ifdef _WIN64
-    USHORT machine = 0;
-    void *context = NULL, *context_ex = NULL;
-
-    if (!RtlWow64GetCurrentCpuArea( &machine, &context, &context_ex ) &&
-        machine == IMAGE_FILE_MACHINE_I386 && context)
-    {
-        __regs_VxDCall( context );
-        return;
-    }
-#endif
-    WARN( "VxDCall invoked without an active i386 CPU context\n" );
-}
-#endif
 
 
 /***********************************************************************
