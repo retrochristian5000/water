@@ -28,7 +28,7 @@ profile. The menu controls PE architectures, the WHP LLVM bootstrap and host
 linker policies, build behavior, and optional Wine components. The LLVM menu
 defaults to a lean Water-only graph: unused tests, docs, examples, benchmarks,
 utilities, runtimes, bindings, and default tool sweeps are excluded while
-required Clang, LLD, archive, symbol, and strip tools remain available. In
+required Clang, LLD, archive, symbol, and strip tools remain available. The
 automatic linker mode uses host LLD only where it is part of the normal
 bootstrap. On macOS, automatic mode keeps the LLVM bootstrap independent of
 the optional Mach-O LLD backend and uses Apple ld; explicitly selecting LLD
