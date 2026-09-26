@@ -194,7 +194,7 @@
 @ stdcall OleCreate(ptr ptr long ptr ptr ptr ptr)
 @ stdcall OleCreateDefaultHandler(ptr ptr ptr ptr)
 @ stdcall OleCreateEmbeddingHelper(ptr ptr long ptr ptr ptr)
-@ stub OleCreateEx
+@ stdcall OleCreateEx(ptr ptr long long long ptr ptr ptr ptr ptr ptr ptr)
 @ stdcall OleCreateFromData(ptr ptr long ptr ptr ptr ptr)
 @ stdcall OleCreateFromDataEx(ptr ptr long long long ptr ptr ptr ptr ptr ptr ptr)
 @ stdcall OleCreateFromFile(ptr wstr ptr long ptr ptr ptr ptr)
