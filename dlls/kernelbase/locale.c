@@ -736,8 +736,8 @@ static BOOL load_sortdefault_nls(void)
     const USHORT *case_ptr;
     UINT i;
     SIZE_T size, keys_count, casemap_words, case_starts[3], case_used, case_remaining;
+    SIZE_T compr_words, compr_end = 0;
     NTSTATUS status;
-    const struct sort_compression *last_compr;
 
     status = NtGetNlsSectionPtr( 9 /* NLS_SECTION_SORTKEYS */, 0, NULL, (void **)&header, &size );
     if (status || !header || size < sizeof(*header) || size % sizeof(UINT))
@@ -813,24 +813,29 @@ static BOOL load_sortdefault_nls(void)
     if (sort.compr_count > ((const char *)end - (const char *)sort.compressions) / sizeof(*sort.compressions))
         goto invalid;
     sort.compr_data = (WCHAR *)(sort.compressions + sort.compr_count);
+    compr_words = ((const char *)end - (const char *)sort.compr_data) / sizeof(*sort.compr_data);
 
-    if (sort.compr_count)
+    for (i = 0; i < sort.compr_count; i++)
     {
-        SIZE_T remaining;
+        const struct sort_compression *compr = sort.compressions + i;
+        SIZE_T pos = compr->offset;
+        unsigned int j;
 
-        last_compr = sort.compressions + sort.compr_count - 1;
-        remaining = ((const char *)end - (const char *)sort.compr_data) / sizeof(*sort.compr_data);
-        if (last_compr->offset > remaining || last_compr->offset % 2) goto invalid;
+        if (pos > compr_words || pos % 2 || compr->minchar > compr->maxchar) goto invalid;
 
-        table = (UINT *)(sort.compr_data + last_compr->offset);
-        for (i = 0; i < 7; i++)
+        for (j = 0; j < ARRAY_SIZE(compr->len); j++)
         {
-            SIZE_T step = (SIZE_T)last_compr->len[i] * ((i + 5) / 2);
-            if (step > (SIZE_T)(end - table)) goto invalid;
-            table += step;
+            SIZE_T elem_words = compression_size( j + 2 );
+            SIZE_T count = compr->len[j];
+
+            if (count > (compr_words - pos) / elem_words) goto invalid;
+            pos += count * elem_words;
         }
+        if (pos > compr_end) compr_end = pos;
     }
-    else table = (UINT *)sort.compr_data;
+
+    if (compr_end % 2 || compr_end > compr_words) goto invalid;
+    table = (UINT *)(sort.compr_data + compr_end);
 
     if (table >= end || 1 + ((SIZE_T)table[0] + 1) / 2 > (SIZE_T)(end - table)) goto invalid;
     table += 1 + ((SIZE_T)table[0] + 1) / 2;  /* skip 2-byte pairs, padded to 4 bytes */
