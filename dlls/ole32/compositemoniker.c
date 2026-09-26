@@ -1817,10 +1817,100 @@ HRESULT WINAPI CreateGenericComposite(IMoniker *left, IMoniker *right, IMoniker 
  *        MonikerCommonPrefixWith	[OLE32.@]
  ******************************************************************************/
 HRESULT WINAPI
-MonikerCommonPrefixWith(IMoniker* pmkThis,IMoniker* pmkOther,IMoniker** ppmkCommon)
+MonikerCommonPrefixWith(IMoniker *moniker, IMoniker *other, IMoniker **prefix)
 {
-    FIXME("(),stub!\n");
-    return E_NOTIMPL;
+    HRESULT hr;
+
+    TRACE("%p, %p, %p.\n", moniker, other, prefix);
+
+    if (!prefix)
+        return E_POINTER;
+    *prefix = NULL;
+    if (!moniker || !other)
+        return E_INVALIDARG;
+
+    if (unsafe_impl_from_IMoniker(moniker))
+        return IMoniker_CommonPrefixWith(moniker, other, prefix);
+
+    if (unsafe_impl_from_IMoniker(other))
+    {
+        hr = IMoniker_CommonPrefixWith(other, moniker, prefix);
+        if (hr == MK_S_HIM)
+            return MK_S_ME;
+        if (hr == MK_S_ME)
+            return MK_S_HIM;
+        return hr;
+    }
+
+    return MK_E_NOPREFIX;
+}
+
+/******************************************************************************
+ *        MonikerRelativePathTo        [OLE32.@]
+ ******************************************************************************/
+HRESULT WINAPI MonikerRelativePathTo(IMoniker *src, IMoniker *dest, IMoniker **relpath, BOOL reserved)
+{
+    CompositeMonikerImpl *dest_composite;
+    IMoniker **components = NULL;
+    IMoniker *first = NULL, *rest = NULL, *partial = NULL;
+    unsigned int count;
+    HRESULT hr;
+
+    TRACE("%p, %p, %p, %d.\n", src, dest, relpath, reserved);
+
+    if (!relpath)
+        return E_POINTER;
+    *relpath = NULL;
+
+    if (reserved != TRUE || !src || !dest)
+        return E_INVALIDARG;
+
+    if (unsafe_impl_from_IMoniker(src))
+        return IMoniker_RelativePathTo(src, dest, relpath);
+
+    dest_composite = unsafe_impl_from_IMoniker(dest);
+    if (!dest_composite)
+    {
+        *relpath = dest;
+        IMoniker_AddRef(dest);
+        return MK_S_HIM;
+    }
+
+    hr = composite_get_components_alloc(dest, &count, &components);
+    if (FAILED(hr))
+        return hr;
+
+    first = components[0];
+    IMoniker_AddRef(first);
+
+    hr = composite_compose_components(components + 1, count - 1, &rest);
+    free(components);
+    if (FAILED(hr))
+        goto done;
+
+    if (IMoniker_IsEqual(src, first) == S_OK)
+    {
+        *relpath = rest;
+        rest = NULL;
+        hr = S_OK;
+        goto done;
+    }
+
+    hr = IMoniker_RelativePathTo(src, first, &partial);
+    if (hr == S_OK)
+        hr = CreateGenericComposite(partial, rest, relpath);
+    else
+    {
+        *relpath = dest;
+        IMoniker_AddRef(dest);
+        hr = MK_S_HIM;
+    }
+
+done:
+    if (partial) IMoniker_Release(partial);
+    if (rest) IMoniker_Release(rest);
+    IMoniker_Release(first);
+    return hr;
 }
 
 HRESULT WINAPI CompositeMoniker_CreateInstance(IClassFactory *iface,
