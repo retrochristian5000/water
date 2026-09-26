@@ -868,32 +868,10 @@ DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, I386_CONTEXT *context )
  * Vectored exception handler used to emulate protected instructions
  * from 32-bit code.
  */
-static I386_CONTEXT *get_exception_i386_context( EXCEPTION_POINTERS *ptrs )
-{
-#ifdef __i386__
-    return (I386_CONTEXT *)ptrs->ContextRecord;
-#elif defined(_WIN64)
-    USHORT machine = 0;
-    void *context = NULL, *context_ex = NULL;
-
-    /*
-     * The exception record belongs to the native host, but privileged Win16
-     * instructions execute in the emulated x86 CPU area on non-i386 hosts.
-     */
-    if (RtlWow64GetCurrentCpuArea( &machine, &context, &context_ex ) ||
-        machine != IMAGE_FILE_MACHINE_I386 || !context)
-        return NULL;
-
-    return context;
-#else
-    return NULL;
-#endif
-}
-
 LONG CALLBACK INSTR_vectored_handler( EXCEPTION_POINTERS *ptrs )
 {
     EXCEPTION_RECORD *record = ptrs->ExceptionRecord;
-    I386_CONTEXT *context = get_exception_i386_context( ptrs );
+    I386_CONTEXT *context = kernel_get_i386_cpu_context( ptrs->ContextRecord );
 
     if (context && ldt_is_system(context->SegCs) &&
         (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
