@@ -374,25 +374,28 @@ static INT16 COMM16_DCBtoDCB16(const DCB *lpdcb, LPDCB16 lpdcb16)
 	lpdcb16->RlsTimeout = 50;
 	lpdcb16->CtsTimeout = 50;
 	lpdcb16->DsrTimeout = 50;
-	lpdcb16->fNull = 0;
-	lpdcb16->fChEvt = 0;
-	lpdcb16->fBinary = 1;
-
-	lpdcb16->fDtrflow = (lpdcb->fDtrControl==DTR_CONTROL_HANDSHAKE);
-	lpdcb16->fRtsflow = (lpdcb->fRtsControl==RTS_CONTROL_HANDSHAKE);
+	lpdcb16->fBinary = lpdcb->fBinary;
+	lpdcb16->fRtsDisable = (lpdcb->fRtsControl == RTS_CONTROL_DISABLE);
+	lpdcb16->fParity = lpdcb->fParity;
 	lpdcb16->fOutxCtsFlow = lpdcb->fOutxCtsFlow;
 	lpdcb16->fOutxDsrFlow = lpdcb->fOutxDsrFlow;
-	lpdcb16->fDtrDisable = (lpdcb->fDtrControl==DTR_CONTROL_DISABLE);
-
-	lpdcb16->fInX = lpdcb->fInX;
-
+	lpdcb16->fDtrDisable = (lpdcb->fDtrControl == DTR_CONTROL_DISABLE);
 	lpdcb16->fOutX = lpdcb->fOutX;
-/*
-	lpdcb16->XonChar =
-	lpdcb16->XoffChar =
- */
-	lpdcb16->XonLim = 10;
-	lpdcb16->XoffLim = 10;
+	lpdcb16->fInX = lpdcb->fInX;
+	lpdcb16->fPeChar = lpdcb->fErrorChar;
+	lpdcb16->fNull = lpdcb->fNull;
+	lpdcb16->fChEvt = 0;  /* Windows 3.x does not use this flag */
+	lpdcb16->fDtrflow = (lpdcb->fDtrControl == DTR_CONTROL_HANDSHAKE);
+	lpdcb16->fRtsflow = (lpdcb->fRtsControl == RTS_CONTROL_HANDSHAKE);
+
+	lpdcb16->XonChar = lpdcb->XonChar;
+	lpdcb16->XoffChar = lpdcb->XoffChar;
+	lpdcb16->XonLim = lpdcb->XonLim;
+	lpdcb16->XoffLim = lpdcb->XoffLim;
+	lpdcb16->PeChar = lpdcb->ErrorChar;
+	lpdcb16->EofChar = lpdcb->EofChar;
+	lpdcb16->EvtChar = lpdcb->EvtChar;
+	lpdcb16->TxDelay = 0; /* Windows 3.x does not use this field */
 
 	return 0;
 }
@@ -839,21 +842,39 @@ INT16 WINAPI SetCommState16(LPDCB16 lpdcb)
         dcb.ByteSize=lpdcb->ByteSize;
         dcb.StopBits=lpdcb->StopBits;
 
-	dcb.fParity=lpdcb->fParity;
-	dcb.Parity=lpdcb->Parity;
-
+	dcb.fBinary = lpdcb->fBinary;
+	dcb.fParity = lpdcb->fParity;
+	dcb.Parity = lpdcb->Parity;
 	dcb.fOutxCtsFlow = lpdcb->fOutxCtsFlow;
-
-	if (lpdcb->fDtrflow || lpdcb->fRtsflow)
-		dcb.fRtsControl = TRUE;
+	dcb.fOutxDsrFlow = lpdcb->fOutxDsrFlow;
 
 	if (lpdcb->fDtrDisable)
-		dcb.fDtrControl = TRUE;
+		dcb.fDtrControl = DTR_CONTROL_DISABLE;
+	else if (lpdcb->fDtrflow)
+		dcb.fDtrControl = DTR_CONTROL_HANDSHAKE;
+	else
+		dcb.fDtrControl = DTR_CONTROL_ENABLE;
+
+	if (lpdcb->fRtsDisable)
+		dcb.fRtsControl = RTS_CONTROL_DISABLE;
+	else if (lpdcb->fRtsflow)
+		dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
+	else
+		dcb.fRtsControl = RTS_CONTROL_ENABLE;
 
 	ptr->evtchar = lpdcb->EvtChar;
 
 	dcb.fInX = lpdcb->fInX;
 	dcb.fOutX = lpdcb->fOutX;
+	dcb.fErrorChar = lpdcb->fPeChar;
+	dcb.fNull = lpdcb->fNull;
+	dcb.XonChar = lpdcb->XonChar;
+	dcb.XoffChar = lpdcb->XoffChar;
+	dcb.XonLim = lpdcb->XonLim;
+	dcb.XoffLim = lpdcb->XoffLim;
+	dcb.ErrorChar = lpdcb->PeChar;
+	dcb.EofChar = lpdcb->EofChar;
+	dcb.EvtChar = lpdcb->EvtChar;
 
 	if (!SetCommState(ptr->handle,&dcb)) {
 		ptr->commerror = WinError();
