@@ -24,36 +24,45 @@ WINE_DEFAULT_DEBUG_CHANNEL(dos);
  * Windows 95 and later 9x releases use a text MSDOS.SYS in the root of the
  * boot drive. Keep this separate from the pre-Windows-95 binary MSDOS.SYS.
  */
+static BOOL is_msdos_sys_file( const char *path )
+{
+    DWORD attrs = GetFileAttributesA( path );
+
+    return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static BOOL try_msdos_sys_drive( char drive, char path[MAX_PATH] )
+{
+    if (snprintf( path, MAX_PATH, "%c:\\MSDOS.SYS", drive ) >= MAX_PATH)
+        return FALSE;
+
+    return is_msdos_sys_file( path );
+}
+
 static BOOL get_msdos_sys_path( char path[MAX_PATH] )
 {
-    char drive[4] = "C:\\";
+    char system_drive[4];
     char windows[MAX_PATH];
     DWORD len;
 
-    len = GetEnvironmentVariableA( "SystemDrive", drive, sizeof(drive) );
-    if (len != 2 || drive[1] != ':')
-    {
-        len = GetWindowsDirectoryA( windows, sizeof(windows) );
-        if (len >= 2 && len < sizeof(windows) && windows[1] == ':')
-        {
-            drive[0] = windows[0];
-            drive[1] = ':';
-            drive[2] = '\\';
-            drive[3] = 0;
-        }
-        else
-            strcpy( drive, "C:\\" );
-    }
-    else
-    {
-        drive[2] = '\\';
-        drive[3] = 0;
-    }
+    len = GetEnvironmentVariableA( "SystemDrive", system_drive, sizeof(system_drive) );
+    if (len == 2 && system_drive[1] == ':' && try_msdos_sys_drive( system_drive[0], path ))
+        return TRUE;
 
-    if (snprintf( path, MAX_PATH, "%sMSDOS.SYS", drive ) >= MAX_PATH)
-        return FALSE;
+    /* C: is the normal Win9x boot root even when Windows itself is elsewhere. */
+    if ((len != 2 || system_drive[0] != 'C') && try_msdos_sys_drive( 'C', path ))
+        return TRUE;
 
-    return GetFileAttributesA( path ) != INVALID_FILE_ATTRIBUTES;
+    len = GetWindowsDirectoryA( windows, sizeof(windows) );
+    if (len >= 2 && len < sizeof(windows) && windows[1] == ':' &&
+        (windows[0] != 'C') &&
+        !(GetEnvironmentVariableA( "SystemDrive", system_drive, sizeof(system_drive) ) == 2 &&
+          system_drive[1] == ':' && system_drive[0] == windows[0]) &&
+        try_msdos_sys_drive( windows[0], path ))
+        return TRUE;
+
+    path[0] = 0;
+    return FALSE;
 }
 
 static void get_msdos_path_value( const char *filename, const char *name,
