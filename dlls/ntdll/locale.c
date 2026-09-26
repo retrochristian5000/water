@@ -51,6 +51,150 @@ static WCHAR casemap( USHORT *table, WCHAR ch )
 }
 
 
+static BOOL nls_range_valid( SIZE_T size, SIZE_T offset, SIZE_T count, SIZE_T elem_size )
+{
+    return offset <= size && (!elem_size || count <= (size - offset) / elem_size);
+}
+
+
+static BOOL validate_compressed_casemap( const USHORT *table, SIZE_T count )
+{
+    unsigned int i, j;
+
+    if (count < 256) return FALSE;
+
+    for (i = 0; i < 256; i++)
+    {
+        SIZE_T offset = table[i];
+
+        if (offset > count - 16) return FALSE;
+        for (j = 0; j < 16; j++)
+        {
+            SIZE_T next = table[offset + j];
+            if (next > count - 16) return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+
+static BOOL validate_casemap_section( const USHORT *data, SIZE_T size )
+{
+    SIZE_T words = size / sizeof(*data), upper_size, lower_size, lower_pos;
+
+    if (size % sizeof(*data) || words < 3 || data[0] != 1) return FALSE;
+
+    upper_size = data[1];
+    if (upper_size <= 1 || upper_size > words - 1) return FALSE;
+    if (!validate_compressed_casemap( data + 2, upper_size - 1 )) return FALSE;
+
+    lower_pos = upper_size + 1;
+    if (lower_pos >= words) return FALSE;
+    lower_size = data[lower_pos];
+    if (lower_size <= 1 || lower_size > words - lower_pos) return FALSE;
+    return validate_compressed_casemap( data + lower_pos + 1, lower_size - 1 );
+}
+
+
+static BOOL validate_codepage_section( const USHORT *data, SIZE_T size )
+{
+    SIZE_T words = size / sizeof(*data), pos, wide_pos;
+    unsigned int i, glyphs;
+
+    if (size % sizeof(*data) || words < 14) return FALSE;
+    if (data[0] < 13 || data[0] >= words) return FALSE;
+    if (data[2] != 1 && data[2] != 2) return FALSE;
+
+    pos = data[0];
+    wide_pos = pos + data[pos] + 1;
+    if (pos + 1 + 256 >= words) return FALSE;
+
+    pos += 1 + 256;
+    glyphs = data[pos++];
+    if (glyphs)
+    {
+        if (glyphs != 256 || glyphs > words - pos) return FALSE;
+        pos += glyphs;
+    }
+    if (pos >= words) return FALSE;
+
+    if (data[2] == 1)
+    {
+        SIZE_T wide_bytes;
+
+        if (data[pos]) return FALSE;
+        if (wide_pos > (SIZE_T)-1 / sizeof(*data)) return FALSE;
+        wide_bytes = wide_pos * sizeof(*data);
+        return wide_bytes <= size && 65536 <= size - wide_bytes;
+    }
+    else
+    {
+        SIZE_T offsets, remaining;
+
+        if (!data[pos]) return FALSE;
+        offsets = pos + 1;
+        if (!nls_range_valid( words, offsets, 256, 1 )) return FALSE;
+        remaining = words - offsets;
+        for (i = 0; i < 256; i++)
+        {
+            USHORT offset = data[offsets + i];
+            if (offset && (offset > remaining || 256 > remaining - offset)) return FALSE;
+        }
+        return nls_range_valid( words, wide_pos, 65536, 1 );
+    }
+}
+
+
+static BOOL validate_locale_nls( const struct locale_nls_header *header, SIZE_T size )
+{
+    const NLS_LOCALE_HEADER *table;
+    const NLS_LOCALE_LCID_INDEX *lcids;
+    const NLS_LOCALE_LCNAME_INDEX *lcnames;
+    const WCHAR *strings;
+    SIZE_T table_size, string_words;
+    unsigned int i;
+
+    if (size < sizeof(*header)) return FALSE;
+    if (header->ctypes < sizeof(*header) ||
+        header->ctypes > header->locales ||
+        header->locales > header->charmaps ||
+        header->charmaps > header->geoids ||
+        header->geoids > header->scripts ||
+        header->scripts > size) return FALSE;
+
+    table_size = header->charmaps - header->locales;
+    if (table_size < sizeof(*table)) return FALSE;
+    table = (const NLS_LOCALE_HEADER *)((const char *)header + header->locales);
+
+    if (table->magic != 0x5344534e || table->locale_size < sizeof(NLS_LOCALE_DATA))
+        return FALSE;
+    if (!nls_range_valid( table_size, table->lcids_offset, table->nb_lcids, sizeof(*lcids) ) ||
+        !nls_range_valid( table_size, table->lcnames_offset, table->nb_lcnames, sizeof(*lcnames) ) ||
+        !nls_range_valid( table_size, table->locales_offset, table->nb_locales, table->locale_size ) ||
+        !nls_range_valid( table_size, table->calendars_offset, table->nb_calendars, table->calendar_size ) ||
+        table->strings_offset > table_size) return FALSE;
+
+    lcids = (const NLS_LOCALE_LCID_INDEX *)((const char *)table + table->lcids_offset);
+    lcnames = (const NLS_LOCALE_LCNAME_INDEX *)((const char *)table + table->lcnames_offset);
+    strings = (const WCHAR *)((const char *)table + table->strings_offset);
+    string_words = (table_size - table->strings_offset) / sizeof(*strings);
+
+    for (i = 0; i < table->nb_lcids; i++)
+    {
+        SIZE_T name = lcids[i].name;
+        if (lcids[i].idx >= table->nb_locales || name >= string_words ||
+            strings[name] >= string_words - name) return FALSE;
+    }
+    for (i = 0; i < table->nb_lcnames; i++)
+    {
+        SIZE_T name = lcnames[i].name;
+        if (lcnames[i].idx >= table->nb_locales || name >= string_words ||
+            strings[name] >= string_words - name) return FALSE;
+    }
+    return TRUE;
+}
+
+
 static NTSTATUS load_norm_table( ULONG form, const struct norm_table **info )
 {
     unsigned int i;
@@ -101,24 +245,36 @@ void locale_init(void)
     const NLS_LOCALE_LCID_INDEX *entry;
     USHORT utf8[2] = { 0, CP_UTF8 };
     WCHAR locale[LOCALE_NAME_MAX_LENGTH];
-    LARGE_INTEGER unused;
+    LARGE_INTEGER mapping_size;
     SIZE_T size;
     UINT ansi_cp = 1252, oem_cp = 437;
-    void *ansi_ptr = utf8, *oem_ptr = utf8, *case_ptr;
+    void *ansi_ptr = utf8, *oem_ptr = utf8, *case_ptr = NULL;
     NTSTATUS status;
     const struct locale_nls_header *header;
     PEB64 *peb64 = get_peb64();
 
-    status = RtlGetLocaleFileMappingAddress( (void **)&header, &system_lcid, &unused );
+    status = RtlGetLocaleFileMappingAddress( (void **)&header, &system_lcid, &mapping_size );
     if (status)
     {
         ERR( "locale init failed %lx\n", status );
+        return;
+    }
+    if (mapping_size.QuadPart <= 0 ||
+        (ULONGLONG)(SIZE_T)mapping_size.QuadPart != (ULONGLONG)mapping_size.QuadPart ||
+        !validate_locale_nls( header, (SIZE_T)mapping_size.QuadPart ))
+    {
+        ERR( "invalid locale.nls mapping\n" );
         return;
     }
     locale_table = (const NLS_LOCALE_HEADER *)((char *)header + header->locales);
     locale_strings = (const WCHAR *)((char *)locale_table + locale_table->strings_offset);
 
     entry = find_lcid_entry( locale_table, system_lcid );
+    if (!entry)
+    {
+        ERR( "system locale %08lx is missing from locale.nls\n", system_lcid );
+        return;
+    }
     ansi_cp = get_locale_data( locale_table, entry->idx )->idefaultansicodepage;
     oem_cp = get_locale_data( locale_table, entry->idx )->idefaultcodepage;
 
@@ -163,20 +319,51 @@ void locale_init(void)
         }
     }
 
-    NtGetNlsSectionPtr( 10, 0, NULL, &case_ptr, &size );
-    NtCurrentTeb()->Peb->UnicodeCaseTableData = case_ptr;
-    if (peb64) peb64->UnicodeCaseTableData = PtrToUlong( case_ptr );
+    status = NtGetNlsSectionPtr( NLS_SECTION_CASEMAP, 0, NULL, &case_ptr, &size );
+    if (status || !validate_casemap_section( case_ptr, size ))
+    {
+        ERR( "failed to load valid NLS casemap table, status %lx\n", status );
+        case_ptr = NULL;
+    }
+    else
+    {
+        NtCurrentTeb()->Peb->UnicodeCaseTableData = case_ptr;
+        if (peb64) peb64->UnicodeCaseTableData = PtrToUlong( case_ptr );
+    }
+
     if (ansi_cp != CP_UTF8)
     {
-        NtGetNlsSectionPtr( 11, ansi_cp, NULL, &ansi_ptr, &size );
-        NtCurrentTeb()->Peb->AnsiCodePageData = ansi_ptr;
-        if (peb64) peb64->AnsiCodePageData = PtrToUlong( ansi_ptr );
+        void *ptr = NULL;
+
+        status = NtGetNlsSectionPtr( NLS_SECTION_CODEPAGE, ansi_cp, NULL, &ptr, &size );
+        if (!status && validate_codepage_section( ptr, size ))
+        {
+            ansi_ptr = ptr;
+            NtCurrentTeb()->Peb->AnsiCodePageData = ansi_ptr;
+            if (peb64) peb64->AnsiCodePageData = PtrToUlong( ansi_ptr );
+        }
+        else
+        {
+            ERR( "failed to load valid ANSI codepage %u, status %lx; using UTF-8\n", ansi_cp, status );
+            ansi_cp = CP_UTF8;
+        }
     }
     if (oem_cp != CP_UTF8)
     {
-        NtGetNlsSectionPtr( 11, oem_cp, NULL, &oem_ptr, &size );
-        NtCurrentTeb()->Peb->OemCodePageData = oem_ptr;
-        if (peb64) peb64->OemCodePageData = PtrToUlong( oem_ptr );
+        void *ptr = NULL;
+
+        status = NtGetNlsSectionPtr( NLS_SECTION_CODEPAGE, oem_cp, NULL, &ptr, &size );
+        if (!status && validate_codepage_section( ptr, size ))
+        {
+            oem_ptr = ptr;
+            NtCurrentTeb()->Peb->OemCodePageData = oem_ptr;
+            if (peb64) peb64->OemCodePageData = PtrToUlong( oem_ptr );
+        }
+        else
+        {
+            ERR( "failed to load valid OEM codepage %u, status %lx; using UTF-8\n", oem_cp, status );
+            oem_cp = CP_UTF8;
+        }
     }
     RtlInitNlsTables( ansi_ptr, oem_ptr, case_ptr, &nls_info );
     NlsAnsiCodePage     = nls_info.AnsiTableInfo.CodePage;
@@ -336,8 +523,16 @@ void WINAPI RtlInitNlsTables( USHORT *ansi, USHORT *oem, USHORT *casetable, NLST
 {
     RtlInitCodePageTable( ansi, &info->AnsiTableInfo );
     RtlInitCodePageTable( oem, &info->OemTableInfo );
-    info->UpperCaseTable = casetable + 2;
-    info->LowerCaseTable = casetable + casetable[1] + 2;
+    if (casetable)
+    {
+        info->UpperCaseTable = casetable + 2;
+        info->LowerCaseTable = casetable + casetable[1] + 2;
+    }
+    else
+    {
+        info->UpperCaseTable = NULL;
+        info->LowerCaseTable = NULL;
+    }
 }
 
 
