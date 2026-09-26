@@ -593,18 +593,22 @@ llvm_source_revision()
     "$git_cmd" -C "$LLVM_SOURCE_DIR" rev-parse HEAD 2>/dev/null
 }
 
-llvm_source_is_dirty()
+llvm_source_state_signature()
 {
     git_cmd=$(command -v git 2>/dev/null || true)
     [ -n "$git_cmd" ] || return 1
-    "$git_cmd" -C "$LLVM_SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+    llvm_revision=$("$git_cmd" -C "$LLVM_SOURCE_DIR" rev-parse HEAD 2>/dev/null) ||
         return 1
 
-    "$git_cmd" -C "$LLVM_SOURCE_DIR" diff --quiet --ignore-submodules=dirty -- 2>/dev/null ||
-        return 0
-    "$git_cmd" -C "$LLVM_SOURCE_DIR" diff --cached --quiet --ignore-submodules=dirty -- 2>/dev/null ||
-        return 0
-    return 1
+    printf 'REV=%s\n' "$llvm_revision"
+    if "$git_cmd" -C "$LLVM_SOURCE_DIR" diff --quiet --ignore-submodules=dirty HEAD -- 2>/dev/null; then
+        printf 'DIFF=clean\n'
+    else
+        printf 'DIFF='
+        "$git_cmd" -C "$LLVM_SOURCE_DIR" diff --binary --no-ext-diff \
+            --ignore-submodules=dirty HEAD -- 2>/dev/null |
+            cksum | awk '{ printf "%s:%s\\n", $1, $2 }'
+    fi
 }
 
 llvm_bootstrap_config_signature()
@@ -628,8 +632,11 @@ llvm_bootstrap_config_signature()
 
 llvm_bootstrap_state_signature()
 {
-    llvm_revision=$(llvm_source_revision 2>/dev/null || true)
-    printf 'LLVM_SOURCE_REV=%s\n' "${llvm_revision:-unknown}"
+    if llvm_source_state=$(llvm_source_state_signature 2>/dev/null); then
+        printf '%s\n' "$llvm_source_state"
+    else
+        printf 'REV=unknown\nDIFF=unknown\n'
+    fi
     llvm_bootstrap_config_signature
 }
 
@@ -652,13 +659,7 @@ llvm_bootstrap_needs_update()
     [ -x "$LLVM_BOOTSTRAP_DIR/bin/clang" ] || return 0
     [ -f "$LLVM_BOOTSTRAP_STATE_FILE" ] || return 0
 
-    # Dirty tracked LLVM sources are always handed to the underlying incremental
-    # build. Ninja/Make will decide which objects actually need rebuilding.
-    if llvm_source_is_dirty; then
-        return 0
-    fi
-
-    llvm_source_revision >/dev/null 2>&1 || return 0
+    llvm_source_state_signature >/dev/null 2>&1 || return 0
 
     current=$(llvm_bootstrap_state_signature)
     previous=$(cat "$LLVM_BOOTSTRAP_STATE_FILE")
@@ -851,6 +852,14 @@ find_llvm_bin()
 setup_toolchain()
 {
     LLVM_BIN=$(find_llvm_bin || true)
+    WHP_LLVM_TOOLCHAIN_STATE=
+    if [ "$LLVM_BIN" = "$LLVM_BOOTSTRAP_DIR/bin" ] &&
+       [ -f "$LLVM_BOOTSTRAP_STATE_FILE" ]; then
+        WHP_LLVM_TOOLCHAIN_STATE=$(cksum "$LLVM_BOOTSTRAP_STATE_FILE" |
+            awk '{ printf "%s:%s", $1, $2 }')
+    fi
+    export WHP_LLVM_TOOLCHAIN_STATE
+
     whp_auto_cc=0
     whp_auto_cxx=0
 
@@ -942,6 +951,7 @@ profile_signature()
         "WHP_DARWIN_SDKROOT=${WHP_DARWIN_SDKROOT:-}" \
         "WHP_HOST_CC_REAL=${WHP_HOST_CC_REAL:-}" \
         "WHP_HOST_CXX_REAL=${WHP_HOST_CXX_REAL:-}" \
+        "WHP_LLVM_TOOLCHAIN_STATE=${WHP_LLVM_TOOLCHAIN_STATE:-}" \
         "WATER_SYSTEM_DLLPATH=${WATER_SYSTEM_DLLPATH:-auto}" \
         "WATER_WINE_TOOLS=${WATER_WINE_TOOLS:-auto}" \
         "WATER_WINE64=${WATER_WINE64:-auto}" \
