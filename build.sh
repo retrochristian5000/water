@@ -488,7 +488,8 @@ probe_lld_linker()
     whp_probe_linker=$2
     whp_probe_language=$3
     whp_probe_sdkroot=${4:-}
-    whp_probe_output="${TMPDIR:-/tmp}/whp-water-linker-probe.$"
+    whp_probe_output=$(mktemp "${TMPDIR:-/tmp}/whp-water-linker-probe.XXXXXX") ||
+        return 1
     whp_probe_linker_dir=$(dirname -- "$whp_probe_linker")
 
     rm -f "$whp_probe_output"
@@ -1040,7 +1041,7 @@ bootstrap_llvm()
             done
             unset whp_required_target
 
-            llvm_cached_linker=$(sed -n 's/^LLVM_USE_LINKER:STRING=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" |
+            llvm_cached_linker=$(sed -n 's/^LLVM_USE_LINKER:[^=]*=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" |
                 sed -n '1p')
             if [ "$llvm_cached_linker" != "$llvm_use_linker" ]; then
                 printf 'WHP LLVM CMake: linker changed (%s -> %s); regenerating\n' \
