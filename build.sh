@@ -836,18 +836,27 @@ bootstrap_llvm()
 
     jobs=$(detect_jobs)
     printf 'WHP LLVM bootstrap: incremental %s\n' "$LLVM_BOOTSTRAP_DIR" >&2
+    llvm_generator=$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" | sed -n '1p')
     if [ "$WATER_KEEP_GOING" = y ] || [ "$WATER_KEEP_GOING" = 1 ]; then
-        if [ "$llvm_ninja_generator" = 1 ]; then
-            "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k 0
-        else
-            "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k
-        fi
+        case "$llvm_generator" in
+            Ninja*)
+                "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
+                    --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k 0
+                ;;
+            *Makefiles*)
+                "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
+                    --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k
+                ;;
+            *)
+                "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
+                    --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+                ;;
+        esac
     else
         "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
             --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
     fi
+    unset llvm_generator
     record_llvm_bootstrap_state
 }
 prepare_llvm_toolchain()
