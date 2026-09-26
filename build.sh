@@ -21,7 +21,7 @@ PROFILE_FILE="$BUILD_DIR/.whp-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
-LLVM_BOOTSTRAP_RECIPE=2
+LLVM_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -72,6 +72,7 @@ Environment:
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
+  WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (default: auto)
   WHP_LLVM_BOOTSTRAP_CC Stage-0 C compiler (default: prefer clang)
   WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
@@ -84,7 +85,7 @@ Environment:
 
 Run ./build.sh menuconfig to edit the persistent .whpconfig profile.
 Explicit environment variables and explicit configure arguments override menu defaults.
-CC/CXX/AR/NM/RANLIB remain authoritative when explicitly set.
+CC/CXX/AR/NM/RANLIB/LD and linker flags remain authoritative when explicitly set.
 EOF
 }
 
@@ -164,6 +165,7 @@ validate_profile()
     WATER_LLVM_ASSERTIONS=${WATER_LLVM_ASSERTIONS:-n}
     WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}
     WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
+    WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
     WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}
     BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
@@ -191,6 +193,10 @@ validate_profile()
     case "$WATER_LLVM_PCH" in
         y|n|0|1) ;;
         *) die "WATER_LLVM_PCH must be y or n" ;;
+    esac
+    case "$WATER_LLVM_LINKER" in
+        auto|lld|system) ;;
+        *) die "WATER_LLVM_LINKER must be auto, lld, or system" ;;
     esac
     case "$LLVM_LINK_JOBS" in
         ''|*[!0-9]*|0) die "WHP_LLVM_LINK_JOBS must be a positive integer" ;;
@@ -397,6 +403,125 @@ darwin_sdkroot()
     [ -n "$sdkroot" ] && [ -d "$sdkroot" ] ||
         die "could not resolve a usable macOS SDK (SDKROOT=${SDKROOT:-auto})"
     printf '%s\n' "$sdkroot"
+}
+
+select_llvm_lld_backends()
+{
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin)
+            printf '%s\n' 'COFF;MinGW;MachO'
+            ;;
+        Linux|FreeBSD|NetBSD|OpenBSD|DragonFly|SunOS|Haiku)
+            printf '%s\n' 'COFF;MinGW;ELF'
+            ;;
+        *)
+            printf '%s\n' 'COFF;MinGW'
+            ;;
+    esac
+}
+
+host_lld_path()
+{
+    whp_lld_bin=$1
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin) whp_lld_name=ld64.lld ;;
+        Linux|FreeBSD|NetBSD|OpenBSD|DragonFly|SunOS|Haiku) whp_lld_name=ld.lld ;;
+        *)
+            unset whp_lld_bin
+            return 1
+            ;;
+    esac
+
+    whp_lld_path="$whp_lld_bin/$whp_lld_name"
+    if [ -x "$whp_lld_path" ]; then
+        printf '%s\n' "$whp_lld_path"
+        unset whp_lld_bin whp_lld_name whp_lld_path
+        return 0
+    fi
+
+    unset whp_lld_bin whp_lld_name whp_lld_path
+    return 1
+}
+
+darwin_arm64e_requested()
+{
+    whp_arm64e_compiler=${1:-}
+
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin) ;;
+        *)
+            unset whp_arm64e_compiler
+            return 1
+            ;;
+    esac
+
+    case " ${CFLAGS:-} ${CXXFLAGS:-} ${LDFLAGS:-} " in
+        *" -arch arm64e "*|*" -target arm64e-"*|*" --target=arm64e-"*)
+            unset whp_arm64e_compiler
+            return 0
+            ;;
+    esac
+
+    if [ -n "$whp_arm64e_compiler" ]; then
+        whp_arm64e_target=$("$whp_arm64e_compiler" -print-target-triple 2>/dev/null || true)
+        case "$whp_arm64e_target" in
+            arm64e-*|aarch64e-*)
+                unset whp_arm64e_compiler whp_arm64e_target
+                return 0
+                ;;
+        esac
+        unset whp_arm64e_target
+    fi
+
+    unset whp_arm64e_compiler
+    return 1
+}
+
+probe_lld_linker()
+{
+    whp_probe_compiler=$1
+    whp_probe_linker=$2
+    whp_probe_language=$3
+    whp_probe_sdkroot=${4:-}
+    whp_probe_output="$BUILD_DIR/.whp-linker-probe.$"
+    whp_probe_linker_dir=$(dirname -- "$whp_probe_linker")
+
+    rm -f "$whp_probe_output"
+    if [ -n "$whp_probe_sdkroot" ]; then
+        if printf 'int main(void) { return 0; }\n' |
+            PATH="$whp_probe_linker_dir:$PATH" "$whp_probe_compiler" \
+                -fuse-ld=lld -isysroot "$whp_probe_sdkroot" \
+                -x "$whp_probe_language" - -o "$whp_probe_output" >/dev/null 2>&1
+        then
+            rm -f "$whp_probe_output"
+            unset whp_probe_compiler whp_probe_linker whp_probe_language \
+                whp_probe_sdkroot whp_probe_output whp_probe_linker_dir
+            return 0
+        fi
+    elif printf 'int main(void) { return 0; }\n' |
+        PATH="$whp_probe_linker_dir:$PATH" "$whp_probe_compiler" \
+            -fuse-ld=lld -x "$whp_probe_language" - -o "$whp_probe_output" >/dev/null 2>&1
+    then
+        rm -f "$whp_probe_output"
+        unset whp_probe_compiler whp_probe_linker whp_probe_language \
+            whp_probe_sdkroot whp_probe_output whp_probe_linker_dir
+        return 0
+    fi
+
+    rm -f "$whp_probe_output"
+    unset whp_probe_compiler whp_probe_linker whp_probe_language \
+        whp_probe_sdkroot whp_probe_output whp_probe_linker_dir
+    return 1
+}
+
+linker_flag_is_explicit()
+{
+    case " ${LDFLAGS:-} " in
+        *" -fuse-ld="*|*" --ld-path="*|*" -Wl,-ld_classic"*|*" -Wl,-ld_new"*)
+            return 0
+            ;;
+    esac
+    return 1
 }
 
 compiler_has_assert_h()
@@ -686,6 +811,9 @@ llvm_bootstrap_config_signature()
     llvm_sdkroot_sig=$(darwin_sdkroot)
     llvm_stage0_cc_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CC:-}" clang)
     llvm_stage0_cxx_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
+    llvm_lld_backends_sig=$(select_llvm_lld_backends)
+    llvm_host_lld_sig=$(host_lld_path "$LLVM_BOOTSTRAP_DIR/bin" || true)
+    [ -n "$llvm_host_lld_sig" ] || llvm_host_lld_sig=none
 
     printf '%s\n' \
         "LLVM_BOOTSTRAP_RECIPE=$LLVM_BOOTSTRAP_RECIPE" \
@@ -693,9 +821,12 @@ llvm_bootstrap_config_signature()
         "WATER_LLVM_ASSERTIONS=$WATER_LLVM_ASSERTIONS" \
         "WATER_LLVM_LEAN=$WATER_LLVM_LEAN" \
         "WATER_LLVM_PCH=$WATER_LLVM_PCH" \
+        "WATER_LLVM_LINKER=$WATER_LLVM_LINKER" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=$WATER_COMPILER_CACHE" \
         "LLVM_TARGETS=$llvm_targets_sig" \
+        "LLVM_LLD_BACKENDS=$llvm_lld_backends_sig" \
+        "LLVM_HOST_LLD=$llvm_host_lld_sig" \
         "LLVM_CACHE=$llvm_cache_sig" \
         "LLVM_SDKROOT=$llvm_sdkroot_sig" \
         "LLVM_STAGE0_CC=$llvm_stage0_cc_sig" \
@@ -792,9 +923,27 @@ bootstrap_llvm()
     llvm_cache=$(select_llvm_cache)
     llvm_stage0_cc=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CC:-}" clang)
     llvm_stage0_cxx=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
-    llvm_lld_backends="COFF;MinGW"
+    llvm_lld_backends=$(select_llvm_lld_backends)
+    llvm_sdkroot=$(darwin_sdkroot)
+    llvm_use_linker=
+    llvm_bootstrap_linker=system
+    llvm_bootstrap_saved_path=$PATH
 
     mkdir -p "$LLVM_BOOTSTRAP_DIR"
+
+    if [ "$WATER_LLVM_LINKER" != system ]; then
+        llvm_previous_lld=$(host_lld_path "$LLVM_BOOTSTRAP_DIR/bin" || true)
+        if [ -n "$llvm_previous_lld" ] && \
+           ! darwin_arm64e_requested "$llvm_stage0_cxx" && \
+           probe_lld_linker "$llvm_stage0_cxx" "$llvm_previous_lld" c++ "$llvm_sdkroot"
+        then
+            llvm_use_linker=lld
+            llvm_bootstrap_linker=$llvm_previous_lld
+            PATH="$(dirname -- "$llvm_previous_lld"):$PATH"
+            export PATH
+        fi
+        unset llvm_previous_lld
+    fi
 
     set -- \
         -S "$LLVM_SOURCE_DIR/llvm" \
@@ -809,6 +958,7 @@ bootstrap_llvm()
         "-DLLVM_ENABLE_PROJECTS=clang;lld" \
         "-DLLVM_TARGETS_TO_BUILD=$llvm_targets" \
         "-DLLD_ENABLE_BACKENDS=$llvm_lld_backends" \
+        "-DLLVM_USE_LINKER=$llvm_use_linker" \
         -DLLVM_APPEND_VC_REV=OFF \
         -DLLVM_ENABLE_LTO=OFF \
         -DLLVM_ENABLE_FATLTO=OFF \
@@ -825,11 +975,11 @@ bootstrap_llvm()
         printf 'WHP LLVM stage-0 C++ compiler: %s\n' "$llvm_stage0_cxx" >&2
     fi
 
-    llvm_sdkroot=$(darwin_sdkroot)
     if [ -n "$llvm_sdkroot" ]; then
         set -- "$@" "-DCMAKE_OSX_SYSROOT=$llvm_sdkroot"
         printf 'WHP LLVM macOS SDK: %s\n' "$llvm_sdkroot" >&2
     fi
+    printf 'WHP LLVM bootstrap linker: %s\n' "$llvm_bootstrap_linker" >&2
 
     case "$WATER_LLVM_LEAN" in
         y|1)
@@ -933,6 +1083,8 @@ bootstrap_llvm()
             --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
     fi
     unset llvm_generator
+    PATH=$llvm_bootstrap_saved_path
+    export PATH
     record_llvm_bootstrap_state
 }
 prepare_llvm_toolchain()
@@ -1068,6 +1220,43 @@ setup_toolchain()
 
     export WHP_DARWIN_SDKROOT WHP_HOST_CC_REAL WHP_HOST_CXX_REAL
 
+    WHP_HOST_LINKER=system
+    if [ "$WATER_LLVM_LINKER" != system ] && [ -n "$LLVM_BIN" ] && \
+       [ -z "${LD:-}" ] && ! linker_flag_is_explicit
+    then
+        whp_host_lld=$(host_lld_path "$LLVM_BIN" || true)
+        if [ -n "$whp_host_lld" ]; then
+            if darwin_arm64e_requested "$CC"; then
+                if [ "$WATER_LLVM_LINKER" = lld ]; then
+                    die "WATER_LLVM_LINKER=lld is unsafe for arm64e until WHP Mach-O LLD supports authenticated relocations"
+                fi
+                printf 'WHP host linker: system (arm64e requires Apple ld)\n' >&2
+            elif probe_lld_linker "$CC" "$whp_host_lld" c "$WHP_DARWIN_SDKROOT"; then
+                LD=$whp_host_lld
+                whp_host_lld_dir=$(dirname -- "$whp_host_lld")
+                PATH="$whp_host_lld_dir:$PATH"
+                case " ${LDFLAGS:-} " in
+                    *" -fuse-ld=lld "*) ;;
+                    *) LDFLAGS="${LDFLAGS:+$LDFLAGS }-fuse-ld=lld" ;;
+                esac
+                WHP_HOST_LINKER=$whp_host_lld
+                export LD LDFLAGS PATH
+                unset whp_host_lld_dir
+            elif [ "$WATER_LLVM_LINKER" = lld ]; then
+                die "selected LLVM host linker failed a real link probe: $whp_host_lld"
+            fi
+        elif [ "$WATER_LLVM_LINKER" = lld ]; then
+            die "WATER_LLVM_LINKER=lld requested, but the selected LLVM toolchain has no host-format LLD"
+        fi
+        unset whp_host_lld
+    elif [ -n "${LD:-}" ]; then
+        WHP_HOST_LINKER=$LD
+    elif linker_flag_is_explicit; then
+        WHP_HOST_LINKER="driver flags"
+    fi
+    export WHP_HOST_LINKER
+    printf 'WHP host linker: %s\n' "$WHP_HOST_LINKER" >&2
+
     if [ -n "$LLVM_BIN" ]; then
         if [ -z "${AR:-}" ] && [ -x "$LLVM_BIN/llvm-ar" ]; then AR="$LLVM_BIN/llvm-ar"; fi
         if [ -z "${NM:-}" ] && [ -x "$LLVM_BIN/llvm-nm" ]; then NM="$LLVM_BIN/llvm-nm"; fi
@@ -1098,6 +1287,7 @@ profile_signature()
         "WATER_LLVM_ASSERTIONS=${WATER_LLVM_ASSERTIONS:-n}" \
         "WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}" \
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
+        "WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
         "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
@@ -1111,7 +1301,8 @@ profile_signature()
         "WATER_SYSTEM_DLLPATH=${WATER_SYSTEM_DLLPATH:-auto}" \
         "WATER_WINE_TOOLS=${WATER_WINE_TOOLS:-auto}" \
         "WATER_WINE64=${WATER_WINE64:-auto}" \
-        "CC=${CC:-}" "CXX=${CXX:-}" "AR=${AR:-}" "NM=${NM:-}" "RANLIB=${RANLIB:-}"
+        "CC=${CC:-}" "CXX=${CXX:-}" "AR=${AR:-}" "NM=${NM:-}" "RANLIB=${RANLIB:-}" \
+        "LD=${LD:-}" "LDFLAGS=${LDFLAGS:-}" "WHP_HOST_LINKER=${WHP_HOST_LINKER:-}"
 
     for var in \
         WATER_ARCH_I386 WATER_ARCH_X86_64 WATER_ARCH_ARM WATER_ARCH_AARCH64 \
