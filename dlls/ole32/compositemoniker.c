@@ -1847,11 +1847,12 @@ MonikerCommonPrefixWith(IMoniker *moniker, IMoniker *other, IMoniker **prefix)
         {
             if (!composite->comp_count)
                 return MK_E_NOPREFIX;
-        hr = IMoniker_CommonPrefixWith(other, moniker, prefix);
-        if (hr == MK_S_HIM)
-            return MK_S_ME;
-        if (hr == MK_S_ME)
-            return MK_S_HIM;
+
+            hr = IMoniker_CommonPrefixWith(other, moniker, prefix);
+            if (hr == MK_S_HIM)
+                return MK_S_ME;
+            if (hr == MK_S_ME)
+                return MK_S_HIM;
             return hr;
         }
     }
@@ -1879,8 +1880,20 @@ HRESULT WINAPI MonikerRelativePathTo(IMoniker *src, IMoniker *dest, IMoniker **r
     if (reserved != TRUE || !src || !dest)
         return E_INVALIDARG;
 
-    if (unsafe_impl_from_IMoniker(src))
-        return IMoniker_RelativePathTo(src, dest, relpath);
+    {
+        CompositeMonikerImpl *src_composite = unsafe_impl_from_IMoniker(src);
+
+        if (src_composite)
+        {
+            if (!src_composite->comp_count)
+            {
+                *relpath = dest;
+                IMoniker_AddRef(dest);
+                return MK_S_HIM;
+            }
+            return IMoniker_RelativePathTo(src, dest, relpath);
+        }
+    }
 
     dest_composite = unsafe_impl_from_IMoniker(dest);
     if (!dest_composite || dest_composite->comp_count < 2)
