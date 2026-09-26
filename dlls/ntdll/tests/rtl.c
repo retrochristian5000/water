@@ -5586,8 +5586,8 @@ static void test_RtlGetLocaleFileMappingAddress(void)
     if (status) return;
 
     ok( ptr1 != NULL, "expected a mapped locale table\n" );
-    ok( size1.QuadPart > 0, "expected a positive locale mapping size, got %s\n",
-        wine_dbgstr_longlong( size1.QuadPart ) );
+    ok( size1.QuadPart > 0, "expected a positive locale mapping size, got %I64d\n",
+        size1.QuadPart );
 
     size2.QuadPart = 0x12345678;
     status = pRtlGetLocaleFileMappingAddress( &ptr2, &lcid2, &size2 );
@@ -5596,8 +5596,8 @@ static void test_RtlGetLocaleFileMappingAddress(void)
 
     ok( ptr2 == ptr1, "mapping changed from %p to %p\n", ptr1, ptr2 );
     ok( lcid2 == lcid1, "LCID changed from %#lx to %#lx\n", lcid1, lcid2 );
-    ok( size2.QuadPart == size1.QuadPart, "mapping size changed from %s to %s\n",
-        wine_dbgstr_longlong( size1.QuadPart ), wine_dbgstr_longlong( size2.QuadPart ) );
+    ok( size2.QuadPart == size1.QuadPart, "mapping size changed from %I64d to %I64d\n",
+        size1.QuadPart, size2.QuadPart );
 }
 
 
