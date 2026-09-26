@@ -66,6 +66,7 @@ typedef struct
     LPITEMIDLIST pidl;
     IImageList *icon_list;
     DWORD advise_cookie;
+    BOOL browser_advised;
 
     IShellWindows *sw;
     LONG sw_cookie;
@@ -729,6 +730,7 @@ static void make_explorer_window(parameters_struct *params)
         DestroyWindow(info->main_window);
         return;
     }
+    info->browser_advised = TRUE;
 
     folder = get_starting_shell_folder(path);
     if (!folder)
@@ -895,7 +897,7 @@ static BOOL handle_copydata(const explorer_info *info, const COPYDATASTRUCT *cds
     TRACE("\n");
 
     /* For SHOpenFolderAndSelectItems() */
-    if (cds->dwData != magic)
+    if (!cds || cds->dwData != magic)
         return FALSE;
     if (!info || !info->browser || !cds->lpData ||
         cds->cbData < sizeof(count) + sizeof(flags))
@@ -970,7 +972,7 @@ static LRESULT CALLBACK explorer_wnd_proc(HWND hwnd, UINT uMsg, WPARAM wParam, L
             IShellWindows_Release(info->sw);
         }
 
-        if (info->advise_cookie) IExplorerBrowser_Unadvise(browser, info->advise_cookie);
+        if (info->browser_advised) IExplorerBrowser_Unadvise(browser, info->advise_cookie);
         IExplorerBrowser_Destroy(browser);
         IExplorerBrowser_Release(browser);
         ILFree(info->pidl);
@@ -1031,7 +1033,7 @@ static void register_explorer_window_class(void)
     window_class.hInstance = explorer_hInstance;
     window_class.hIcon = NULL;
     window_class.hCursor = NULL;
-    window_class.hbrBackground = (HBRUSH)COLOR_BACKGROUND;
+    window_class.hbrBackground = (HBRUSH)(COLOR_BACKGROUND + 1);
     window_class.lpszMenuName = NULL;
     window_class.lpszClassName = L"ExplorerWClass";
     window_class.hIconSm = NULL;
