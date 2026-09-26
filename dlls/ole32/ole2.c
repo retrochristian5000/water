@@ -2866,6 +2866,14 @@ HRESULT WINAPI OleCreateFromDataEx(IDataObject *data, REFIID iid, DWORD flags,
     HRESULT hr;
     UINT src_cf;
 
+    if (!data || !iid || !stg || !obj)
+        return E_INVALIDARG;
+    *obj = NULL;
+    if (num_cache_fmts && (!adv_flags || !cache_fmts))
+        return E_INVALIDARG;
+    if (!sink && conns)
+        return E_INVALIDARG;
+
     FIXME("%p, %s, %#lx, %#lx, %ld, %p, %p, %p, %p, %p, %p, %p: stub\n",
           data, debugstr_guid(iid), flags, renderopt, num_cache_fmts, adv_flags, cache_fmts,
           sink, conns, client_site, stg, obj);
@@ -3020,6 +3028,14 @@ HRESULT WINAPI OleCreateFromFileEx(REFCLSID clsid, const OLECHAR *filename, REFI
     IUnknown *unk = NULL;
     IOleCache *cache = NULL;
     ULONG i;
+
+    if (!clsid || !filename || !iid || !stg || !obj)
+        return E_INVALIDARG;
+    *obj = NULL;
+    if (num_fmts && (!adv_flags || !fmts))
+        return E_INVALIDARG;
+    if (!sink && conns)
+        return E_INVALIDARG;
 
     TRACE("cls %s, %s, iid %s, flags %ld, render opts %ld, num fmts %ld, adv flags %p, fmts %p\n", debugstr_guid(clsid),
           debugstr_w(filename), debugstr_guid(iid), flags, renderopt, num_fmts, adv_flags, fmts);
