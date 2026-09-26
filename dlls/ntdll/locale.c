@@ -53,7 +53,7 @@ static WCHAR casemap( USHORT *table, WCHAR ch )
 
 static BOOL nls_range_valid( SIZE_T size, SIZE_T offset, SIZE_T count, SIZE_T elem_size )
 {
-    return offset <= size && (!elem_size || count <= (size - offset) / elem_size);
+    return offset <= size && (!count || (elem_size && count <= (size - offset) / elem_size));
 }
 
 
