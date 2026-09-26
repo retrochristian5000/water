@@ -34,18 +34,18 @@ WINE_DECLARE_DEBUG_CHANNEL(relay);
 #define BCD_TO_BIN(x) ((x&15) + (x>>4)*10)
 #define BIN_TO_BCD(x) ((x%10) + ((x/10)<<4))
 
-static void WINAPI DOSVM_Int11Handler(CONTEXT*);
-static void WINAPI DOSVM_Int12Handler(CONTEXT*);
-static void WINAPI DOSVM_Int16Handler(CONTEXT*);
-static void WINAPI DOSVM_Int17Handler(CONTEXT*);
-static void WINAPI DOSVM_Int19Handler(CONTEXT*);
-static void WINAPI DOSVM_Int1aHandler(CONTEXT*);
-static void WINAPI DOSVM_Int20Handler(CONTEXT*);
-static void WINAPI DOSVM_Int2aHandler(CONTEXT*);
-static void WINAPI DOSVM_Int41Handler(CONTEXT*);
-static void WINAPI DOSVM_Int4bHandler(CONTEXT*);
-static void WINAPI DOSVM_Int5cHandler(CONTEXT*);
-static void WINAPI DOSVM_DefaultHandler(CONTEXT*);
+static void WINAPI DOSVM_Int11Handler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int12Handler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int16Handler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int17Handler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int19Handler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int1aHandler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int20Handler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int2aHandler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int41Handler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int4bHandler(I386_CONTEXT *);
+static void WINAPI DOSVM_Int5cHandler(I386_CONTEXT *);
+static void WINAPI DOSVM_DefaultHandler(I386_CONTEXT *);
 
 static FARPROC16     DOSVM_Vectors16[256];
 static const INTPROC DOSVM_VectorsBuiltin[] =
@@ -89,7 +89,7 @@ static const INTPROC DOSVM_VectorsBuiltin[] =
  * Default interrupt handler. This will be used to emulate all
  * interrupts that don't have their own interrupt handler.
  */
-static void WINAPI DOSVM_DefaultHandler( CONTEXT *context )
+static void WINAPI DOSVM_DefaultHandler( I386_CONTEXT *context )
 {
 }
 
@@ -146,7 +146,7 @@ static BOOL DOSVM_GetKeyboardEvent( KEY_EVENT_RECORD *key, BOOL remove )
  * DOSKEY.COM.  Enhanced-keyboard functions 10h/11h share the same
  * behavior here because KEY_EVENT_RECORD already carries scan codes.
  */
-static void WINAPI DOSVM_Int16Handler( CONTEXT *context )
+static void WINAPI DOSVM_Int16Handler( I386_CONTEXT *context )
 {
     KEY_EVENT_RECORD key;
     BYTE flags = 0;
@@ -223,7 +223,7 @@ static INTPROC DOSVM_GetBuiltinHandler( BYTE intnum )
  * We can't just call the interrupt handler directly, since some code (in
  * particular, LoadModule16) assumes that it's running on the 32-bit stack and
  * that CURRENT_STACK16 points to the bottom of the used 16-bit stack. */
-static void return_to_interrupt_handler( CONTEXT *context, BYTE intnum )
+static void return_to_interrupt_handler( I386_CONTEXT *context, BYTE intnum )
 {
     FARPROC16 addr = GetProcAddress16( GetModuleHandle16( "KERNEL" ), "__wine_call_int_handler" );
     WORD *stack = ldt_get_ptr( context->SegSs, context->Esp );
@@ -244,7 +244,7 @@ static void return_to_interrupt_handler( CONTEXT *context, BYTE intnum )
  * so that it actually contains two copies of eflags, one of which is
  * popped during return from interrupt handler.
  */
-static void DOSVM_PushFlags( CONTEXT *context, BOOL islong, BOOL isstub )
+static void DOSVM_PushFlags( I386_CONTEXT *context, BOOL islong, BOOL isstub )
 {
     if (islong)
     {
@@ -291,7 +291,7 @@ static void DOSVM_PushFlags( CONTEXT *context, BOOL islong, BOOL isstub )
  * Pushes interrupt frame to stack and changes instruction
  * pointer to interrupt handler.
  */
-static void DOSVM_HardwareInterruptPM( CONTEXT *context, BYTE intnum )
+static void DOSVM_HardwareInterruptPM( I386_CONTEXT *context, BYTE intnum )
 {
     FARPROC16 addr = DOSVM_GetPMHandler16( intnum );
 
@@ -332,7 +332,7 @@ static void DOSVM_HardwareInterruptPM( CONTEXT *context, BYTE intnum )
  * Pushes interrupt frame to stack and changes instruction 
  * pointer to interrupt handler.
  */
-BOOL DOSVM_EmulateInterruptPM( CONTEXT *context, BYTE intnum )
+BOOL DOSVM_EmulateInterruptPM( I386_CONTEXT *context, BYTE intnum )
 {
     TRACE_(relay)("\1Call DOS int 0x%02x ret=%04lx:%08lx\n"
                   "  eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx\n"
@@ -516,7 +516,7 @@ void DOSVM_SetPMHandler16( BYTE intnum, FARPROC16 handler )
  *
  * Execute Wine interrupt handler procedure.
  */
-static void DOSVM_CallBuiltinHandler( CONTEXT *context, BYTE intnum )
+static void DOSVM_CallBuiltinHandler( I386_CONTEXT *context, BYTE intnum )
 {
     /*
      * FIXME: Make all builtin interrupt calls go via this routine.
@@ -532,7 +532,7 @@ static void DOSVM_CallBuiltinHandler( CONTEXT *context, BYTE intnum )
 /**********************************************************************
  *         __wine_call_int_handler16    (KERNEL.@)
  */
-void WINAPI __wine_call_int_handler16( BYTE intnum, CONTEXT *context )
+void WINAPI __wine_call_int_handler16( BYTE intnum, I386_CONTEXT *context )
 {
     DOSMEM_InitDosMemory();
     DOSVM_CallBuiltinHandler( context, intnum );
@@ -575,7 +575,7 @@ void WINAPI __wine_call_int_handler16( BYTE intnum, CONTEXT *context )
  *                  All *nix systems either have a math processor or
  *		     emulate one.
  */
-static void WINAPI DOSVM_Int11Handler( CONTEXT *context )
+static void WINAPI DOSVM_Int11Handler( I386_CONTEXT *context )
 {
     int diskdrives = 0;
     int parallelports = 0;
@@ -625,7 +625,7 @@ static void WINAPI DOSVM_Int11Handler( CONTEXT *context )
  *
  * Handler for int 12h (get memory size).
  */
-static void WINAPI DOSVM_Int12Handler( CONTEXT *context )
+static void WINAPI DOSVM_Int12Handler( I386_CONTEXT *context )
 {
     SET_AX( context, 640 );
 }
@@ -636,7 +636,7 @@ static void WINAPI DOSVM_Int12Handler( CONTEXT *context )
  *
  * Handler for int 17h (printer - output character).
  */
-static void WINAPI DOSVM_Int17Handler( CONTEXT *context )
+static void WINAPI DOSVM_Int17Handler( I386_CONTEXT *context )
 {
     switch( AH_reg(context) )
     {
@@ -663,7 +663,7 @@ static void WINAPI DOSVM_Int17Handler( CONTEXT *context )
  *
  * Handler for int 19h (Reboot).
  */
-static void WINAPI DOSVM_Int19Handler( CONTEXT *context )
+static void WINAPI DOSVM_Int19Handler( I386_CONTEXT *context )
 {
     TRACE( "Attempted Reboot\n" );
     ExitProcess(0);
@@ -675,7 +675,7 @@ static void WINAPI DOSVM_Int19Handler( CONTEXT *context )
  *
  * Handler for int 1ah.
  */
-static void WINAPI DOSVM_Int1aHandler( CONTEXT *context )
+static void WINAPI DOSVM_Int1aHandler( I386_CONTEXT *context )
 {
     switch(AH_reg(context))
     {
@@ -776,7 +776,7 @@ static void WINAPI DOSVM_Int1aHandler( CONTEXT *context )
  *
  * Handler for int 20h.
  */
-static void WINAPI DOSVM_Int20Handler( CONTEXT *context )
+static void WINAPI DOSVM_Int20Handler( I386_CONTEXT *context )
 {
     DOSVM_Exit( 0 );
 }
@@ -787,7 +787,7 @@ static void WINAPI DOSVM_Int20Handler( CONTEXT *context )
  *
  * Handler for int 2ah (network).
  */
-static void WINAPI DOSVM_Int2aHandler( CONTEXT *context )
+static void WINAPI DOSVM_Int2aHandler( I386_CONTEXT *context )
 {
     switch(AH_reg(context))
     {
@@ -803,7 +803,7 @@ static void WINAPI DOSVM_Int2aHandler( CONTEXT *context )
 /***********************************************************************
  *           DOSVM_Int41Handler
  */
-static void WINAPI DOSVM_Int41Handler( CONTEXT *context )
+static void WINAPI DOSVM_Int41Handler( I386_CONTEXT *context )
 {
     switch ( AX_reg(context) )
     {
@@ -833,7 +833,7 @@ static void WINAPI DOSVM_Int41Handler( CONTEXT *context )
  *           DOSVM_Int4bHandler
  *
  */
-static void WINAPI DOSVM_Int4bHandler( CONTEXT *context )
+static void WINAPI DOSVM_Int4bHandler( I386_CONTEXT *context )
 {
     switch(AH_reg(context))
     {
@@ -855,7 +855,7 @@ static void WINAPI DOSVM_Int4bHandler( CONTEXT *context )
  *
  * Called from NetBIOSCall16.
  */
-static void WINAPI DOSVM_Int5cHandler( CONTEXT *context )
+static void WINAPI DOSVM_Int5cHandler( I386_CONTEXT *context )
 {
     BYTE* ptr;
     ptr = MapSL( MAKESEGPTR(context->SegEs,BX_reg(context)) );
