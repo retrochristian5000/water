@@ -307,7 +307,13 @@ void WINAPI DOSVM_Int31Handler( I386_CONTEXT *context )
             DWORD limit = MAKELONG( DX_reg(context), CX_reg(context) );
             TRACE( "set selector limit (0x%04x,0x%08lx)\n",
                    BX_reg(context), limit );
-            SetSelectorLimit16( BX_reg(context), limit );
+            if (CX_reg(context))
+            {
+                SET_AX( context, 0x8021 );  /* invalid value on a 16-bit DPMI host */
+                SET_CFLAG( context );
+            }
+            else
+                SetSelectorLimit16( BX_reg(context), limit );
         }
         break;
 
