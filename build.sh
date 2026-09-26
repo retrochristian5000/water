@@ -733,25 +733,30 @@ setup_toolchain()
         Darwin)
             cc_has_assert=1
             cxx_has_assert=1
-            compiler_has_assert_h "$CC" c || cc_has_assert=0
-            compiler_has_assert_h "$CXX" c++ || cxx_has_assert=0
+            if [ "$whp_auto_cc" = 1 ]; then
+                compiler_has_assert_h "$CC" c || cc_has_assert=0
+            fi
+            if [ "$whp_auto_cxx" = 1 ]; then
+                compiler_has_assert_h "$CXX" c++ || cxx_has_assert=0
+            fi
 
             if [ "$cc_has_assert" = 0 ] || [ "$cxx_has_assert" = 0 ]; then
-                if [ "$whp_auto_cc" = 1 ] && [ "$whp_auto_cxx" = 1 ]; then
-                    WHP_DARWIN_SDKROOT=$(darwin_sdkroot)
-                    WHP_HOST_CC_REAL=$CC
-                    WHP_HOST_CXX_REAL=$CXX
-                    CC=$(write_darwin_compiler_wrapper clang "$WHP_HOST_CC_REAL" "$WHP_DARWIN_SDKROOT")
-                    CXX=$(write_darwin_compiler_wrapper clang++ "$WHP_HOST_CXX_REAL" "$WHP_DARWIN_SDKROOT")
+                WHP_DARWIN_SDKROOT=$(darwin_sdkroot)
 
+                if [ "$cc_has_assert" = 0 ]; then
+                    WHP_HOST_CC_REAL=$CC
+                    CC=$(write_darwin_compiler_wrapper clang "$WHP_HOST_CC_REAL" "$WHP_DARWIN_SDKROOT")
                     compiler_has_assert_h "$CC" c ||
                         die "LLVM C compiler still cannot find assert.h with macOS SDK $WHP_DARWIN_SDKROOT"
+                fi
+                if [ "$cxx_has_assert" = 0 ]; then
+                    WHP_HOST_CXX_REAL=$CXX
+                    CXX=$(write_darwin_compiler_wrapper clang++ "$WHP_HOST_CXX_REAL" "$WHP_DARWIN_SDKROOT")
                     compiler_has_assert_h "$CXX" c++ ||
                         die "LLVM C++ compiler still cannot find assert.h with macOS SDK $WHP_DARWIN_SDKROOT"
-                    printf 'WHP host compiler SDK wrapper: %s\n' "$WHP_DARWIN_SDKROOT" >&2
-                else
-                    printf 'warning: explicit CC/CXX cannot find assert.h; preserving explicit compiler settings\n' >&2
                 fi
+
+                printf 'WHP host compiler SDK wrapper: %s\n' "$WHP_DARWIN_SDKROOT" >&2
             fi
             ;;
     esac
