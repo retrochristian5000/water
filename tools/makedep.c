@@ -4516,7 +4516,11 @@ static void output_pch( struct makefile *make )
     output( "\t%sprintf '#include \"%s\"\\n' >$@\n", cmd_prefix( "GEN" ), make->pch );
 
     output( "%s: %s", pch, wrapper );
-    output_filename( "Makefile" );
+    /* The PCH command only needs to follow this component and configure state.
+     * Depending on the global Makefile makes an unrelated module Makefile.in
+     * change rebuild host-tool PCHs, which then fans out through winebuild,
+     * WIDL, and WRC into otherwise unaffected modules. */
+    output_filename( "config.status" );
     output_filenames( make->pch_file->dependencies );
     output( "\n" );
     output( "\t%s", cmd_prefix( "PCH" ) );
