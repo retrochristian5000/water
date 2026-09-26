@@ -2073,7 +2073,7 @@ void WINAPI MapHInstLS16( I386_CONTEXT *context )
  */
 void WINAPI MapHInstSL16( I386_CONTEXT *context )
 {
-    context->Eax = (DWORD)MapHModuleSL( context->Eax );
+    context->Eax = (DWORD)(UINT_PTR)MapHModuleSL( context->Eax );
 }
 
 /***************************************************************************
