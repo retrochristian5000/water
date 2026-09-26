@@ -1295,7 +1295,7 @@ setup_toolchain()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=3" \
+        "WHP_PROFILE_SCHEMA=4" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
