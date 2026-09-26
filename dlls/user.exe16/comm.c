@@ -376,7 +376,6 @@ static INT16 COMM16_DCBtoDCB16(const DCB *lpdcb, LPDCB16 lpdcb16)
 	lpdcb16->DsrTimeout = 50;
 	lpdcb16->fBinary = lpdcb->fBinary;
 	lpdcb16->fRtsDisable = (lpdcb->fRtsControl == RTS_CONTROL_DISABLE);
-	lpdcb16->fParity = lpdcb->fParity;
 	lpdcb16->fOutxCtsFlow = lpdcb->fOutxCtsFlow;
 	lpdcb16->fOutxDsrFlow = lpdcb->fOutxDsrFlow;
 	lpdcb16->fDtrDisable = (lpdcb->fDtrControl == DTR_CONTROL_DISABLE);
@@ -830,6 +829,8 @@ INT16 WINAPI SetCommState16(LPDCB16 lpdcb)
 	case CBR_19200_16:  dcb.BaudRate = 19200;  break;
 	case CBR_38400_16:  dcb.BaudRate = 38400;  break;
 	case CBR_56000_16:  dcb.BaudRate = 56000;  break;
+	case CBR_57600_16:  dcb.BaudRate = 57600;  break;
+	case CBR_115200_16: dcb.BaudRate = 115200; break;
 	case CBR_128000_16: dcb.BaudRate = 128000; break;
 	case CBR_256000_16: dcb.BaudRate = 256000; break;
 	default:
