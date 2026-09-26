@@ -21,10 +21,9 @@
 #ifndef __WINE_OLE2_H
 #define __WINE_OLE2_H
 
-/* Match the native Windows SDK guard for source compatibility. */
+/* Honor the native Windows SDK guard as well as Wine's private guard. */
 #ifndef _OLE2_H_
 #define _OLE2_H_
-#endif
 
 #ifndef RC_INVOKED
 #pragma pack(push,8)
@@ -181,4 +180,5 @@ WINOLE32API HRESULT     WINAPI OleSetAutoConvert( REFCLSID clsidOld, REFCLSID cl
 #pragma pack(pop)
 #endif
 
+#endif  /* _OLE2_H_ */
 #endif  /* __WINE_OLE2_H */
