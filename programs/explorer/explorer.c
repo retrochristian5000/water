@@ -76,11 +76,20 @@ enum
     BACK_BUTTON,FORWARD_BUTTON,UP_BUTTON
 };
 
-static void variant_from_pidl(VARIANT *var, const ITEMIDLIST *pidl)
+static HRESULT variant_from_pidl(VARIANT *var, const ITEMIDLIST *pidl)
 {
+    SAFEARRAY *array;
+    UINT size;
+
+    VariantInit(var);
+    size = ILGetSize(pidl);
+    if (!(array = SafeArrayCreateVector(VT_UI1, 0, size)))
+        return E_OUTOFMEMORY;
+
+    memcpy(array->pvData, pidl, size);
     V_VT(var) = VT_ARRAY | VT_UI1;
-    V_ARRAY(var) = SafeArrayCreateVector(VT_UI1, 0, ILGetSize(pidl));
-    memcpy(V_ARRAY(var)->pvData, pidl, ILGetSize(pidl));
+    V_ARRAY(var) = array;
+    return S_OK;
 }
 
 typedef struct
@@ -281,9 +290,11 @@ static HRESULT WINAPI IExplorerBrowserEventsImpl_fnOnNavigationComplete(IExplore
     {
         VARIANT var;
 
-        variant_from_pidl(&var, pidl);
-        IShellWindows_OnNavigate(This->info->sw, This->info->sw_cookie, &var);
-        VariantClear(&var);
+        if (SUCCEEDED(variant_from_pidl(&var, pidl)))
+        {
+            IShellWindows_OnNavigate(This->info->sw, This->info->sw_cookie, &var);
+            VariantClear(&var);
+        }
     }
 
     ILFree(This->info->pidl);
@@ -422,10 +433,13 @@ static void make_explorer_window(parameters_struct *params)
             return;
         }
 
-        variant_from_pidl(&var, pidl);
         V_VT(&empty_var) = VT_EMPTY;
-        hres = IShellWindows_FindWindowSW(sw, &var, &empty_var, SWC_EXPLORER, &hwnd, 0, &dispatch);
-        VariantClear(&var);
+        hres = variant_from_pidl(&var, pidl);
+        if (SUCCEEDED(hres))
+        {
+            hres = IShellWindows_FindWindowSW(sw, &var, &empty_var, SWC_EXPLORER, &hwnd, 0, &dispatch);
+            VariantClear(&var);
+        }
         ILFree(pidl);
         if (hres == S_OK)
         {
