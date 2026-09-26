@@ -3764,12 +3764,13 @@ static const UINT *find_compression( const WCHAR *src, const WCHAR *table, int c
 static int get_compression_weights( UINT compression, const WCHAR *compr_tables[8],
                                     const WCHAR *src, int srclen, union char_weights *weights )
 {
-    const struct sort_compression *compr = sort.compressions + compression;
+    const struct sort_compression *compr;
     const UINT *ret;
     BYTE size = weights->_case & CASE_COMPR_6;
     int i, maxlen = 1;
 
     if (compression >= sort.compr_count) return 0;
+    compr = sort.compressions + compression;
     if (size == CASE_COMPR_6) maxlen = 8;
     else if (size == CASE_COMPR_4) maxlen = 5;
     else if (size == CASE_COMPR_2) maxlen = 3;
