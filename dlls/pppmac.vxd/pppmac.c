@@ -50,7 +50,7 @@ BOOL WINAPI PPPMAC_DeviceIoControl( DWORD code, void *in_buffer, DWORD in_size,
 /***********************************************************************
  *           VxDCall   (PPPMAC.VXD.@)
  */
-DWORD WINAPI PPPMAC_VxDCall( DWORD service, CONTEXT *context )
+DWORD WINAPI PPPMAC_VxDCall( DWORD service, I386_CONTEXT *context )
 {
     (void)context;
 
