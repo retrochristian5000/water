@@ -40,13 +40,14 @@ WINE_DECLARE_DEBUG_CHANNEL(snoop);
 
 /* symbols exported from relay16.s */
 extern DWORD WINAPI wine_call_to_16( FARPROC16 target, DWORD cbArgs, PEXCEPTION_HANDLER handler );
-extern void WINAPI wine_call_to_16_regs( CONTEXT *context, DWORD cbArgs, PEXCEPTION_HANDLER handler );
+extern void WINAPI wine_call_to_16_regs( I386_CONTEXT *context, DWORD cbArgs, PEXCEPTION_HANDLER handler );
 extern void __wine_call_to_16_ret(void);
 extern BYTE __wine_call16_start[];
 extern BYTE __wine_call16_end[];
 
 static SEGPTR call16_ret_addr;  /* segptr to __wine_call_to_16_ret routine */
 
+#ifdef __i386__
 extern const BYTE cbclient_ret[], cbclient_ret_end[];
 __ASM_GLOBAL_FUNC( cbclient_ret,
                    "movzwl %sp,%ebx\n\t"
@@ -64,6 +65,29 @@ __ASM_GLOBAL_FUNC( cbclientex_ret,
                    "lretl\n\t"
                    ".globl " __ASM_NAME("cbclientex_ret_end") "\n"
                    __ASM_NAME("cbclientex_ret_end") ":" )
+#else
+/*
+ * These are x86 guest return stubs mapped into a selector; they are not
+ * native host code.  Encode them as bytes when the host assembler is not x86.
+ */
+static const BYTE cbclient_ret[] =
+{
+    0x0f, 0xb7, 0xdc,                   /* movzwl %sp,%ebx */
+    0x36, 0x0f, 0xb2, 0x63, 0xf0,       /* lssl %ss:-16(%ebx),%esp */
+    0xcb                                /* lretl */
+};
+#define cbclient_ret_end (cbclient_ret + sizeof(cbclient_ret))
+
+static const BYTE cbclientex_ret[] =
+{
+    0x0f, 0xb7, 0xdd,                   /* movzwl %bp,%ebx */
+    0x66, 0x29, 0xec,                   /* subw %bp,%sp */
+    0x0f, 0xb7, 0xec,                   /* movzwl %sp,%ebp */
+    0x36, 0x0f, 0xb2, 0x63, 0xf4,       /* lssl %ss:-12(%ebx),%esp */
+    0xcb                                /* lretl */
+};
+#define cbclientex_ret_end (cbclientex_ret + sizeof(cbclientex_ret))
+#endif
 
 /***********************************************************************
  *           WOWTHUNK_Init
@@ -99,7 +123,7 @@ BOOL WOWTHUNK_Init(void)
  * Fix a selector load that caused an exception if it's in the
  * 16-bit relay code.
  */
-static BOOL fix_selector( CONTEXT *context )
+static BOOL fix_selector( I386_CONTEXT *context )
 {
     WORD *stack;
     BYTE *instr = (BYTE *)context->Eip;
@@ -140,8 +164,10 @@ static BOOL fix_selector( CONTEXT *context )
  * Handler for exceptions occurring in 16-bit code.
  */
 static DWORD call16_handler( EXCEPTION_RECORD *record, EXCEPTION_REGISTRATION_RECORD *frame,
-                             CONTEXT *context, EXCEPTION_REGISTRATION_RECORD **pdispatcher )
+                             CONTEXT *host_context, EXCEPTION_REGISTRATION_RECORD **pdispatcher )
 {
+    I386_CONTEXT *context = kernel_get_i386_cpu_context( host_context );
+
     if (record->ExceptionFlags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND))
     {
         /* unwinding: restore the stack pointer in the TEB, and leave the Win16 mutex */
@@ -149,8 +175,8 @@ static DWORD call16_handler( EXCEPTION_RECORD *record, EXCEPTION_REGISTRATION_RE
         kernel_get_thread_data()->stack = frame32->frame16;
         _LeaveWin16Lock();
     }
-    else if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
-             record->ExceptionCode == EXCEPTION_PRIV_INSTRUCTION)
+    else if (context && (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
+                         record->ExceptionCode == EXCEPTION_PRIV_INSTRUCTION))
     {
         if (ldt_is_system(context->SegCs))
         {
@@ -438,7 +464,7 @@ BOOL WINAPI K32WOWCallback16Ex( DWORD vpfn16, DWORD dwFlags,
 
     if (dwFlags & WCB16_REGS)
     {
-        CONTEXT *context = (CONTEXT *)pdwRetCode;
+        I386_CONTEXT *context = (I386_CONTEXT *)pdwRetCode;
 
         if (TRACE_ON(relay))
         {
