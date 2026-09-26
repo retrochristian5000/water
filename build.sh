@@ -75,6 +75,8 @@ Environment:
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
   AUTOCONF              Autoconf program used to generate ./configure
+  WATER_WITH_MINGW      PE compiler policy: auto, clang, llvm-mingw, y, or n
+                         (auto prefers Water's selected LLVM clang)
 
 Run ./build.sh menuconfig to edit the persistent .whpconfig profile.
 Explicit environment variables and explicit configure arguments override menu defaults.
@@ -215,7 +217,7 @@ validate_profile()
         WATER_WITH_DBUS WATER_WITH_FFMPEG WATER_WITH_FONTCONFIG WATER_WITH_FREETYPE \
         WATER_WITH_GETTEXT WATER_WITH_GETTEXTPO WATER_WITH_GPHOTO WATER_WITH_GNUTLS \
         WATER_WITH_GSSAPI WATER_WITH_GSTREAMER WATER_WITH_HWLOC WATER_WITH_INOTIFY \
-        WATER_WITH_KRB5 WATER_WITH_MINGW WATER_WITH_NETAPI WATER_WITH_OPENCL \
+        WATER_WITH_KRB5 WATER_WITH_NETAPI WATER_WITH_OPENCL \
         WATER_WITH_OPENGL WATER_WITH_OSS WATER_WITH_PCAP WATER_WITH_PCSCLITE \
         WATER_WITH_PTHREAD WATER_WITH_PULSE WATER_WITH_SANE WATER_WITH_SDL \
         WATER_WITH_UDEV WATER_WITH_USB WATER_WITH_V4L2 WATER_WITH_VA \
@@ -230,6 +232,11 @@ validate_profile()
             *) die "$var must be auto, y, or n" ;;
         esac
     done
+
+    case "${WATER_WITH_MINGW:-auto}" in
+        auto|clang|llvm-mingw|y|n|0|1|*/clang) ;;
+        *) die "WATER_WITH_MINGW must be auto, clang, llvm-mingw, y, n, or a path ending in /clang" ;;
+    esac
 }
 
 autoconf_state_signature()
@@ -1080,7 +1087,7 @@ configure_build()
         WATER_WITH_GETTEXT:gettext WATER_WITH_GETTEXTPO:gettextpo \
         WATER_WITH_GPHOTO:gphoto WATER_WITH_GNUTLS:gnutls WATER_WITH_GSSAPI:gssapi \
         WATER_WITH_GSTREAMER:gstreamer WATER_WITH_HWLOC:hwloc WATER_WITH_INOTIFY:inotify \
-        WATER_WITH_KRB5:krb5 WATER_WITH_MINGW:mingw WATER_WITH_NETAPI:netapi \
+        WATER_WITH_KRB5:krb5 WATER_WITH_NETAPI:netapi \
         WATER_WITH_OPENCL:opencl WATER_WITH_OPENGL:opengl WATER_WITH_OSS:oss \
         WATER_WITH_PCAP:pcap WATER_WITH_PCSCLITE:pcsclite WATER_WITH_PTHREAD:pthread \
         WATER_WITH_PULSE:pulse WATER_WITH_SANE:sane WATER_WITH_SDL:sdl \
@@ -1100,6 +1107,53 @@ configure_build()
             n|0) set -- "--without-$option" "$@" ;;
         esac
     done
+
+    case "${WATER_WITH_MINGW:-auto}" in
+        auto|'')
+            mingw_clang=
+            if [ -n "${LLVM_BIN:-}" ] && [ -x "$LLVM_BIN/clang" ]; then
+                mingw_clang="$LLVM_BIN/clang"
+            elif [ -n "${WHP_HOST_CC_REAL:-}" ]; then
+                case "$WHP_HOST_CC_REAL" in
+                    clang|*/clang) mingw_clang=$WHP_HOST_CC_REAL ;;
+                esac
+            else
+                case "${CC:-}" in
+                    clang|*/clang) mingw_clang=$CC ;;
+                esac
+            fi
+            [ -n "$mingw_clang" ] ||
+                die "WATER_WITH_MINGW=auto requires a usable LLVM clang"
+            set -- "--with-mingw=$mingw_clang" "$@"
+            printf 'WHP PE compiler: %s\n' "$mingw_clang" >&2
+            ;;
+        clang)
+            if [ -n "${LLVM_BIN:-}" ] && [ -x "$LLVM_BIN/clang" ]; then
+                mingw_clang="$LLVM_BIN/clang"
+            else
+                mingw_clang=$(command -v clang 2>/dev/null || true)
+            fi
+            [ -n "$mingw_clang" ] ||
+                die "WATER_WITH_MINGW=clang requested but clang was not found"
+            set -- "--with-mingw=$mingw_clang" "$@"
+            printf 'WHP PE compiler: %s\n' "$mingw_clang" >&2
+            ;;
+        llvm-mingw)
+            set -- "--with-mingw=llvm-mingw" "$@"
+            ;;
+        y|1)
+            set -- "--with-mingw" "$@"
+            ;;
+        n|0)
+            set -- "--without-mingw" "$@"
+            ;;
+        */clang)
+            [ -x "$WATER_WITH_MINGW" ] ||
+                die "WATER_WITH_MINGW clang path is not executable: $WATER_WITH_MINGW"
+            set -- "--with-mingw=$WATER_WITH_MINGW" "$@"
+            printf 'WHP PE compiler: %s\n' "$WATER_WITH_MINGW" >&2
+            ;;
+    esac
 
     case "$WATER_COMPILER_CACHE" in
         sccache|ccache) set -- "--with-compiler-cache=$WATER_COMPILER_CACHE" "$@" ;;
