@@ -97,6 +97,15 @@ static IExplorerBrowserEventsImpl *impl_from_IExplorerBrowserEvents(IExplorerBro
 
 static HRESULT WINAPI IExplorerBrowserEventsImpl_fnQueryInterface(IExplorerBrowserEvents *iface, REFIID riid, void **ppvObject)
 {
+    if (!ppvObject) return E_POINTER;
+
+    *ppvObject = NULL;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IExplorerBrowserEvents))
+    {
+        *ppvObject = iface;
+        IExplorerBrowserEvents_AddRef(iface);
+        return S_OK;
+    }
     return E_NOINTERFACE;
 }
 
@@ -327,12 +336,15 @@ static IExplorerBrowserEventsVtbl vt_IExplorerBrowserEvents =
 
 static IExplorerBrowserEvents *make_explorer_events(explorer_info *info)
 {
-    IExplorerBrowserEventsImpl *ret = malloc( sizeof(IExplorerBrowserEventsImpl) );
+    IExplorerBrowserEventsImpl *ret = malloc( sizeof(*ret) );
+
+    if (!ret) return NULL;
+
     ret->IExplorerBrowserEvents_iface.lpVtbl = &vt_IExplorerBrowserEvents;
     ret->info = info;
     ret->ref = 1;
-    SHGetImageList(SHIL_SMALL,&IID_IImageList,(void**)&(ret->info->icon_list));
-    SendMessageW(info->path_box,CBEM_SETIMAGELIST,0,(LPARAM)ret->info->icon_list);
+    if (SUCCEEDED(SHGetImageList(SHIL_SMALL, &IID_IImageList, (void **)&info->icon_list)))
+        SendMessageW(info->path_box, CBEM_SETIMAGELIST, 0, (LPARAM)info->icon_list);
     return &ret->IExplorerBrowserEvents_iface;
 }
 
