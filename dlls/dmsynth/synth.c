@@ -31,6 +31,15 @@
 #include <fluidsynth.h>
 #include <math.h>
 
+#ifdef WATER_BUNDLED_FLUIDSYNTH
+#if !defined(FLUIDSYNTH_VERSION_MAJOR) || !defined(FLUIDSYNTH_VERSION_MINOR) || !defined(FLUIDSYNTH_VERSION_MICRO)
+#error Water bundled Fsynth headers are missing FluidSynth version macros
+#endif
+#if FLUIDSYNTH_VERSION_MAJOR != 2 || FLUIDSYNTH_VERSION_MINOR != 6 || FLUIDSYNTH_VERSION_MICRO != 1
+#error Water bundled Fsynth headers must match FluidSynth 2.6.1
+#endif
+#endif
+
 WINE_DEFAULT_DEBUG_CHANNEL(dmsynth);
 
 #define ROUND_ADDR(addr, mask) ((void *)((UINT_PTR)(addr) & ~(UINT_PTR)(mask)))

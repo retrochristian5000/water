@@ -1261,14 +1261,11 @@ then
         WINE_NOTICE([FAudio ${notice_platform}MinGW development files not found (or too old); using bundled version.])
     fi
 
-    WINE_MINGW_PACKAGE_FLAGS(FLUIDSYNTH,[fluidsynth],[-lfluidsynth],
-        [WINE_CHECK_MINGW_HEADER(fluidsynth.h,
-            [WINE_CHECK_MINGW_FUNC(new_fluid_synth,[:],[FLUIDSYNTH_PE_CFLAGS=""; FLUIDSYNTH_PE_LIBS=""])],
-            [FLUIDSYNTH_PE_CFLAGS=""; FLUIDSYNTH_PE_LIBS=""])])
-    if test "x$FLUIDSYNTH_PE_LIBS" = "x"
-    then
-        WINE_NOTICE([Fluidsynth ${notice_platform}MinGW development files not found (or too old); using bundled version.])
-    fi
+    dnl Water pins Fsynth as a submodule. Do not auto-select a MinGW/system
+    dnl FluidSynth here: doing so can compile dmsynth against headers from one
+    dnl release and then link a different ABI than the pinned bundled archive.
+    dnl Explicit FLUIDSYNTH_PE_CFLAGS/FLUIDSYNTH_PE_LIBS overrides remain
+    dnl supported by WINE_EXTLIB_FLAGS below.
 
     WINE_MINGW_PACKAGE_FLAGS(JPEG,[libjpeg],,
         [WINE_CHECK_MINGW_HEADER(jpeglib.h,
@@ -1344,7 +1341,7 @@ WINE_EXTLIB_FLAGS(CXX, c++, "c++ \$(CXXABI_PE_LIBS) msvcp140 vcruntime140")
 WINE_EXTLIB_FLAGS(CXXABI, c++abi, "c++abi \$(UNWIND_PE_LIBS) c++", "-I\$(top_srcdir)/libs/c++abi/include")
 WINE_EXTLIB_FLAGS(FAUDIO, faudio, "faudio mfplat mfreadwrite mfuuid propsys", "-I\$(top_srcdir)/libs/faudio/include")
 WINE_EXTLIB_FLAGS(FFMPEG, ffmpeg, "ffmpeg bcrypt", "-I\$(top_srcdir)/libs/ffmpeg")
-WINE_EXTLIB_FLAGS(FLUIDSYNTH, fluidsynth, "fluidsynth", "-I\$(top_srcdir)/libs/fluidsynth/include")
+WINE_EXTLIB_FLAGS(FLUIDSYNTH, fluidsynth, "fluidsynth", "-I\$(top_srcdir)/libs/fluidsynth/include -DWATER_BUNDLED_FLUIDSYNTH=1")
 WINE_EXTLIB_FLAGS(GSM, gsm, gsm, "-I\$(top_srcdir)/libs/gsm/inc")
 WINE_EXTLIB_FLAGS(ICUCOMMON, icucommon, icucommon, "-I\$(top_srcdir)/libs/icucommon")
 WINE_EXTLIB_FLAGS(ICUI18N, icui18n, icui18n)
