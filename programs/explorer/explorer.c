@@ -466,11 +466,12 @@ static IExplorerBrowserEvents *make_explorer_events(explorer_info *info)
 
 static IShellFolder *get_starting_shell_folder(WCHAR *path)
 {
-    IShellFolder* desktop,*folder;
+    IShellFolder *desktop = NULL, *folder;
     LPITEMIDLIST root_pidl;
     HRESULT hres;
 
-    SHGetDesktopFolder(&desktop);
+    hres = SHGetDesktopFolder(&desktop);
+    if (FAILED(hres)) return NULL;
 
     if (!path)
         return desktop;
@@ -640,10 +641,25 @@ static void make_explorer_window(parameters_struct *params)
     rebar = CreateWindowExW(WS_EX_TOOLWINDOW,REBARCLASSNAMEW,NULL,
                             WS_CHILD|WS_VISIBLE|RBS_VARHEIGHT|CCS_TOP|CCS_NODIVIDER,
                             0,0,0,0,info->main_window,NULL,explorer_hInstance,NULL);
+    if (!rebar)
+    {
+        ERR("Could not create explorer rebar.\n");
+        free(path);
+        DestroyWindow(info->main_window);
+        return;
+    }
+
     nav_toolbar
         = CreateWindowExW(TBSTYLE_EX_MIXEDBUTTONS,TOOLBARCLASSNAMEW,NULL,
                           WS_CHILD|WS_VISIBLE|TBSTYLE_FLAT,0,0,0,0,rebar,NULL,
                           explorer_hInstance,NULL);
+    if (!nav_toolbar)
+    {
+        ERR("Could not create explorer navigation toolbar.\n");
+        free(path);
+        DestroyWindow(info->main_window);
+        return;
+    }
 
     bitmap_info.hInst = HINST_COMMCTRL;
     bitmap_info.nID = IDB_HIST_LARGE_COLOR;
@@ -679,6 +695,13 @@ static void make_explorer_window(parameters_struct *params)
                                    WS_CHILD | WS_VISIBLE | CBS_DROPDOWN,
                                    0,0,default_width,pathbox_height,rebar,NULL,
                                    explorer_hInstance,NULL);
+    if (!info->path_box)
+    {
+        ERR("Could not create explorer path box.\n");
+        free(path);
+        DestroyWindow(info->main_window);
+        return;
+    }
     GetWindowRect(info->path_box, &rect);
     band_info.cyChild = rect.bottom - rect.top;
     band_info.cx=0;
@@ -708,6 +731,14 @@ static void make_explorer_window(parameters_struct *params)
     }
 
     folder = get_starting_shell_folder(path);
+    if (!folder)
+    {
+        ERR("Could not obtain the starting shell folder.\n");
+        IExplorerBrowserEvents_Release(events);
+        free(path);
+        DestroyWindow(info->main_window);
+        return;
+    }
     IExplorerBrowser_BrowseToObject(info->browser, (IUnknown *)folder, SBSP_ABSOLUTE);
     IShellFolder_Release(folder);
     free(path);
