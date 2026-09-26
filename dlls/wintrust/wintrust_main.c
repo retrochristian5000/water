@@ -18,6 +18,8 @@
  */
 
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "windef.h"
 #include "winbase.h"
