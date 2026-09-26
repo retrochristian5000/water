@@ -167,6 +167,12 @@ typedef struct
 
 /* definitions specific to Wine 16-bit relaying support */
 
+/*
+ * Register state passed through WOW16 is always an i386 register frame,
+ * regardless of the host architecture used to run Water.
+ */
+typedef I386_CONTEXT WOW16_CONTEXT, *PWOW16_CONTEXT;
+
 /* 32-bit stack layout after __wine_call_to_16() */
 typedef struct _STACK32FRAME
 {
@@ -179,7 +185,7 @@ typedef struct _STACK32FRAME
     DWORD   ebx;            /* 1c */
     DWORD   ebp;            /* 20 saved 32-bit frame pointer */
     DWORD   retaddr;        /* 24 return address */
-    DWORD   target;         /* 28 target address / CONTEXT86 pointer */
+    DWORD   target;         /* 28 target address / WOW16_CONTEXT pointer */
     DWORD   nb_args;        /* 2c number of 16-bit argument bytes */
 } STACK32FRAME;
 

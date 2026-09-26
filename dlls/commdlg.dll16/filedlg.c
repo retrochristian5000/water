@@ -36,7 +36,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(commdlg);
 
 static inline WORD get_word( const char **ptr )
 {
-    WORD ret = *(WORD *)*ptr;
+    const BYTE *src = (const BYTE *)*ptr;
+    WORD ret = MAKEWORD( src[0], src[1] );
+
     *ptr += sizeof(WORD);
     return ret;
 }
@@ -50,9 +52,8 @@ static inline void copy_string( WORD **out, const char **in, DWORD maxlen )
 
 static inline void copy_dword( WORD **out, const char **in )
 {
-    *(DWORD *)*out = *(DWORD *)*in;
-    *in += sizeof(DWORD);
-    *out += sizeof(DWORD) / sizeof(WORD);
+    *(*out)++ = get_word( in );
+    *(*out)++ = get_word( in );
 }
 
 static LPDLGTEMPLATEA convert_dialog( const char *p, DWORD size )
@@ -107,7 +108,7 @@ static LPDLGTEMPLATEA convert_dialog( const char *p, DWORD size )
         *out++ = cy;
         *out++ = id;
 
-        if (*p & 0x80)  /* class */
+        if ((BYTE)*p & 0x80)  /* class */
         {
             *out++ = 0xffff;
             *out++ = (BYTE)*p++;
@@ -215,10 +216,10 @@ static void CREATESTRUCT32Ato16( const CREATESTRUCTA* from, CREATESTRUCT16* to )
 
 static LRESULT call_hook16( WNDPROC16 hook, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
 {
-    CONTEXT context;
+    WOW16_CONTEXT context;
     WORD params[5];
 
-    TRACE( "%p: %p %08x %x %Ix: stub\n", hook, hwnd, msg, wp, lp );
+    TRACE( "%08Ix: %p %08x %x %Ix\n", (UINT_PTR)hook, hwnd, msg, wp, lp );
 
     memset( &context, 0, sizeof(context) );
     context.SegDs = context.SegEs = CURRENT_SS;
@@ -496,45 +497,69 @@ static UINT_PTR CALLBACK call_hook_proc( WNDPROC16 hook, HWND hwnd, UINT msg, WP
 }
 
 
-#pragma pack(push,1)
-struct hook_proc
+struct hook_frame
 {
-    BYTE popl_eax;    /* popl %eax */
-    BYTE pushl_hook;  /* pushl $hook_ptr */
-    LPOFNHOOKPROC16 hook_ptr;
-    BYTE pushl_eax;   /* pushl %eax */
-    BYTE jmp;         /* jmp call_hook */
-    DWORD call_hook;
+    LPOFNHOOKPROC16 hook;
+    struct hook_frame *previous;
 };
-#pragma pack(pop)
 
-static LPOFNHOOKPROC alloc_hook( LPOFNHOOKPROC16 hook16 )
+static LONG hook_tls_index = TLS_OUT_OF_INDEXES;
+
+static DWORD get_hook_tls_index(void)
 {
-    static struct hook_proc *hooks;
-    static unsigned int count;
-    SIZE_T size = 0x1000;
-    unsigned int i;
+    LONG index = hook_tls_index;
 
-    if (!hooks && !(hooks = VirtualAlloc( NULL, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE )))
-        return NULL;
-
-    for (i = 0; i < count; i++)
-        if (hooks[i].hook_ptr == hook16)
-            return (LPOFNHOOKPROC)&hooks[i];
-
-    if (count >= size / sizeof(*hooks))
+    if ((DWORD)index == TLS_OUT_OF_INDEXES)
     {
-        FIXME( "all hooks are in use\n" );
-        return NULL;
+        DWORD new_index = TlsAlloc();
+
+        if (new_index == TLS_OUT_OF_INDEXES) return TLS_OUT_OF_INDEXES;
+
+        index = InterlockedCompareExchange( &hook_tls_index, (LONG)new_index,
+                                            (LONG)TLS_OUT_OF_INDEXES );
+        if ((DWORD)index != TLS_OUT_OF_INDEXES)
+        {
+            TlsFree( new_index );
+            return (DWORD)index;
+        }
+        return new_index;
     }
 
-    hooks[count].popl_eax   = 0x58;
-    hooks[count].pushl_hook = 0x68;
-    hooks[count].hook_ptr   = hook16;
-    hooks[count].pushl_eax  = 0x50;
-    hooks[count].jmp        = 0xe9;
-    hooks[count].call_hook  = (char *)call_hook_proc - (char *)(&hooks[count].call_hook + 1);
-    return (LPOFNHOOKPROC)&hooks[count++];
+    return (DWORD)index;
+}
+
+static BOOL push_hook16( struct hook_frame *frame, LPOFNHOOKPROC16 hook )
+{
+    DWORD index = get_hook_tls_index();
+
+    if (index == TLS_OUT_OF_INDEXES) return FALSE;
+
+    frame->hook = hook;
+    frame->previous = TlsGetValue( index );
+    return TlsSetValue( index, frame );
+}
+
+static void pop_hook16( struct hook_frame *frame )
+{
+    DWORD index = (DWORD)hook_tls_index;
+
+    if (index == TLS_OUT_OF_INDEXES) return;
+    if (TlsGetValue( index ) != frame) WARN( "hook stack out of order\n" );
+    TlsSetValue( index, frame->previous );
+}
+
+static UINT_PTR CALLBACK hook_thunk( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
+{
+    DWORD index = (DWORD)hook_tls_index;
+    struct hook_frame *frame;
+
+    if (index == TLS_OUT_OF_INDEXES || !(frame = TlsGetValue( index )) || !frame->hook)
+    {
+        WARN( "Win16 common-dialog hook invoked without an active hook frame\n" );
+        return FALSE;
+    }
+
+    return call_hook_proc( frame->hook, hwnd, msg, wp, lp );
 }
 
 static UINT_PTR CALLBACK dummy_hook( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
@@ -577,6 +602,8 @@ BOOL16 WINAPI GetOpenFileName16( SEGPTR ofn ) /* [in/out] address of structure w
     LPOPENFILENAME16 lpofn = MapSL(ofn);
     LPDLGTEMPLATEA template = NULL;
     OPENFILENAMEA ofn32;
+    struct hook_frame hook_frame;
+    BOOL hook_active = FALSE;
     BOOL ret;
 
     if (!lpofn) return FALSE;
@@ -615,9 +642,21 @@ BOOL16 WINAPI GetOpenFileName16( SEGPTR ofn ) /* [in/out] address of structure w
         FreeResource16( handle );
     }
 
-    if (lpofn->Flags & OFN_ENABLEHOOK) ofn32.lpfnHook = alloc_hook( lpofn->lpfnHook );
+    if (lpofn->Flags & OFN_ENABLEHOOK)
+    {
+        if (!push_hook16( &hook_frame, lpofn->lpfnHook ))
+        {
+            HeapFree( GetProcessHeap(), 0, template );
+            return FALSE;
+        }
+        hook_active = TRUE;
+        ofn32.lpfnHook = hook_thunk;
+    }
 
-    if ((ret = GetOpenFileNameA( &ofn32 )))
+    ret = GetOpenFileNameA( &ofn32 );
+    if (hook_active) pop_hook16( &hook_frame );
+
+    if (ret)
     {
 	lpofn->nFilterIndex   = ofn32.nFilterIndex;
 	lpofn->nFileOffset    = ofn32.nFileOffset;
@@ -644,6 +683,8 @@ BOOL16 WINAPI GetSaveFileName16( SEGPTR ofn ) /* [in/out] address of structure w
     LPOPENFILENAME16 lpofn = MapSL(ofn);
     LPDLGTEMPLATEA template = NULL;
     OPENFILENAMEA ofn32;
+    struct hook_frame hook_frame;
+    BOOL hook_active = FALSE;
     BOOL ret;
 
     if (!lpofn) return FALSE;
@@ -682,9 +723,21 @@ BOOL16 WINAPI GetSaveFileName16( SEGPTR ofn ) /* [in/out] address of structure w
         FreeResource16( handle );
     }
 
-    if (lpofn->Flags & OFN_ENABLEHOOK) ofn32.lpfnHook = alloc_hook( lpofn->lpfnHook );
+    if (lpofn->Flags & OFN_ENABLEHOOK)
+    {
+        if (!push_hook16( &hook_frame, lpofn->lpfnHook ))
+        {
+            HeapFree( GetProcessHeap(), 0, template );
+            return FALSE;
+        }
+        hook_active = TRUE;
+        ofn32.lpfnHook = hook_thunk;
+    }
 
-    if ((ret = GetSaveFileNameA( &ofn32 )))
+    ret = GetSaveFileNameA( &ofn32 );
+    if (hook_active) pop_hook16( &hook_frame );
+
+    if (ret)
     {
 	lpofn->nFilterIndex   = ofn32.nFilterIndex;
 	lpofn->nFileOffset    = ofn32.nFileOffset;
