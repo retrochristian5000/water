@@ -184,7 +184,7 @@
 @ stdcall IsValidPtrOut(ptr long)
 @ stdcall MkParseDisplayName(ptr wstr ptr ptr)
 @ stdcall MonikerCommonPrefixWith(ptr ptr ptr)
-@ stub MonikerRelativePathTo
+@ stdcall MonikerRelativePathTo(ptr ptr ptr long)
 @ stdcall Ole32DllGetClassObject(ptr ptr ptr)
 @ stdcall OleBuildVersion()
 @ stdcall OleConvertIStorageToOLESTREAM(ptr ptr)
