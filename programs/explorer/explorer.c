@@ -784,24 +784,31 @@ static void register_explorer_window_class(void)
     RegisterClassExW(&window_class);
 }
 
-static WCHAR *copy_path_string(WCHAR *target, WCHAR *source)
+static WCHAR *copy_path_string(WCHAR *target, size_t target_count, WCHAR *source)
 {
-    INT i = 0;
+    size_t i = 0;
+    BOOL truncated = FALSE, quoted;
 
     while (iswspace(*source)) source++;
 
-    if (*source == '\"')
+    quoted = *source == '\"';
+    if (quoted) source++;
+
+    while (*source && (quoted ? *source != '\"' : *source != ','))
     {
-        source ++;
-        while (*source && *source != '\"') target[i++] = *source++;
-        target[i] = 0;
-        if (*source) source++;
+        if (i + 1 < target_count)
+            target[i++] = *source;
+        else
+            truncated = TRUE;
+        source++;
     }
-    else
-    {
-        while (*source && *source != ',') target[i++] = *source++;
-        target[i] = 0;
-    }
+
+    if (target_count) target[i] = 0;
+    if (quoted && *source) source++;
+
+    if (truncated)
+        WARN("Explorer path argument exceeds %Iu characters and was truncated.\n", target_count - 1);
+
     PathRemoveBackslashW(target);
     return source;
 }
@@ -876,17 +883,17 @@ static void parse_command_line(LPWSTR commandline,parameters_struct *parameters)
         else if (wcsnicmp(p, arg_cd, len_cd )==0)
         {
             p += len_cd;
-            p = copy_path_string(parameters->root,p);
+            p = copy_path_string(parameters->root, ARRAY_SIZE(parameters->root), p);
         }
         else if (wcsnicmp(p, arg_root, len_root )==0)
         {
             p += len_root;
-            p = copy_path_string(parameters->root,p);
+            p = copy_path_string(parameters->root, ARRAY_SIZE(parameters->root), p);
         }
         else if (wcsnicmp(p, arg_select, len_select )==0)
         {
             p += len_select;
-            p = copy_path_string(parameters->selection,p);
+            p = copy_path_string(parameters->selection, ARRAY_SIZE(parameters->selection), p);
             if (!parameters->root[0])
                 copy_path_root(parameters->root,
                                parameters->selection);
@@ -905,7 +912,7 @@ static void parse_command_line(LPWSTR commandline,parameters_struct *parameters)
         else
         {
             /* left over command line is generally the path to be opened */
-            copy_path_string(parameters->root,p);
+            copy_path_string(parameters->root, ARRAY_SIZE(parameters->root), p);
             break;
         }
     }
