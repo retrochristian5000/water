@@ -29,10 +29,11 @@ linker policies, build behavior, and optional Wine components. The LLVM menu
 defaults to a lean Water-only graph: unused tests, docs, examples, benchmarks,
 utilities, runtimes, bindings, and default tool sweeps are excluded while
 required Clang, LLD, archive, symbol, and strip tools remain available. In
-automatic linker mode the bootstrap also builds the host LLD backend and uses
-it only after real host-link probes succeed. On macOS this includes compiling
-Objective-C to an object and linking it with Foundation, matching winemac.drv's
-framework-link path; arm64e macOS remains on Apple ld.
+automatic linker mode uses host LLD only where it is part of the normal
+bootstrap. On macOS, automatic mode keeps the LLVM bootstrap independent of
+the optional Mach-O LLD backend and uses Apple ld; explicitly selecting LLD
+opts into Mach-O and requires an Objective-C/Foundation link probe to pass.
+arm64e macOS remains on Apple ld.
 It uses the same curses UI as the QEMU funnel when Python is available and
 falls back to a POSIX-shell menu otherwise.
 
