@@ -435,7 +435,7 @@ static CRITICAL_SECTION locale_section = { &critsect_debug, -1, 0, 0, 0, 0 };
 
 static BOOL nls_range_valid( SIZE_T size, SIZE_T offset, SIZE_T count, SIZE_T elem_size )
 {
-    return offset <= size && elem_size && count <= (size - offset) / elem_size;
+    return offset <= size && (!count || (elem_size && count <= (size - offset) / elem_size));
 }
 
 
@@ -604,13 +604,14 @@ static BOOL load_sortdefault_nls(void)
     NTSTATUS status;
     const struct sort_compression *last_compr;
 
-    status = NtGetNlsSectionPtr( NLS_SECTION_SORTKEYS, 0, NULL, (void **)&header, &size );
-    if (status || !header || size < sizeof(*header))
+    status = NtGetNlsSectionPtr( 9 /* NLS_SECTION_SORTKEYS */, 0, NULL, (void **)&header, &size );
+    if (status || !header || size < sizeof(*header) || size % sizeof(UINT))
     {
         ERR( "failed to load sortdefault.nls, status %lx\n", status );
         return FALSE;
     }
     if (header->sortkeys < sizeof(*header) ||
+        (header->sortkeys | header->casemaps | header->ctypes | header->sortids) % sizeof(UINT) ||
         header->sortkeys > header->casemaps ||
         header->casemaps > header->ctypes ||
         header->ctypes > header->sortids ||
@@ -672,7 +673,7 @@ static BOOL load_sortdefault_nls(void)
 
         last_compr = sort.compressions + sort.compr_count - 1;
         remaining = ((const char *)end - (const char *)sort.compr_data) / sizeof(*sort.compr_data);
-        if (last_compr->offset > remaining) goto invalid;
+        if (last_compr->offset > remaining || last_compr->offset % 2) goto invalid;
 
         table = (UINT *)(sort.compr_data + last_compr->offset);
         for (i = 0; i < 7; i++)
@@ -684,8 +685,8 @@ static BOOL load_sortdefault_nls(void)
     }
     else table = (UINT *)sort.compr_data;
 
-    if (table >= end || 1 + (table[0] + 1) / 2 > (SIZE_T)(end - table)) goto invalid;
-    table += 1 + (table[0] + 1) / 2;  /* skip 2-byte pairs, padded to 4 bytes */
+    if (table >= end || 1 + ((SIZE_T)table[0] + 1) / 2 > (SIZE_T)(end - table)) goto invalid;
+    table += 1 + ((SIZE_T)table[0] + 1) / 2;  /* skip 2-byte pairs, padded to 4 bytes */
     if (table >= end || table[0] > ((const char *)end - (const char *)(table + 1)) / sizeof(*sort.jamo))
         goto invalid;
     sort.jamo = (struct jamo_sort *)(table + 1);
