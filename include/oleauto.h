@@ -19,10 +19,9 @@
 #ifndef __WINE_OLEAUTO_H
 #define __WINE_OLEAUTO_H
 
-/* Match the native Windows SDK guard for source compatibility. */
+/* Honor the native Windows SDK guard as well as Wine's private guard. */
 #ifndef _OLEAUTO_H_
 #define _OLEAUTO_H_
-#endif
 
 #ifndef RC_INVOKED
 #pragma pack(push,8)
@@ -793,4 +792,5 @@ WINOLEAUTAPI void WINAPI ClearCustData(LPCUSTDATA);
 #pragma pack(pop)
 #endif
 
-#endif /*__WINE_OLEAUTO_H*/
+#endif /* _OLEAUTO_H_ */
+#endif /* __WINE_OLEAUTO_H */
