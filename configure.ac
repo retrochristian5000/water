@@ -516,15 +516,17 @@ do
             AC_CHECK_PROGS(arm_CC,[armv7-w64-mingw32-clang armv7-w64-mingw32-gcc clang],[false])
             ;;
           i386)
-            ac_prefix_list="m4_foreach([cc],[gcc,clang],m4_foreach([cpu],[i686,i586,i486,i386],[cpu-w64-mingw32-cc ]))"
-            AC_CHECK_PROGS(i386_CC,[$ac_prefix_list clang],[false])
+            clang_prefix_list="m4_foreach([cpu],[i686,i586,i486,i386],[cpu-w64-mingw32-clang ])"
+            gcc_prefix_list="m4_foreach([cpu],[i686,i586,i486,i386],[cpu-w64-mingw32-gcc ])"
+            AC_CHECK_PROGS(i386_CC,[$clang_prefix_list $gcc_prefix_list clang],[false])
             ;;
           powerpc)
             AC_CHECK_PROGS(powerpc_CC,[powerpcle-w64-mingw32-clang powerpcle-w64-mingw32-gcc powerpc-w64-mingw32-clang powerpc-w64-mingw32-gcc clang],[false])
             ;;
           x86_64)
-            ac_prefix_list="m4_foreach([cc],[gcc,clang],m4_foreach([cpu],[x86_64,amd64],[cpu-w64-mingw32-cc ]))"
-            AC_CHECK_PROGS(x86_64_CC,[$ac_prefix_list clang],[false])
+            clang_prefix_list="m4_foreach([cpu],[x86_64,amd64],[cpu-w64-mingw32-clang ])"
+            gcc_prefix_list="m4_foreach([cpu],[x86_64,amd64],[cpu-w64-mingw32-gcc ])"
+            AC_CHECK_PROGS(x86_64_CC,[$clang_prefix_list $gcc_prefix_list clang],[false])
             ;;
          esac
          wine_try_msvc=yes],
