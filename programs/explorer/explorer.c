@@ -644,10 +644,15 @@ static LRESULT explorer_on_end_edit(explorer_info *info,NMCBEENDEDITW *edit_info
     case CBENF_RETURN:
         {
             WCHAR path[MAX_PATH];
+            LRESULT len;
             HWND edit_ctrl = (HWND)SendMessageW(edit_info->hdr.hwndFrom,
                                                 CBEM_GETEDITCONTROL,0,0);
-            *((WORD*)path)=MAX_PATH;
-            SendMessageW(edit_ctrl,EM_GETLINE,0,(LPARAM)path);
+
+            *((WORD *)path) = ARRAY_SIZE(path) - 1;
+            len = SendMessageW(edit_ctrl, EM_GETLINE, 0, (LPARAM)path);
+            if (len < 0) len = 0;
+            if (len >= ARRAY_SIZE(path)) len = ARRAY_SIZE(path) - 1;
+            path[len] = 0;
             pidl = ILCreateFromPathW(path);
             break;
         }
