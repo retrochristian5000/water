@@ -759,7 +759,7 @@ HRESULT WINAPI SHOpenFolderAndSelectItems(PCIDLIST_ABSOLUTE pidlFolder, UINT cid
      * Absolute input PIDLs can be larger than the relative child PIDLs copied into
      * the packet, so the allocation size is not necessarily the serialized size. */
     memcpy(cds.lpData, &child_count, sizeof(child_count));
-    cds.cbData = ptr - (unsigned char *)cds.lpData;
+    cds.cbData = (DWORD)(ptr - (unsigned char *)cds.lpData);
 
     SetForegroundWindow(GetAncestor((HWND)(LONG_PTR)hwnd, GA_ROOT));
     ret = SendMessageW((HWND)(LONG_PTR)hwnd, WM_COPYDATA, 0, (LPARAM)&cds);
