@@ -67,7 +67,7 @@ typedef struct
     IImageList *icon_list;
     DWORD advise_cookie;
 
-    IShellWindows *sw = NULL;
+    IShellWindows *sw;
     LONG sw_cookie;
 } explorer_info;
 
@@ -510,7 +510,7 @@ static void make_explorer_window(parameters_struct *params)
     IShellFolder *folder;
     IDispatch *dispatch;
     WCHAR *path = NULL;
-    IShellWindows *sw;
+    IShellWindows *sw = NULL;
     ITEMIDLIST *pidl;
     UINT dpix, dpiy;
     DWORD size;
@@ -756,7 +756,7 @@ static LRESULT explorer_on_end_edit(explorer_info *info,NMCBEENDEDITW *edit_info
             *((WORD *)path) = ARRAY_SIZE(path) - 1;
             len = SendMessageW(edit_ctrl, EM_GETLINE, 0, (LPARAM)path);
             if (len < 0) len = 0;
-            if (len >= ARRAY_SIZE(path)) len = ARRAY_SIZE(path) - 1;
+            if ((size_t)len >= ARRAY_SIZE(path)) len = ARRAY_SIZE(path) - 1;
             path[len] = 0;
             pidl = ILCreateFromPathW(path);
             break;
@@ -927,13 +927,12 @@ static LRESULT CALLBACK explorer_wnd_proc(HWND hwnd, UINT uMsg, WPARAM wParam, L
     IExplorerBrowser *browser = NULL;
 
     TRACE( "(hwnd=%p,uMsg=%u,wParam=%Ix,lParam=%Ix)\n", hwnd, uMsg, wParam, lParam );
-    if(info)
-        browser = info->browser;
+    if (!info) return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+
+    browser = info->browser;
     switch(uMsg)
     {
     case WM_DESTROY:
-        if (!info) return DefWindowProcW(hwnd, uMsg, wParam, lParam);
-
         if(info->sw)
         {
             IShellWindows_Revoke(info->sw, info->sw_cookie);
@@ -1031,9 +1030,10 @@ static WCHAR *copy_path_string(WCHAR *target, size_t target_count, WCHAR *source
     if (quoted && *source) source++;
 
     if (truncated)
-        WARN("Explorer path argument exceeds %Iu characters and was truncated.\n", target_count - 1);
+        WARN("Explorer path argument exceeds %Iu characters and was truncated.\n",
+             target_count ? target_count - 1 : 0);
 
-    PathRemoveBackslashW(target);
+    if (target_count) PathRemoveBackslashW(target);
     return source;
 }
 
