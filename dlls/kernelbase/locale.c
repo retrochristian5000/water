@@ -455,6 +455,25 @@ static BOOL validate_compressed_charmap( const USHORT *table, SIZE_T count )
             if (next > count - 16) return FALSE;
         }
     }
+
+    if (table[0] >= 0x500)
+    {
+        if (count < 256 + 1024) return FALSE;
+        for (i = 0; i < 1024; i++)
+        {
+            SIZE_T offset = table[256 + i];
+
+            if (offset > count - 32) return FALSE;
+            for (j = 0; j < 32; j++)
+            {
+                SIZE_T next = table[offset + j];
+
+                /* High-plane deltas are stored as 32-bit values split over two
+                 * words and selected by the low five bits of the surrogate. */
+                if (next > count - 64) return FALSE;
+            }
+        }
+    }
     return TRUE;
 }
 
