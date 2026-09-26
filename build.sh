@@ -407,19 +407,20 @@ darwin_sdkroot()
 
 select_llvm_lld_backends()
 {
-    if [ "$WATER_LLVM_LINKER" = system ]; then
-        printf '%s\n' 'COFF;MinGW'
-        return
-    fi
-
-    case "$(uname -s 2>/dev/null || true)" in
-        Darwin)
+    case "$WATER_LLVM_LINKER:$(uname -s 2>/dev/null || true)" in
+        lld:Darwin)
             printf '%s\n' 'COFF;MinGW;MachO'
             ;;
-        Linux|FreeBSD|NetBSD|OpenBSD|DragonFly|SunOS|Haiku)
+        lld:Linux|lld:FreeBSD|lld:NetBSD|lld:OpenBSD|lld:DragonFly|lld:SunOS|lld:Haiku)
+            printf '%s\n' 'COFF;MinGW;ELF'
+            ;;
+        auto:Linux|auto:FreeBSD|auto:NetBSD|auto:OpenBSD|auto:DragonFly|auto:SunOS|auto:Haiku)
             printf '%s\n' 'COFF;MinGW;ELF'
             ;;
         *)
+            # Darwin auto/system deliberately avoid Mach-O LLD.  Water can use
+            # Apple ld without making the optional Mach-O backend a bootstrap
+            # dependency.  Explicit WATER_LLVM_LINKER=lld opts into Mach-O.
             printf '%s\n' 'COFF;MinGW'
             ;;
     esac
@@ -1008,13 +1009,28 @@ bootstrap_llvm()
     if [ "$WATER_LLVM_LINKER" != system ]; then
         llvm_previous_lld=$(host_lld_path "$LLVM_BOOTSTRAP_DIR/bin" || true)
         if [ -n "$llvm_previous_lld" ] && \
-           ! darwin_arm64e_requested "$llvm_stage0_cxx" && \
-           probe_lld_linker "$llvm_stage0_cxx" "$llvm_previous_lld" c++ "$llvm_sdkroot"
+           ! darwin_arm64e_requested "$llvm_stage0_cxx"
         then
-            llvm_use_linker=lld
-            llvm_bootstrap_linker=$llvm_previous_lld
-            PATH="$(dirname -- "$llvm_previous_lld"):$PATH"
-            export PATH
+            case "$(uname -s 2>/dev/null || true)" in
+                Darwin)
+                    if [ "$WATER_LLVM_LINKER" = lld ] && \
+                       probe_darwin_objc_lld "$llvm_stage0_cxx" "$llvm_previous_lld" "$llvm_sdkroot"
+                    then
+                        llvm_use_linker=lld
+                    fi
+                    ;;
+                *)
+                    if probe_lld_linker "$llvm_stage0_cxx" "$llvm_previous_lld" c++ "$llvm_sdkroot"
+                    then
+                        llvm_use_linker=lld
+                    fi
+                    ;;
+            esac
+            if [ "$llvm_use_linker" = lld ]; then
+                llvm_bootstrap_linker=$llvm_previous_lld
+                PATH="$(dirname -- "$llvm_previous_lld"):$PATH"
+                export PATH
+            fi
         fi
         unset llvm_previous_lld
     fi
