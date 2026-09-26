@@ -1006,7 +1006,7 @@ setup_toolchain()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=4" \
+        "WHP_PROFILE_SCHEMA=3" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -1015,7 +1015,6 @@ profile_signature()
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
-        "WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}" \
         "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
         "NINJA_CMD=${NINJA_CMD:-}" \
         "SDKROOT=${SDKROOT:-}" \
