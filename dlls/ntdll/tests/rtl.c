@@ -107,6 +107,7 @@ static ULONGLONG (FASTCALL *pRtlUlonglongByteSwap)(ULONGLONG source);
 static void *    (WINAPI *pRtlGetElementGenericTable)(PRTL_GENERIC_TABLE, ULONG);
 static DWORD     (WINAPI *pRtlGetThreadErrorMode)(void);
 static NTSTATUS  (WINAPI *pRtlSetThreadErrorMode)(DWORD, LPDWORD);
+static NTSTATUS  (WINAPI *pRtlGetLocaleFileMappingAddress)(void **, LCID *, LARGE_INTEGER *);
 static PVOID     (WINAPI *pRtlInsertElementGenericTable)(PRTL_GENERIC_TABLE, PVOID, CLONG, PBOOLEAN);
 static NTSTATUS  (WINAPI *pRtlIpv4AddressToStringExA)(const IN_ADDR *, USHORT, LPSTR, PULONG);
 static NTSTATUS  (WINAPI *pRtlIpv4StringToAddressExA)(PCSTR, BOOLEAN, IN_ADDR *, PUSHORT);
@@ -183,6 +184,7 @@ static void InitFunctionPtrs(void)
         pRtlGetElementGenericTable = (void *)GetProcAddress(hntdll, "RtlGetElementGenericTable");
         pRtlGetThreadErrorMode = (void *)GetProcAddress(hntdll, "RtlGetThreadErrorMode");
         pRtlSetThreadErrorMode = (void *)GetProcAddress(hntdll, "RtlSetThreadErrorMode");
+        pRtlGetLocaleFileMappingAddress = (void *)GetProcAddress(hntdll, "RtlGetLocaleFileMappingAddress");
         pRtlInsertElementGenericTable = (void *)GetProcAddress(hntdll, "RtlInsertElementGenericTable");
         pRtlIpv4AddressToStringExA = (void *)GetProcAddress(hntdll, "RtlIpv4AddressToStringExA");
         pRtlIpv4StringToAddressExA = (void *)GetProcAddress(hntdll, "RtlIpv4StringToAddressExA");
@@ -5565,11 +5567,46 @@ static void test_pointer_encoding(void)
     ok( v == expected, "got %p, expected %p.\n", v, expected );
 }
 
+static void test_RtlGetLocaleFileMappingAddress(void)
+{
+    void *ptr1 = NULL, *ptr2 = NULL;
+    LARGE_INTEGER size1, size2;
+    LCID lcid1 = 0, lcid2 = 0;
+    NTSTATUS status;
+
+    if (!pRtlGetLocaleFileMappingAddress)
+    {
+        win_skip( "RtlGetLocaleFileMappingAddress is not available\n" );
+        return;
+    }
+
+    size1.QuadPart = -1;
+    status = pRtlGetLocaleFileMappingAddress( &ptr1, &lcid1, &size1 );
+    ok( !status, "RtlGetLocaleFileMappingAddress returned %#lx\n", status );
+    if (status) return;
+
+    ok( ptr1 != NULL, "expected a mapped locale table\n" );
+    ok( size1.QuadPart > 0, "expected a positive locale mapping size, got %s\n",
+        wine_dbgstr_longlong( size1.QuadPart ) );
+
+    size2.QuadPart = 0x12345678;
+    status = pRtlGetLocaleFileMappingAddress( &ptr2, &lcid2, &size2 );
+    ok( !status, "second RtlGetLocaleFileMappingAddress returned %#lx\n", status );
+    if (status) return;
+
+    ok( ptr2 == ptr1, "mapping changed from %p to %p\n", ptr1, ptr2 );
+    ok( lcid2 == lcid1, "LCID changed from %#lx to %#lx\n", lcid1, lcid2 );
+    ok( size2.QuadPart == size1.QuadPart, "mapping size changed from %s to %s\n",
+        wine_dbgstr_longlong( size1.QuadPart ), wine_dbgstr_longlong( size2.QuadPart ) );
+}
+
+
 START_TEST(rtl)
 {
     InitFunctionPtrs();
 
     test_nt3_compat_exports();
+    test_RtlGetLocaleFileMappingAddress();
     test_RtlQueryProcessDebugInformation();
     test_RtlCompareMemory();
     test_RtlCompareMemoryUlong();
