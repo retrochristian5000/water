@@ -1297,7 +1297,39 @@ typedef PPC_FLOATING_SAVE_AREA FLOATING_SAVE_AREA, *PFLOATING_SAVE_AREA;
 
 typedef struct _PPC_CONTEXT
 {
-    FLOATING_SAVE_AREA FloatSave;
+    double Fpr0;
+    double Fpr1;
+    double Fpr2;
+    double Fpr3;
+    double Fpr4;
+    double Fpr5;
+    double Fpr6;
+    double Fpr7;
+    double Fpr8;
+    double Fpr9;
+    double Fpr10;
+    double Fpr11;
+    double Fpr12;
+    double Fpr13;
+    double Fpr14;
+    double Fpr15;
+    double Fpr16;
+    double Fpr17;
+    double Fpr18;
+    double Fpr19;
+    double Fpr20;
+    double Fpr21;
+    double Fpr22;
+    double Fpr23;
+    double Fpr24;
+    double Fpr25;
+    double Fpr26;
+    double Fpr27;
+    double Fpr28;
+    double Fpr29;
+    double Fpr30;
+    double Fpr31;
+    double Fpscr;
 
     DWORD Gpr0;
     DWORD Gpr1;
