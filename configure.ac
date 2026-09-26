@@ -45,7 +45,7 @@ AC_ARG_WITH(gstreamer, AS_HELP_STRING([--without-gstreamer],[do not use GStreame
 AC_ARG_WITH(hwloc,     AS_HELP_STRING([--without-hwloc],[do not use hwloc (CPU/cache topology detection on FreeBSD)]))
 AC_ARG_WITH(inotify,   AS_HELP_STRING([--without-inotify],[do not use inotify (filesystem change notifications)]))
 AC_ARG_WITH(krb5,      AS_HELP_STRING([--without-krb5],[do not use krb5 (Kerberos)]))
-AC_ARG_WITH(mingw,     AS_HELP_STRING([--with-mingw=COMPILER],[PE compiler policy: clang, llvm-mingw, or auto-detected MinGW; use --without-mingw to disable]))
+AC_ARG_WITH(mingw,     AS_HELP_STRING([--with-mingw=COMPILER],[PE compiler policy: clang (default), llvm-mingw, or auto for compiler discovery; use --without-mingw to disable]))
 AC_ARG_WITH(netapi,    AS_HELP_STRING([--without-netapi],[do not use the Samba NetAPI library]))
 AC_ARG_WITH(opencl,    AS_HELP_STRING([--without-opencl],[do not use OpenCL]),
             [if test "x$withval" = "xno"; then ac_cv_header_OpenCL_opencl_h=no; fi])
@@ -130,14 +130,19 @@ case $host_os in
     ;;
 esac
 
-AS_IF([test "x$enable_sast" = xyes],[CC=${CC:-clang}
+dnl Water's build and PE paths are LLVM-first.  Keep environment overrides
+dnl authoritative, but don't let Autoconf or an installed MinGW GCC silently
+dnl select a different compiler family when no policy was requested.
 with_mingw=${with_mingw:-clang}
+
+AS_IF([test "x$enable_sast" = xyes],[CC=${CC:-clang}
+CXX=${CXX:-clang++}
 AC_CHECK_PROGS(SARIF_CONVERTER,sarif-converter,false)])
 
 dnl **** Check for some programs ****
 
-AC_PROG_CC
-AC_PROG_CXX
+AC_PROG_CC([clang gcc cc])
+AC_PROG_CXX([clang++ g++ c++])
 
 case "x$with_compiler_cache" in
   xno) COMPILER_CACHE= ;;
@@ -501,8 +506,18 @@ do
       *)       mingw_cpu=$wine_arch ;;
     esac
     case "x$with_mingw" in
-      xclang|x*/clang) AS_VAR_SET(${wine_arch}_CC,$with_mingw) ;;
-      xllvm-mingw)     AS_VAR_SET(${wine_arch}_CC,${mingw_cpu}-w64-mingw32-clang) ;;
+      xclang)
+        AS_VAR_SET(${wine_arch}_CC,clang)
+        AS_VAR_SET(${wine_arch}_CXX,clang++)
+        ;;
+      x*/clang)
+        AS_VAR_SET(${wine_arch}_CC,$with_mingw)
+        AS_VAR_SET(${wine_arch}_CXX,${with_mingw}++)
+        ;;
+      xllvm-mingw)
+        AS_VAR_SET(${wine_arch}_CC,${mingw_cpu}-w64-mingw32-clang)
+        AS_VAR_SET(${wine_arch}_CXX,${mingw_cpu}-w64-mingw32-clang++)
+        ;;
     esac
     AS_VAR_IF([${wine_arch}_CC],[],
         [case $wine_arch in
@@ -535,7 +550,23 @@ do
     CPPFLAGS=""
     AS_VAR_SET_IF([${wine_arch}_CFLAGS],[],[AS_VAR_SET([${wine_arch}_CFLAGS],[${CROSSCFLAGS:-"-g -O2"}])])
     AS_VAR_SET_IF([${wine_arch}_LDFLAGS],[],[AS_VAR_SET([${wine_arch}_LDFLAGS],[$CROSSLDFLAGS])])
-    AS_VAR_SET_IF([${wine_arch}_CXX],[],[AS_VAR_COPY([${wine_arch}_CXX],[${wine_arch}_CC])])
+    AS_VAR_IF([${wine_arch}_CXX],[],
+        [AS_IF([test "$wine_try_msvc" = yes],
+            [AS_VAR_COPY([wine_pe_cc],[${wine_arch}_CC])
+             case "$wine_pe_cc" in
+               clang)   wine_pe_cxx=clang++ ;;
+               *-clang) wine_pe_cxx="${wine_pe_cc%clang}clang++" ;;
+               gcc)     wine_pe_cxx=g++ ;;
+               *-gcc)   wine_pe_cxx="${wine_pe_cc%gcc}g++" ;;
+               *)       wine_pe_cxx= ;;
+             esac
+             if test -n "$wine_pe_cxx" && command -v "$wine_pe_cxx" >/dev/null 2>&1
+             then
+                 AS_VAR_SET([${wine_arch}_CXX],[$wine_pe_cxx])
+             else
+                 AS_VAR_COPY([${wine_arch}_CXX],[${wine_arch}_CC])
+             fi],
+            [AS_VAR_COPY([${wine_arch}_CXX],[${wine_arch}_CC])])])
     AS_VAR_SET_IF([${wine_arch}_CXXFLAGS],[],[AS_VAR_COPY([${wine_arch}_CXXFLAGS],[${wine_arch}_CFLAGS])])
     AS_VAR_COPY([CC],[${wine_arch}_CC])
     AS_VAR_COPY([CXX],[${wine_arch}_CXX])
