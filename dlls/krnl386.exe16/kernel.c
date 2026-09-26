@@ -387,7 +387,15 @@ void WINAPI DebugBreak16( I386_CONTEXT *context )
     rec.ExceptionRecord  = NULL;
     rec.ExceptionAddress = (LPVOID)context->Eip;
     rec.NumberParameters = 0;
-    NtRaiseException( &rec, context, TRUE );
+#ifdef __i386__
+    NtRaiseException( &rec, (CONTEXT *)context, TRUE );
+#else
+    /*
+     * On non-i386 hosts the guest register frame lives in the WoW CPU area;
+     * raising through the native dispatcher preserves that separation.
+     */
+    RtlRaiseException( &rec );
+#endif
 }
 
 /***********************************************************************
