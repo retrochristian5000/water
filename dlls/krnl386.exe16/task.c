@@ -616,7 +616,7 @@ void WINAPI ExitKernel16(void)
  *
  * Called by the application startup code.
  */
-void WINAPI InitTask16( CONTEXT *context )
+void WINAPI InitTask16( I386_CONTEXT *context )
 {
     TDB *pTask;
     INSTANCEDATA *pinstance;
@@ -1136,7 +1136,7 @@ void WINAPI SwitchStackTo16( WORD seg, WORD ptr, WORD top )
 /***********************************************************************
  *           SwitchStackBack   (KERNEL.109)
  */
-void WINAPI SwitchStackBack16( CONTEXT *context )
+void WINAPI SwitchStackBack16( I386_CONTEXT *context )
 {
     STACK16FRAME *oldFrame, *newFrame;
     INSTANCEDATA *pData;
