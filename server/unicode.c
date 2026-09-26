@@ -295,13 +295,25 @@ static char *get_nls_dir(void)
     }
 #elif defined(__APPLE__)
     uint32_t dir_size = PATH_MAX;
+
     dir = malloc( dir_size );
-    if (dir)
+    if (dir && _NSGetExecutablePath( dir, &dir_size ))
     {
-        if (_NSGetExecutablePath( dir, &dir_size ))
+        char *new_dir;
+
+        if (!(new_dir = realloc( dir, dir_size )))
         {
             free( dir );
             dir = NULL;
+        }
+        else
+        {
+            dir = new_dir;
+            if (_NSGetExecutablePath( dir, &dir_size ))
+            {
+                free( dir );
+                dir = NULL;
+            }
         }
     }
 #else
@@ -322,6 +334,26 @@ static char *get_nls_dir(void)
     ret = build_relative_path( dir, BINDIR, DATADIR "/wine/nls" );
     free( dir );
     return ret;
+}
+
+static int validate_casemap_table( const unsigned short *table, unsigned int size )
+{
+    unsigned int i, j, offset;
+
+    if (size < 256) return 0;
+
+    for (i = 0; i < 256; i++)
+    {
+        offset = table[i];
+        if (offset > size - 16) return 0;
+
+        for (j = 0; j < 16; j++)
+        {
+            unsigned int next = table[offset + j];
+            if (next > size - 16) return 0;
+        }
+    }
+    return 1;
 }
 
 /* load the case mapping table */
@@ -363,6 +395,7 @@ struct fd *load_intl_file(void)
     /* read lowercase table */
     if (!(casemap = malloc( size * 2 ))) goto failed;
     if (pread( unix_fd, casemap, size * 2, offset * 2 ) != size * 2) goto failed;
+    if (!validate_casemap_table( casemap, size )) goto failed;
     free( path );
     return fd;
 
