@@ -23,6 +23,7 @@ SOURCES = \
 	ioports.c \
 	kernel.c \
 	local.c \
+	msdos.c \
 	ne_module.c \
 	ne_segment.c \
 	registry.c \
