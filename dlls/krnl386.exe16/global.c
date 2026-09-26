@@ -537,7 +537,7 @@ BOOL16 WINAPI GlobalUnlock16(
  * *all* registers, even AX/DX !
  *
  */
-void WINAPI GlobalChangeLockCount16( HGLOBAL16 handle, INT16 delta, CONTEXT *context )
+void WINAPI GlobalChangeLockCount16( HGLOBAL16 handle, INT16 delta, I386_CONTEXT *context )
 {
     if ( delta == 1 )
         GlobalLock16( handle );
