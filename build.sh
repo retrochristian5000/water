@@ -333,7 +333,9 @@ darwin_sdkroot()
     esac
 
     if [ -n "${SDKROOT:-}" ] && [ -d "$SDKROOT" ]; then
-        printf '%s\n' "$SDKROOT"
+        sdkroot=$(cd "$SDKROOT" 2>/dev/null && pwd -P) ||
+            die "could not canonicalize macOS SDK root '$SDKROOT'"
+        printf '%s\n' "$sdkroot"
         return 0
     fi
 
