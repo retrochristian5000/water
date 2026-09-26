@@ -1,7 +1,7 @@
    1 stub WEP
    2 stub OleDelete
-   3 stdcall OleSaveToStream(ptr ptr)
-   4 stdcall OleLoadFromStream(ptr str ptr long str ptr)
+   3 stdcall OleSaveToStream(ptr ptr) OLECLI32_OleSaveToStream
+   4 stdcall OleLoadFromStream(ptr str ptr long str ptr) OLECLI32_OleLoadFromStream
    6 stub OleClone
    7 stub OleCopyFromLink
    8 stub OleEqual
@@ -30,11 +30,11 @@
   31 stub OleQueryOutOfDate
   32 stub OleObjectConvert
   33 stub OleCreateFromTemplate
-  34 stdcall OleCreate(str ptr str long str ptr long long)
+  34 stdcall OleCreate(str ptr str long str ptr long long) OLECLI32_OleCreate
   35 stub OleQueryReleaseStatus
   36 stub OleQueryReleaseError
   37 stub OleQueryReleaseMethod
-  38 stdcall OleCreateFromFile(str ptr str str long str ptr long long)
+  38 stdcall OleCreateFromFile(str ptr str str long str ptr long long) OLECLI32_OleCreateFromFile
   39 stub OleCreateLinkFromFile
   40 stub OleRelease
   41 stdcall OleRegisterClientDoc(str str long ptr)

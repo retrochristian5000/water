@@ -95,7 +95,7 @@ static OLESTATUS unsupported_object_creation(_LPOLEOBJECT *object)
 /******************************************************************************
  *              OleSaveToStream        [OLECLI32.3]
  */
-OLESTATUS WINAPI OleSaveToStream(_LPOLEOBJECT object, struct _OLESTREAM *stream)
+OLESTATUS WINAPI OLECLI32_OleSaveToStream(_LPOLEOBJECT object, struct _OLESTREAM *stream)
 {
     if (!object || !object->lpvtbl || !object->lpvtbl->SaveToStream)
         return OLE_ERROR_OBJECT;
@@ -108,7 +108,7 @@ OLESTATUS WINAPI OleSaveToStream(_LPOLEOBJECT object, struct _OLESTREAM *stream)
 /******************************************************************************
  *              OleLoadFromStream      [OLECLI32.4]
  */
-OLESTATUS WINAPI OleLoadFromStream(struct _OLESTREAM *stream, LPCSTR protocol,
+OLESTATUS WINAPI OLECLI32_OleLoadFromStream(struct _OLESTREAM *stream, LPCSTR protocol,
                                    LPOLECLIENT client, LHCLIENTDOC clientdoc,
                                    LPCSTR object_name, _LPOLEOBJECT *object)
 {
@@ -121,7 +121,7 @@ OLESTATUS WINAPI OleLoadFromStream(struct _OLESTREAM *stream, LPCSTR protocol,
 /******************************************************************************
  *              OleCreate              [OLECLI32.34]
  */
-OLESTATUS WINAPI OleCreate(LPCSTR protocol, LPOLECLIENT client, LPCSTR class_name,
+OLESTATUS WINAPI OLECLI32_OleCreate(LPCSTR protocol, LPOLECLIENT client, LPCSTR class_name,
                            LHCLIENTDOC clientdoc, LPCSTR object_name,
                            _LPOLEOBJECT *object, OLEOPT_RENDER render,
                            OLECLIPFORMAT format)
@@ -136,7 +136,7 @@ OLESTATUS WINAPI OleCreate(LPCSTR protocol, LPOLECLIENT client, LPCSTR class_nam
 /******************************************************************************
  *              OleCreateFromFile      [OLECLI32.38]
  */
-OLESTATUS WINAPI OleCreateFromFile(LPCSTR protocol, LPOLECLIENT client,
+OLESTATUS WINAPI OLECLI32_OleCreateFromFile(LPCSTR protocol, LPOLECLIENT client,
                                    LPCSTR class_name, LPCSTR filename,
                                    LHCLIENTDOC clientdoc, LPCSTR object_name,
                                    _LPOLEOBJECT *object, OLEOPT_RENDER render,
