@@ -17,6 +17,7 @@ WATER_WIN64|Build behavior|Win64-only build|choice|auto|auto,y,n|
 WATER_TESTS|Build behavior|Regression tests|choice|auto|auto,y,n|
 WATER_BUILD_ID|Build behavior|Build ID sections|choice|auto|auto,y,n|
 WATER_NINJA|Build behavior|Generate/prefer Ninja files|choice|auto|auto,y,n|
+WATER_KEEP_GOING|Build behavior|Keep independent jobs running after errors|bool|y||
 WATER_MAINTAINER_MODE|Build behavior|Maintainer mode|choice|auto|auto,y,n|
 WATER_SAST|Build behavior|Clang static analysis / SAST|choice|auto|auto,y,n|
 WATER_SILENT_RULES|Build behavior|Silent build rules|choice|auto|auto,y,n|
