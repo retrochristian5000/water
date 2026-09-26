@@ -57,6 +57,18 @@ static void (WINAPI *pSysFreeString)(BSTR);
  */
 #define EQ_DOUBLE(a,b)     (fabs((a)-(b)) / (1.0+fabs(a)+fabs(b)) < 1e-14)
 
+static double make_nan(void)
+{
+    union
+    {
+        double d;
+        ULONG64 bits;
+    } value;
+
+    value.bits = ((ULONG64)0x7ff80000 << 32);
+    return value.d;
+}
+
 static HMODULE hOleaut32;
 
 /* Has I8/UI8 data type? */
@@ -522,6 +534,8 @@ static void test_VarI1FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarI1FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarI1FromR8, -129.0); EXPECT_OVERFLOW;
   CONVERT(VarI1FromR8, -128.51); EXPECT_OVERFLOW;
   CONVERT(VarI1FromR8, -128.5); EXPECT(-128);
@@ -547,6 +561,8 @@ static void test_VarI1FromR8(void)
 static void test_VarI1FromDate(void)
 {
   CONVVARS(DATE);
+
+  CONVERT(VarI1FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarI1FromDate, -129.0); EXPECT_OVERFLOW;
   CONVERT(VarI1FromDate, -128.0); EXPECT(-128);
@@ -759,6 +775,8 @@ static void test_VarUI1FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarUI1FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarUI1FromR8, -1.0);  EXPECT_OVERFLOW;
   CONVERT(VarUI1FromR8, -0.51);  EXPECT_OVERFLOW;
   CONVERT(VarUI1FromR8, -0.5);   EXPECT(0);
@@ -783,6 +801,8 @@ static void test_VarUI1FromR8(void)
 static void test_VarUI1FromDate(void)
 {
   CONVVARS(DATE);
+
+  CONVERT(VarUI1FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarUI1FromDate, -1.0);  EXPECT_OVERFLOW;
   CONVERT(VarUI1FromDate, 0.0);   EXPECT(0);
@@ -1051,6 +1071,8 @@ static void test_VarI2FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarI2FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarI2FromR8, -32769.0); EXPECT_OVERFLOW;
   CONVERT(VarI2FromR8, -32768.51); EXPECT_OVERFLOW;
   CONVERT(VarI2FromR8, -32768.5); EXPECT(-32768);
@@ -1077,6 +1099,8 @@ static void test_VarI2FromR8(void)
 static void test_VarI2FromDate(void)
 {
   CONVVARS(DATE);
+
+  CONVERT(VarI2FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarI2FromDate, -32769.0); EXPECT_OVERFLOW;
   CONVERT(VarI2FromDate, -32768.0); EXPECT(-32768);
@@ -1291,6 +1315,8 @@ static void test_VarUI2FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarUI2FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarUI2FromR8, -1.0);    EXPECT_OVERFLOW;
   CONVERT(VarUI2FromR8, -0.51);    EXPECT_OVERFLOW;
   CONVERT(VarUI2FromR8, -0.5);     EXPECT(0);
@@ -1315,6 +1341,8 @@ static void test_VarUI2FromR8(void)
 static void test_VarUI2FromDate(void)
 {
   CONVVARS(DATE);
+
+  CONVERT(VarUI2FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarUI2FromDate, -1.0);    EXPECT_OVERFLOW;
   CONVERT(VarUI2FromDate, 0.0);     EXPECT(0);
@@ -1519,6 +1547,8 @@ static void test_VarI4FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarI4FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarI4FromR8, -2147483649.0); EXPECT_OVERFLOW;
   CONVERT(VarI4FromR8, -2147483648.51); EXPECT_OVERFLOW;
   CONVERT(VarI4FromR8, -2147483648.5); EXPECT(-2147483647 - 1);
@@ -1544,6 +1574,8 @@ static void test_VarI4FromR8(void)
 static void test_VarI4FromDate(void)
 {
   CONVVARS(DATE);
+
+  CONVERT(VarI4FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarI4FromDate, -2147483649.0); EXPECT_OVERFLOW;
   CONVERT(VarI4FromDate, -2147483648.0); EXPECT(-2147483647 - 1);
@@ -1754,6 +1786,8 @@ static void test_VarUI4FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarUI4FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarUI4FromR8, -1.0);         EXPECT_OVERFLOW;
   CONVERT(VarUI4FromR4, -0.51f);       EXPECT_OVERFLOW;
   CONVERT(VarUI4FromR4, -0.5f);        EXPECT(0);
@@ -1776,7 +1810,9 @@ static void test_VarUI4FromR8(void)
 
 static void test_VarUI4FromDate(void)
 {
-  CONVVARS(DOUBLE);
+  CONVVARS(DATE);
+
+  CONVERT(VarUI4FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarUI4FromDate, -1.0);         EXPECT_OVERFLOW;
   CONVERT(VarUI4FromDate, 0.0);          EXPECT(0);
@@ -1946,6 +1982,8 @@ static void test_VarI8FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarI8FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarI8FromR8, -128.0); EXPECT(-128);
   CONVERT(VarI8FromR8, -1.0);   EXPECT(-1);
   CONVERT(VarI8FromR8, 0.0);    EXPECT(0);
@@ -1965,6 +2003,8 @@ static void test_VarI8FromR8(void)
 static void test_VarI8FromDate(void)
 {
   CONVVARS(DATE);
+
+  CONVERT(VarI8FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarI8FromDate, -128.0); EXPECT(-128);
   CONVERT(VarI8FromDate, -1.0);   EXPECT(-1);
@@ -2158,6 +2198,8 @@ static void test_VarUI8FromR8(void)
 {
   CONVVARS(DOUBLE);
 
+  CONVERT(VarUI8FromR8, make_nan()); EXPECT_OVERFLOW;
+
   CONVERT(VarUI8FromR8, -1.0);  EXPECT_OVERFLOW;
   CONVERT(VarUI8FromR8, 0.0);   EXPECT(0);
   CONVERT(VarUI8FromR8, 1.0);   EXPECT(1);
@@ -2176,6 +2218,8 @@ static void test_VarUI8FromR8(void)
 static void test_VarUI8FromDate(void)
 {
   CONVVARS(DATE);
+
+  CONVERT(VarUI8FromDate, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarUI8FromDate, -1.0);  EXPECT_OVERFLOW;
   CONVERT(VarUI8FromDate, 0.0);   EXPECT(0);
