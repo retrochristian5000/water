@@ -101,7 +101,13 @@ dnl active SDK the way /usr/bin/clang does.  Normalize SDKROOT to an absolute
 dnl SDK path so Apple Clang and standalone LLVM Clang see the same sysroot.
 case $host_os in
   darwin*)
-    if test -n "$SDKROOT" && test ! -d "$SDKROOT"
+    if test -n "$SDKROOT" && test -d "$SDKROOT"
+    then
+        wine_sdkroot=`cd "$SDKROOT" 2>/dev/null && pwd -P`
+        test -n "$wine_sdkroot" ||
+            AC_MSG_ERROR([could not canonicalize macOS SDK root '$SDKROOT'])
+        SDKROOT=$wine_sdkroot
+    elif test -n "$SDKROOT"
     then
         if command -v xcrun >/dev/null 2>&1
         then
@@ -112,7 +118,7 @@ case $host_os in
         else
             AC_MSG_ERROR([macOS SDK '$SDKROOT' is not a directory and xcrun is unavailable])
         fi
-    elif test -z "$SDKROOT" && command -v xcrun >/dev/null 2>&1
+    elif command -v xcrun >/dev/null 2>&1
     then
         SDKROOT=`xcrun --sdk macosx --show-sdk-path 2>/dev/null`
     fi
