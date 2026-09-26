@@ -854,10 +854,7 @@ bootstrap_llvm()
             llvm_ninja_generator=1
         fi
     else
-        ninja_cmd=${NINJA_CMD:-${NINJA:-}}
-        if [ -z "$ninja_cmd" ]; then
-            ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
-        fi
+        ninja_cmd=$(find_existing_ninja)
         if [ -n "$ninja_cmd" ]; then
             set -- "$@" -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
             llvm_ninja_generator=1
@@ -1380,10 +1377,7 @@ run_build()
     jobs=$(detect_jobs)
 
     if [ -f "$BUILD_DIR/build.ninja" ]; then
-        ninja_cmd=${NINJA_CMD:-${NINJA:-}}
-        if [ -z "$ninja_cmd" ]; then
-            ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
-        fi
+        ninja_cmd=$(find_existing_ninja)
         [ -n "$ninja_cmd" ] || die "build.ninja exists but Ninja was not found"
         if [ "$WATER_KEEP_GOING" = y ] || [ "$WATER_KEEP_GOING" = 1 ]; then
             "$ninja_cmd" -C "$BUILD_DIR" -j "$jobs" -k 0 "$@"
