@@ -2125,6 +2125,24 @@ static void test_VarI8ChangeTypeEx(void)
 
   INITIAL_TYPETESTI8(VT_I8, V_I8);
   COMMON_TYPETEST;
+
+  VariantInit(&vSrc);
+  VariantInit(&vDst);
+  V_VT(&vSrc) = VT_I8;
+
+  V_I8(&vSrc) = 65535;
+  hres = VariantChangeTypeEx(&vDst, &vSrc, 0, 0, VT_UI2);
+  ok(hres == S_OK && V_VT(&vDst) == VT_UI2 && V_UI2(&vDst) == 65535,
+     "I8 65535 -> UI2 returned %#lx, type %u, value %u\n",
+     hres, V_VT(&vDst), V_UI2(&vDst));
+
+  V_I8(&vSrc) = 65536;
+  hres = VariantChangeTypeEx(&vDst, &vSrc, 0, 0, VT_UI2);
+  ok(hres == DISP_E_OVERFLOW, "I8 65536 -> UI2 returned %#lx\n", hres);
+
+  V_I8(&vSrc) = -1;
+  hres = VariantChangeTypeEx(&vDst, &vSrc, 0, 0, VT_UI2);
+  ok(hres == DISP_E_OVERFLOW, "I8 -1 -> UI2 returned %#lx\n", hres);
 }
 
 /* Adapt the test macros to UI8 */
@@ -2344,6 +2362,20 @@ static void test_VarUI8ChangeTypeEx(void)
 
   INITIAL_TYPETESTI8(VT_UI8, V_UI8);
   COMMON_TYPETEST;
+
+  VariantInit(&vSrc);
+  VariantInit(&vDst);
+  V_VT(&vSrc) = VT_UI8;
+
+  V_UI8(&vSrc) = 65535;
+  hres = VariantChangeTypeEx(&vDst, &vSrc, 0, 0, VT_UI2);
+  ok(hres == S_OK && V_VT(&vDst) == VT_UI2 && V_UI2(&vDst) == 65535,
+     "UI8 65535 -> UI2 returned %#lx, type %u, value %u\n",
+     hres, V_VT(&vDst), V_UI2(&vDst));
+
+  V_UI8(&vSrc) = 65536;
+  hres = VariantChangeTypeEx(&vDst, &vSrc, 0, 0, VT_UI2);
+  ok(hres == DISP_E_OVERFLOW, "UI8 65536 -> UI2 returned %#lx\n", hres);
 }
 
 /*
