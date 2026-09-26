@@ -97,23 +97,6 @@ static BOOL has_extension( const char *list, const char *ext )
     return FALSE;
 }
 
-static void dump_extensions( const char *list )
-{
-    const char *start, *end, *ptr;
-
-    for (start = end = ptr = list; ptr; ptr = strchr( ptr + 1, ' ' ))
-    {
-        if (ptr - start <= 128) end = ptr;
-        else
-        {
-            TRACE( "%.*s\n", (int)(end - start), start );
-            start = end + 1;
-        }
-    }
-
-    TRACE( "%s\n", start );
-}
-
 void *opengl_drawable_create( UINT size, const struct opengl_drawable_funcs *funcs, int format, struct client_surface *client )
 {
     struct opengl_drawable *drawable;
@@ -274,6 +257,23 @@ static void make_client_context_current(void)
 }
 
 #ifdef SONAME_LIBEGL
+
+static void dump_extensions( const char *list )
+{
+    const char *start, *end, *ptr;
+
+    for (start = end = ptr = list; ptr; ptr = strchr( ptr + 1, ' ' ))
+    {
+        if (ptr - start <= 128) end = ptr;
+        else
+        {
+            TRACE( "%.*s\n", (int)(end - start), start );
+            start = end + 1;
+        }
+    }
+
+    TRACE( "%s\n", start );
+}
 
 struct framebuffer_surface
 {
