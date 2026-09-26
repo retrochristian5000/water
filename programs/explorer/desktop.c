@@ -346,8 +346,9 @@ static WCHAR *build_title( const WCHAR *filename, int len )
     WCHAR *ret;
 
     if (len == -1) len = lstrlenW( filename );
-    for (p = filename + len - 1; p >= filename; p--)
+    for (p = filename + len; p > filename;)
     {
+        --p;
         if (*p == '.')
         {
             len = p - filename;
