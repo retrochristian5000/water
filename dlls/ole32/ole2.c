@@ -2472,6 +2472,9 @@ static HRESULT ole_create_configure_formats(IUnknown *object, ULONG count, DWORD
     if (!(cookies = calloc(count, sizeof(*cookies))))
         return E_OUTOFMEMORY;
 
+    if (sink && connections)
+        memset(connections, 0, count * sizeof(*connections));
+
     if (sink)
     {
         IDataObject *data;
