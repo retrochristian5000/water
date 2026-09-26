@@ -171,6 +171,7 @@ static BOOL validate_locale_nls( const struct locale_nls_header *header, SIZE_T 
     if (!nls_range_valid( table_size, table->lcids_offset, table->nb_lcids, sizeof(*lcids) ) ||
         !nls_range_valid( table_size, table->lcnames_offset, table->nb_lcnames, sizeof(*lcnames) ) ||
         !nls_range_valid( table_size, table->locales_offset, table->nb_locales, table->locale_size ) ||
+        (table->nb_calendars && !table->calendar_size) ||
         !nls_range_valid( table_size, table->calendars_offset, table->nb_calendars, table->calendar_size ) ||
         table->strings_offset > table_size) return FALSE;
 
@@ -320,7 +321,7 @@ void locale_init(void)
     }
 
     status = NtGetNlsSectionPtr( NLS_SECTION_CASEMAP, 0, NULL, &case_ptr, &size );
-    if (status || !validate_casemap_section( case_ptr, size ))
+    if (status || !case_ptr || !validate_casemap_section( case_ptr, size ))
     {
         ERR( "failed to load valid NLS casemap table, status %lx\n", status );
         case_ptr = NULL;
@@ -336,7 +337,7 @@ void locale_init(void)
         void *ptr = NULL;
 
         status = NtGetNlsSectionPtr( NLS_SECTION_CODEPAGE, ansi_cp, NULL, &ptr, &size );
-        if (!status && validate_codepage_section( ptr, size ))
+        if (!status && ptr && validate_codepage_section( ptr, size ))
         {
             ansi_ptr = ptr;
             NtCurrentTeb()->Peb->AnsiCodePageData = ansi_ptr;
@@ -353,7 +354,7 @@ void locale_init(void)
         void *ptr = NULL;
 
         status = NtGetNlsSectionPtr( NLS_SECTION_CODEPAGE, oem_cp, NULL, &ptr, &size );
-        if (!status && validate_codepage_section( ptr, size ))
+        if (!status && ptr && validate_codepage_section( ptr, size ))
         {
             oem_ptr = ptr;
             NtCurrentTeb()->Peb->OemCodePageData = oem_ptr;
