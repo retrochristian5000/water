@@ -29,6 +29,7 @@
  */
 
 #include <stdarg.h>
+#include <string.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -45,108 +46,126 @@ WINE_DEFAULT_DEBUG_CHANNEL(vxd);
 #define IFS_IOCTL_GET_RES           102
 #define IFS_IOCTL_GET_NETPRO_NAME_A 103
 
-struct win32apireq {
-        unsigned long   ar_proid;
-        unsigned long   ar_eax;
-        unsigned long   ar_ebx;
-        unsigned long   ar_ecx;
-        unsigned long   ar_edx;
-        unsigned long   ar_esi;
-        unsigned long   ar_edi;
-        unsigned long   ar_ebp;
-        unsigned short  ar_error;
-        unsigned short  ar_pad;
+/*
+ * Windows 9x passes an x86 register packet here.  Keep the packet fixed-width
+ * and independent of the architecture used to build Water.
+ */
+struct win32apireq
+{
+    DWORD ar_proid;
+    DWORD ar_eax;
+    DWORD ar_ebx;
+    DWORD ar_ecx;
+    DWORD ar_edx;
+    DWORD ar_esi;
+    DWORD ar_edi;
+    DWORD ar_ebp;
+    WORD  ar_error;
+    WORD  ar_pad;
 };
 
-static void win32apieq_2_CONTEXT(const struct win32apireq *pIn, CONTEXT *pCxt)
+static void win32apireq_to_i386_context(const struct win32apireq *request,
+                                        I386_CONTEXT *context)
 {
-        memset(pCxt,0,sizeof(*pCxt));
+    memset(context, 0, sizeof(*context));
 
-        pCxt->ContextFlags=CONTEXT_INTEGER|CONTEXT_CONTROL;
-        pCxt->Eax = pIn->ar_eax;
-        pCxt->Ebx = pIn->ar_ebx;
-        pCxt->Ecx = pIn->ar_ecx;
-        pCxt->Edx = pIn->ar_edx;
-        pCxt->Esi = pIn->ar_esi;
-        pCxt->Edi = pIn->ar_edi;
+    context->ContextFlags = CONTEXT_I386_INTEGER | CONTEXT_I386_CONTROL;
+    context->Eax = request->ar_eax;
+    context->Ebx = request->ar_ebx;
+    context->Ecx = request->ar_ecx;
+    context->Edx = request->ar_edx;
+    context->Esi = request->ar_esi;
+    context->Edi = request->ar_edi;
 
-        /* FIXME: Only partial CONTEXT_CONTROL */
-        pCxt->Ebp = pIn->ar_ebp;
-
-        /* FIXME: pIn->ar_proid ignored */
-        /* FIXME: pIn->ar_error ignored */
-        /* FIXME: pIn->ar_pad ignored */
+    /* The VxD packet only exposes part of the x86 control state. */
+    context->Ebp = request->ar_ebp;
 }
 
-static void CONTEXT_2_win32apieq(const CONTEXT *pCxt, struct win32apireq *pOut)
+static void i386_context_to_win32apireq(const I386_CONTEXT *context,
+                                        const struct win32apireq *request,
+                                        struct win32apireq *reply)
 {
-        memset(pOut,0,sizeof(struct win32apireq));
+    /*
+     * proid/error/pad are packet metadata, not CPU registers. Preserve them
+     * unless a service grows explicit handling for those fields.
+     */
+    *reply = *request;
 
-        pOut->ar_eax = pCxt->Eax;
-        pOut->ar_ebx = pCxt->Ebx;
-        pOut->ar_ecx = pCxt->Ecx;
-        pOut->ar_edx = pCxt->Edx;
-        pOut->ar_esi = pCxt->Esi;
-        pOut->ar_edi = pCxt->Edi;
-
-        /* FIXME: Only partial CONTEXT_CONTROL */
-        pOut->ar_ebp = pCxt->Ebp;
-
-        /* FIXME: pOut->ar_proid ignored */
-        /* FIXME: pOut->ar_error ignored */
-        /* FIXME: pOut->ar_pad ignored */
+    reply->ar_eax = context->Eax;
+    reply->ar_ebx = context->Ebx;
+    reply->ar_ecx = context->Ecx;
+    reply->ar_edx = context->Edx;
+    reply->ar_esi = context->Esi;
+    reply->ar_edi = context->Edi;
+    reply->ar_ebp = context->Ebp;
 }
 
-extern void WINAPI __wine_call_int_handler16( BYTE intnum, CONTEXT *context );
+/*
+ * The interrupt dispatcher consumes guest x86 register state.  This is not the
+ * host exception CONTEXT on ARM/ARM64.
+ */
+extern void WINAPI __wine_call_int_handler16(BYTE intnum, I386_CONTEXT *context);
 
 /***********************************************************************
  *           DeviceIoControl   (IFSMGR.VXD.@)
  */
 BOOL WINAPI IFSMGR_DeviceIoControl(DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuffer,
-                                  LPVOID lpvOutBuffer, DWORD cbOutBuffer,
-                                  LPDWORD lpcbBytesReturned,
-                                  LPOVERLAPPED lpOverlapped)
+                                   LPVOID lpvOutBuffer, DWORD cbOutBuffer,
+                                   LPDWORD lpcbBytesReturned,
+                                   LPOVERLAPPED lpOverlapped)
 {
-    TRACE("(%ld,%p,%ld,%p,%ld,%p,%p): stub\n",
-          dwIoControlCode, lpvInBuffer,cbInBuffer, lpvOutBuffer,cbOutBuffer,
-          lpcbBytesReturned, lpOverlapped);
+    TRACE("(%u,%p,%u,%p,%u,%p,%p)\n",
+          (unsigned int)dwIoControlCode, lpvInBuffer, (unsigned int)cbInBuffer,
+          lpvOutBuffer, (unsigned int)cbOutBuffer, lpcbBytesReturned, lpOverlapped);
+
+    if (lpcbBytesReturned) *lpcbBytesReturned = 0;
 
     switch (dwIoControlCode)
     {
     case IFS_IOCTL_21:
     case IFS_IOCTL_2F:
         {
-            CONTEXT cxt;
-            struct win32apireq *pIn=lpvInBuffer;
-            struct win32apireq *pOut=lpvOutBuffer;
+            I386_CONTEXT context;
+            const struct win32apireq *request = lpvInBuffer;
+            struct win32apireq *reply = lpvOutBuffer;
 
-            TRACE( "Control '%s': "
-                   "proid=0x%08lx, eax=0x%08lx, ebx=0x%08lx, ecx=0x%08lx, "
-                   "edx=0x%08lx, esi=0x%08lx, edi=0x%08lx, ebp=0x%08lx, "
-                   "error=0x%04x, pad=0x%04x\n",
-                   (dwIoControlCode==IFS_IOCTL_21)?"IFS_IOCTL_21":"IFS_IOCTL_2F",
-                   pIn->ar_proid, pIn->ar_eax, pIn->ar_ebx, pIn->ar_ecx,
-                   pIn->ar_edx, pIn->ar_esi, pIn->ar_edi, pIn->ar_ebp,
-                   pIn->ar_error, pIn->ar_pad );
+            if (!request || cbInBuffer < sizeof(*request) ||
+                !reply || cbOutBuffer < sizeof(*reply))
+            {
+                SetLastError(ERROR_INSUFFICIENT_BUFFER);
+                return FALSE;
+            }
 
-            win32apieq_2_CONTEXT(pIn,&cxt);
+            TRACE("Control '%s': "
+                  "proid=0x%08x, eax=0x%08x, ebx=0x%08x, ecx=0x%08x, "
+                  "edx=0x%08x, esi=0x%08x, edi=0x%08x, ebp=0x%08x, "
+                  "error=0x%04x, pad=0x%04x\n",
+                  (dwIoControlCode == IFS_IOCTL_21) ? "IFS_IOCTL_21" : "IFS_IOCTL_2F",
+                  (unsigned int)request->ar_proid, (unsigned int)request->ar_eax,
+                  (unsigned int)request->ar_ebx, (unsigned int)request->ar_ecx,
+                  (unsigned int)request->ar_edx, (unsigned int)request->ar_esi,
+                  (unsigned int)request->ar_edi, (unsigned int)request->ar_ebp,
+                  request->ar_error, request->ar_pad);
 
-            if(dwIoControlCode==IFS_IOCTL_21)
-                __wine_call_int_handler16( 0x21, &cxt );
-            else
-                __wine_call_int_handler16( 0x2f, &cxt );
+            win32apireq_to_i386_context(request, &context);
+            __wine_call_int_handler16(dwIoControlCode == IFS_IOCTL_21 ? 0x21 : 0x2f,
+                                      &context);
+            i386_context_to_win32apireq(&context, request, reply);
 
-            CONTEXT_2_win32apieq(&cxt,pOut);
+            if (lpcbBytesReturned) *lpcbBytesReturned = sizeof(*reply);
             return TRUE;
         }
+
     case IFS_IOCTL_GET_RES:
-        FIXME( "Control 'IFS_IOCTL_GET_RES' not implemented\n");
+        FIXME("Control 'IFS_IOCTL_GET_RES' not implemented\n");
         return FALSE;
+
     case IFS_IOCTL_GET_NETPRO_NAME_A:
-        FIXME( "Control 'IFS_IOCTL_GET_NETPRO_NAME_A' not implemented\n");
+        FIXME("Control 'IFS_IOCTL_GET_NETPRO_NAME_A' not implemented\n");
         return FALSE;
+
     default:
-        FIXME( "Control %ld not implemented\n", dwIoControlCode);
+        FIXME("Control %u not implemented\n", (unsigned int)dwIoControlCode);
         return FALSE;
     }
 }
