@@ -39,7 +39,7 @@ WINE_DECLARE_DEBUG_CHANNEL(io);
 #define SET_LOBYTE(dw,val)  ((dw) = ((dw) & 0xffffff00) | LOBYTE(val))
 #define ADD_LOWORD(dw,val)  ((dw) = ((dw) & 0xffff0000) | LOWORD((DWORD)(dw)+(val)))
 
-static inline void add_stack( CONTEXT *context, int offset )
+static inline void add_stack( I386_CONTEXT *context, int offset )
 {
     if (!ldt_is_32bit(context->SegSs))
         ADD_LOWORD( context->Esp, offset );
@@ -47,14 +47,14 @@ static inline void add_stack( CONTEXT *context, int offset )
         context->Esp += offset;
 }
 
-static inline void *make_ptr( CONTEXT *context, DWORD seg, DWORD off, int long_addr )
+static inline void *make_ptr( I386_CONTEXT *context, DWORD seg, DWORD off, int long_addr )
 {
     if (ldt_is_system(seg)) return (void *)off;
     if (!long_addr) off = LOWORD(off);
     return (char *) MapSL( MAKESEGPTR( seg, 0 ) ) + off;
 }
 
-static inline void *get_stack( CONTEXT *context )
+static inline void *get_stack( I386_CONTEXT *context )
 {
     return ldt_get_ptr( context->SegSs, context->Esp );
 }
@@ -88,7 +88,7 @@ static inline struct idtr get_idtr(void)
  *
  * See Undocumented Windows, Chapter 5, __0040.
  */
-static BOOL INSTR_ReplaceSelector( CONTEXT *context, WORD *sel )
+static BOOL INSTR_ReplaceSelector( I386_CONTEXT *context, WORD *sel )
 {
     if (*sel == 0x40)
     {
@@ -101,7 +101,7 @@ static BOOL INSTR_ReplaceSelector( CONTEXT *context, WORD *sel )
 
 
 /* store an operand into a register */
-static void store_reg_word( CONTEXT *context, BYTE regmodrm, const BYTE *addr, int long_op )
+static void store_reg_word( I386_CONTEXT *context, BYTE regmodrm, const BYTE *addr, int long_op )
 {
     switch((regmodrm >> 3) & 7)
     {
@@ -141,7 +141,7 @@ static void store_reg_word( CONTEXT *context, BYTE regmodrm, const BYTE *addr, i
 }
 
 /* store an operand into a byte register */
-static void store_reg_byte( CONTEXT *context, BYTE regmodrm, const BYTE *addr )
+static void store_reg_byte( I386_CONTEXT *context, BYTE regmodrm, const BYTE *addr )
 {
     switch((regmodrm >> 3) & 7)
     {
@@ -161,7 +161,7 @@ static void store_reg_byte( CONTEXT *context, BYTE regmodrm, const BYTE *addr )
  *
  * Return the address of an instruction operand (from the mod/rm byte).
  */
-static BYTE *INSTR_GetOperandAddr( CONTEXT *context, BYTE *instr,
+static BYTE *INSTR_GetOperandAddr( I386_CONTEXT *context, BYTE *instr,
                                    int long_addr, int segprefix, int *len )
 {
     int mod, rm, base = 0, index = 0, ss = 0, seg = 0, off;
@@ -319,7 +319,7 @@ static BYTE *INSTR_GetOperandAddr( CONTEXT *context, BYTE *instr,
  *
  * Emulate the LDS (and LES,LFS,etc.) instruction.
  */
-static BOOL INSTR_EmulateLDS( CONTEXT *context, BYTE *instr, int long_op,
+static BOOL INSTR_EmulateLDS( I386_CONTEXT *context, BYTE *instr, int long_op,
                               int long_addr, int segprefix, int *len )
 {
     WORD seg;
@@ -363,7 +363,7 @@ static BOOL INSTR_EmulateLDS( CONTEXT *context, BYTE *instr, int long_op,
  *
  * input on an I/O port
  */
-static DWORD INSTR_inport( WORD port, int size, CONTEXT *context )
+static DWORD INSTR_inport( WORD port, int size, I386_CONTEXT *context )
 {
     DWORD res = DOSVM_inport( port, size );
 
@@ -394,7 +394,7 @@ static DWORD INSTR_inport( WORD port, int size, CONTEXT *context )
  *
  * output on an I/O port
  */
-static void INSTR_outport( WORD port, int size, DWORD val, CONTEXT *context )
+static void INSTR_outport( WORD port, int size, DWORD val, I386_CONTEXT *context )
 {
     DOSVM_outport( port, size, val );
 
@@ -425,7 +425,7 @@ static void INSTR_outport( WORD port, int size, DWORD val, CONTEXT *context )
  * Emulate a privileged instruction.
  * Returns exception continuation status.
  */
-DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
+DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, I386_CONTEXT *context )
 {
     int prefix, segprefix, prefixlen, len, repX, long_op, long_addr;
     BYTE *instr;
@@ -868,12 +868,34 @@ DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
  * Vectored exception handler used to emulate protected instructions
  * from 32-bit code.
  */
+static I386_CONTEXT *get_exception_i386_context( EXCEPTION_POINTERS *ptrs )
+{
+#ifdef __i386__
+    return (I386_CONTEXT *)ptrs->ContextRecord;
+#elif defined(_WIN64)
+    USHORT machine = 0;
+    void *context = NULL, *context_ex = NULL;
+
+    /*
+     * The exception record belongs to the native host, but privileged Win16
+     * instructions execute in the emulated x86 CPU area on non-i386 hosts.
+     */
+    if (RtlWow64GetCurrentCpuArea( &machine, &context, &context_ex ) ||
+        machine != IMAGE_FILE_MACHINE_I386 || !context)
+        return NULL;
+
+    return context;
+#else
+    return NULL;
+#endif
+}
+
 LONG CALLBACK INSTR_vectored_handler( EXCEPTION_POINTERS *ptrs )
 {
     EXCEPTION_RECORD *record = ptrs->ExceptionRecord;
-    CONTEXT *context = ptrs->ContextRecord;
+    I386_CONTEXT *context = get_exception_i386_context( ptrs );
 
-    if (ldt_is_system(context->SegCs) &&
+    if (context && ldt_is_system(context->SegCs) &&
         (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
          record->ExceptionCode == EXCEPTION_PRIV_INSTRUCTION))
     {
@@ -887,7 +909,7 @@ LONG CALLBACK INSTR_vectored_handler( EXCEPTION_POINTERS *ptrs )
 /***********************************************************************
  *           DOS3Call         (KERNEL.102)
  */
-void WINAPI DOS3Call( CONTEXT *context )
+void WINAPI DOS3Call( I386_CONTEXT *context )
 {
     __wine_call_int_handler16( 0x21, context );
 }
@@ -896,7 +918,7 @@ void WINAPI DOS3Call( CONTEXT *context )
 /***********************************************************************
  *           NetBIOSCall      (KERNEL.103)
  */
-void WINAPI NetBIOSCall16( CONTEXT *context )
+void WINAPI NetBIOSCall16( I386_CONTEXT *context )
 {
     __wine_call_int_handler16( 0x5c, context );
 }
