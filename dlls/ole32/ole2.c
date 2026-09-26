@@ -2927,10 +2927,11 @@ HRESULT WINAPI OleCreateStaticFromData(IDataObject *data, REFIID iid, DWORD rend
     STGMEDIUM stgmedium;
     LPOLESTR ole_typename;
 
-    TRACE("%p, %s, %#lx, %p, %p, %p, %p.\n", data, debugstr_guid(iid), renderopt, fmt, client_site, stg, obj);
-
-    if (!obj || !stg)
+    if (!data || !iid || !stg || !obj)
         return E_INVALIDARG;
+    *obj = NULL;
+
+    TRACE("%p, %s, %#lx, %p, %p, %p, %p.\n", data, debugstr_guid(iid), renderopt, fmt, client_site, stg, obj);
 
     if (renderopt != OLERENDER_FORMAT)
     {
