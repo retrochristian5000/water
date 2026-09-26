@@ -1717,7 +1717,10 @@ static BOOL create_memory_pbuffer( HDC hdc )
         struct pbuffer *pbuffer;
 
         if (!(pbuffer = pbuffer_create( format, width, height, NULL )))
+        {
             WARN( "Failed to create pbuffer for memory DC %p\n", hdc );
+            ret = FALSE;
+        }
         else
         {
             TRACE( "Created pbuffer %p for memory DC %p\n", pbuffer, hdc );
