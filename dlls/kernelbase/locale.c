@@ -572,8 +572,8 @@ static BOOL load_sortdefault_nls(void)
     }
     else table = (UINT *)sort.compr_data;
 
-    if (table >= end || 1 + table[0] / 2 > (SIZE_T)(end - table)) goto invalid;
-    table += 1 + table[0] / 2;  /* skip multiple weights */
+    if (table >= end || 1 + (table[0] + 1) / 2 > (SIZE_T)(end - table)) goto invalid;
+    table += 1 + (table[0] + 1) / 2;  /* skip 2-byte pairs, padded to 4 bytes */
     if (table >= end || table[0] > ((const char *)end - (const char *)(table + 1)) / sizeof(*sort.jamo))
         goto invalid;
     sort.jamo = (struct jamo_sort *)(table + 1);
