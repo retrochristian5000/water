@@ -2996,7 +2996,7 @@ HRESULT WINAPI OleCreateStaticFromData(IDataObject *data, REFIID iid, DWORD rend
     hr = IOleObject_QueryInterface(ole_object, iid, obj);
 
 end:
-    if (stgmedium.tymed == TYMED_NULL)
+    if (stgmedium.tymed != TYMED_NULL)
         ReleaseStgMedium(&stgmedium);
     if (persist)
         IPersistStorage_Release(persist);
