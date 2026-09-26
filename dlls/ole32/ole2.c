@@ -2461,6 +2461,72 @@ HRESULT WINAPI OleTranslateAccelerator (LPOLEINPLACEFRAME lpFrame,
     return S_FALSE;
 }
 
+static HRESULT ole_create_configure_formats(IUnknown *object, ULONG count, DWORD *adv_flags,
+                                            FORMATETC *formats, IAdviseSink *sink,
+                                            DWORD *connections)
+{
+    DWORD *cookies;
+    HRESULT hr;
+    ULONG i;
+
+    if (!(cookies = calloc(count, sizeof(*cookies))))
+        return E_OUTOFMEMORY;
+
+    if (sink)
+    {
+        IDataObject *data;
+
+        hr = IUnknown_QueryInterface(object, &IID_IDataObject, (void **)&data);
+        if (FAILED(hr))
+        {
+            free(cookies);
+            return hr;
+        }
+
+        for (i = 0; i < count; ++i)
+        {
+            hr = IDataObject_DAdvise(data, &formats[i], adv_flags[i], sink, &cookies[i]);
+            if (FAILED(hr))
+                break;
+            if (connections)
+                connections[i] = cookies[i];
+        }
+
+        if (FAILED(hr))
+            while (i--)
+                IDataObject_DUnadvise(data, cookies[i]);
+
+        IDataObject_Release(data);
+    }
+    else
+    {
+        IOleCache *cache;
+
+        hr = IUnknown_QueryInterface(object, &IID_IOleCache, (void **)&cache);
+        if (FAILED(hr))
+        {
+            free(cookies);
+            return hr;
+        }
+
+        for (i = 0; i < count; ++i)
+        {
+            hr = IOleCache_Cache(cache, &formats[i], adv_flags[i], &cookies[i]);
+            if (FAILED(hr))
+                break;
+        }
+
+        if (FAILED(hr))
+            while (i--)
+                IOleCache_Uncache(cache, cookies[i]);
+
+        IOleCache_Release(cache);
+    }
+
+    free(cookies);
+    return hr;
+}
+
 /******************************************************************************
  *              OleCreate        [OLE32.@]
  *
@@ -2555,6 +2621,71 @@ HRESULT WINAPI OleCreate(
 
     TRACE("-- %p\n", pUnk);
     return hres;
+}
+
+/******************************************************************************
+ *              OleCreateEx        [OLE32.@]
+ */
+HRESULT WINAPI OleCreateEx(REFCLSID clsid, REFIID iid, DWORD flags, DWORD renderopt,
+        ULONG count, DWORD *adv_flags, FORMATETC *formats, IAdviseSink *sink,
+        DWORD *connections, IOleClientSite *client_site, IStorage *storage, void **obj)
+{
+    IUnknown *unk;
+    HRESULT hr;
+
+    TRACE("%s, %s, %#lx, %#lx, %lu, %p, %p, %p, %p, %p, %p, %p.\n",
+          debugstr_guid(clsid), debugstr_guid(iid), flags, renderopt, count, adv_flags,
+          formats, sink, connections, client_site, storage, obj);
+
+    if (!clsid || !iid || !storage || !obj)
+        return E_INVALIDARG;
+    *obj = NULL;
+
+    if (flags & ~OLECREATE_LEAVERUNNING)
+        return E_INVALIDARG;
+
+    if (renderopt == OLERENDER_FORMAT)
+    {
+        if (!count || !adv_flags || !formats)
+            return E_INVALIDARG;
+    }
+    else if (count || adv_flags || formats || sink)
+    {
+        return E_INVALIDARG;
+    }
+
+    if (renderopt != OLERENDER_FORMAT)
+    {
+        hr = OleCreate(clsid, iid, renderopt, NULL, client_site, storage, obj);
+        if (SUCCEEDED(hr) && (flags & OLECREATE_LEAVERUNNING))
+        {
+            unk = *obj;
+            hr = OleRun(unk);
+            if (FAILED(hr))
+            {
+                IUnknown_Release(unk);
+                *obj = NULL;
+            }
+        }
+        return hr;
+    }
+
+    hr = OleCreate(clsid, iid, OLERENDER_NONE, NULL, client_site, storage, obj);
+    if (FAILED(hr))
+        return hr;
+
+    unk = *obj;
+    hr = OleRun(unk);
+    if (SUCCEEDED(hr))
+        hr = ole_create_configure_formats(unk, count, adv_flags, formats, sink, connections);
+
+    if (FAILED(hr))
+    {
+        IUnknown_Release(unk);
+        *obj = NULL;
+    }
+
+    return hr;
 }
 
 /******************************************************************************
