@@ -67,7 +67,7 @@ typedef struct
     IImageList *icon_list;
     DWORD advise_cookie;
 
-    IShellWindows *sw;
+    IShellWindows *sw = NULL;
     LONG sw_cookie;
 } explorer_info;
 
@@ -419,8 +419,14 @@ static void make_explorer_window(parameters_struct *params)
     if (params->root[0])
     {
         size = GetFullPathNameW(params->root, 0, NULL, NULL);
-        path = malloc( size * sizeof(WCHAR) );
-        GetFullPathNameW(params->root, size, path, NULL);
+        if (!size || !(path = malloc(size * sizeof(WCHAR))) ||
+            !GetFullPathNameW(params->root, size, path, NULL))
+        {
+            ERR("Failed to resolve explorer path %s.\n", debugstr_w(params->root));
+            free(path);
+            if (sw) IShellWindows_Release(sw);
+            return;
+        }
     }
 
     if (sw && path)
@@ -469,7 +475,7 @@ static void make_explorer_window(parameters_struct *params)
     if(!info)
     {
         ERR( "Could not allocate an explorer_info struct\n" );
-        IShellWindows_Release(sw);
+        if (sw) IShellWindows_Release(sw);
         free(path);
         return;
     }
@@ -479,7 +485,7 @@ static void make_explorer_window(parameters_struct *params)
     {
         ERR( "Could not obtain an instance of IExplorerBrowser\n" );
         free(info);
-        IShellWindows_Release(sw);
+        if (sw) IShellWindows_Release(sw);
         free(path);
         return;
     }
@@ -488,20 +494,42 @@ static void make_explorer_window(parameters_struct *params)
         = CreateWindowW(L"ExplorerWClass",explorer_title,WS_OVERLAPPEDWINDOW,
                         CW_USEDEFAULT,CW_USEDEFAULT,default_width,
                         default_height,NULL,NULL,explorer_hInstance,NULL);
-
-    if (sw)
+    if (!info->main_window)
     {
-        IShellWindows_Register(sw, NULL, (LONG_PTR)info->main_window, SWC_EXPLORER, &info->sw_cookie);
-        info->sw = sw;
+        ERR("Could not create explorer window.\n");
+        IExplorerBrowser_Release(info->browser);
+        free(info);
+        if (sw) IShellWindows_Release(sw);
+        free(path);
+        return;
     }
 
     fs.ViewMode = FVM_DETAILS;
     fs.fFlags = FWF_AUTOARRANGE;
 
     SetRect(&rect, 0, 0, default_width, default_height);
-    IExplorerBrowser_Initialize(info->browser,info->main_window,&rect,&fs);
+    hres = IExplorerBrowser_Initialize(info->browser,info->main_window,&rect,&fs);
+    if (FAILED(hres))
+    {
+        ERR("Could not initialize IExplorerBrowser, hr %#lx.\n", hres);
+        DestroyWindow(info->main_window);
+        IExplorerBrowser_Release(info->browser);
+        free(info);
+        if (sw) IShellWindows_Release(sw);
+        free(path);
+        return;
+    }
     IExplorerBrowser_SetOptions(info->browser,EBO_SHOWFRAMES);
     SetWindowLongPtrW(info->main_window,EXPLORER_INFO_INDEX,(LONG_PTR)info);
+
+    if (sw)
+    {
+        hres = IShellWindows_Register(sw, NULL, (LONG_PTR)info->main_window, SWC_EXPLORER, &info->sw_cookie);
+        if (SUCCEEDED(hres))
+            info->sw = sw;
+        else
+            IShellWindows_Release(sw);
+    }
 
     /*setup navbar*/
     rebar = CreateWindowExW(WS_EX_TOOLWINDOW,REBARCLASSNAMEW,NULL,
@@ -557,7 +585,22 @@ static void make_explorer_window(parameters_struct *params)
     band_info.hwndChild=info->path_box;
     SendMessageW(rebar,RB_INSERTBANDW,-1,(LPARAM)&band_info);
     events = make_explorer_events(info);
-    IExplorerBrowser_Advise(info->browser,events,&info->advise_cookie);
+    if (!events)
+    {
+        ERR("Could not allocate explorer browser event sink.\n");
+        free(path);
+        DestroyWindow(info->main_window);
+        return;
+    }
+    hres = IExplorerBrowser_Advise(info->browser, events, &info->advise_cookie);
+    if (FAILED(hres))
+    {
+        ERR("Could not advise explorer browser events, hr %#lx.\n", hres);
+        IExplorerBrowserEvents_Release(events);
+        free(path);
+        DestroyWindow(info->main_window);
+        return;
+    }
 
     folder = get_starting_shell_folder(path);
     IExplorerBrowser_BrowseToObject(info->browser, (IUnknown *)folder, SBSP_ABSOLUTE);
@@ -785,17 +828,19 @@ static LRESULT CALLBACK explorer_wnd_proc(HWND hwnd, UINT uMsg, WPARAM wParam, L
     switch(uMsg)
     {
     case WM_DESTROY:
+        if (!info) return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+
         if(info->sw)
         {
             IShellWindows_Revoke(info->sw, info->sw_cookie);
             IShellWindows_Release(info->sw);
         }
 
-        IExplorerBrowser_Unadvise(browser,info->advise_cookie);
+        if (info->advise_cookie) IExplorerBrowser_Unadvise(browser, info->advise_cookie);
         IExplorerBrowser_Destroy(browser);
         IExplorerBrowser_Release(browser);
         ILFree(info->pidl);
-        IImageList_Release(info->icon_list);
+        if (info->icon_list) IImageList_Release(info->icon_list);
         free(info);
         SetWindowLongPtrW(hwnd,EXPLORER_INFO_INDEX,0);
         PostQuitMessage(0);
