@@ -54,7 +54,7 @@
 /*
  * Forward declarations.
  */
-static BOOL INT21_RenameFile( CONTEXT *context );
+static BOOL INT21_RenameFile( I386_CONTEXT *context );
 static BYTE INT21_GetBootDrive(void);
 static void INT21_LoadBootConfig(void);
 
@@ -832,7 +832,7 @@ static INT21_HEAP *INT21_GetHeapPointer( void )
  * Get segment/selector for DOS heap (INT21_HEAP).
  * Creates and initializes heap on first call.
  */
-static WORD INT21_GetHeapSelector( CONTEXT *context )
+static WORD INT21_GetHeapSelector( I386_CONTEXT *context )
 {
     INT21_HEAP *heap = INT21_GetHeapPointer();
     return heap->misc_selector;
@@ -1036,7 +1036,7 @@ static SEGPTR INT21_GetListOfLists(void)
  * - function 0x47
  * - subfunction 0x47 of function 0x71
  */
-static BOOL INT21_GetCurrentDirectory( CONTEXT *context, BOOL islong )
+static BOOL INT21_GetCurrentDirectory( I386_CONTEXT *context, BOOL islong )
 {
     char  *buffer = ldt_get_ptr(context->SegDs, context->Esi);
     BYTE   drive = INT21_MapDrive( DL_reg(context) );
@@ -1159,7 +1159,7 @@ static BOOL INT21_GetCurrentDirectory( CONTEXT *context, BOOL islong )
  * - function 0x3b
  * - subfunction 0x3b of function 0x71
  */
-static BOOL INT21_SetCurrentDirectory( CONTEXT *context )
+static BOOL INT21_SetCurrentDirectory( I386_CONTEXT *context )
 {
     WCHAR dirW[MAX_PATH];
     WCHAR env_var[4];
@@ -1202,7 +1202,7 @@ static BOOL INT21_SetCurrentDirectory( CONTEXT *context )
  * - function 0x6c
  * - subfunction 0x6c of function 0x71
  */
-static BOOL INT21_CreateFile( CONTEXT *context,
+static BOOL INT21_CreateFile( I386_CONTEXT *context,
                               DWORD      pathSegOff,
                               BOOL       returnStatus,
                               WORD       dosAccessShare,
@@ -1397,7 +1397,7 @@ static BOOL INT21_CreateFile( CONTEXT *context,
 /***********************************************************************
  *           INT21_GetCurrentDTA
  */
-static BYTE *INT21_GetCurrentDTA( CONTEXT *context )
+static BYTE *INT21_GetCurrentDTA( I386_CONTEXT *context )
 {
     TDB *pTask = GlobalLock16(GetCurrentTask());
 
@@ -1423,7 +1423,7 @@ static BYTE *INT21_GetCurrentDTA( CONTEXT *context )
  *  the FCB must have the drive_number, file_name, and file_extension
  *  fields filled and all other bytes cleared.
  */
-static void INT21_OpenFileUsingFCB( CONTEXT *context )
+static void INT21_OpenFileUsingFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -1522,7 +1522,7 @@ static void INT21_OpenFileUsingFCB( CONTEXT *context )
  * NOTES
  *  Closes a FCB file.
  */
-static void INT21_CloseFileUsingFCB( CONTEXT *context )
+static void INT21_CloseFileUsingFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -1567,7 +1567,7 @@ static void INT21_CloseFileUsingFCB( CONTEXT *context )
  *  are updated to point to the next record. If a partial record is
  *  read, it is filled with zeros up to the FCB->logical_record_size.
  */
-static void INT21_SequentialReadFromFCB( CONTEXT *context )
+static void INT21_SequentialReadFromFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -1647,7 +1647,7 @@ static void INT21_SequentialReadFromFCB( CONTEXT *context )
  *  Then FCB->current_block_number and FCB->record_within_current_block
  *  are updated to point to the next record. 
  */
-static void INT21_SequentialWriteToFCB( CONTEXT *context )
+static void INT21_SequentialWriteToFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -1723,7 +1723,7 @@ static void INT21_SequentialWriteToFCB( CONTEXT *context )
  *  FCB->random_access_record_number is not updated. If a partial record
  *  is read, it is filled with zeros up to the FCB->logical_record_size.
  */
-static void INT21_ReadRandomRecordFromFCB( CONTEXT *context )
+static void INT21_ReadRandomRecordFromFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -1796,7 +1796,7 @@ static void INT21_ReadRandomRecordFromFCB( CONTEXT *context )
  *  is specified with FCB->random_access_record_number. The
  *  FCB->random_access_record_number is not updated.
  */
-static void INT21_WriteRandomRecordToFCB( CONTEXT *context )
+static void INT21_WriteRandomRecordToFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -1871,7 +1871,7 @@ static void INT21_WriteRandomRecordToFCB( CONTEXT *context )
  *  it is filled with zeros up to the FCB->logical_record_size. The
  *  CX register is set to the number of successfully read records.
  */
-static void INT21_RandomBlockReadFromFCB( CONTEXT *context )
+static void INT21_RandomBlockReadFromFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -1962,7 +1962,7 @@ static void INT21_RandomBlockReadFromFCB( CONTEXT *context )
  *  next record after the records written. The CX register is set to
  *  the number of successfully written records.
  */
-static void INT21_RandomBlockWriteToFCB( CONTEXT *context )
+static void INT21_RandomBlockWriteToFCB( I386_CONTEXT *context )
 {
     struct FCB *fcb;
     struct XFCB *xfcb;
@@ -2031,7 +2031,7 @@ static void INT21_RandomBlockWriteToFCB( CONTEXT *context )
  * - subfunction 0x39 of function 0x71
  * - subfunction 0xff of function 0x43 (CL == 0x39)
  */
-static BOOL INT21_CreateDirectory( CONTEXT *context )
+static BOOL INT21_CreateDirectory( I386_CONTEXT *context )
 {
     WCHAR dirW[MAX_PATH];
     char *dirA = ldt_get_ptr(context->SegDs, context->Edx);
@@ -2069,7 +2069,7 @@ static BOOL INT21_CreateDirectory( CONTEXT *context )
  *
  * Handler for function 0x65.
  */
-static void INT21_ExtendedCountryInformation( CONTEXT *context )
+static void INT21_ExtendedCountryInformation( I386_CONTEXT *context )
 {
     BYTE *dataptr = ldt_get_ptr( context->SegEs, context->Edi );
     BYTE buffsize = CX_reg (context);
@@ -2199,7 +2199,7 @@ static void INT21_ExtendedCountryInformation( CONTEXT *context )
  * - function 0x43
  * - subfunction 0x43 of function 0x71
  */
-static BOOL INT21_FileAttributes( CONTEXT *context,
+static BOOL INT21_FileAttributes( I386_CONTEXT *context,
                                   BYTE       subfunction,
                                   BOOL       islong )
 {
@@ -2454,7 +2454,7 @@ static BOOL INT21_FileAttributes( CONTEXT *context,
  *
  * Handler for function 0x57.
  */
-static BOOL INT21_FileDateTime( CONTEXT *context )
+static BOOL INT21_FileDateTime( I386_CONTEXT *context )
 {
     HANDLE   handle = DosFileHandleToWin32Handle(BX_reg(context));
     FILETIME filetime;
@@ -2554,7 +2554,7 @@ static BOOL INT21_FileDateTime( CONTEXT *context )
  *
  * Handler for functions 0x51 and 0x62.
  */
-static void INT21_GetPSP( CONTEXT *context )
+static void INT21_GetPSP( I386_CONTEXT *context )
 {
     TRACE( "GET CURRENT PSP ADDRESS (%02x)\n", AH_reg(context) );
 
@@ -2625,7 +2625,7 @@ static inline DWORD INT21_Ioctl_CylHeadSect2Lin(DWORD cyl, WORD head, WORD sec, 
  *
  * Handler for block device IOCTLs.
  */
-static void INT21_Ioctl_Block( CONTEXT *context )
+static void INT21_Ioctl_Block( I386_CONTEXT *context )
 {
     BYTE *dataptr;
     BYTE  drive = INT21_MapDrive( BL_reg(context) );
@@ -2847,7 +2847,7 @@ static void INT21_Ioctl_Block( CONTEXT *context )
  *
  * Handler for character device IOCTLs.
  */
-static void INT21_Ioctl_Char( CONTEXT *context )
+static void INT21_Ioctl_Char( I386_CONTEXT *context )
 {
     HANDLE handle = DosFileHandleToWin32Handle(BX_reg(context));
     BOOL IsConsoleIOHandle = VerifyConsoleIoHandle( handle );
@@ -2926,7 +2926,7 @@ static void INT21_Ioctl_Char( CONTEXT *context )
  *
  * Handler for function 0x44.
  */
-static void INT21_Ioctl( CONTEXT *context )
+static void INT21_Ioctl( I386_CONTEXT *context )
 {
     switch (AL_reg(context))
     {
@@ -3016,7 +3016,7 @@ static void INT21_Ioctl( CONTEXT *context )
  *
  * Handler for function 0x73.
  */
-static BOOL INT21_Fat32( CONTEXT *context )
+static BOOL INT21_Fat32( I386_CONTEXT *context )
 {
     switch (AL_reg(context))
     {
@@ -3132,7 +3132,7 @@ static void INT21_ConvertFindDataWtoA(WIN32_FIND_DATAA *dataA,
  *
  * Handler for function 0x71.
  */
-static void INT21_LongFilename( CONTEXT *context )
+static void INT21_LongFilename( I386_CONTEXT *context )
 {
     BOOL bSetDOSExtendedError = FALSE;
     WCHAR pathW[MAX_PATH];
@@ -3421,7 +3421,7 @@ static void INT21_LongFilename( CONTEXT *context )
  * - subfunction 0x56 of function 0x71
  * - subfunction 0xff of function 0x43 (CL == 0x56)
  */
-static BOOL INT21_RenameFile( CONTEXT *context )
+static BOOL INT21_RenameFile( I386_CONTEXT *context )
 {
     WCHAR fromW[MAX_PATH];
     WCHAR toW[MAX_PATH];
@@ -3442,7 +3442,7 @@ static BOOL INT21_RenameFile( CONTEXT *context )
  * Handler for:
  * - function 0x5e
  */
-static BOOL INT21_NetworkFunc (CONTEXT *context)
+static BOOL INT21_NetworkFunc (I386_CONTEXT *context)
 {
     switch (AL_reg(context)) 
     {
@@ -3479,7 +3479,7 @@ static BOOL INT21_NetworkFunc (CONTEXT *context)
  *		INT21_GetDiskSerialNumber
  *
  */
-static int INT21_GetDiskSerialNumber( CONTEXT *context )
+static int INT21_GetDiskSerialNumber( I386_CONTEXT *context )
 {
     BYTE *dataptr = ldt_get_ptr(context->SegDs, context->Edx);
     WCHAR path[] = {'A',':','\\',0}, label[11];
@@ -3504,7 +3504,7 @@ static int INT21_GetDiskSerialNumber( CONTEXT *context )
  *		INT21_SetDiskSerialNumber
  *
  */
-static BOOL INT21_SetDiskSerialNumber( CONTEXT *context )
+static BOOL INT21_SetDiskSerialNumber( I386_CONTEXT *context )
 {
 #if 0
     BYTE *dataptr = ldt_get_ptr(context->SegDs, context->Edx);
@@ -3530,7 +3530,7 @@ static BOOL INT21_SetDiskSerialNumber( CONTEXT *context )
  *		INT21_GetFreeDiskSpace
  *
  */
-static BOOL INT21_GetFreeDiskSpace( CONTEXT *context )
+static BOOL INT21_GetFreeDiskSpace( I386_CONTEXT *context )
 {
     DWORD cluster_sectors, sector_bytes, free_clusters, total_clusters;
     WCHAR root[] = {'A',':','\\',0};
@@ -3605,7 +3605,7 @@ static BOOL INT21_GetFreeDiskSpace( CONTEXT *context )
  *		INT21_GetDriveAllocInfo
  *
  */
-static BOOL INT21_GetDriveAllocInfo( CONTEXT *context, BYTE drive )
+static BOOL INT21_GetDriveAllocInfo( I386_CONTEXT *context, BYTE drive )
 {
     INT21_DPB  *dpb;
 
@@ -3624,7 +3624,7 @@ static BOOL INT21_GetDriveAllocInfo( CONTEXT *context, BYTE drive )
 /***********************************************************************
  *           INT21_GetExtendedError
  */
-static void INT21_GetExtendedError( CONTEXT *context )
+static void INT21_GetExtendedError( I386_CONTEXT *context )
 {
     BYTE class, action, locus;
     WORD error = GetLastError();
@@ -3733,7 +3733,7 @@ static void INT21_GetExtendedError( CONTEXT *context )
     SET_CH( context, locus );
 }
 
-static BOOL INT21_CreateTempFile( CONTEXT *context )
+static BOOL INT21_CreateTempFile( I386_CONTEXT *context )
 {
     static int counter = 0;
     char *name = ldt_get_ptr( context->SegDs, context->Edx );
@@ -3867,7 +3867,7 @@ static const WCHAR *INT21_FindPath; /* will point to current dta->fullPath searc
 /******************************************************************
  *		INT21_FindFirst
  */
-static BOOL INT21_FindFirst( CONTEXT *context )
+static BOOL INT21_FindFirst( I386_CONTEXT *context )
 {
     WCHAR *p, *q;
     const char *path;
@@ -3998,7 +3998,7 @@ static unsigned INT21_FindHelper(LPCWSTR fullPath, unsigned drive, unsigned coun
 /******************************************************************
  *		INT21_FindNext
  */
-static BOOL INT21_FindNext( CONTEXT *context )
+static BOOL INT21_FindNext( I386_CONTEXT *context )
 {
     FINDFILE_DTA *dta = (FINDFILE_DTA *)INT21_GetCurrentDTA(context);
     DWORD attr = dta->search_attr | FA_UNUSED | FA_ARCHIVE | FA_RDONLY;
@@ -4044,7 +4044,7 @@ static BOOL INT21_FindNext( CONTEXT *context )
  *		INT21_FindFirstFCB
  *
  */
-static BOOL INT21_FindFirstFCB( CONTEXT *context )
+static BOOL INT21_FindFirstFCB( I386_CONTEXT *context )
 {
     BYTE *fcb = ldt_get_ptr(context->SegDs, context->Edx);
     FINDFILE_FCB *pFCB;
@@ -4068,7 +4068,7 @@ static BOOL INT21_FindFirstFCB( CONTEXT *context )
  *		INT21_FindNextFCB
  *
  */
-static BOOL INT21_FindNextFCB( CONTEXT *context )
+static BOOL INT21_FindNextFCB( I386_CONTEXT *context )
 {
     BYTE *fcb = ldt_get_ptr(context->SegDs, context->Edx);
     FINDFILE_FCB *pFCB;
@@ -4227,7 +4227,7 @@ BYTE DOSVM_ParseFCBName( const char *filename, BYTE options, BYTE *fcb,
  *              INT21_ParseFileNameIntoFCB
  *
  */
-static void INT21_ParseFileNameIntoFCB( CONTEXT *context )
+static void INT21_ParseFileNameIntoFCB( I386_CONTEXT *context )
 {
     char *filename = ldt_get_ptr( context->SegDs, context->Esi );
     BYTE *fcb = ldt_get_ptr( context->SegEs, context->Edi );
@@ -4289,7 +4289,7 @@ static BOOL     INT21_Dup2(HFILE16 hFile1, HFILE16 hFile2)
  *
  * Interrupt 0x21 handler.
  */
-void WINAPI DOSVM_Int21Handler( CONTEXT *context )
+void WINAPI DOSVM_Int21Handler( I386_CONTEXT *context )
 {
     INT21_HEAP *heap = INT21_GetHeapPointer();
     BOOL bSetDOSExtendedError = FALSE;
