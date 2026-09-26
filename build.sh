@@ -7,6 +7,7 @@ BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
 LLVM_LINK_JOBS=${WHP_LLVM_LINK_JOBS:-2}
+WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-1}
 WHP_SUBMODULES=${WHP_SUBMODULES:-1}
 WHP_RECONFIGURE=${WHP_RECONFIGURE:-0}
 AUTOCONF=${AUTOCONF:-autoconf}
@@ -49,6 +50,11 @@ die()
     exit 1
 }
 
+case "$WHP_GIT_UPDATE" in
+    0|1) ;;
+    *) die "WHP_GIT_UPDATE must be 0 or 1" ;;
+esac
+
 case "$WHP_SUBMODULES" in
     0|1) ;;
     *) die "WHP_SUBMODULES must be 0 or 1" ;;
@@ -77,6 +83,7 @@ Environment:
   WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
   BOOTSTRAP_NINJA        Pinned WHP Ninja policy: auto, y, or n
+  WHP_GIT_UPDATE        Fast-forward Water from its configured upstream: 1 or 0 (default: 1)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
   AUTOCONF              Autoconf program used to generate ./configure
@@ -315,6 +322,18 @@ generate_configure()
         printf 'WHP configure script: regenerated from configure.ac\n' >&2
     fi
     record_autoconf_state
+}
+
+update_repository()
+{
+    [ "$WHP_GIT_UPDATE" = 1 ] || return 0
+    [ -d "$SOURCE_DIR/.git" ] || return 0
+
+    command -v git >/dev/null 2>&1 ||
+        die "git is required to update the Water source tree"
+
+    printf 'WHP source update: git pull --ff-only\n' >&2
+    git -C "$SOURCE_DIR" pull --ff-only
 }
 
 init_submodules()
@@ -1733,6 +1752,7 @@ case "${1:-build}" in
         ;;
 esac
 
+update_repository
 generate_configure
 init_submodules
 prepare_ninja
