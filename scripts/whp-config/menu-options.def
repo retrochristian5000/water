@@ -39,7 +39,7 @@ WATER_WITH_GSTREAMER|Optional components|GStreamer|choice|auto|auto,y,n|
 WATER_WITH_HWLOC|Optional components|hwloc|choice|auto|auto,y,n|
 WATER_WITH_INOTIFY|Optional components|inotify|choice|auto|auto,y,n|
 WATER_WITH_KRB5|Optional components|Kerberos 5|choice|auto|auto,y,n|
-WATER_WITH_MINGW|Optional components|MinGW / PE cross compiler|choice|auto|auto,y,n|
+WATER_WITH_MINGW|Optional components|PE compiler policy|choice|auto|auto,clang,llvm-mingw,y,n|
 WATER_WITH_NETAPI|Optional components|Samba NetAPI|choice|auto|auto,y,n|
 WATER_WITH_OPENCL|Optional components|OpenCL|choice|auto|auto,y,n|
 WATER_WITH_OPENGL|Optional components|OpenGL|choice|auto|auto,y,n|
