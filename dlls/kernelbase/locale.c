@@ -433,7 +433,33 @@ static CRITICAL_SECTION_DEBUG critsect_debug =
 static CRITICAL_SECTION locale_section = { &critsect_debug, -1, 0, 0, 0, 0 };
 
 
-static void load_locale_nls(void)
+static BOOL nls_range_valid( SIZE_T size, SIZE_T offset, SIZE_T count, SIZE_T elem_size )
+{
+    return offset <= size && elem_size && count <= (size - offset) / elem_size;
+}
+
+
+static BOOL validate_compressed_charmap( const USHORT *table, SIZE_T count )
+{
+    unsigned int i, j;
+
+    if (count < 256) return FALSE;
+    for (i = 0; i < 256; i++)
+    {
+        SIZE_T offset = table[i];
+
+        if (offset > count - 16) return FALSE;
+        for (j = 0; j < 16; j++)
+        {
+            SIZE_T next = table[offset + j];
+            if (next > count - 16) return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+
+static BOOL load_locale_nls(void)
 {
     struct
     {
@@ -456,22 +482,108 @@ static void load_locale_nls(void)
         UINT  index_count;
     } *geo_header;
 
-    LARGE_INTEGER dummy;
+    LARGE_INTEGER mapping_size;
     const USHORT *map_ptr;
+    SIZE_T size, locale_size, geo_size, map_words;
+    NTSTATUS status;
     unsigned int i;
 
-    RtlGetLocaleFileMappingAddress( (void **)&header, &system_lcid, &dummy );
+    status = RtlGetLocaleFileMappingAddress( (void **)&header, &system_lcid, &mapping_size );
+    if (status || !header || mapping_size.QuadPart <= 0 ||
+        (ULONGLONG)(SIZE_T)mapping_size.QuadPart != (ULONGLONG)mapping_size.QuadPart)
+    {
+        ERR( "failed to load locale.nls, status %lx\n", status );
+        return FALSE;
+    }
+    size = mapping_size.QuadPart;
+
+    if (size < sizeof(*header) || header->ctypes < sizeof(*header) ||
+        header->ctypes > header->locales ||
+        header->locales > header->charmaps ||
+        header->charmaps > header->geoids ||
+        header->geoids > header->scripts ||
+        header->scripts > size)
+    {
+        ERR( "invalid locale.nls section offsets\n" );
+        return FALSE;
+    }
+
+    locale_size = header->charmaps - header->locales;
+    if (locale_size < sizeof(*locale_table))
+    {
+        ERR( "invalid locale.nls locale table size\n" );
+        return FALSE;
+    }
+
     locale_table = (const NLS_LOCALE_HEADER *)((char *)header + header->locales);
+    if (locale_table->magic != 0x5344534e ||
+        locale_table->locale_size < sizeof(NLS_LOCALE_DATA) ||
+        !nls_range_valid( locale_size, locale_table->lcids_offset,
+                          locale_table->nb_lcids, sizeof(*lcids_index) ) ||
+        !nls_range_valid( locale_size, locale_table->lcnames_offset,
+                          locale_table->nb_lcnames, sizeof(*lcnames_index) ) ||
+        !nls_range_valid( locale_size, locale_table->locales_offset,
+                          locale_table->nb_locales, locale_table->locale_size ) ||
+        (locale_table->nb_calendars && !locale_table->calendar_size) ||
+        !nls_range_valid( locale_size, locale_table->calendars_offset,
+                          locale_table->nb_calendars, locale_table->calendar_size ) ||
+        locale_table->strings_offset > locale_size)
+    {
+        ERR( "invalid locale.nls locale table layout\n" );
+        return FALSE;
+    }
     lcids_index = (const NLS_LOCALE_LCID_INDEX *)((char *)locale_table + locale_table->lcids_offset);
     lcnames_index = (const NLS_LOCALE_LCNAME_INDEX *)((char *)locale_table + locale_table->lcnames_offset);
     locale_strings = (const WCHAR *)((char *)locale_table + locale_table->strings_offset);
+
+    for (i = 0; i < locale_table->nb_lcids; i++)
+        if (lcids_index[i].idx >= locale_table->nb_locales) goto invalid_locale;
+    for (i = 0; i < locale_table->nb_lcnames; i++)
+        if (lcnames_index[i].idx >= locale_table->nb_locales) goto invalid_locale;
+
+    geo_size = header->scripts - header->geoids;
+    if (geo_size < sizeof(*geo_header)) goto invalid_geo;
     geo_header = (struct geo_header *)((char *)header + header->geoids);
+    if (geo_header->signature[0] != 'g' || geo_header->signature[1] != 'e' ||
+        geo_header->signature[2] != 'o' || geo_header->signature[3] ||
+        geo_header->total_size > geo_size ||
+        !nls_range_valid( geo_header->total_size, geo_header->ids_offset,
+                          geo_header->ids_count, sizeof(*geo_ids) ) ||
+        !nls_range_valid( geo_header->total_size, geo_header->index_offset,
+                          geo_header->index_count, sizeof(*geo_index) ))
+        goto invalid_geo;
+
     geo_ids = (const struct geo_id *)((char *)geo_header + geo_header->ids_offset);
     geo_index = (const struct geo_index *)((char *)geo_header + geo_header->index_offset);
     geo_ids_count = geo_header->ids_count;
     geo_index_count = geo_header->index_count;
+    for (i = 0; i < geo_index_count; i++)
+        if (geo_index[i].idx >= geo_ids_count) goto invalid_geo;
+
     map_ptr = (const USHORT *)((char *)header + header->charmaps);
-    for (i = 0; i < NB_CHARMAPS; i++, map_ptr += *map_ptr) charmaps[i] = map_ptr + 1;
+    map_words = (header->geoids - header->charmaps) / sizeof(*map_ptr);
+    for (i = 0; i < NB_CHARMAPS; i++)
+    {
+        SIZE_T words;
+
+        if (!map_words || !(words = map_ptr[0]) || words > map_words ||
+            !validate_compressed_charmap( map_ptr + 1, words - 1 ))
+            goto invalid_charmap;
+        charmaps[i] = map_ptr + 1;
+        map_ptr += words;
+        map_words -= words;
+    }
+    return TRUE;
+
+invalid_locale:
+    ERR( "invalid locale.nls locale index\n" );
+    return FALSE;
+invalid_geo:
+    ERR( "invalid locale.nls geography table\n" );
+    return FALSE;
+invalid_charmap:
+    ERR( "invalid locale.nls character map table\n" );
+    return FALSE;
 }
 
 
@@ -2031,7 +2143,7 @@ void init_locale( HMODULE module )
     HKEY hkey;
 
     kernelbase_handle = module;
-    load_locale_nls();
+    if (!load_locale_nls()) return;
     if (!load_sortdefault_nls()) return;
 
     if (system_lcid == LOCALE_CUSTOM_UNSPECIFIED) system_lcid = MAKELANGID( LANG_ENGLISH, SUBLANG_DEFAULT );
