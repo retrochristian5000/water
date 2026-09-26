@@ -28,6 +28,7 @@
 
 #if 0
 #pragma makedep implib
+#pragma makedep arm64ec_x64
 #endif
 
 #ifdef __WINE_PE_BUILD
