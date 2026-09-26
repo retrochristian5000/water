@@ -152,7 +152,12 @@ static BOOL create_combobox_item(IShellFolder *folder, LPCITEMIDLIST child_pidl,
 
     item->mask &= ~CBEIF_IMAGE;
     hres = SHGetIDListFromObject( (IUnknown *)folder, &parent_pidl );
-    if (FAILED(hres)) return FALSE;
+    if (FAILED(hres))
+    {
+        CoTaskMemFree(item->pszText);
+        item->pszText = NULL;
+        return FALSE;
+    }
 
     pidl = ILCombine( parent_pidl, child_pidl );
     if (pidl)
@@ -174,107 +179,207 @@ static BOOL create_combobox_item(IShellFolder *folder, LPCITEMIDLIST child_pidl,
 
 static void update_path_box(explorer_info *info)
 {
-    COMBOBOXEXITEMW item;
-    COMBOBOXEXITEMW main_item;
-    IShellFolder *desktop;
-    IPersistFolder2 *persist;
-    LPITEMIDLIST desktop_pidl;
-    IEnumIDList *ids;
+    COMBOBOXEXITEMW item = {0};
+    COMBOBOXEXITEMW main_item = {0};
+    IShellFolder *desktop = NULL;
+    IPersistFolder2 *persist = NULL;
+    LPITEMIDLIST desktop_pidl = NULL;
+    IEnumIDList *ids = NULL;
+    BOOL desktop_pidl_owned = FALSE;
+    BOOL have_main_item = FALSE;
+    HRESULT hres;
 
-    SendMessageW(info->path_box,CB_RESETCONTENT,0,0);
-    SHGetDesktopFolder(&desktop);
-    IShellFolder_QueryInterface(desktop,&IID_IPersistFolder2,(void**)&persist);
-    IPersistFolder2_GetCurFolder(persist,&desktop_pidl);
+    SendMessageW(info->path_box, CB_RESETCONTENT, 0, 0);
+    if (!info->pidl) return;
+
+    hres = SHGetDesktopFolder(&desktop);
+    if (FAILED(hres)) return;
+
+    hres = IShellFolder_QueryInterface(desktop, &IID_IPersistFolder2, (void **)&persist);
+    if (FAILED(hres)) goto done;
+
+    hres = IPersistFolder2_GetCurFolder(persist, &desktop_pidl);
     IPersistFolder2_Release(persist);
     persist = NULL;
-    /*Add Desktop*/
+    if (FAILED(hres)) goto done;
+
+    /* Add Desktop. */
     item.iItem = -1;
     item.mask = CBEIF_TEXT | CBEIF_INDENT | CBEIF_LPARAM;
     item.iIndent = 0;
-    create_combobox_item(desktop,desktop_pidl,info->icon_list,&item);
+    if (!create_combobox_item(desktop, desktop_pidl, info->icon_list, &item))
+        goto done;
+
     item.lParam = (LPARAM)desktop_pidl;
-    SendMessageW(info->path_box,CBEM_INSERTITEMW,0,(LPARAM)&item);
-    if(ILIsEqual(info->pidl,desktop_pidl))
-        main_item = item;
-    else
-        CoTaskMemFree(item.pszText);
-    /*Add all direct subfolders of Desktop*/
-    if(SUCCEEDED(IShellFolder_EnumObjects(desktop,NULL,SHCONTF_FOLDERS,&ids))
-       && ids!=NULL)
+    if (SendMessageW(info->path_box, CBEM_INSERTITEMW, 0, (LPARAM)&item) == -1)
     {
-        LPITEMIDLIST curr_pidl=NULL;
-        HRESULT hres;
+        CoTaskMemFree(item.pszText);
+        item.pszText = NULL;
+        goto done;
+    }
+    desktop_pidl_owned = TRUE;
+
+    if (ILIsEqual(info->pidl, desktop_pidl))
+    {
+        main_item = item;
+        have_main_item = TRUE;
+    }
+    else
+    {
+        CoTaskMemFree(item.pszText);
+        item.pszText = NULL;
+    }
+
+    /* Add all direct subfolders of Desktop. */
+    hres = IShellFolder_EnumObjects(desktop, NULL, SHCONTF_FOLDERS, &ids);
+    if (SUCCEEDED(hres) && ids)
+    {
+        LPITEMIDLIST curr_pidl = NULL;
 
         item.iIndent = 1;
-        while(1)
+        while (1)
         {
-            ILFree(curr_pidl);
-            curr_pidl=NULL;
-            hres = IEnumIDList_Next(ids,1,&curr_pidl,NULL);
-            if(FAILED(hres) || hres == S_FALSE)
-                break;
-            if (!create_combobox_item( desktop, curr_pidl, info->icon_list, &item ))
-                WARN( "Could not create a combobox item\n" );
-            else
-            {
-                LPITEMIDLIST full_pidl = ILCombine(desktop_pidl,curr_pidl);
-                item.lParam = (LPARAM)full_pidl;
-                SendMessageW(info->path_box,CBEM_INSERTITEMW,0,(LPARAM)&item);
-                if(ILIsEqual(full_pidl,info->pidl))
-                    main_item = item;
-                else if(ILIsParent(full_pidl,info->pidl,FALSE))
-                {
-                    /*add all parents of the pidl passed in*/
-                    LPITEMIDLIST next_pidl = ILFindChild(full_pidl,info->pidl);
-                    IShellFolder *curr_folder = NULL, *temp;
-                    hres = IShellFolder_BindToObject(desktop,curr_pidl,NULL,
-                                                     &IID_IShellFolder,
-                                                     (void**)&curr_folder);
-                    if (FAILED(hres)) WARN( "Could not get an IShellFolder\n" );
-                    while(!ILIsEmpty(next_pidl))
-                    {
-                        LPITEMIDLIST first = ILCloneFirst(next_pidl);
-                        CoTaskMemFree(item.pszText);
-                        if(!create_combobox_item(curr_folder,first,
-                                                 info->icon_list,&item))
-                        {
-                            WARN( "Could not create a combobox item\n" );
-                            break;
-                        }
-                        ++item.iIndent;
-                        full_pidl = ILCombine(full_pidl,first);
-                        item.lParam = (LPARAM)full_pidl;
-                        SendMessageW(info->path_box,CBEM_INSERTITEMW,0,(LPARAM)&item);
-                        temp=NULL;
-                        hres = IShellFolder_BindToObject(curr_folder,first,NULL,
-                                                         &IID_IShellFolder,
-                                                         (void**)&temp);
-                        if(FAILED(hres))
-                        {
-                            WARN( "Could not get an IShellFolder\n" );
-                            break;
-                        }
-                        IShellFolder_Release(curr_folder);
-                        curr_folder = temp;
+            LPITEMIDLIST full_pidl;
 
+            ILFree(curr_pidl);
+            curr_pidl = NULL;
+            hres = IEnumIDList_Next(ids, 1, &curr_pidl, NULL);
+            if (FAILED(hres) || hres == S_FALSE)
+                break;
+
+            if (!create_combobox_item(desktop, curr_pidl, info->icon_list, &item))
+            {
+                WARN("Could not create a combobox item\n");
+                continue;
+            }
+
+            full_pidl = ILCombine(desktop_pidl, curr_pidl);
+            if (!full_pidl)
+            {
+                CoTaskMemFree(item.pszText);
+                item.pszText = NULL;
+                continue;
+            }
+
+            item.lParam = (LPARAM)full_pidl;
+            if (SendMessageW(info->path_box, CBEM_INSERTITEMW, 0, (LPARAM)&item) == -1)
+            {
+                ILFree(full_pidl);
+                CoTaskMemFree(item.pszText);
+                item.pszText = NULL;
+                continue;
+            }
+
+            if (ILIsEqual(full_pidl, info->pidl))
+            {
+                main_item = item;
+                have_main_item = TRUE;
+            }
+            else if (ILIsParent(full_pidl, info->pidl, FALSE))
+            {
+                LPITEMIDLIST next_pidl = ILFindChild(full_pidl, info->pidl);
+                IShellFolder *curr_folder = NULL;
+
+                hres = IShellFolder_BindToObject(desktop, curr_pidl, NULL,
+                                                 &IID_IShellFolder, (void **)&curr_folder);
+                if (FAILED(hres))
+                {
+                    WARN("Could not get an IShellFolder\n");
+                    CoTaskMemFree(item.pszText);
+                    item.pszText = NULL;
+                    continue;
+                }
+
+                while (next_pidl && !ILIsEmpty(next_pidl))
+                {
+                    LPITEMIDLIST first = ILCloneFirst(next_pidl);
+                    LPITEMIDLIST combined;
+                    IShellFolder *temp = NULL;
+
+                    CoTaskMemFree(item.pszText);
+                    item.pszText = NULL;
+                    if (!first) break;
+
+                    if (!create_combobox_item(curr_folder, first, info->icon_list, &item))
+                    {
+                        WARN("Could not create a combobox item\n");
                         ILFree(first);
-                        next_pidl = ILGetNext(next_pidl);
+                        break;
                     }
-                    memcpy(&main_item,&item,sizeof(item));
-                    if(curr_folder)
-                        IShellFolder_Release(curr_folder);
-                    item.iIndent = 1;
+
+                    combined = ILCombine(full_pidl, first);
+                    if (!combined)
+                    {
+                        CoTaskMemFree(item.pszText);
+                        item.pszText = NULL;
+                        ILFree(first);
+                        break;
+                    }
+
+                    ++item.iIndent;
+                    item.lParam = (LPARAM)combined;
+                    if (SendMessageW(info->path_box, CBEM_INSERTITEMW, 0, (LPARAM)&item) == -1)
+                    {
+                        ILFree(combined);
+                        CoTaskMemFree(item.pszText);
+                        item.pszText = NULL;
+                        ILFree(first);
+                        break;
+                    }
+                    full_pidl = combined;
+
+                    hres = IShellFolder_BindToObject(curr_folder, first, NULL,
+                                                     &IID_IShellFolder, (void **)&temp);
+                    ILFree(first);
+                    if (FAILED(hres))
+                    {
+                        WARN("Could not get an IShellFolder\n");
+                        break;
+                    }
+
+                    IShellFolder_Release(curr_folder);
+                    curr_folder = temp;
+                    next_pidl = ILGetNext(next_pidl);
+                }
+
+                if (item.pszText && ILIsEqual(full_pidl, info->pidl))
+                {
+                    main_item = item;
+                    have_main_item = TRUE;
                 }
                 else
+                {
                     CoTaskMemFree(item.pszText);
+                    item.pszText = NULL;
+                }
+
+                IShellFolder_Release(curr_folder);
+                item.iIndent = 1;
+            }
+            else
+            {
+                CoTaskMemFree(item.pszText);
+                item.pszText = NULL;
             }
         }
         ILFree(curr_pidl);
         IEnumIDList_Release(ids);
     }
-    else WARN( "Could not enumerate the desktop\n" );
-    SendMessageW(info->path_box,CBEM_SETITEMW,0,(LPARAM)&main_item);
-    CoTaskMemFree(main_item.pszText);
+    else
+    {
+        WARN("Could not enumerate the desktop\n");
+    }
+
+    if (have_main_item)
+    {
+        SendMessageW(info->path_box, CBEM_SETITEMW, 0, (LPARAM)&main_item);
+        CoTaskMemFree(main_item.pszText);
+    }
+
+done:
+    if (persist) IPersistFolder2_Release(persist);
+    if (!desktop_pidl_owned) ILFree(desktop_pidl);
+    IShellFolder_Release(desktop);
 }
 
 static HRESULT WINAPI IExplorerBrowserEventsImpl_fnOnNavigationComplete(IExplorerBrowserEvents *iface, PCIDLIST_ABSOLUTE pidl)
