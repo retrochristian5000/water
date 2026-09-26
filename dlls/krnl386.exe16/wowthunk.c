@@ -126,7 +126,7 @@ BOOL WOWTHUNK_Init(void)
 static BOOL fix_selector( I386_CONTEXT *context )
 {
     WORD *stack;
-    BYTE *instr = (BYTE *)context->Eip;
+    BYTE *instr = (BYTE *)(UINT_PTR)context->Eip;
 
     if (instr < __wine_call16_start || instr >= __wine_call16_end) return FALSE;
 
