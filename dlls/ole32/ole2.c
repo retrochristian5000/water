@@ -2994,28 +2994,50 @@ HRESULT WINAPI OleCreateFromDataEx(IDataObject *data, REFIID iid, DWORD flags,
                                    IAdviseSink *sink, DWORD *conns,
                                    IOleClientSite *client_site, IStorage *stg, void **obj)
 {
+    IUnknown *unk;
     HRESULT hr;
-    UINT src_cf;
 
     if (!data || !iid || !stg || !obj)
         return E_INVALIDARG;
     *obj = NULL;
-    if (num_cache_fmts && (!adv_flags || !cache_fmts))
-        return E_INVALIDARG;
-    if (!sink && conns)
+
+    if (flags & ~OLECREATE_LEAVERUNNING)
         return E_INVALIDARG;
 
-    FIXME("%p, %s, %#lx, %#lx, %ld, %p, %p, %p, %p, %p, %p, %p: stub\n",
+    if (renderopt == OLERENDER_FORMAT)
+    {
+        if (!num_cache_fmts || !adv_flags || !cache_fmts)
+            return E_INVALIDARG;
+    }
+    else if (num_cache_fmts || adv_flags || cache_fmts || sink)
+    {
+        return E_INVALIDARG;
+    }
+
+    TRACE("%p, %s, %#lx, %#lx, %lu, %p, %p, %p, %p, %p, %p, %p.\n",
           data, debugstr_guid(iid), flags, renderopt, num_cache_fmts, adv_flags, cache_fmts,
           sink, conns, client_site, stg, obj);
 
-    hr = get_storage(data, stg, &src_cf, TRUE);
-    if(FAILED(hr)) return hr;
+    hr = get_storage(data, stg, NULL, TRUE);
+    if (FAILED(hr))
+        return hr;
 
     hr = OleLoad(stg, iid, client_site, obj);
-    if(FAILED(hr)) return hr;
+    if (FAILED(hr))
+        return hr;
 
-    /* FIXME: Init cache */
+    unk = *obj;
+    if (renderopt == OLERENDER_FORMAT || (flags & OLECREATE_LEAVERUNNING))
+        hr = OleRun(unk);
+
+    if (SUCCEEDED(hr) && renderopt == OLERENDER_FORMAT)
+        hr = ole_create_configure_formats(unk, num_cache_fmts, adv_flags, cache_fmts, sink, conns);
+
+    if (FAILED(hr))
+    {
+        IUnknown_Release(unk);
+        *obj = NULL;
+    }
 
     return hr;
 }
@@ -3028,8 +3050,31 @@ HRESULT WINAPI OleCreateFromData(IDataObject *data, REFIID iid, DWORD renderopt,
 {
     DWORD advf = ADVF_PRIMEFIRST;
 
-    return OleCreateFromDataEx(data, iid, 0, renderopt, fmt ? 1 : 0, fmt ? &advf : NULL,
-                               fmt, NULL, NULL, client_site, stg, obj);
+    return OleCreateFromDataEx(data, iid, 0, renderopt,
+                               renderopt == OLERENDER_FORMAT && fmt ? 1 : 0,
+                               renderopt == OLERENDER_FORMAT && fmt ? &advf : NULL,
+                               renderopt == OLERENDER_FORMAT ? fmt : NULL,
+                               NULL, NULL, client_site, stg, obj);
+}
+
+/******************************************************************************
+ *              OleCreateLinkFromDataEx        [OLE32.@]
+ *
+ * Water's link-from-data path still shares the existing semi-stub storage
+ * behavior with OleCreateLinkFromData(), but the extended cache/advice
+ * contract is fully honored here.
+ */
+HRESULT WINAPI OleCreateLinkFromDataEx(IDataObject *data, REFIID iid, DWORD flags,
+        DWORD renderopt, ULONG count, DWORD *adv_flags, FORMATETC *formats,
+        IAdviseSink *sink, DWORD *connections, IOleClientSite *client_site,
+        IStorage *storage, void **obj)
+{
+    TRACE("%p, %s, %#lx, %#lx, %lu, %p, %p, %p, %p, %p, %p, %p: semi-stub.\n",
+          data, debugstr_guid(iid), flags, renderopt, count, adv_flags, formats,
+          sink, connections, client_site, storage, obj);
+
+    return OleCreateFromDataEx(data, iid, flags, renderopt, count, adv_flags, formats,
+                               sink, connections, client_site, storage, obj);
 }
 
 /******************************************************************************
