@@ -744,7 +744,10 @@ llvm_bootstrap_has_target()
     whp_target=$1
 
     if [ -f "$LLVM_BOOTSTRAP_DIR/build.ninja" ]; then
-        ninja_cmd=$(find_existing_ninja)
+        ninja_cmd=$(sed -n 's/^CMAKE_MAKE_PROGRAM:[^=]*=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" 2>/dev/null | sed -n '1p')
+        if [ -z "$ninja_cmd" ] || [ ! -x "$ninja_cmd" ]; then
+            ninja_cmd=$(find_existing_ninja)
+        fi
         [ -n "$ninja_cmd" ] || { unset whp_target; return 1; }
         if "$ninja_cmd" -C "$LLVM_BOOTSTRAP_DIR" -t targets all 2>/dev/null |
            awk -F: -v wanted="$whp_target" '$1 == wanted { found = 1 } END { exit !found }'; then
