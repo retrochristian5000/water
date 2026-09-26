@@ -57,7 +57,11 @@ typedef struct
     WORD  ss;
 } REALMODECALL;
 
-static void *real_mode_ptr( WORD seg, WORD off ) { return (void *)((int)seg * 16 + off); }
+static void *real_mode_ptr( WORD seg, WORD off )
+{
+    DOSMEM_InitDosMemory();
+    return DOSMEM_MapRealToLinear( MAKESEGPTR( seg, off ) );
+}
 
 static void simulate_real_mode_interrupt( REALMODECALL *ctx, int num )
 {
@@ -382,15 +386,19 @@ void WINAPI DOSVM_Int31Handler( CONTEXT *context )
         break;
 
     case 0x0200: /* get real mode interrupt vector */
-        TRACE( "get realmode interrupt vector (0x%02x) - not supported\n",
-               BL_reg(context) );
-        SET_CX( context, 0 );
-        SET_DX( context, 0 );
+        TRACE( "get realmode interrupt vector (0x%02x)\n", BL_reg(context) );
+        {
+            FARPROC16 proc = DOSVM_GetRMHandler( BL_reg(context) );
+            SET_CX( context, SELECTOROF(proc) );
+            SET_DX( context, OFFSETOF(proc) );
+        }
         break;
 
     case 0x0201: /* set real mode interrupt vector */
-        TRACE( "set realmode interrupt vector (0x%02x, 0x%04x:0x%04x) - not supported\n",
+        TRACE( "set realmode interrupt vector (0x%02x, 0x%04x:0x%04x)\n",
                BL_reg(context), CX_reg(context), DX_reg(context) );
+        DOSVM_SetRMHandler( BL_reg(context),
+                            (FARPROC16)MAKESEGPTR( CX_reg(context), DX_reg(context) ) );
         break;
 
     case 0x0202:  /* Get Processor Exception Handler Vector */

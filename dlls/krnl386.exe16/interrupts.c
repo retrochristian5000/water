@@ -380,6 +380,44 @@ BOOL DOSVM_EmulateInterruptPM( CONTEXT *context, BYTE intnum )
 
 
 /**********************************************************************
+ *          DOSVM_GetRMVector
+ *
+ * Return a pointer to a real-mode IVT entry.  KERNEL may relocate the
+ * low-memory IVT while Win16 keeps the first 64K protected, so always
+ * resolve it through the __0000H selector instead of assuming address 0.
+ */
+static FARPROC16 *DOSVM_GetRMVector( BYTE intnum )
+{
+    DOSMEM_InitDosMemory();
+    return (FARPROC16 *)ldt_get_base( DOSMEM_0000H ) + intnum;
+}
+
+
+/**********************************************************************
+ *          DOSVM_GetRMHandler
+ *
+ * Return the real-mode interrupt vector for a given interrupt.
+ */
+FARPROC16 DOSVM_GetRMHandler( BYTE intnum )
+{
+    return *DOSVM_GetRMVector( intnum );
+}
+
+
+/**********************************************************************
+ *          DOSVM_SetRMHandler
+ *
+ * Set the real-mode interrupt vector for a given interrupt.
+ */
+void DOSVM_SetRMHandler( BYTE intnum, FARPROC16 handler )
+{
+    TRACE( "Set real mode interrupt vector %02x <- %04x:%04x\n",
+           intnum, SELECTOROF(handler), OFFSETOF(handler) );
+    *DOSVM_GetRMVector( intnum ) = handler;
+}
+
+
+/**********************************************************************
  *          DOSVM_GetPMHandler16
  *
  * Return the protected mode interrupt vector for a given interrupt.

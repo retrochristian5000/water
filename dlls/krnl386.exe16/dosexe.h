@@ -216,7 +216,9 @@ extern void WINAPI DOSVM_Int31Handler(CONTEXT*);
 extern void WINAPI __wine_call_int_handler16( BYTE, CONTEXT * );
 extern BOOL        DOSVM_EmulateInterruptPM( CONTEXT *, BYTE );
 extern FARPROC16   DOSVM_GetPMHandler16( BYTE );
+extern FARPROC16   DOSVM_GetRMHandler( BYTE );
 extern void        DOSVM_SetPMHandler16( BYTE, FARPROC16 );
+extern void        DOSVM_SetRMHandler( BYTE, FARPROC16 );
 
 /* ioports.c */
 extern DWORD DOSVM_inport( int port, int size );

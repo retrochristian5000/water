@@ -169,7 +169,7 @@ static void start_dosbox( const char *appname, const char *args )
 /***********************************************************************
  *           read_pif_file
  *pif386rec_tu
- * Read a pif file and return the header and possibly the 286 (real mode)
+ * Read a pif file and return the header and possibly the 286 (standard mode)
  * record or 386 (enhanced mode) record. Returns FALSE if the file is
  * invalid otherwise TRUE.
  */
