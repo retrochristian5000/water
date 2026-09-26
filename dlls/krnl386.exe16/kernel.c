@@ -378,7 +378,7 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
 /***********************************************************************
  *           DebugBreak   (KERNEL.203)
  */
-void WINAPI DebugBreak16( CONTEXT *context )
+void WINAPI DebugBreak16( I386_CONTEXT *context )
 {
     EXCEPTION_RECORD rec;
 
