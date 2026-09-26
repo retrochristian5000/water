@@ -130,19 +130,20 @@ case $host_os in
     ;;
 esac
 
-dnl Water's build and PE paths are LLVM-first.  Keep environment overrides
-dnl authoritative, but don't let Autoconf or an installed MinGW GCC silently
-dnl select a different compiler family when no policy was requested.
+dnl Water's build and PE paths are LLVM-first.  Keep explicit environment
+dnl overrides authoritative, but make the implicit toolchain unambiguously
+dnl Clang so Autoconf cannot silently fall back to GCC.
+CC=${CC:-clang}
+CXX=${CXX:-clang++}
 with_mingw=${with_mingw:-clang}
 
-AS_IF([test "x$enable_sast" = xyes],[CC=${CC:-clang}
-CXX=${CXX:-clang++}
+AS_IF([test "x$enable_sast" = xyes],[
 AC_CHECK_PROGS(SARIF_CONVERTER,sarif-converter,false)])
 
 dnl **** Check for some programs ****
 
-AC_PROG_CC([clang gcc cc])
-AC_PROG_CXX([clang++ g++ c++])
+AC_PROG_CC
+AC_PROG_CXX
 
 case "x$with_compiler_cache" in
   xno) COMPILER_CACHE= ;;
@@ -169,8 +170,14 @@ then
         enable_ninja=yes
     fi
 fi
-dnl We can't use AC_PROG_CPP for winegcc, it uses by default $(CC) -E
-AC_CHECK_TOOL(CPPBIN,cpp,cpp)
+dnl winegcc needs a standalone preprocessor command.  Keep it in the selected
+dnl compiler family instead of baking an unrelated GNU cpp into winecpp.
+AS_IF([test -z "$CPPBIN"],
+      [case "$CC" in
+         *clang*) CPPBIN="$CC --driver-mode=cpp" ;;
+         *) AC_CHECK_TOOL(CPPBIN,cpp,cpp) ;;
+       esac])
+AC_SUBST(CPPBIN)
 AC_DEFINE_UNQUOTED(EXEEXT,["$ac_exeext"],[Define to the file extension for executables.])
 AC_CHECK_TOOL(LD,ld)
 
@@ -522,26 +529,26 @@ do
     AS_VAR_IF([${wine_arch}_CC],[],
         [case $wine_arch in
           aarch64)
-            AC_CHECK_PROGS(aarch64_CC,[aarch64-w64-mingw32-clang aarch64-w64-mingw32-gcc clang],[false])
+            AC_CHECK_PROGS(aarch64_CC,[aarch64-w64-mingw32-clang clang aarch64-w64-mingw32-gcc],[false])
             ;;
           arm64ec)
-            AC_CHECK_PROGS(arm64ec_CC,[arm64ec-w64-mingw32-clang arm64ec-w64-mingw32-gcc clang],[false])
+            AC_CHECK_PROGS(arm64ec_CC,[arm64ec-w64-mingw32-clang clang arm64ec-w64-mingw32-gcc],[false])
             ;;
           arm)
-            AC_CHECK_PROGS(arm_CC,[armv7-w64-mingw32-clang armv7-w64-mingw32-gcc clang],[false])
+            AC_CHECK_PROGS(arm_CC,[armv7-w64-mingw32-clang clang armv7-w64-mingw32-gcc],[false])
             ;;
           i386)
             clang_prefix_list="m4_foreach([cpu],[i686,i586,i486,i386],[cpu-w64-mingw32-clang ])"
             gcc_prefix_list="m4_foreach([cpu],[i686,i586,i486,i386],[cpu-w64-mingw32-gcc ])"
-            AC_CHECK_PROGS(i386_CC,[$clang_prefix_list $gcc_prefix_list clang],[false])
+            AC_CHECK_PROGS(i386_CC,[$clang_prefix_list clang $gcc_prefix_list],[false])
             ;;
           powerpc)
-            AC_CHECK_PROGS(powerpc_CC,[powerpcle-w64-mingw32-clang powerpc-w64-mingw32-clang powerpcle-w64-mingw32-gcc powerpc-w64-mingw32-gcc clang],[false])
+            AC_CHECK_PROGS(powerpc_CC,[powerpcle-w64-mingw32-clang powerpc-w64-mingw32-clang clang powerpcle-w64-mingw32-gcc powerpc-w64-mingw32-gcc],[false])
             ;;
           x86_64)
             clang_prefix_list="m4_foreach([cpu],[x86_64,amd64],[cpu-w64-mingw32-clang ])"
             gcc_prefix_list="m4_foreach([cpu],[x86_64,amd64],[cpu-w64-mingw32-gcc ])"
-            AC_CHECK_PROGS(x86_64_CC,[$clang_prefix_list $gcc_prefix_list clang],[false])
+            AC_CHECK_PROGS(x86_64_CC,[$clang_prefix_list clang $gcc_prefix_list],[false])
             ;;
          esac
          wine_try_msvc=yes],
