@@ -66,6 +66,7 @@ Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|clean|dist
 Environment:
   WHP_BUILD_DIR         Out-of-tree build directory (default: ./build)
   WHP_BUILD_JOBS        Parallel build jobs (default: detected CPU count)
+  WATER_KEEP_GOING      Continue independent work after errors: y or n (default: y)
   WHP_LLVM_SOURCE_DIR   LLVM source tree (default: ./toolchains/llvm-project)
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
@@ -163,6 +164,7 @@ validate_profile()
     WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}
     WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
+    WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}
     BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
 
     case "$WATER_ARCHS_MODE" in
@@ -195,6 +197,10 @@ validate_profile()
     case "$WATER_COMPILER_CACHE" in
         auto|sccache|ccache|none) ;;
         *) die "WATER_COMPILER_CACHE must be auto, sccache, ccache, or none" ;;
+    esac
+    case "$WATER_KEEP_GOING" in
+        y|n|0|1) ;;
+        *) die "WATER_KEEP_GOING must be y or n" ;;
     esac
     case "$BOOTSTRAP_NINJA" in
         auto|y|n|0|1) ;;
@@ -830,8 +836,18 @@ bootstrap_llvm()
 
     jobs=$(detect_jobs)
     printf 'WHP LLVM bootstrap: incremental %s\n' "$LLVM_BOOTSTRAP_DIR" >&2
-    "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-        --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+    if [ "$WATER_KEEP_GOING" = y ] || [ "$WATER_KEEP_GOING" = 1 ]; then
+        if [ "$llvm_ninja_generator" = 1 ]; then
+            "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
+                --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k 0
+        else
+            "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
+                --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip -- -k
+        fi
+    else
+        "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
+            --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+    fi
     record_llvm_bootstrap_state
 }
 prepare_llvm_toolchain()
@@ -990,7 +1006,7 @@ setup_toolchain()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=3" \
+        "WHP_PROFILE_SCHEMA=4" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -999,6 +1015,7 @@ profile_signature()
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
+        "WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}" \
         "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
         "NINJA_CMD=${NINJA_CMD:-}" \
         "SDKROOT=${SDKROOT:-}" \
@@ -1284,7 +1301,11 @@ run_build()
             ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
         fi
         [ -n "$ninja_cmd" ] || die "build.ninja exists but Ninja was not found"
-        "$ninja_cmd" -C "$BUILD_DIR" -j "$jobs" "$@"
+        if [ "$WATER_KEEP_GOING" = y ] || [ "$WATER_KEEP_GOING" = 1 ]; then
+            "$ninja_cmd" -C "$BUILD_DIR" -j "$jobs" -k 0 "$@"
+        else
+            "$ninja_cmd" -C "$BUILD_DIR" -j "$jobs" "$@"
+        fi
         return
     fi
 
@@ -1293,7 +1314,11 @@ run_build()
         make_cmd=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
     fi
     [ -n "$make_cmd" ] || die "make was not found"
-    "$make_cmd" -C "$BUILD_DIR" -j"$jobs" "$@"
+    if [ "$WATER_KEEP_GOING" = y ] || [ "$WATER_KEEP_GOING" = 1 ]; then
+        "$make_cmd" -C "$BUILD_DIR" -j"$jobs" -k "$@"
+    else
+        "$make_cmd" -C "$BUILD_DIR" -j"$jobs" "$@"
+    fi
 }
 
 case "${1:-build}" in
