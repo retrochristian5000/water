@@ -70,6 +70,8 @@ Environment:
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
+  WHP_LLVM_BOOTSTRAP_CC Stage-0 C compiler (default: prefer clang)
+  WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
   BOOTSTRAP_NINJA        Pinned WHP Ninja policy: auto, y, or n
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
@@ -614,11 +616,36 @@ llvm_source_state_signature()
     fi
 }
 
+find_llvm_bootstrap_compiler()
+{
+    explicit=$1
+    fallback=$2
+
+    if [ -n "$explicit" ]; then
+        case "$explicit" in
+            */*)
+                [ -x "$explicit" ] || die "LLVM bootstrap compiler is not executable: $explicit"
+                printf '%s\n' "$explicit"
+                ;;
+            *)
+                path=$(command -v "$explicit" 2>/dev/null || true)
+                [ -n "$path" ] || die "LLVM bootstrap compiler was not found: $explicit"
+                printf '%s\n' "$path"
+                ;;
+        esac
+        return 0
+    fi
+
+    command -v "$fallback" 2>/dev/null || true
+}
+
 llvm_bootstrap_config_signature()
 {
     llvm_targets_sig=$(select_llvm_targets)
     llvm_cache_sig=$(select_llvm_cache)
     llvm_sdkroot_sig=$(darwin_sdkroot)
+    llvm_stage0_cc_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CC:-}" clang)
+    llvm_stage0_cxx_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
 
     printf '%s\n' \
         "WATER_LLVM_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
@@ -630,6 +657,8 @@ llvm_bootstrap_config_signature()
         "LLVM_TARGETS=$llvm_targets_sig" \
         "LLVM_CACHE=$llvm_cache_sig" \
         "LLVM_SDKROOT=$llvm_sdkroot_sig" \
+        "LLVM_STAGE0_CC=$llvm_stage0_cc_sig" \
+        "LLVM_STAGE0_CXX=$llvm_stage0_cxx_sig" \
         "NINJA_CMD=${NINJA_CMD:-${NINJA:-}}"
 }
 
@@ -688,6 +717,8 @@ bootstrap_llvm()
 
     llvm_targets=$(select_llvm_targets)
     llvm_cache=$(select_llvm_cache)
+    llvm_stage0_cc=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CC:-}" clang)
+    llvm_stage0_cxx=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
     llvm_lld_backends="COFF;MinGW"
 
     mkdir -p "$LLVM_BOOTSTRAP_DIR"
@@ -711,6 +742,15 @@ bootstrap_llvm()
         -DLLVM_BUILD_INSTRUMENTED=OFF \
         -DLLVM_ENABLE_MODULES=OFF \
         -DLLVM_ENABLE_PLUGINS=OFF
+
+    if [ -n "$llvm_stage0_cc" ]; then
+        set -- "$@" "-DCMAKE_C_COMPILER=$llvm_stage0_cc"
+        printf 'WHP LLVM stage-0 C compiler: %s\n' "$llvm_stage0_cc" >&2
+    fi
+    if [ -n "$llvm_stage0_cxx" ]; then
+        set -- "$@" "-DCMAKE_CXX_COMPILER=$llvm_stage0_cxx"
+        printf 'WHP LLVM stage-0 C++ compiler: %s\n' "$llvm_stage0_cxx" >&2
+    fi
 
     llvm_sdkroot=$(darwin_sdkroot)
     if [ -n "$llvm_sdkroot" ]; then
@@ -946,7 +986,7 @@ setup_toolchain()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=2" \
+        "WHP_PROFILE_SCHEMA=3" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
