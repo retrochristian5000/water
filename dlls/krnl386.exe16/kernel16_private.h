@@ -320,6 +320,28 @@ static inline struct kernel_thread_data *kernel_get_thread_data(void)
 }
 
 /*
+ * Return the current guest i386 CPU context without conflating it with the
+ * architecture-native exception CONTEXT used by the Water host.
+ */
+static inline I386_CONTEXT *kernel_get_i386_cpu_context( CONTEXT *host_context )
+{
+#ifdef __i386__
+    return (I386_CONTEXT *)host_context;
+#elif defined(_WIN64)
+    USHORT machine = 0;
+    void *context = NULL, *context_ex = NULL;
+
+    if (RtlWow64GetCurrentCpuArea( &machine, &context, &context_ex ) ||
+        machine != IMAGE_FILE_MACHINE_I386 || !context)
+        return NULL;
+    return context;
+#else
+    (void)host_context;
+    return NULL;
+#endif
+}
+
+/*
  * Win16/DOS/VxD register entry points carry guest i386 state even when the
  * Water host is ARM64.  Host exception CONTEXT remains architecture-native.
  */
