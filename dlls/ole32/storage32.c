@@ -10543,12 +10543,120 @@ enum stream_1ole_flags {
 /*************************************************************************
  * OleConvertIStorageToOLESTREAMEx [OLE32.@]
  */
-HRESULT WINAPI OleConvertIStorageToOLESTREAMEx ( LPSTORAGE stg, CLIPFORMAT cf, LONG width, LONG height,
-                                                 DWORD size, LPSTGMEDIUM medium, LPOLESTREAM olestream )
+HRESULT WINAPI OleConvertIStorageToOLESTREAMEx(LPSTORAGE storage, CLIPFORMAT format,
+        LONG width, LONG height, DWORD size, STGMEDIUM *medium, LPOLESTREAM olestream)
 {
-    FIXME("%p, %x, %ld, %ld, %ld, %p, %p: stub\n", stg, cf, width, height, size, medium, olestream);
+    OLECONVERT_OLESTREAM_DATA data[2];
+    IStream *stream;
+    HRESULT hr = S_OK;
+    unsigned int i;
 
-    return E_NOTIMPL;
+    TRACE("%p, %x, %ld, %ld, %lu, %p, %p.\n",
+          storage, format, width, height, size, medium, olestream);
+
+    if (!storage || !olestream)
+        return E_INVALIDARG;
+    if (format && (!medium || (medium->tymed != TYMED_HGLOBAL && medium->tymed != TYMED_ISTREAM)))
+        return E_INVALIDARG;
+    if (format && medium->tymed == TYMED_HGLOBAL && !medium->hGlobal)
+        return E_INVALIDARG;
+    if (format && medium->tymed == TYMED_ISTREAM && !medium->pstm)
+        return E_INVALIDARG;
+    if (format && format != CF_METAFILEPICT)
+        return DV_E_CLIPFORMAT;
+    if (format && size > MAXDWORD - sizeof(METAFILEPICT16))
+        return E_INVALIDARG;
+
+    memset(data, 0, sizeof(data));
+
+    data[0].dwOleTypeNameLength = OLESTREAM_MAX_STR_LEN;
+    hr = OLECONVERT_GetOLE10ProgID(storage, data[0].strOleTypeName, &data[0].dwOleTypeNameLength);
+    if (FAILED(hr))
+        goto done;
+
+    hr = IStorage_OpenStream(storage, L"\1Ole10Native", NULL,
+                             STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stream);
+    if (SUCCEEDED(hr))
+    {
+        IStream_Release(stream);
+        OLECONVERT_GetOle10PresData(storage, data);
+        hr = S_OK;
+    }
+    else
+    {
+        OLECONVERT_GetOle20PresData(storage, data);
+        hr = S_OK;
+    }
+
+    HeapFree(GetProcessHeap(), 0, data[1].pData);
+    data[1].pData = NULL;
+    data[1].dwDataLength = 0;
+    data[1].dwOleID = OLESTREAM_ID;
+    data[1].dwTypeID = 0;
+    data[1].dwOleTypeNameLength = 0;
+    data[1].strOleTypeName[0] = 0;
+
+    if (format)
+    {
+        METAFILEPICT16 meta = {0};
+        BYTE *dst;
+
+        data[1].dwTypeID = 5;
+        data[1].dwOleTypeNameLength = sizeof("METAFILEPICT");
+        memcpy(data[1].strOleTypeName, "METAFILEPICT", sizeof("METAFILEPICT"));
+        data[1].dwMetaFileWidth = width;
+        data[1].dwMetaFileHeight = height;
+        data[1].dwDataLength = size + sizeof(meta);
+
+        if (!(data[1].pData = HeapAlloc(GetProcessHeap(), 0, data[1].dwDataLength)))
+        {
+            hr = E_OUTOFMEMORY;
+            goto done;
+        }
+
+        meta.mm = MM_ANISOTROPIC;
+        meta.xExt = width;
+        meta.yExt = height;
+        meta.hMF = 0;
+        memcpy(data[1].pData, &meta, sizeof(meta));
+        dst = data[1].pData + sizeof(meta);
+
+        if (medium->tymed == TYMED_HGLOBAL)
+        {
+            const void *src;
+
+            if (GlobalSize(medium->hGlobal) < size || !(src = GlobalLock(medium->hGlobal)))
+            {
+                hr = E_INVALIDARG;
+                goto done;
+            }
+            memcpy(dst, src, size);
+            GlobalUnlock(medium->hGlobal);
+        }
+        else
+        {
+            ULONG read = 0;
+
+            hr = IStream_Read(medium->pstm, dst, size, &read);
+            if (SUCCEEDED(hr) && read != size)
+                hr = STG_E_READFAULT;
+            if (FAILED(hr))
+                goto done;
+        }
+    }
+
+    hr = OLECONVERT_SaveOLE10(&data[0], olestream);
+    if (SUCCEEDED(hr))
+        hr = OLECONVERT_SaveOLE10(&data[1], olestream);
+
+done:
+    for (i = 0; i < ARRAY_SIZE(data); ++i)
+    {
+        HeapFree(GetProcessHeap(), 0, data[i].pData);
+        HeapFree(GetProcessHeap(), 0, data[i].pstrOleObjFileName);
+    }
+
+    return hr;
 }
 
 /***********************************************************************
