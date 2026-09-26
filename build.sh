@@ -520,6 +520,74 @@ probe_lld_linker()
     return 1
 }
 
+probe_darwin_objc_lld()
+{
+    whp_objc_compiler=$1
+    whp_objc_linker=$2
+    whp_objc_sdkroot=$3
+    whp_objc_object=$(mktemp "${TMPDIR:-/tmp}/whp-water-objc-probe.XXXXXX") ||
+        return 1
+    whp_objc_output=$(mktemp "${TMPDIR:-/tmp}/whp-water-objc-link.XXXXXX") ||
+    {
+        rm -f "$whp_objc_object"
+        unset whp_objc_compiler whp_objc_linker whp_objc_sdkroot whp_objc_object
+        return 1
+    }
+    whp_objc_linker_dir=$(dirname -- "$whp_objc_linker")
+
+    rm -f "$whp_objc_object" "$whp_objc_output"
+    if printf '%s\n' \
+        '#import <Foundation/Foundation.h>' \
+        'int main(void)' \
+        '{' \
+        '    @autoreleasepool { return [NSObject class] ? 0 : 1; }' \
+        '}' |
+        "$whp_objc_compiler" -isysroot "$whp_objc_sdkroot" \
+            -x objective-c -c -o "$whp_objc_object" - >/dev/null 2>&1 &&
+       PATH="$whp_objc_linker_dir:$PATH" "$whp_objc_compiler" \
+            -fuse-ld=lld -isysroot "$whp_objc_sdkroot" \
+            "$whp_objc_object" -framework Foundation \
+            -o "$whp_objc_output" >/dev/null 2>&1
+    then
+        rm -f "$whp_objc_object" "$whp_objc_output"
+        unset whp_objc_compiler whp_objc_linker whp_objc_sdkroot \
+            whp_objc_object whp_objc_output whp_objc_linker_dir
+        return 0
+    fi
+
+    rm -f "$whp_objc_object" "$whp_objc_output"
+    unset whp_objc_compiler whp_objc_linker whp_objc_sdkroot \
+        whp_objc_object whp_objc_output whp_objc_linker_dir
+    return 1
+}
+
+probe_water_host_lld()
+{
+    whp_host_probe_compiler=$1
+    whp_host_probe_linker=$2
+    whp_host_probe_sdkroot=${3:-}
+
+    probe_lld_linker "$whp_host_probe_compiler" "$whp_host_probe_linker" c "$whp_host_probe_sdkroot" ||
+    {
+        unset whp_host_probe_compiler whp_host_probe_linker whp_host_probe_sdkroot
+        return 1
+    }
+
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin)
+            probe_darwin_objc_lld "$whp_host_probe_compiler" "$whp_host_probe_linker" \
+                "$whp_host_probe_sdkroot" ||
+            {
+                unset whp_host_probe_compiler whp_host_probe_linker whp_host_probe_sdkroot
+                return 1
+            }
+            ;;
+    esac
+
+    unset whp_host_probe_compiler whp_host_probe_linker whp_host_probe_sdkroot
+    return 0
+}
+
 linker_flag_is_explicit()
 {
     case " ${LDFLAGS:-} " in
@@ -1246,7 +1314,7 @@ setup_toolchain()
                     die "WATER_LLVM_LINKER=lld is unsafe for arm64e until WHP Mach-O LLD supports authenticated relocations"
                 fi
                 printf 'WHP host linker: system (arm64e requires Apple ld)\n' >&2
-            elif probe_lld_linker "$CC" "$whp_host_lld" c "$WHP_DARWIN_SDKROOT"; then
+            elif probe_water_host_lld "$CC" "$whp_host_lld" "$WHP_DARWIN_SDKROOT"; then
                 LD=$whp_host_lld
                 whp_host_lld_dir=$(dirname -- "$whp_host_lld")
                 PATH="$whp_host_lld_dir:$PATH"
@@ -1258,7 +1326,7 @@ setup_toolchain()
                 export LD LDFLAGS PATH
                 unset whp_host_lld_dir
             elif [ "$WATER_LLVM_LINKER" = lld ]; then
-                die "selected LLVM host linker failed a real link probe: $whp_host_lld"
+                die "selected LLVM host linker failed the Water host link probes: $whp_host_lld"
             fi
         elif [ "$WATER_LLVM_LINKER" = lld ]; then
             die "WATER_LLVM_LINKER=lld requested, but the selected LLVM toolchain has no host-format LLD"
