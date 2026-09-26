@@ -52,8 +52,8 @@ typedef struct
     WORD  cdrom_selector;	/* Protected mode selector for CDROM_HEAP */
 } CDROM_HEAP;
 
-static void do_int2f_16( CONTEXT *context );
-static void MSCDEX_Handler( CONTEXT *context );
+static void do_int2f_16( I386_CONTEXT *context );
+static void MSCDEX_Handler( I386_CONTEXT *context );
 
 /*
  * INT 2Fh/16xx reports the loader/multiplex Windows version, which is not
@@ -78,7 +78,7 @@ static WORD get_windows_mux_version(void)
  *
  * Handler for int 2fh (multiplex).
  */
-void WINAPI DOSVM_Int2fHandler( CONTEXT *context )
+void WINAPI DOSVM_Int2fHandler( I386_CONTEXT *context )
 {
     TRACE("Subfunction 0x%X\n", AX_reg(context));
 
@@ -323,7 +323,7 @@ void WINAPI DOSVM_Int2fHandler( CONTEXT *context )
 /**********************************************************************
  *         do_int2f_16
  */
-static void do_int2f_16( CONTEXT *context )
+static void do_int2f_16( I386_CONTEXT *context )
 {
     DWORD addr;
 
@@ -914,7 +914,7 @@ static void MSCDEX_Request(BYTE *driver_request)
         (data.CurrentPosition.Header.AudioStatus == AUDIO_STATUS_IN_PROGRESS) ? 3 : 1;
 }
 
-static void MSCDEX_Handler(CONTEXT* context)
+static void MSCDEX_Handler(I386_CONTEXT * context)
 {
     int        drive, count;
     char*      p;
