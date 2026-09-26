@@ -439,6 +439,31 @@ static BOOL nls_range_valid( SIZE_T size, SIZE_T offset, SIZE_T count, SIZE_T el
 }
 
 
+static BOOL validate_normalization_nls( const struct norm_table *info, SIZE_T size, USHORT form )
+{
+    const USHORT *tables;
+    SIZE_T words;
+    unsigned int i;
+
+    if (!info || size <= 0x44 || size % sizeof(USHORT) || info->form != form)
+        return FALSE;
+
+    words = size / sizeof(USHORT);
+    tables = &info->classes;
+    for (i = 0; i < 8; i++)
+    {
+        if (tables[i] > words) return FALSE;
+        if (i && tables[i] < tables[i - 1]) return FALSE;
+    }
+
+    /* Every normalization form uses the decomposition hash.  Composition is
+     * optional for decomposition-only forms, but NormalizationC has it. */
+    if (!info->decomp_size) return FALSE;
+    if (form == NormalizationC && !info->comp_size) return FALSE;
+    return TRUE;
+}
+
+
 static BOOL validate_compressed_charmap( const USHORT *table, SIZE_T count )
 {
     unsigned int i, j;
@@ -2354,6 +2379,7 @@ void init_locale( HMODULE module )
     const WCHAR *user_locale_name;
     DWORD count;
     SIZE_T size;
+    NTSTATUS status;
     HKEY hkey;
 
     kernelbase_handle = module;
@@ -2376,7 +2402,15 @@ void init_locale( HMODULE module )
     if (GetEnvironmentVariableW( L"WINEUNIXCP", bufferW, ARRAY_SIZE(bufferW) ))
         unix_cp = wcstoul( bufferW, NULL, 10 );
 
-    NtGetNlsSectionPtr( 12, NormalizationC, NULL, (void **)&norm_info, &size );
+    norm_info = NULL;
+    status = NtGetNlsSectionPtr( 12 /* NLS_SECTION_NORMALIZE */, NormalizationC,
+                                 NULL, (void **)&norm_info, &size );
+    if (status || !validate_normalization_nls( norm_info, size, NormalizationC ))
+    {
+        ERR( "failed to load valid NormalizationC NLS table, status %lx\n", status );
+        norm_info = NULL;
+        return;
+    }
 
     ansi_ptr = NtCurrentTeb()->Peb->AnsiCodePageData ? NtCurrentTeb()->Peb->AnsiCodePageData : utf8;
     oem_ptr = NtCurrentTeb()->Peb->OemCodePageData ? NtCurrentTeb()->Peb->OemCodePageData : utf8;
