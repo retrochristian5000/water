@@ -89,6 +89,8 @@ OPTIONS = (
     Option('WATER_LLVM_ASSERTIONS', 'LLVM toolchain', 'LLVM assertions', 'bool', 'n'),
     Option('WATER_LLVM_LEAN', 'LLVM toolchain', 'Lean Water-only LLVM graph', 'bool', 'y'),
     Option('WATER_LLVM_PCH', 'LLVM toolchain', 'LLVM precompiled headers', 'bool', 'n'),
+    Option('WATER_LLVM_LINKER', 'LLVM toolchain', 'Host linker policy', 'choice',
+           'auto', ('auto', 'lld', 'system')),
 
     Option('WATER_WIN16', 'Build behavior', 'Win16 support', 'choice',
            'auto', ('auto', 'y', 'n')),
