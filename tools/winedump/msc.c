@@ -244,9 +244,17 @@ static const char* get_property(cv_property_t prop)
     if (prop.is_scoped)                 X("scoped");
     if (prop.has_decorated_name)        X("decorated-name");
     if (prop.is_sealed)                 X("sealed");
-    if (prop.hfa)                       pos += snprintf(tmp + pos, sizeof(tmp) - pos, "hfa%x", prop.hfa);
+    if (prop.hfa)
+    {
+        if (pos) tmp[pos++] = ';';
+        pos += snprintf(tmp + pos, sizeof(tmp) - pos, "hfa%x", prop.hfa);
+    }
     if (prop.is_intrinsic)              X("intrinsic");
-    if (prop.mocom)                     pos += snprintf(tmp + pos, sizeof(tmp) - pos, "mocom%x", prop.mocom);
+    if (prop.mocom)
+    {
+        if (pos) tmp[pos++] = ';';
+        pos += snprintf(tmp + pos, sizeof(tmp) - pos, "mocom%x", prop.mocom);
+    }
 #undef X
     if (!pos) return "none";
 
@@ -266,7 +274,11 @@ static const char* get_funcattr(unsigned attr)
     if (attr & 0x0001) X("C++ReturnUDT");
     if (attr & 0x0002) X("Ctor");
     if (attr & 0x0004) X("Ctor-w/virtualbase");
-    if (attr & 0xfff8) pos += snprintf(tmp + pos, sizeof(tmp) - pos, "unk:%x", attr & 0xfff8);
+    if (attr & 0xfff8)
+    {
+        if (pos) tmp[pos++] = ';';
+        pos += snprintf(tmp + pos, sizeof(tmp) - pos, "unk:%x", attr & 0xfff8);
+    }
 #undef X
 
     tmp[pos] = '\0';
@@ -292,7 +304,11 @@ static const char* get_varflags(struct cv_local_varflag flags)
     if (flags.optimized_out)   X("optimized-out");
     if (flags.enreg_global)    X("enreg-global");
     if (flags.enreg_static)    X("enreg-static");
-    if (flags.unused)          pos += snprintf(tmp + pos, sizeof(tmp) - pos, "unk:%x", flags.unused);
+    if (flags.unused)
+    {
+        if (pos) tmp[pos++] = ';';
+        pos += snprintf(tmp + pos, sizeof(tmp) - pos, "unk:%x", flags.unused);
+    }
 #undef X
 
     if (!pos) return "none";

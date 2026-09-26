@@ -825,9 +825,21 @@ static DWORD locale_strings_len;
 
 static void grow_locale_buffer( char **buffer, size_t *size, size_t needed )
 {
+    size_t new_size;
+
     if (*size >= needed) return;
-    *buffer = xrealloc( *buffer, needed );
-    *size = needed;
+    new_size = *size ? *size : 256;
+    while (new_size < needed)
+    {
+        if (new_size > needed / 2)
+        {
+            new_size = needed;
+            break;
+        }
+        new_size *= 2;
+    }
+    *buffer = xrealloc( *buffer, new_size );
+    *size = new_size;
 }
 
 static const char *get_locale_string( DWORD offset )
@@ -840,7 +852,7 @@ static const char *get_locale_string( DWORD offset )
 
     if (offset >= locale_strings_len) return "<invalid>";
     len = locale_strings[offset];
-    if (offset + len + 1 > locale_strings_len) return "<invalid>";
+    if ((DWORD)len + 1 > locale_strings_len - offset) return "<invalid>";
     grow_locale_buffer( &buffer, &buffer_size, (size_t)len * 4 + 3 );
     p = locale_strings + offset + 1;
     buffer[i++] = '"';
@@ -892,7 +904,7 @@ static const char *get_locale_strarray( DWORD offset )
 
     if (offset >= locale_strings_len) return "<invalid>";
     count = locale_strings[offset];
-    if (offset + 1 + count * 2 > locale_strings_len) return "<invalid>";
+    if ((DWORD)count * 2 + 1 > locale_strings_len - offset) return "<invalid>";
     array = (const DWORD *)(locale_strings + offset + 1);
     grow_locale_buffer( &buffer, &buffer_size, 3 );
     buffer[i++] = '{';
@@ -921,7 +933,7 @@ static const char *get_locale_uints( DWORD offset )
 
     if (offset >= locale_strings_len) return "<invalid>";
     len = locale_strings[offset];
-    if (offset + len + 1 > locale_strings_len) return "<invalid>";
+    if ((DWORD)len + 1 > locale_strings_len - offset) return "<invalid>";
     if (len < 2) return "[]";
     count = len / 2;
     grow_locale_buffer( &buffer, &buffer_size, (size_t)count * 9 + 3 );
