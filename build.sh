@@ -332,15 +332,16 @@ darwin_sdkroot()
         *) return 0 ;;
     esac
 
+    if [ -n "${SDKROOT:-}" ] && [ -d "$SDKROOT" ]; then
+        printf '%s\n' "$SDKROOT"
+        return 0
+    fi
+
     xcrun_cmd=$(command -v xcrun 2>/dev/null || true)
     [ -n "$xcrun_cmd" ] ||
-        die "xcrun is required to locate the macOS SDK"
+        die "xcrun is required to resolve the macOS SDK name"
 
     if [ -n "${SDKROOT:-}" ]; then
-        if [ -d "$SDKROOT" ]; then
-            printf '%s\n' "$SDKROOT"
-            return 0
-        fi
         sdkroot=$("$xcrun_cmd" --sdk "$SDKROOT" --show-sdk-path 2>/dev/null || true)
     else
         sdkroot=$("$xcrun_cmd" --sdk macosx --show-sdk-path 2>/dev/null || true)
@@ -876,6 +877,13 @@ setup_toolchain()
     WHP_HOST_CXX_REAL=
     case "$(uname -s 2>/dev/null || true)" in
         Darwin)
+            WHP_DARWIN_SDKROOT=$(darwin_sdkroot)
+            if [ -n "$WHP_DARWIN_SDKROOT" ]; then
+                SDKROOT=$WHP_DARWIN_SDKROOT
+                export SDKROOT
+                printf 'WHP macOS SDK: %s\n' "$WHP_DARWIN_SDKROOT" >&2
+            fi
+
             cc_has_assert=1
             cxx_has_assert=1
             if [ "$whp_auto_cc" = 1 ]; then
@@ -886,8 +894,6 @@ setup_toolchain()
             fi
 
             if [ "$cc_has_assert" = 0 ] || [ "$cxx_has_assert" = 0 ]; then
-                WHP_DARWIN_SDKROOT=$(darwin_sdkroot)
-
                 if [ "$cc_has_assert" = 0 ]; then
                     WHP_HOST_CC_REAL=$CC
                     CC=$(write_darwin_compiler_wrapper clang "$WHP_HOST_CC_REAL" "$WHP_DARWIN_SDKROOT")
@@ -942,6 +948,8 @@ profile_signature()
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
         "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
         "NINJA_CMD=${NINJA_CMD:-}" \
+        "SDKROOT=${SDKROOT:-}" \
+        "MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-}" \
         "WHP_DARWIN_SDKROOT=${WHP_DARWIN_SDKROOT:-}" \
         "WHP_HOST_CC_REAL=${WHP_HOST_CC_REAL:-}" \
         "WHP_HOST_CXX_REAL=${WHP_HOST_CXX_REAL:-}" \
