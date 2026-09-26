@@ -153,9 +153,11 @@ HANDLE __wine_vxd_open( LPCWSTR filenameW, DWORD access, SECURITY_ATTRIBUTES *sa
         wcscpy( name, filenameW );
         wcscat( name, L".vxd" );
     }
-    else if (p && !wcsicmp( p, L".vxd" ) && lstrlenW( filenameW ) <= 12)  /* existing extension has to be .vxd */
+    else if (p && (!wcsicmp( p, L".vxd" ) || !wcsicmp( p, L".386" )) &&
+             lstrlenW( filenameW ) <= 12)
     {
         wcscpy( name, filenameW );
+        if (!wcsicmp( p, L".386" )) wcscpy( name + (p - filenameW), L".vxd" );
     }
     else
     {
