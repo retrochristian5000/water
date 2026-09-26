@@ -190,7 +190,7 @@
 @ stdcall OleConvertIStorageToOLESTREAM(ptr ptr)
 @ stdcall OleConvertIStorageToOLESTREAMEx(ptr long long long long ptr ptr)
 @ stdcall OleConvertOLESTREAMToIStorage(ptr ptr ptr)
-@ stub OleConvertOLESTREAMToIStorageEx
+@ stdcall OleConvertOLESTREAMToIStorageEx(ptr ptr ptr ptr ptr ptr ptr)
 @ stdcall OleCreate(ptr ptr long ptr ptr ptr ptr)
 @ stdcall OleCreateDefaultHandler(ptr ptr ptr ptr)
 @ stdcall OleCreateEmbeddingHelper(ptr ptr long ptr ptr ptr)
