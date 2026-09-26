@@ -10349,6 +10349,123 @@ HRESULT WINAPI OleConvertOLESTREAMToIStorage (
 }
 
 /*************************************************************************
+ * OleConvertOLESTREAMToIStorageEx [OLE32.@]
+ */
+HRESULT WINAPI OleConvertOLESTREAMToIStorageEx(LPOLESTREAM olestream, LPSTORAGE storage,
+        CLIPFORMAT *format, LONG *width, LONG *height, DWORD *size, STGMEDIUM *medium)
+{
+    OLECONVERT_OLESTREAM_DATA data[2];
+    TYMED requested_tymed;
+    HRESULT hr = S_OK;
+    unsigned int i;
+
+    TRACE("%p, %p, %p, %p, %p, %p, %p.\n",
+          olestream, storage, format, width, height, size, medium);
+
+    if (!olestream || !storage || !width || !height || !size || !medium)
+        return E_INVALIDARG;
+    if (medium->tymed != TYMED_NULL && medium->tymed != TYMED_ISTREAM)
+        return E_INVALIDARG;
+    if (medium->tymed == TYMED_ISTREAM && !medium->pstm)
+        return E_INVALIDARG;
+
+    requested_tymed = medium->tymed;
+    if (format) *format = 0;
+    *width = 0;
+    *height = 0;
+    *size = 0;
+    medium->pUnkForRelease = NULL;
+    if (requested_tymed == TYMED_NULL)
+        medium->hGlobal = NULL;
+
+    memset(data, 0, sizeof(data));
+
+    hr = OLECONVERT_LoadOLE10(olestream, &data[0], TRUE);
+    if (SUCCEEDED(hr))
+        hr = OLECONVERT_LoadOLE10(olestream, &data[1], FALSE);
+
+    if (SUCCEEDED(hr))
+    {
+        if (data[0].dwDataLength > sizeof(STORAGE_magic) &&
+            !memcmp(data[0].pData, STORAGE_magic, sizeof(STORAGE_magic)))
+        {
+            OLECONVERT_GetOLE20FromOLE10(storage, data[0].pData, data[0].dwDataLength);
+        }
+        else
+        {
+            OLECONVERT_CreateOle10NativeStream(storage, data[0].pData, data[0].dwDataLength);
+        }
+
+        hr = OLECONVERT_CreateCompObjStream(storage, data[0].strOleTypeName);
+        if (SUCCEEDED(hr))
+            hr = STORAGE_CreateOleStream(storage, 0);
+    }
+
+    if (SUCCEEDED(hr) && data[1].dwDataLength)
+    {
+        const char *name = data[1].strOleTypeName;
+
+        *width = (LONG)data[1].dwMetaFileWidth;
+        *height = (LONG)data[1].dwMetaFileHeight;
+        *size = data[1].dwDataLength;
+
+        if (format)
+        {
+            if (!lstrcmpiA(name, "METAFILEPICT"))
+                *format = CF_METAFILEPICT;
+            else if (!lstrcmpiA(name, "BITMAP"))
+                *format = CF_BITMAP;
+            else if (!lstrcmpiA(name, "DIB"))
+                *format = CF_DIB;
+            else if (*name)
+                *format = RegisterClipboardFormatA(name);
+        }
+
+        if (requested_tymed == TYMED_ISTREAM)
+        {
+            ULONG written = 0;
+
+            hr = IStream_Write(medium->pstm, data[1].pData, data[1].dwDataLength, &written);
+            if (SUCCEEDED(hr) && written != data[1].dwDataLength)
+                hr = STG_E_MEDIUMFULL;
+        }
+        else
+        {
+            void *ptr;
+
+            medium->hGlobal = GlobalAlloc(GMEM_MOVEABLE, data[1].dwDataLength);
+            if (!medium->hGlobal)
+                hr = E_OUTOFMEMORY;
+            else if (!(ptr = GlobalLock(medium->hGlobal)))
+            {
+                GlobalFree(medium->hGlobal);
+                medium->hGlobal = NULL;
+                hr = E_OUTOFMEMORY;
+            }
+            else
+            {
+                memcpy(ptr, data[1].pData, data[1].dwDataLength);
+                GlobalUnlock(medium->hGlobal);
+            }
+        }
+    }
+
+    if (FAILED(hr) && requested_tymed == TYMED_NULL && medium->hGlobal)
+    {
+        GlobalFree(medium->hGlobal);
+        medium->hGlobal = NULL;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(data); ++i)
+    {
+        HeapFree(GetProcessHeap(), 0, data[i].pData);
+        HeapFree(GetProcessHeap(), 0, data[i].pstrOleObjFileName);
+    }
+
+    return hr;
+}
+
+/*************************************************************************
  * OleConvertIStorageToOLESTREAM [OLE32.@]
  *
  * Read info on MSDN
