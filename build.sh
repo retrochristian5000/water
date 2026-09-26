@@ -287,6 +287,68 @@ detect_jobs()
     printf '%s\n' "$jobs"
 }
 
+darwin_sdkroot()
+{
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin) ;;
+        *) return 0 ;;
+    esac
+
+    xcrun_cmd=$(command -v xcrun 2>/dev/null || true)
+    [ -n "$xcrun_cmd" ] ||
+        die "xcrun is required to locate the macOS SDK"
+
+    if [ -n "${SDKROOT:-}" ]; then
+        if [ -d "$SDKROOT" ]; then
+            printf '%s\n' "$SDKROOT"
+            return 0
+        fi
+        sdkroot=$("$xcrun_cmd" --sdk "$SDKROOT" --show-sdk-path 2>/dev/null || true)
+    else
+        sdkroot=$("$xcrun_cmd" --sdk macosx --show-sdk-path 2>/dev/null || true)
+    fi
+
+    [ -n "$sdkroot" ] && [ -d "$sdkroot" ] ||
+        die "could not resolve a usable macOS SDK (SDKROOT=${SDKROOT:-auto})"
+    printf '%s\n' "$sdkroot"
+}
+
+compiler_has_assert_h()
+{
+    compiler=$1
+    language=$2
+    printf '#include <assert.h>\nint main(void) { return 0; }\n' |
+        "$compiler" -x "$language" -fsyntax-only - >/dev/null 2>&1
+}
+
+shell_quote()
+{
+    printf "'"
+    printf '%s' "$1" | sed "s/'/'\\\\''/g"
+    printf "'"
+}
+
+write_darwin_compiler_wrapper()
+{
+    name=$1
+    compiler=$2
+    sdkroot=$3
+    wrapper_dir="$BUILD_DIR/.whp-host-toolchain"
+    wrapper="$wrapper_dir/$name"
+    tmp="$wrapper.tmp.$$"
+
+    mkdir -p "$wrapper_dir"
+    compiler_q=$(shell_quote "$compiler")
+    sdkroot_q=$(shell_quote "$sdkroot")
+    {
+        printf '%s\n' '#!/bin/sh'
+        printf 'exec %s -isysroot %s "$@"\n' "$compiler_q" "$sdkroot_q"
+    } > "$tmp"
+    chmod +x "$tmp"
+    mv -f "$tmp" "$wrapper"
+    printf '%s\n' "$wrapper"
+}
+
 prepare_ninja()
 {
     ninja_cmd=
@@ -529,6 +591,12 @@ bootstrap_llvm()
         -DLLVM_ENABLE_MODULES=OFF \
         -DLLVM_ENABLE_PLUGINS=OFF
 
+    llvm_sdkroot=$(darwin_sdkroot)
+    if [ -n "$llvm_sdkroot" ]; then
+        set -- "$@" "-DCMAKE_OSX_SYSROOT=$llvm_sdkroot"
+        printf 'WHP LLVM macOS SDK: %s\n' "$llvm_sdkroot" >&2
+    fi
+
     case "$WATER_LLVM_LEAN" in
         y|1)
             set -- "$@" \
@@ -640,10 +708,13 @@ find_llvm_bin()
 setup_toolchain()
 {
     LLVM_BIN=$(find_llvm_bin || true)
+    whp_auto_cc=0
+    whp_auto_cxx=0
 
     if [ -z "${CC:-}" ]; then
         [ -n "$LLVM_BIN" ] || die "no usable clang was found"
         CC="$LLVM_BIN/clang"
+        whp_auto_cc=1
     fi
     if [ -z "${CXX:-}" ]; then
         if [ -n "$LLVM_BIN" ] && [ -x "$LLVM_BIN/clang++" ]; then
@@ -652,7 +723,40 @@ setup_toolchain()
             CXX=$(command -v clang++ 2>/dev/null || true)
             [ -n "$CXX" ] || die "no usable clang++ was found"
         fi
+        whp_auto_cxx=1
     fi
+
+    WHP_DARWIN_SDKROOT=
+    WHP_HOST_CC_REAL=
+    WHP_HOST_CXX_REAL=
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin)
+            cc_has_assert=1
+            cxx_has_assert=1
+            compiler_has_assert_h "$CC" c || cc_has_assert=0
+            compiler_has_assert_h "$CXX" c++ || cxx_has_assert=0
+
+            if [ "$cc_has_assert" = 0 ] || [ "$cxx_has_assert" = 0 ]; then
+                if [ "$whp_auto_cc" = 1 ] && [ "$whp_auto_cxx" = 1 ]; then
+                    WHP_DARWIN_SDKROOT=$(darwin_sdkroot)
+                    WHP_HOST_CC_REAL=$CC
+                    WHP_HOST_CXX_REAL=$CXX
+                    CC=$(write_darwin_compiler_wrapper clang "$WHP_HOST_CC_REAL" "$WHP_DARWIN_SDKROOT")
+                    CXX=$(write_darwin_compiler_wrapper clang++ "$WHP_HOST_CXX_REAL" "$WHP_DARWIN_SDKROOT")
+
+                    compiler_has_assert_h "$CC" c ||
+                        die "LLVM C compiler still cannot find assert.h with macOS SDK $WHP_DARWIN_SDKROOT"
+                    compiler_has_assert_h "$CXX" c++ ||
+                        die "LLVM C++ compiler still cannot find assert.h with macOS SDK $WHP_DARWIN_SDKROOT"
+                    printf 'WHP host compiler SDK wrapper: %s\n' "$WHP_DARWIN_SDKROOT" >&2
+                else
+                    printf 'warning: explicit CC/CXX cannot find assert.h; preserving explicit compiler settings\n' >&2
+                fi
+            fi
+            ;;
+    esac
+
+    export WHP_DARWIN_SDKROOT WHP_HOST_CC_REAL WHP_HOST_CXX_REAL
 
     if [ -n "$LLVM_BIN" ]; then
         if [ -z "${AR:-}" ] && [ -x "$LLVM_BIN/llvm-ar" ]; then AR="$LLVM_BIN/llvm-ar"; fi
@@ -687,6 +791,9 @@ profile_signature()
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
         "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
         "NINJA_CMD=${NINJA_CMD:-}" \
+        "WHP_DARWIN_SDKROOT=${WHP_DARWIN_SDKROOT:-}" \
+        "WHP_HOST_CC_REAL=${WHP_HOST_CC_REAL:-}" \
+        "WHP_HOST_CXX_REAL=${WHP_HOST_CXX_REAL:-}" \
         "WATER_SYSTEM_DLLPATH=${WATER_SYSTEM_DLLPATH:-auto}" \
         "WATER_WINE_TOOLS=${WATER_WINE_TOOLS:-auto}" \
         "WATER_WINE64=${WATER_WINE64:-auto}" \
