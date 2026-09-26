@@ -418,9 +418,9 @@ UINT WINAPI ThunkConnect32(
  * FIXME: DDJ talks of certain register usage rules; I'm not sure
  * whether we cover this 100%.
  */
-void WINAPI __regs_QT_Thunk( CONTEXT *context )
+void WINAPI __regs_QT_Thunk( I386_CONTEXT *context )
 {
-    CONTEXT context16;
+    I386_CONTEXT context16;
     DWORD argsize;
 
     context16 = *context;
@@ -498,7 +498,7 @@ DEFINE_REGS_ENTRYPOINT( QT_Thunk )
  *  ESP is EBP-64 after return.
  *
  */
-void WINAPI __regs_FT_Prolog( CONTEXT *context )
+void WINAPI __regs_FT_Prolog( I386_CONTEXT *context )
 {
     /* Build stack frame */
     stack32_push(context, context->Ebp);
@@ -540,12 +540,12 @@ DEFINE_REGS_ENTRYPOINT( FT_Prolog )
  *        of arguments, so that the single DWORD bitmap is no longer
  *        sufficient ...
  */
-void WINAPI __regs_FT_Thunk( CONTEXT *context )
+void WINAPI __regs_FT_Thunk( I386_CONTEXT *context )
 {
     DWORD mapESPrelative = *(DWORD *)(context->Ebp - 20);
     DWORD callTarget     = *(DWORD *)(context->Ebp - 52);
 
-    CONTEXT context16;
+    I386_CONTEXT context16;
     DWORD i, argsize;
     DWORD newstack[32];
     LPBYTE oldstack;
@@ -699,9 +699,9 @@ DWORD WINAPI ThunkInitLS(
  * in the BL register by the called 16-bit routine.
  *
  */
-void WINAPI __regs_Common32ThkLS( CONTEXT *context )
+void WINAPI __regs_Common32ThkLS( I386_CONTEXT *context )
 {
-    CONTEXT context16;
+    I386_CONTEXT context16;
     DWORD argsize;
 
     context16 = *context;
@@ -756,9 +756,9 @@ DEFINE_REGS_ENTRYPOINT( Common32ThkLS )
  * (Note that this function seems only to be used for
  *  OLECLI32 -> OLECLI and OLESVR32 -> OLESVR thunking.)
  */
-void WINAPI __regs_OT_32ThkLSF( CONTEXT *context )
+void WINAPI __regs_OT_32ThkLSF( I386_CONTEXT *context )
 {
-    CONTEXT context16;
+    I386_CONTEXT context16;
     DWORD argsize;
 
     context16 = *context;
@@ -861,7 +861,7 @@ LPVOID WINAPI ThunkInitLSF(
  * Note: The two DWORD arguments get popped off the stack.
  *
  */
-void WINAPI __regs_FT_PrologPrime( CONTEXT *context )
+void WINAPI __regs_FT_PrologPrime( I386_CONTEXT *context )
 {
     DWORD  targetTableOffset;
     LPBYTE relayCode;
@@ -891,7 +891,7 @@ DEFINE_REGS_ENTRYPOINT( FT_PrologPrime )
  *         EAX    start of relay code
  *
  */
-void WINAPI __regs_QT_ThunkPrime( CONTEXT *context )
+void WINAPI __regs_QT_ThunkPrime( I386_CONTEXT *context )
 {
     DWORD  targetTableOffset;
     LPBYTE relayCode;
@@ -967,7 +967,7 @@ BOOL WINAPI SSOnBigStack(void)
  *
  * This must be a register routine as it has to preserve *all* registers.
  */
-void WINAPI SSConfirmSmallStack( CONTEXT *context )
+void WINAPI SSConfirmSmallStack( I386_CONTEXT *context )
 {
     /* We are always on the small stack while in 16-bit code ... */
 }
@@ -995,7 +995,7 @@ DWORD WINAPIV SSCall(
 /**********************************************************************
  *           W32S_BackTo32                      (KERNEL32.51)
  */
-void WINAPI __regs_W32S_BackTo32( CONTEXT *context )
+void WINAPI __regs_W32S_BackTo32( I386_CONTEXT *context )
 {
     LPDWORD stack = (LPDWORD)context->Esp;
     FARPROC proc = (FARPROC)context->Eip;
@@ -1094,7 +1094,7 @@ FreeSLCallback(
  *       The SEGPTR is used by the caller!
  */
 void WINAPI __regs_AllocMappedBuffer(
-              CONTEXT *context /* [in] EDI register: size of buffer to allocate */
+              I386_CONTEXT *context /* [in] EDI register: size of buffer to allocate */
 ) {
     HGLOBAL handle = GlobalAlloc(0, context->Edi + 8);
     DWORD *buffer = GlobalLock(handle);
@@ -1129,7 +1129,7 @@ DEFINE_REGS_ENTRYPOINT( AllocMappedBuffer )
  *  Nothing.
  */
 void WINAPI __regs_FreeMappedBuffer(
-              CONTEXT *context /* [in] EDI register: pointer to buffer */
+              I386_CONTEXT *context /* [in] EDI register: pointer to buffer */
 ) {
     if (context->Edi)
     {
@@ -1190,7 +1190,7 @@ BOOL16 WINAPI IsPeFormat16(
 /***********************************************************************
  *           K32Thk1632Prolog			(KERNEL32.@)
  */
-void WINAPI __regs_K32Thk1632Prolog( CONTEXT *context )
+void WINAPI __regs_K32Thk1632Prolog( I386_CONTEXT *context )
 {
    LPBYTE code = (LPBYTE)context->Eip - 5;
 
@@ -1253,7 +1253,7 @@ DEFINE_REGS_ENTRYPOINT( K32Thk1632Prolog )
 /***********************************************************************
  *           K32Thk1632Epilog			(KERNEL32.@)
  */
-void WINAPI __regs_K32Thk1632Epilog( CONTEXT *context )
+void WINAPI __regs_K32Thk1632Epilog( I386_CONTEXT *context )
 {
    LPBYTE code = (LPBYTE)context->Eip - 13;
 
@@ -1400,7 +1400,7 @@ UINT WINAPI ThunkConnect16(
  *           C16ThkSL                           (KERNEL.630)
  */
 
-void WINAPI C16ThkSL(CONTEXT *context)
+void WINAPI C16ThkSL(I386_CONTEXT *context)
 {
     LPBYTE stub = MapSL(context->Eax), x = stub;
 
@@ -1444,7 +1444,7 @@ void WINAPI C16ThkSL(CONTEXT *context)
  *           C16ThkSL01                         (KERNEL.631)
  */
 
-void WINAPI C16ThkSL01(CONTEXT *context)
+void WINAPI C16ThkSL01(I386_CONTEXT *context)
 {
     LPBYTE stub = MapSL(context->Eax), x = stub;
 
@@ -1920,7 +1920,7 @@ void WINAPI InitCBClient16( FARPROC glueLS )
 /***********************************************************************
  *     CBClientGlueSL                      (KERNEL.604)
  */
-void WINAPI CBClientGlueSL( CONTEXT *context )
+void WINAPI CBClientGlueSL( I386_CONTEXT *context )
 {
     /* Create stack frame */
     SEGPTR stackSeg = stack16_push( 12 );
@@ -2071,7 +2071,7 @@ __ASM_GLOBAL_FUNC( CALL32_CBClient,
 /***********************************************************************
  *     CBClientThunkSL                      (KERNEL.620)
  */
-void WINAPI CBClientThunkSL( CONTEXT *context )
+void WINAPI CBClientThunkSL( I386_CONTEXT *context )
 {
     /* Call 32-bit relay code */
 
@@ -2132,7 +2132,7 @@ __ASM_GLOBAL_FUNC( CALL32_CBClientEx,
 /***********************************************************************
  *     CBClientThunkSLEx                    (KERNEL.621)
  */
-void WINAPI CBClientThunkSLEx( CONTEXT *context )
+void WINAPI CBClientThunkSLEx( I386_CONTEXT *context )
 {
     /* Call 32-bit relay code */
 
@@ -2401,7 +2401,7 @@ INT WINAPIV k32wsprintfA(LPSTR buffer, LPCSTR spec, ...)
  * Real prototype is:
  *   INT16 WINAPI Catch( LPCATCHBUF lpbuf );
  */
-void WINAPI Catch16( LPCATCHBUF lpbuf, CONTEXT *context )
+void WINAPI Catch16( LPCATCHBUF lpbuf, I386_CONTEXT *context )
 {
     /* Note: we don't save the current ss, as the catch buffer is */
     /* only 9 words long. Hopefully no one will have the silly    */
@@ -2439,7 +2439,7 @@ void WINAPI Catch16( LPCATCHBUF lpbuf, CONTEXT *context )
  * Real prototype is:
  *   INT16 WINAPI Throw( LPCATCHBUF lpbuf, INT16 retval );
  */
-void WINAPI Throw16( LPCATCHBUF lpbuf, INT16 retval, CONTEXT *context )
+void WINAPI Throw16( LPCATCHBUF lpbuf, INT16 retval, I386_CONTEXT *context )
 {
     STACK16FRAME *pFrame;
     STACK32FRAME *frame32;
