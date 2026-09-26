@@ -433,6 +433,23 @@ static struct strarray build_tool_name( const char *target_name, struct tool_nam
         return ret;
     }
 
+    /*
+     * Water is LLVM-first.  Prefer the compiler selected by configure before
+     * probing target-prefixed GNU names; otherwise a stray <target>-gcc in
+     * PATH silently overrides CC=clang for cross-target winegcc invocations.
+     * Explicit --cc-cmd remains authoritative, and the GNU lookup below stays
+     * available as the compatibility fallback when the configured compiler
+     * cannot be found.
+     */
+    if (tool.deflt && *tool.deflt && !strncmp( tool.llvm_base, "clang", 5 ) &&
+        (path = find_binary( tool.deflt )))
+    {
+        ret = strarray_fromstring( path, " " );
+        if (target_name && strstr( get_basename( ret.str[0] ), "clang" ))
+            add_clang_options( target_name, &ret );
+        return ret;
+    }
+
     if (target_name && target_version)
         str = strmake( "%s-%s-%s", target_name, tool.base, target_version );
     else if (target_name)
