@@ -39,6 +39,8 @@ typedef struct tagDIOCRegs {
     DWORD   reg_Flags;
 } DIOC_REGISTERS, *PDIOC_REGISTERS;
 
+C_ASSERT( sizeof(DIOC_REGISTERS) == 7 * sizeof(DWORD) );
+
 #define VWIN32_DIOC_DOS_IOCTL     1 /* This is the specified MS-DOS device I/O ctl - Interrupt 21h Function 4400h - 4411h */
 #define VWIN32_DIOC_DOS_INT25     2 /* This is the Absolute Disk Read command - Interrupt 25h */
 #define VWIN32_DIOC_DOS_INT26     3 /* This is the Absolute Disk Write command - Interrupt 25h */
@@ -55,23 +57,23 @@ typedef struct tagMID {
 } MID, *PMID;
 #pragma pack(pop)
 
-extern void WINAPI __wine_call_int_handler16( BYTE intnum, CONTEXT *context );
+extern void WINAPI __wine_call_int_handler16( BYTE intnum, I386_CONTEXT *context );
 
 /* Pop a DWORD from the 32-bit stack */
-static inline DWORD stack32_pop( CONTEXT *context )
+static inline DWORD stack32_pop( I386_CONTEXT *context )
 {
-    DWORD ret = *(DWORD *)context->Esp;
+    DWORD ret = *(DWORD *)(UINT_PTR)context->Esp;
     context->Esp += sizeof(DWORD);
     return ret;
 }
 
-static void DIOCRegs_2_CONTEXT( DIOC_REGISTERS *pIn, CONTEXT *pCxt )
+static void DIOCRegs_2_i386_context( const DIOC_REGISTERS *pIn, I386_CONTEXT *pCxt )
 {
     memset( pCxt, 0, sizeof(*pCxt) );
     /* Note: segment registers == 0 means that CTX_SEG_OFF_TO_LIN
              will interpret 32-bit register contents as linear pointers */
 
-    pCxt->ContextFlags=CONTEXT_INTEGER|CONTEXT_CONTROL;
+    pCxt->ContextFlags = CONTEXT_I386_INTEGER | CONTEXT_I386_CONTROL;
     pCxt->Eax = pIn->reg_EAX;
     pCxt->Ebx = pIn->reg_EBX;
     pCxt->Ecx = pIn->reg_ECX;
@@ -84,7 +86,7 @@ static void DIOCRegs_2_CONTEXT( DIOC_REGISTERS *pIn, CONTEXT *pCxt )
     pCxt->EFlags = pIn->reg_Flags & ~0x00020000; /* clear vm86 mode */
 }
 
-static void CONTEXT_2_DIOCRegs( CONTEXT *pCxt, DIOC_REGISTERS *pOut )
+static void i386_context_2_DIOCRegs( const I386_CONTEXT *pCxt, DIOC_REGISTERS *pOut )
 {
     memset( pOut, 0, sizeof(DIOC_REGISTERS) );
 
@@ -117,22 +119,31 @@ BOOL WINAPI VWIN32_DeviceIoControl(DWORD dwIoControlCode,
     case 0x29: /* Int 0x31 call, call it VWIN_DIOC_INT31 ? */
     case VWIN32_DIOC_DOS_DRIVEINFO:
         {
-            CONTEXT cxt;
-            DIOC_REGISTERS *pIn  = lpvInBuffer;
+            I386_CONTEXT cxt;
+            const DIOC_REGISTERS *pIn = lpvInBuffer;
             DIOC_REGISTERS *pOut = lpvOutBuffer;
             BYTE intnum = 0;
 
+            if (lpcbBytesReturned) *lpcbBytesReturned = 0;
+            if (!pIn || cbInBuffer < sizeof(*pIn) ||
+                !pOut || cbOutBuffer < sizeof(*pOut))
+            {
+                SetLastError( ERROR_INSUFFICIENT_BUFFER );
+                return FALSE;
+            }
+
             TRACE( "Control '%s': "
-                   "eax=0x%08lx, ebx=0x%08lx, ecx=0x%08lx, "
-                   "edx=0x%08lx, esi=0x%08lx, edi=0x%08lx\n",
+                   "eax=0x%08x, ebx=0x%08x, ecx=0x%08x, "
+                   "edx=0x%08x, esi=0x%08x, edi=0x%08x\n",
                    (dwIoControlCode == VWIN32_DIOC_DOS_IOCTL)? "VWIN32_DIOC_DOS_IOCTL" :
                    (dwIoControlCode == VWIN32_DIOC_DOS_INT25)? "VWIN32_DIOC_DOS_INT25" :
                    (dwIoControlCode == VWIN32_DIOC_DOS_INT26)? "VWIN32_DIOC_DOS_INT26" :
                    (dwIoControlCode == VWIN32_DIOC_DOS_DRIVEINFO)? "VWIN32_DIOC_DOS_DRIVEINFO" :  "???",
-                   pIn->reg_EAX, pIn->reg_EBX, pIn->reg_ECX,
-                   pIn->reg_EDX, pIn->reg_ESI, pIn->reg_EDI );
+                   (unsigned int)pIn->reg_EAX, (unsigned int)pIn->reg_EBX,
+                   (unsigned int)pIn->reg_ECX, (unsigned int)pIn->reg_EDX,
+                   (unsigned int)pIn->reg_ESI, (unsigned int)pIn->reg_EDI );
 
-            DIOCRegs_2_CONTEXT( pIn, &cxt );
+            DIOCRegs_2_i386_context( pIn, &cxt );
 
             switch (dwIoControlCode)
             {
@@ -156,7 +167,8 @@ BOOL WINAPI VWIN32_DeviceIoControl(DWORD dwIoControlCode,
             }
 
             __wine_call_int_handler16( intnum, &cxt );
-            CONTEXT_2_DIOCRegs( &cxt, pOut );
+            i386_context_2_DIOCRegs( &cxt, pOut );
+            if (lpcbBytesReturned) *lpcbBytesReturned = sizeof(*pOut);
         }
         return TRUE;
 
@@ -165,7 +177,7 @@ BOOL WINAPI VWIN32_DeviceIoControl(DWORD dwIoControlCode,
         return FALSE;
 
     default:
-        FIXME( "Unknown Control %ld\n", dwIoControlCode);
+        FIXME( "Unknown Control %u\n", (unsigned int)dwIoControlCode);
         return FALSE;
     }
 }
@@ -178,7 +190,7 @@ BOOL WINAPI VWIN32_DeviceIoControl(DWORD dwIoControlCode,
  *  Programming Secrets".  Parameters from experimentation on real Win98.
  *
  */
-DWORD WINAPI VWIN32_VxDCall( DWORD service, CONTEXT *context )
+DWORD WINAPI VWIN32_VxDCall( DWORD service, I386_CONTEXT *context )
 {
     switch ( LOWORD(service) )
     {
