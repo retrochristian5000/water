@@ -194,7 +194,7 @@ SNOOP16_GetProcAddress16(HMODULE16 hmod,DWORD ordinal,FARPROC16 origfun) {
 }
 
 #define CALLER1REF (*(DWORD*)(MapSL( MAKESEGPTR(context->SegSs,LOWORD(context->Esp)+4))))
-void WINAPI __wine_snoop_entry( CONTEXT *context )
+void WINAPI __wine_snoop_entry( I386_CONTEXT *context )
 {
 	DWORD		ordinal=0;
 	DWORD		entry=(DWORD)MapSL( MAKESEGPTR(context->SegCs,LOWORD(context->Eip)) )-5;
@@ -262,7 +262,7 @@ void WINAPI __wine_snoop_entry( CONTEXT *context )
 	TRACE(") ret=%04x:%04x\n",HIWORD(ret->origreturn),LOWORD(ret->origreturn));
 }
 
-void WINAPI __wine_snoop_return( CONTEXT *context )
+void WINAPI __wine_snoop_return( I386_CONTEXT *context )
 {
 	SNOOP16_RETURNENTRY	*ret = (SNOOP16_RETURNENTRY*)((char *) MapSL( MAKESEGPTR(context->SegCs,LOWORD(context->Eip)) )-5);
 
