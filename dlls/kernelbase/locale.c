@@ -620,6 +620,88 @@ invalid_charmap:
     return FALSE;
 }
 
+static BOOL validate_sort_casemap( const USHORT *data, SIZE_T words, SIZE_T *used )
+{
+    SIZE_T upper_size, lower_size, lower_pos;
+
+    if (words < 3 || data[0] != 1) return FALSE;
+
+    upper_size = data[1];
+    if (upper_size <= 1 || upper_size > words - 1 ||
+        !validate_compressed_charmap( data + 2, upper_size - 1 ))
+        return FALSE;
+
+    lower_pos = upper_size + 1;
+    if (lower_pos >= words) return FALSE;
+    lower_size = data[lower_pos];
+    if (lower_size <= 1 || lower_size > words - lower_pos ||
+        !validate_compressed_charmap( data + lower_pos + 1, lower_size - 1 ))
+        return FALSE;
+
+    *used = 1 + upper_size + lower_size;
+    return *used <= words;
+}
+
+
+static BOOL validate_sort_ctype( const WORD *ctype, SIZE_T section_size )
+{
+    const BYTE *index;
+    SIZE_T total, index_offset, index_size, types_count;
+    unsigned int i, j, k;
+
+    if (section_size < 2 * sizeof(*ctype)) return FALSE;
+
+    total = ctype[0];
+    index_offset = (SIZE_T)ctype[1] + 2;
+    if (total > section_size || ctype[1] < 2 || index_offset > total ||
+        (ctype[1] - 2) % (3 * sizeof(WORD)))
+        return FALSE;
+
+    types_count = (ctype[1] - 2) / (3 * sizeof(WORD));
+    if (!types_count) return FALSE;
+
+    index = (const BYTE *)ctype + index_offset;
+    index_size = total - index_offset;
+    if (index_size < 256 * sizeof(WORD)) return FALSE;
+
+    for (i = 0; i < 256; i++)
+    {
+        SIZE_T row_offset = ((const WORD *)index)[i];
+        const WORD *row;
+
+        if (row_offset % sizeof(WORD) || row_offset > index_size - 16 * sizeof(WORD))
+            return FALSE;
+        row = (const WORD *)(index + row_offset);
+
+        for (j = 0; j < 16; j++)
+        {
+            SIZE_T data_offset = row[j];
+
+            if (data_offset > index_size - 16) return FALSE;
+            for (k = 0; k < 16; k++)
+                if (index[data_offset + k] >= types_count) return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+
+static BOOL validate_sort_exception( const UINT *keys, SIZE_T count, UINT except )
+{
+    unsigned int i;
+
+    if (!except) return TRUE;
+    if (except > count || 256 > count - except) return FALSE;
+
+    for (i = 0; i < 256; i++)
+    {
+        SIZE_T page = keys[except + i];
+        if (page > count || 256 > count - page) return FALSE;
+    }
+    return TRUE;
+}
+
+
 static BOOL load_sortdefault_nls(void)
 {
     const struct
@@ -632,8 +714,9 @@ static BOOL load_sortdefault_nls(void)
 
     const WORD *ctype;
     const UINT *table, *end;
+    const USHORT *case_ptr;
     UINT i;
-    SIZE_T size, keys_count, casemap_words;
+    SIZE_T size, keys_count, casemap_words, case_starts[3], case_used, case_remaining;
     NTSTATUS status;
     const struct sort_compression *last_compr;
 
@@ -665,10 +748,22 @@ static BOOL load_sortdefault_nls(void)
     sort.keys = (UINT *)((char *)header + header->sortkeys);
     sort.casemap = (USHORT *)((char *)header + header->casemaps);
 
+    case_ptr = (const USHORT *)((const char *)header + header->casemaps);
+    case_remaining = casemap_words;
+    for (i = 0; i < ARRAY_SIZE(case_starts); i++)
+    {
+        case_starts[i] = case_ptr - (const USHORT *)((const char *)header + header->casemaps);
+        if (!validate_sort_casemap( case_ptr, case_remaining, &case_used ))
+        {
+            ERR( "invalid sortdefault.nls casemap table %u\n", i );
+            return FALSE;
+        }
+        case_ptr += case_used;
+        case_remaining -= case_used;
+    }
+
     ctype = (WORD *)((char *)header + header->ctypes);
-    if (header->sortids - header->ctypes < 2 * sizeof(*ctype) ||
-        ctype[0] > header->sortids - header->ctypes ||
-        ctype[1] + 2 > ctype[0])
+    if (!validate_sort_ctype( ctype, header->sortids - header->ctypes ))
     {
         ERR( "invalid sortdefault.nls character type table\n" );
         return FALSE;
@@ -726,16 +821,26 @@ static BOOL load_sortdefault_nls(void)
 
     for (i = 0; i < sort.guid_count; i++)
     {
-        if (sort.guids[i].casemap >= casemap_words ||
+        SIZE_T j;
+        BOOL valid_casemap = sort.guids[i].casemap == 0;
+
+        for (j = 0; j < ARRAY_SIZE(case_starts); j++)
+            if (sort.guids[i].casemap == case_starts[j]) valid_casemap = TRUE;
+
+        if (!valid_casemap ||
             (sort.guids[i].compr != ~0u && sort.guids[i].compr >= sort.compr_count) ||
-            sort.guids[i].except >= keys_count ||
-            sort.guids[i].ling_except >= keys_count)
+            !validate_sort_exception( sort.keys, keys_count, sort.guids[i].except ) ||
+            !validate_sort_exception( sort.keys, keys_count, sort.guids[i].ling_except ))
             goto invalid;
     }
 
     locale_sorts = RtlAllocateHeap( GetProcessHeap(), HEAP_ZERO_MEMORY,
                                     locale_table->nb_lcnames * sizeof(*locale_sorts) );
-    if (!locale_sorts) return FALSE;
+    if (!locale_sorts)
+    {
+        memset( &sort, 0, sizeof(sort) );
+        return FALSE;
+    }
     return TRUE;
 
 invalid:
