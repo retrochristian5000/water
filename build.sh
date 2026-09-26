@@ -341,6 +341,35 @@ detect_jobs()
     printf '%s\n' "$jobs"
 }
 
+find_existing_ninja()
+{
+    if [ -n "${NINJA_CMD:-}" ]; then
+        printf '%s\n' "$NINJA_CMD"
+        return 0
+    fi
+    if [ -n "${NINJA:-}" ]; then
+        printf '%s\n' "$NINJA"
+        return 0
+    fi
+
+    whp_ninja_system=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    whp_ninja_machine=$(uname -m 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    whp_ninja_dir="$BUILD_DIR/../.whp-host-tools/ninja-${whp_ninja_system}-${whp_ninja_machine}"
+
+    for whp_ninja_candidate in "$whp_ninja_dir/ninja" "$whp_ninja_dir/ninja.exe"
+    do
+        if [ -x "$whp_ninja_candidate" ]; then
+            printf '%s\n' "$whp_ninja_candidate"
+            unset whp_ninja_system whp_ninja_machine whp_ninja_dir whp_ninja_candidate
+            return 0
+        fi
+    done
+
+    whp_ninja_candidate=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+    printf '%s\n' "$whp_ninja_candidate"
+    unset whp_ninja_system whp_ninja_machine whp_ninja_dir whp_ninja_candidate
+}
+
 darwin_sdkroot()
 {
     case "$(uname -s 2>/dev/null || true)" in
@@ -715,10 +744,7 @@ llvm_bootstrap_has_target()
     whp_target=$1
 
     if [ -f "$LLVM_BOOTSTRAP_DIR/build.ninja" ]; then
-        ninja_cmd=${NINJA_CMD:-${NINJA:-}}
-        if [ -z "$ninja_cmd" ]; then
-            ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
-        fi
+        ninja_cmd=$(find_existing_ninja)
         [ -n "$ninja_cmd" ] || { unset whp_target; return 1; }
         if "$ninja_cmd" -C "$LLVM_BOOTSTRAP_DIR" -t targets all 2>/dev/null |
            awk -F: -v wanted="$whp_target" '$1 == wanted { found = 1 } END { exit !found }'; then
