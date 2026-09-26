@@ -24,13 +24,15 @@ The build funnel regenerates the ignored `./configure` script from
 `configure.ac` with Autoconf, initializes the pinned submodules, selects the
 LLVM toolchain, configures an out-of-tree build, and invokes Ninja or Make.
 Use `./build.sh menuconfig` to edit the persistent ignored `.whpconfig`
-profile. The menu controls PE architectures, the WHP LLVM bootstrap policy,
-build behavior, and optional Wine components. The LLVM menu also defaults to
-a lean Water-only graph: unused tests, docs, examples, benchmarks, utilities,
-runtimes, bindings, and default tool sweeps are excluded while required Clang,
-LLD, archive, symbol, and strip tools remain available. It uses the same curses UI as
-the QEMU funnel when Python is available and falls back to a POSIX-shell menu
-otherwise.
+profile. The menu controls PE architectures, the WHP LLVM bootstrap and host
+linker policies, build behavior, and optional Wine components. The LLVM menu
+defaults to a lean Water-only graph: unused tests, docs, examples, benchmarks,
+utilities, runtimes, bindings, and default tool sweeps are excluded while
+required Clang, LLD, archive, symbol, and strip tools remain available. In
+automatic linker mode the bootstrap also builds the host LLD backend and uses
+it only after a real link probe succeeds; arm64e macOS remains on Apple ld.
+It uses the same curses UI as the QEMU funnel when Python is available and
+falls back to a POSIX-shell menu otherwise.
 
 Use `./build.sh configure [options]` when one-run or advanced configure
 options are needed; explicit command-line options override the saved profile.
