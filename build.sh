@@ -18,6 +18,9 @@ WHP_MENU_SCHEMA="$SOURCE_DIR/scripts/whp-config/menu-options.def"
 NINJA_BOOTSTRAP_TOOL="$SOURCE_DIR/scripts/ensure-ninja.py"
 CONFIGURE_USER_ARGS_FILE="$BUILD_DIR/.whp-configure-args"
 PROFILE_FILE="$BUILD_DIR/.whp-profile"
+AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
+LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
+LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -58,7 +61,7 @@ esac
 usage()
 {
     cat <<EOF
-Usage: ./build.sh [build|configure|reconfigure|menuconfig|clean|distclean|install|test|TARGET...]
+Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|clean|distclean|install|test|TARGET...]
 
 Environment:
   WHP_BUILD_DIR         Out-of-tree build directory (default: ./build)
@@ -229,10 +232,44 @@ validate_profile()
     done
 }
 
+autoconf_state_signature()
+{
+    autoconf_path=$(command -v "$AUTOCONF" 2>/dev/null || true)
+    [ -n "$autoconf_path" ] ||
+        die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
+
+    printf 'AUTOCONF=%s\n' "$autoconf_path"
+    "$AUTOCONF" --version 2>/dev/null | sed -n '1p'
+    cksum "$SOURCE_DIR/configure.ac"
+    if [ -f "$SOURCE_DIR/aclocal.m4" ]; then
+        cksum "$SOURCE_DIR/aclocal.m4"
+    fi
+    if [ -f "$SOURCE_DIR/configure" ]; then
+        cksum "$SOURCE_DIR/configure"
+    fi
+}
+
+record_autoconf_state()
+{
+    mkdir -p "$BUILD_DIR"
+    tmp="$AUTOCONF_STATE_FILE.tmp.$$"
+    autoconf_state_signature > "$tmp"
+    mv -f "$tmp" "$AUTOCONF_STATE_FILE"
+}
+
 generate_configure()
 {
     command -v "$AUTOCONF" >/dev/null 2>&1 ||
         die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
+
+    if [ -f "$SOURCE_DIR/configure" ] && [ -f "$AUTOCONF_STATE_FILE" ]; then
+        current=$(autoconf_state_signature)
+        previous=$(cat "$AUTOCONF_STATE_FILE")
+        if [ "$current" = "$previous" ]; then
+            printf 'WHP configure script: cached\n' >&2
+            return 0
+        fi
+    fi
 
     configure_tmp="$SOURCE_DIR/.configure.tmp.$$"
     rm -f "$configure_tmp"
@@ -255,6 +292,7 @@ generate_configure()
         mv -f "$configure_tmp" "$SOURCE_DIR/configure"
         printf 'WHP configure script: regenerated from configure.ac\n' >&2
     fi
+    record_autoconf_state
 }
 
 init_submodules()
@@ -548,6 +586,85 @@ select_llvm_cache()
     printf '%s\n' "$llvm_cache"
 }
 
+llvm_source_revision()
+{
+    git_cmd=$(command -v git 2>/dev/null || true)
+    [ -n "$git_cmd" ] || return 1
+    "$git_cmd" -C "$LLVM_SOURCE_DIR" rev-parse HEAD 2>/dev/null
+}
+
+llvm_source_is_dirty()
+{
+    git_cmd=$(command -v git 2>/dev/null || true)
+    [ -n "$git_cmd" ] || return 1
+    "$git_cmd" -C "$LLVM_SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+        return 1
+
+    "$git_cmd" -C "$LLVM_SOURCE_DIR" diff --quiet --ignore-submodules=dirty -- 2>/dev/null ||
+        return 0
+    "$git_cmd" -C "$LLVM_SOURCE_DIR" diff --cached --quiet --ignore-submodules=dirty -- 2>/dev/null ||
+        return 0
+    return 1
+}
+
+llvm_bootstrap_config_signature()
+{
+    llvm_targets_sig=$(select_llvm_targets)
+    llvm_cache_sig=$(select_llvm_cache)
+    llvm_sdkroot_sig=$(darwin_sdkroot)
+
+    printf '%s\n' \
+        "WATER_LLVM_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
+        "WATER_LLVM_ASSERTIONS=$WATER_LLVM_ASSERTIONS" \
+        "WATER_LLVM_LEAN=$WATER_LLVM_LEAN" \
+        "WATER_LLVM_PCH=$WATER_LLVM_PCH" \
+        "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
+        "WATER_COMPILER_CACHE=$WATER_COMPILER_CACHE" \
+        "LLVM_TARGETS=$llvm_targets_sig" \
+        "LLVM_CACHE=$llvm_cache_sig" \
+        "LLVM_SDKROOT=$llvm_sdkroot_sig" \
+        "NINJA_CMD=${NINJA_CMD:-${NINJA:-}}"
+}
+
+llvm_bootstrap_state_signature()
+{
+    llvm_revision=$(llvm_source_revision 2>/dev/null || true)
+    printf 'LLVM_SOURCE_REV=%s\n' "${llvm_revision:-unknown}"
+    llvm_bootstrap_config_signature
+}
+
+record_llvm_bootstrap_state()
+{
+    tmp="$LLVM_BOOTSTRAP_STATE_FILE.tmp.$$"
+    llvm_bootstrap_state_signature > "$tmp"
+    mv -f "$tmp" "$LLVM_BOOTSTRAP_STATE_FILE"
+}
+
+record_llvm_bootstrap_config()
+{
+    tmp="$LLVM_BOOTSTRAP_CONFIG_FILE.tmp.$$"
+    llvm_bootstrap_config_signature > "$tmp"
+    mv -f "$tmp" "$LLVM_BOOTSTRAP_CONFIG_FILE"
+}
+
+llvm_bootstrap_needs_update()
+{
+    [ -x "$LLVM_BOOTSTRAP_DIR/bin/clang" ] || return 0
+    [ -f "$LLVM_BOOTSTRAP_STATE_FILE" ] || return 0
+
+    # Dirty tracked LLVM sources are always handed to the underlying incremental
+    # build. Ninja/Make will decide which objects actually need rebuilding.
+    if llvm_source_is_dirty; then
+        return 0
+    fi
+
+    llvm_source_revision >/dev/null 2>&1 || return 0
+
+    current=$(llvm_bootstrap_state_signature)
+    previous=$(cat "$LLVM_BOOTSTRAP_STATE_FILE")
+    [ "$current" != "$previous" ]
+}
+
 bootstrap_llvm()
 {
     [ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ] ||
@@ -637,6 +754,16 @@ bootstrap_llvm()
         set -- "$@" "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
     fi
 
+    llvm_configure=1
+    if [ -f "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" ] &&
+       [ -f "$LLVM_BOOTSTRAP_CONFIG_FILE" ]; then
+        current=$(llvm_bootstrap_config_signature)
+        previous=$(cat "$LLVM_BOOTSTRAP_CONFIG_FILE")
+        if [ "$current" = "$previous" ]; then
+            llvm_configure=0
+        fi
+    fi
+
     printf 'WHP LLVM targets: %s\n' "$llvm_targets" >&2
     printf 'WHP LLVM LLD backends: %s\n' "$llvm_lld_backends" >&2
     if [ -n "$llvm_cache" ]; then
@@ -646,12 +773,18 @@ bootstrap_llvm()
     fi
     printf 'WHP LLVM lean profile: %s\n' "$WATER_LLVM_LEAN" >&2
 
-    "$cmake_cmd" "$@"
+    if [ "$llvm_configure" = 1 ]; then
+        "$cmake_cmd" "$@"
+        record_llvm_bootstrap_config
+    else
+        printf 'WHP LLVM CMake: cached\n' >&2
+    fi
 
     jobs=$(detect_jobs)
-    printf 'WHP LLVM bootstrap: %s\n' "$LLVM_BOOTSTRAP_DIR" >&2
+    printf 'WHP LLVM bootstrap: incremental %s\n' "$LLVM_BOOTSTRAP_DIR" >&2
     "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
         --target clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+    record_llvm_bootstrap_state
 }
 prepare_llvm_toolchain()
 {
@@ -667,9 +800,19 @@ prepare_llvm_toolchain()
             return
             ;;
         auto)
-            if [ -n "${CC:-}" ] ||
-               [ -x "$LLVM_BOOTSTRAP_DIR/bin/clang" ] ||
-               [ -x "$LLVM_SOURCE_DIR/build/bin/clang" ] ||
+            if [ -n "${CC:-}" ]; then
+                return
+            fi
+            if [ -x "$LLVM_BOOTSTRAP_DIR/bin/clang" ]; then
+                if llvm_bootstrap_needs_update; then
+                    printf 'WHP LLVM bootstrap: source/config changed; updating incrementally\n' >&2
+                    bootstrap_llvm
+                else
+                    printf 'WHP LLVM bootstrap: cached\n' >&2
+                fi
+                return
+            fi
+            if [ -x "$LLVM_SOURCE_DIR/build/bin/clang" ] ||
                [ -x "$LLVM_SOURCE_DIR/build/Release/bin/clang" ] ||
                command -v clang >/dev/null 2>&1
             then
@@ -1066,7 +1209,7 @@ case "${1:-build}" in
             configure_saved
         fi
         ;;
-    build)
+    build|incremental)
         if [ "$#" -gt 0 ]; then shift; fi
         ensure_configured
         run_build "$@"
