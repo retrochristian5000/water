@@ -478,6 +478,57 @@ static BOOL validate_compressed_charmap( const USHORT *table, SIZE_T count )
 }
 
 
+static BOOL validate_codepage_nls( const USHORT *data, SIZE_T size )
+{
+    SIZE_T words = size / sizeof(*data), pos, wide_pos;
+    unsigned int i, glyphs;
+
+    if (!data || size % sizeof(*data) || words < 14) return FALSE;
+    if (data[0] < 13 || data[0] >= words) return FALSE;
+    if (data[2] != 1 && data[2] != 2) return FALSE;
+
+    pos = data[0];
+    if (pos + 1 + 256 >= words) return FALSE;
+    wide_pos = pos + data[pos] + 1;
+
+    pos += 1 + 256;
+    glyphs = data[pos++];
+    if (glyphs)
+    {
+        if (glyphs != 256 || glyphs > words - pos) return FALSE;
+        pos += glyphs;
+    }
+    if (pos >= words) return FALSE;
+
+    if (data[2] == 1)
+    {
+        SIZE_T wide_bytes;
+
+        if (data[pos]) return FALSE;
+        if (wide_pos > (SIZE_T)-1 / sizeof(*data)) return FALSE;
+        wide_bytes = wide_pos * sizeof(*data);
+        return wide_bytes <= size && 65536 <= size - wide_bytes;
+    }
+    else
+    {
+        SIZE_T offsets, remaining;
+
+        if (!data[pos]) return FALSE;
+        offsets = pos + 1;
+        if (!nls_range_valid( words, offsets, 256, 1 )) return FALSE;
+        remaining = words - offsets;
+
+        for (i = 0; i < 256; i++)
+        {
+            USHORT offset = data[offsets + i];
+
+            if (offset && (offset > remaining || 256 > remaining - offset)) return FALSE;
+        }
+        return nls_range_valid( words, wide_pos, 65536, 1 );
+    }
+}
+
+
 static BOOL load_locale_nls(void)
 {
     struct
@@ -2615,7 +2666,9 @@ static const CPTABLEINFO *get_codepage_table( UINT codepage )
         ERR( "too many codepages\n" );
         return NULL;
     }
-    if (NtGetNlsSectionPtr( 11, codepage, NULL, (void **)&ptr, &size ))
+    ptr = NULL;
+    if (NtGetNlsSectionPtr( 11 /* NLS_SECTION_CODEPAGE */, codepage, NULL, (void **)&ptr, &size ) ||
+        !validate_codepage_nls( ptr, size ))
     {
         RtlLeaveCriticalSection( &locale_section );
         SetLastError( ERROR_INVALID_PARAMETER );
