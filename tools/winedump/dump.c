@@ -129,18 +129,18 @@ int dump_strA( const char *str, size_t len )
         }
         if ((unsigned char)*str > 127)  /* hex escape */
         {
-            pos += sprintf( pos, "\\x%02x", (unsigned char)*str );
+            pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\x%02x", (unsigned char)*str );
             continue;
         }
         if (*str < 32)  /* octal or C escape */
         {
             if (!*str && len == 1) continue;  /* do not output terminating NULL */
             if (escapes[(unsigned char)*str] != '.')
-                pos += sprintf( pos, "\\%c", escapes[(unsigned char)*str] );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\%c", escapes[(unsigned char)*str] );
             else if (len > 1 && str[1] >= '0' && str[1] <= '7')
-                pos += sprintf( pos, "\\%03o", *str );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\%03o", *str );
             else
-                pos += sprintf( pos, "\\%o", *str );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\%o", *str );
             continue;
         }
         if (*str == '\\') *pos++ = '\\';
@@ -170,20 +170,20 @@ int dump_strW( const WCHAR *str, size_t len )
         if (*str > 127)  /* hex escape */
         {
             if (len > 1 && str[1] < 128 && isxdigit((char)str[1]))
-                pos += sprintf( pos, "\\x%04x", *str );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\x%04x", *str );
             else
-                pos += sprintf( pos, "\\x%x", *str );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\x%x", *str );
             continue;
         }
         if (*str < 32)  /* octal or C escape */
         {
             if (!*str && len == 1) continue;  /* do not output terminating NULL */
             if (escapes[*str] != '.')
-                pos += sprintf( pos, "\\%c", escapes[*str] );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\%c", escapes[*str] );
             else if (len > 1 && str[1] >= '0' && str[1] <= '7')
-                pos += sprintf( pos, "\\%03o", *str );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\%03o", *str );
             else
-                pos += sprintf( pos, "\\%o", *str );
+                pos += snprintf( pos, buffer + sizeof(buffer) - pos, "\\%o", *str );
             continue;
         }
         if (*str == '\\') *pos++ = '\\';
@@ -198,9 +198,9 @@ const char *get_hexint64_str( DWORD64 l )
 {
     char *buf = dump_want_n(2 + 16 + 1);
     if (sizeof(l) > sizeof(unsigned long) && l >> 32)
-        sprintf(buf, "%#lx%08lx", (unsigned long)(l >> 32), (unsigned long)l);
+        snprintf(buf, 2 + 16 + 1, "%#lx%08lx", (unsigned long)(l >> 32), (unsigned long)l);
     else
-        sprintf(buf, "%#lx", (unsigned long)l);
+        snprintf(buf, 2 + 16 + 1, "%#lx", (unsigned long)l);
     assert(strlen(buf) <= 18);
     return buf;
 }
@@ -232,7 +232,7 @@ const char* get_guid_str(const GUID* guid)
 
     str = dump_want_n(39);
     if (str)
-        sprintf(str, "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+        snprintf(str, 39, "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
                 (unsigned int)guid->Data1, guid->Data2, guid->Data3,
                 guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3],
                 guid->Data4[4], guid->Data4[5], guid->Data4[6], guid->Data4[7]);
@@ -242,11 +242,13 @@ const char* get_guid_str(const GUID* guid)
 const char *get_unicode_str( const WCHAR *str, int len )
 {
     char *buffer;
+    size_t size;
     int i = 0;
 
     if (!str) return "(null)";
     if (len == -1) len = strlenW( str );
-    buffer = dump_want_n( len * 6 + 3);
+    size = (size_t)len * 6 + 3;
+    buffer = dump_want_n( size );
     buffer[i++] = '"';
     while (len-- > 0 && *str)
     {
@@ -260,7 +262,7 @@ const char *get_unicode_str( const WCHAR *str, int len )
         case '\\': strcpy( buffer + i, "\\\\" ); i += 2; break;
         default:
             if (c >= ' ' && c <= 126) buffer[i++] = c;
-            else i += sprintf( buffer + i, "\\u%04x",c);
+            else i += snprintf( buffer + i, size - i, "\\u%04x", c );
         }
     }
     buffer[i++] = '"';

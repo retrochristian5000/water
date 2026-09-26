@@ -195,9 +195,9 @@ static inline const char *longlong_str( ULONGLONG value )
     static char buffer[20];
 
     if (sizeof(value) > sizeof(unsigned long) && value >> 32)
-        sprintf(buffer, "%lx%08lx", (unsigned long)(value >> 32), (unsigned long)value);
+        snprintf(buffer, sizeof(buffer), "%lx%08lx", (unsigned long)(value >> 32), (unsigned long)value);
     else
-        sprintf(buffer, "%lx", (unsigned long)value);
+        snprintf(buffer, sizeof(buffer), "%lx", (unsigned long)value);
     return buffer;
 }
 
@@ -1598,9 +1598,9 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
                     last = 3;
             }
             if (first == last)
-                sprintf(intregs, "r%u", first);
+                snprintf(intregs, sizeof(intregs), "r%u", first);
             else
-                sprintf(intregs, "r%u-r%u", first, last);
+                snprintf(intregs, sizeof(intregs), "r%u-r%u", first, last);
             fpoffset = last + 1 - first;
         }
 
@@ -1614,9 +1614,9 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
                     last = 3;
             }
             if (first == last)
-                sprintf(intregspop, "r%u", first);
+                snprintf(intregspop, sizeof(intregspop), "r%u", first);
             else
-                sprintf(intregspop, "r%u-r%u", first, last);
+                snprintf(intregspop, sizeof(intregspop), "r%u-r%u", first, last);
         }
 
         if (fnc->C)
@@ -1645,7 +1645,7 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
         if (fnc->R)
         {
             if (fnc->Reg)
-                sprintf(vfpregs, "d8-d%u", fnc->Reg + 8);
+                snprintf(vfpregs, sizeof(vfpregs), "d8-d%u", fnc->Reg + 8);
             else
                 strcpy(vfpregs, "d8");
         }
@@ -5296,13 +5296,13 @@ static	void	do_grab_sym( void )
     {
 	if (pFunc[i] && !(map[i / 32] & (1 << (i % 32))))
 	{
-	    char ordinal_text[256];
+	    char *ordinal_text;
 	    /* Ordinal only entry */
-            sprintf (ordinal_text, "%s_%u",
-		      globals.forward_dll ? globals.forward_dll : OUTPUT_UC_DLL_NAME,
-                      (UINT)exportDir->Base + i);
+            ordinal_text = strmake( "%s_%u",
+                                    globals.forward_dll ? globals.forward_dll : OUTPUT_UC_DLL_NAME,
+                                    (UINT)exportDir->Base + i );
 	    str_toupper(ordinal_text);
-	    dll_symbols[j].symbol = xstrdup(ordinal_text);
+	    dll_symbols[j].symbol = ordinal_text;
 	    assert(dll_symbols[j].symbol);
 	    dll_symbols[j].ordinal = exportDir->Base + i;
 	    j++;

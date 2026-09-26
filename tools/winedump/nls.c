@@ -540,9 +540,10 @@ static const char *get_sortkey( UINT key )
     static char buffer[16];
     if (!key) return "....";
     if ((WORD)key == 0x200)
-        sprintf( buffer, "expand %04x", key >> 16 );
+        snprintf( buffer, sizeof(buffer), "expand %04x", key >> 16 );
     else
-        sprintf( buffer, "%u.%u.%u.%u", (BYTE)(key >> 8), (BYTE)key, (BYTE)(key >> 16), (BYTE)(key >> 24) );
+        snprintf( buffer, sizeof(buffer), "%u.%u.%u.%u", (BYTE)(key >> 8), (BYTE)key,
+                  (BYTE)(key >> 16), (BYTE)(key >> 24) );
     return buffer;
 }
 
@@ -822,22 +823,32 @@ static void dump_sort( int old_version )
 static const USHORT *locale_strings;
 static DWORD locale_strings_len;
 
+static void grow_locale_buffer( char **buffer, size_t *size, size_t needed )
+{
+    if (*size >= needed) return;
+    *buffer = xrealloc( *buffer, needed );
+    *size = needed;
+}
+
 static const char *get_locale_string( DWORD offset )
 {
-    static char buffer[1024];
-    int i = 0, len;
+    static char *buffer;
+    static size_t buffer_size;
+    size_t i = 0;
+    int len;
     const WCHAR *p;
 
     if (offset >= locale_strings_len) return "<invalid>";
     len = locale_strings[offset];
     if (offset + len + 1 > locale_strings_len) return "<invalid>";
+    grow_locale_buffer( &buffer, &buffer_size, (size_t)len * 4 + 3 );
     p = locale_strings + offset + 1;
     buffer[i++] = '"';
     while (len--)
     {
         if (*p < 0x20)
         {
-            i += sprintf( buffer + i, "\\%03o", *p );
+            i += snprintf( buffer + i, buffer_size - i, "\\%03o", *p );
         }
         else if (*p < 0x80)
         {
@@ -848,7 +859,7 @@ static const char *get_locale_string( DWORD offset )
             buffer[i++] = 0xc0 | (*p >> 6);
             buffer[i++] = 0x80 | (*p & 0x3f);
         }
-        else if (*p >= 0xd800 && *p <= 0xdbff)
+        else if (*p >= 0xd800 && *p <= 0xdbff && len > 0 && p[1] >= 0xdc00 && p[1] <= 0xdfff)
         {
             int val = 0x10000 + ((*p & 0x3ff) << 10) + (p[1] & 0x3ff);
             buffer[i++] = 0xf0 | (val >> 18);
@@ -873,19 +884,27 @@ static const char *get_locale_string( DWORD offset )
 
 static const char *get_locale_strarray( DWORD offset )
 {
-    static char buffer[2048];
-    int i = 0, count;
+    static char *buffer;
+    static size_t buffer_size;
+    size_t i = 0;
+    int count;
     const DWORD *array;
 
     if (offset >= locale_strings_len) return "<invalid>";
     count = locale_strings[offset];
     if (offset + 1 + count * 2 > locale_strings_len) return "<invalid>";
     array = (const DWORD *)(locale_strings + offset + 1);
+    grow_locale_buffer( &buffer, &buffer_size, 3 );
     buffer[i++] = '{';
     while (count--)
     {
+        const char *str = get_locale_string( *array++ );
+        size_t len = strlen( str );
+
+        grow_locale_buffer( &buffer, &buffer_size, i + (i > 1) + len + 2 );
         if (i > 1) buffer[i++] = ' ';
-        i += sprintf( buffer + i, "%s", get_locale_string( *array++ ));
+        memcpy( buffer + i, str, len );
+        i += len;
     }
     buffer[i++] = '}';
     buffer[i] = 0;
@@ -894,19 +913,26 @@ static const char *get_locale_strarray( DWORD offset )
 
 static const char *get_locale_uints( DWORD offset )
 {
-    static char buffer[1024];
-    int len;
+    static char *buffer;
+    static size_t buffer_size;
+    size_t i = 0;
+    int len, count;
     const unsigned int *p;
 
-    buffer[0] = 0;
     if (offset >= locale_strings_len) return "<invalid>";
     len = locale_strings[offset];
     if (offset + len + 1 > locale_strings_len) return "<invalid>";
     if (len < 2) return "[]";
-    for (p = (unsigned int *)(locale_strings + offset + 1); len >= 2; p++, len -= 2)
-        sprintf( buffer + strlen(buffer), " %08x", *p );
-    buffer[0] = '[';
-    strcat( buffer, "]" );
+    count = len / 2;
+    grow_locale_buffer( &buffer, &buffer_size, (size_t)count * 9 + 3 );
+    buffer[i++] = '[';
+    for (p = (const unsigned int *)(locale_strings + offset + 1); len >= 2; p++, len -= 2)
+    {
+        if (i > 1) buffer[i++] = ' ';
+        i += snprintf( buffer + i, buffer_size - i, "%08x", *p );
+    }
+    buffer[i++] = ']';
+    buffer[i] = 0;
     return buffer;
 }
 
