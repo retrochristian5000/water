@@ -72,7 +72,18 @@ static LDT_ENTRY idt[256];
 static inline struct idtr get_idtr(void)
 {
     struct idtr ret;
+
+#ifdef __i386__
     __asm__( "sidtl %0" : "=m" (ret) );
+#else
+    /*
+     * This legacy workaround recognizes accesses to the host i386 IDT.
+     * Non-i386 hosts do not have an x86 IDTR, so disable the shortcut
+     * instead of executing host-incompatible assembly.
+     */
+    ret.limit = 0;
+    ret.base = NULL;
+#endif
     return ret;
 }
 
@@ -701,10 +712,13 @@ DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, I386_CONTEXT *context )
                                                   segprefix, &len);
                 unsigned int data_size = (*instr == 0x8b) ? (long_op ? 4 : 2) : 1;
                 struct idtr idtr = get_idtr();
-                unsigned int offset = data - idtr.base;
+                UINT_PTR data_addr = (UINT_PTR)data;
+                UINT_PTR idt_base = (UINT_PTR)idtr.base;
 
-                if (offset <= idtr.limit + 1 - data_size)
+                if (idtr.base && data_addr >= idt_base &&
+                    data_addr - idt_base <= idtr.limit + 1 - data_size)
                 {
+                    unsigned int offset = (unsigned int)(data_addr - idt_base);
                     idt[1].LimitLow = 0x100; /* FIXME */
                     idt[2].LimitLow = 0x11E; /* FIXME */
                     idt[3].LimitLow = 0x500; /* FIXME */

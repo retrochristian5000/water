@@ -264,10 +264,35 @@ extern WORD SELECTOR_AllocBlock( const void *base, DWORD size, struct ldt_bits b
 extern WORD SELECTOR_ReallocBlock( WORD sel, const void *base, DWORD size );
 extern void SELECTOR_FreeBlock( WORD sel );
 
+static inline I386_CONTEXT *kernel_get_i386_cpu_context( CONTEXT *host_context );
+
+#ifdef __i386__
 static inline WORD get_cs(void) { WORD res; __asm__( "movw %%cs,%0" : "=r" (res) ); return res; }
 static inline WORD get_ds(void) { WORD res; __asm__( "movw %%ds,%0" : "=r" (res) ); return res; }
 static inline WORD get_fs(void) { WORD res; __asm__( "movw %%fs,%0" : "=r" (res) ); return res; }
 static inline WORD get_gs(void) { WORD res; __asm__( "movw %%gs,%0" : "=r" (res) ); return res; }
+#else
+static inline WORD get_cs(void)
+{
+    I386_CONTEXT *context = kernel_get_i386_cpu_context( NULL );
+    return context ? context->SegCs : 0;
+}
+static inline WORD get_ds(void)
+{
+    I386_CONTEXT *context = kernel_get_i386_cpu_context( NULL );
+    return context ? context->SegDs : 0;
+}
+static inline WORD get_fs(void)
+{
+    I386_CONTEXT *context = kernel_get_i386_cpu_context( NULL );
+    return context ? context->SegFs : 0;
+}
+static inline WORD get_gs(void)
+{
+    I386_CONTEXT *context = kernel_get_i386_cpu_context( NULL );
+    return context ? context->SegGs : 0;
+}
+#endif
 
 /* relay16.c */
 extern int relay_call_from_16( void *entry_point, unsigned char *args16, I386_CONTEXT *context );
