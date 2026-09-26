@@ -358,20 +358,30 @@ void WINAPI RtlResetRtlTranslations( const NLSTABLEINFO *info )
  */
 NTSTATUS WINAPI RtlGetLocaleFileMappingAddress( void **ptr, LCID *lcid, LARGE_INTEGER *size )
 {
+    static LARGE_INTEGER cached_size;
     static void *cached_ptr;
     static LCID cached_lcid;
 
     if (!cached_ptr)
     {
+        LARGE_INTEGER new_size;
+        LCID new_lcid;
         void *addr;
-        NTSTATUS status = NtInitializeNlsFiles( &addr, &cached_lcid, size );
+        NTSTATUS status = NtInitializeNlsFiles( &addr, &new_lcid, &new_size );
 
         if (status) return status;
+
+        /* Publish the metadata before the mapping pointer.  Concurrent initializers
+         * obtain the same locale mapping, so duplicate metadata writes are harmless,
+         * while a thread observing cached_ptr is guaranteed to see initialized values. */
+        cached_lcid = new_lcid;
+        cached_size = new_size;
         if (InterlockedCompareExchangePointer( &cached_ptr, addr, NULL ))
             NtUnmapViewOfSection( GetCurrentProcess(), addr );
     }
     *ptr = cached_ptr;
     *lcid = cached_lcid;
+    *size = cached_size;
     return STATUS_SUCCESS;
 }
 
