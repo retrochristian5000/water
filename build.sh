@@ -21,6 +21,7 @@ PROFILE_FILE="$BUILD_DIR/.whp-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
+LLVM_BOOTSTRAP_RECIPE=2
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -658,6 +659,7 @@ llvm_bootstrap_config_signature()
     llvm_stage0_cxx_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
 
     printf '%s\n' \
+        "LLVM_BOOTSTRAP_RECIPE=$LLVM_BOOTSTRAP_RECIPE" \
         "WATER_LLVM_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
         "WATER_LLVM_ASSERTIONS=$WATER_LLVM_ASSERTIONS" \
         "WATER_LLVM_LEAN=$WATER_LLVM_LEAN" \
@@ -706,6 +708,38 @@ llvm_bootstrap_needs_update()
     current=$(llvm_bootstrap_state_signature)
     previous=$(cat "$LLVM_BOOTSTRAP_STATE_FILE")
     [ "$current" != "$previous" ]
+}
+
+llvm_bootstrap_has_target()
+{
+    whp_target=$1
+
+    if [ -f "$LLVM_BOOTSTRAP_DIR/build.ninja" ]; then
+        ninja_cmd=${NINJA_CMD:-${NINJA:-}}
+        if [ -z "$ninja_cmd" ]; then
+            ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+        fi
+        [ -n "$ninja_cmd" ] || { unset whp_target; return 1; }
+        if "$ninja_cmd" -C "$LLVM_BOOTSTRAP_DIR" -t targets all 2>/dev/null |
+           awk -F: -v wanted="$whp_target" '$1 == wanted { found = 1 } END { exit !found }'; then
+            unset whp_target
+            return 0
+        fi
+        unset whp_target
+        return 1
+    fi
+
+    if [ -f "$LLVM_BOOTSTRAP_DIR/Makefile" ]; then
+        if grep -Eq "^${whp_target}([[:space:]]*:|:)" "$LLVM_BOOTSTRAP_DIR/Makefile"; then
+            unset whp_target
+            return 0
+        fi
+        unset whp_target
+        return 1
+    fi
+
+    unset whp_target
+    return 1
 }
 
 bootstrap_llvm()
@@ -815,6 +849,15 @@ bootstrap_llvm()
         previous=$(cat "$LLVM_BOOTSTRAP_CONFIG_FILE")
         if [ "$current" = "$previous" ]; then
             llvm_configure=0
+            for whp_required_target in clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+            do
+                if ! llvm_bootstrap_has_target "$whp_required_target"; then
+                    printf 'WHP LLVM CMake: cached target %s is missing; regenerating\n' "$whp_required_target" >&2
+                    llvm_configure=1
+                    break
+                fi
+            done
+            unset whp_required_target
         fi
     fi
 
