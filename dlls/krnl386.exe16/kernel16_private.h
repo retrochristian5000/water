@@ -224,7 +224,7 @@ extern BOOL16 GLOBAL_MoveBlock( HGLOBAL16 handle, void *ptr, DWORD size );
 extern HGLOBAL16 GLOBAL_Alloc( WORD flags, DWORD size, HGLOBAL16 hOwner, struct ldt_bits bits );
 
 /* instr.c */
-extern DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context );
+extern DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, I386_CONTEXT *context );
 extern LONG CALLBACK INSTR_vectored_handler( EXCEPTION_POINTERS *ptrs );
 
 /* ne_module.c */
@@ -270,7 +270,7 @@ static inline WORD get_fs(void) { WORD res; __asm__( "movw %%fs,%0" : "=r" (res)
 static inline WORD get_gs(void) { WORD res; __asm__( "movw %%gs,%0" : "=r" (res) ); return res; }
 
 /* relay16.c */
-extern int relay_call_from_16( void *entry_point, unsigned char *args16, CONTEXT *context );
+extern int relay_call_from_16( void *entry_point, unsigned char *args16, I386_CONTEXT *context );
 extern void RELAY16_InitDebugLists(void);
 
 /* snoop16.c */
@@ -319,17 +319,22 @@ static inline struct kernel_thread_data *kernel_get_thread_data(void)
     return (struct kernel_thread_data *)NtCurrentTeb()->SystemReserved1;
 }
 
-/* Push a DWORD on the 32-bit stack */
-static inline void stack32_push( CONTEXT *context, DWORD val )
+/*
+ * Win16/DOS/VxD register entry points carry guest i386 state even when the
+ * Water host is ARM64.  Host exception CONTEXT remains architecture-native.
+ */
+
+/* Push a DWORD on the guest 32-bit stack */
+static inline void stack32_push( I386_CONTEXT *context, DWORD val )
 {
     context->Esp -= sizeof(DWORD);
-    *(DWORD *)context->Esp = val;
+    *(DWORD *)(UINT_PTR)context->Esp = val;
 }
 
-/* Pop a DWORD from the 32-bit stack */
-static inline DWORD stack32_pop( CONTEXT *context )
+/* Pop a DWORD from the guest 32-bit stack */
+static inline DWORD stack32_pop( I386_CONTEXT *context )
 {
-    DWORD ret = *(DWORD *)context->Esp;
+    DWORD ret = *(DWORD *)(UINT_PTR)context->Esp;
     context->Esp += sizeof(DWORD);
     return ret;
 }
