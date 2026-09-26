@@ -618,25 +618,29 @@ llvm_source_state_signature()
 
 find_llvm_bootstrap_compiler()
 {
-    explicit=$1
-    fallback=$2
+    whp_bootstrap_explicit=$1
+    whp_bootstrap_fallback=$2
+    whp_bootstrap_path=
 
-    if [ -n "$explicit" ]; then
-        case "$explicit" in
+    if [ -n "$whp_bootstrap_explicit" ]; then
+        case "$whp_bootstrap_explicit" in
             */*)
-                [ -x "$explicit" ] || die "LLVM bootstrap compiler is not executable: $explicit"
-                printf '%s\n' "$explicit"
+                [ -x "$whp_bootstrap_explicit" ] ||
+                    die "LLVM bootstrap compiler is not executable: $whp_bootstrap_explicit"
+                whp_bootstrap_path=$whp_bootstrap_explicit
                 ;;
             *)
-                path=$(command -v "$explicit" 2>/dev/null || true)
-                [ -n "$path" ] || die "LLVM bootstrap compiler was not found: $explicit"
-                printf '%s\n' "$path"
+                whp_bootstrap_path=$(command -v "$whp_bootstrap_explicit" 2>/dev/null || true)
+                [ -n "$whp_bootstrap_path" ] ||
+                    die "LLVM bootstrap compiler was not found: $whp_bootstrap_explicit"
                 ;;
         esac
-        return 0
+    else
+        whp_bootstrap_path=$(command -v "$whp_bootstrap_fallback" 2>/dev/null || true)
     fi
 
-    command -v "$fallback" 2>/dev/null || true
+    printf '%s\n' "$whp_bootstrap_path"
+    unset whp_bootstrap_explicit whp_bootstrap_fallback whp_bootstrap_path
 }
 
 llvm_bootstrap_config_signature()
