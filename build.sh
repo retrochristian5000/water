@@ -877,6 +877,13 @@ bootstrap_llvm()
         printf 'WHP LLVM CMake: cached\n' >&2
     fi
 
+    for whp_required_target in clang lld llvm-ar llvm-nm llvm-ranlib llvm-strip
+    do
+        llvm_bootstrap_has_target "$whp_required_target" ||
+            die "LLVM bootstrap target '$whp_required_target' is missing after CMake generation"
+    done
+    unset whp_required_target
+
     jobs=$(detect_jobs)
     printf 'WHP LLVM bootstrap: incremental %s\n' "$LLVM_BOOTSTRAP_DIR" >&2
     llvm_generator=$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" | sed -n '1p')
@@ -1384,6 +1391,21 @@ esac
 
 load_whp_config
 validate_profile
+
+case "${1:-build}" in
+    clean|distclean)
+        maintenance_target=$1
+        shift
+        if [ -f "$BUILD_DIR/Makefile" ] || [ -f "$BUILD_DIR/build.ninja" ]; then
+            printf 'WHP maintenance target: %s\n' "$maintenance_target" >&2
+            run_build "$maintenance_target" "$@"
+        else
+            printf 'WHP maintenance target %s: build tree is already absent\n' "$maintenance_target" >&2
+        fi
+        exit 0
+        ;;
+esac
+
 generate_configure
 init_submodules
 prepare_ninja
