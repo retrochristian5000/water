@@ -290,7 +290,7 @@ __ASM_GLOBAL_FUNC( call_entry_point,
  *
  * Same as relay_call_from_16 but doesn't print any debug information.
  */
-static int relay_call_from_16_no_debug( void *entry_point, unsigned char *args16, CONTEXT *context,
+static int relay_call_from_16_no_debug( void *entry_point, unsigned char *args16, I386_CONTEXT *context,
                                         const CALLFROM16 *call )
 {
     unsigned int i, j, nb_args = 0;
@@ -384,7 +384,7 @@ static int relay_call_from_16_no_debug( void *entry_point, unsigned char *args16
  *
  * Replacement for the 16-bit relay functions when relay debugging is on.
  */
-int relay_call_from_16( void *entry_point, unsigned char *args16, CONTEXT *context )
+int relay_call_from_16( void *entry_point, unsigned char *args16, I386_CONTEXT *context )
 {
     STACK16FRAME *frame;
     WORD ordinal;
