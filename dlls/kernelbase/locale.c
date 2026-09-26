@@ -475,7 +475,7 @@ static void load_locale_nls(void)
 }
 
 
-static void load_sortdefault_nls(void)
+static BOOL load_sortdefault_nls(void)
 {
     const struct
     {
@@ -486,42 +486,116 @@ static void load_sortdefault_nls(void)
     } *header;
 
     const WORD *ctype;
-    const UINT *table;
+    const UINT *table, *end;
     UINT i;
-    SIZE_T size;
+    SIZE_T size, keys_count, casemap_words;
+    NTSTATUS status;
     const struct sort_compression *last_compr;
 
-    NtGetNlsSectionPtr( 9, 0, NULL, (void **)&header, &size );
+    status = NtGetNlsSectionPtr( NLS_SECTION_SORTKEYS, 0, NULL, (void **)&header, &size );
+    if (status || !header || size < sizeof(*header))
+    {
+        ERR( "failed to load sortdefault.nls, status %lx\n", status );
+        return FALSE;
+    }
+    if (header->sortkeys < sizeof(*header) ||
+        header->sortkeys > header->casemaps ||
+        header->casemaps > header->ctypes ||
+        header->ctypes > header->sortids ||
+        header->sortids > size)
+    {
+        ERR( "invalid sortdefault.nls section offsets\n" );
+        return FALSE;
+    }
+
+    keys_count = (header->casemaps - header->sortkeys) / sizeof(UINT);
+    casemap_words = (header->ctypes - header->casemaps) / sizeof(USHORT);
+    if (keys_count < 0x10000 || !casemap_words || header->sortids + 2 * sizeof(UINT) > size)
+    {
+        ERR( "invalid sortdefault.nls table sizes\n" );
+        return FALSE;
+    }
 
     sort.keys = (UINT *)((char *)header + header->sortkeys);
     sort.casemap = (USHORT *)((char *)header + header->casemaps);
 
     ctype = (WORD *)((char *)header + header->ctypes);
+    if (header->sortids - header->ctypes < 2 * sizeof(*ctype) ||
+        ctype[0] > header->sortids - header->ctypes ||
+        ctype[1] + 2 > ctype[0])
+    {
+        ERR( "invalid sortdefault.nls character type table\n" );
+        return FALSE;
+    }
     sort.ctypes = ctype + 2;
     sort.ctype_idx = (BYTE *)ctype + ctype[1] + 2;
 
     table = (UINT *)((char *)header + header->sortids);
+    end = (const UINT *)((const char *)header + size);
     sort.version = table[0];
     sort.guid_count = table[1];
     sort.guids = (struct sortguid *)(table + 2);
 
+    if (sort.guid_count > ((const char *)end - (const char *)sort.guids) / sizeof(*sort.guids))
+        goto invalid;
     table = (UINT *)(sort.guids + sort.guid_count);
+    if (table >= end) goto invalid;
+
     sort.exp_count = table[0];
     sort.expansions = (struct sort_expansion *)(table + 1);
-
+    if (sort.exp_count > ((const char *)end - (const char *)sort.expansions) / sizeof(*sort.expansions))
+        goto invalid;
     table = (UINT *)(sort.expansions + sort.exp_count);
+    if (table >= end) goto invalid;
+
     sort.compr_count = table[0];
     sort.compressions = (struct sort_compression *)(table + 1);
+    if (sort.compr_count > ((const char *)end - (const char *)sort.compressions) / sizeof(*sort.compressions))
+        goto invalid;
     sort.compr_data = (WCHAR *)(sort.compressions + sort.compr_count);
 
-    last_compr = sort.compressions + sort.compr_count - 1;
-    table = (UINT *)(sort.compr_data + last_compr->offset);
-    for (i = 0; i < 7; i++) table += last_compr->len[i] * ((i + 5) / 2);
+    if (sort.compr_count)
+    {
+        SIZE_T remaining;
+
+        last_compr = sort.compressions + sort.compr_count - 1;
+        remaining = ((const char *)end - (const char *)sort.compr_data) / sizeof(*sort.compr_data);
+        if (last_compr->offset > remaining) goto invalid;
+
+        table = (UINT *)(sort.compr_data + last_compr->offset);
+        for (i = 0; i < 7; i++)
+        {
+            SIZE_T step = (SIZE_T)last_compr->len[i] * ((i + 5) / 2);
+            if (step > (SIZE_T)(end - table)) goto invalid;
+            table += step;
+        }
+    }
+    else table = (UINT *)sort.compr_data;
+
+    if (table >= end || 1 + table[0] / 2 > (SIZE_T)(end - table)) goto invalid;
     table += 1 + table[0] / 2;  /* skip multiple weights */
+    if (table >= end || table[0] > ((const char *)end - (const char *)(table + 1)) / sizeof(*sort.jamo))
+        goto invalid;
     sort.jamo = (struct jamo_sort *)(table + 1);
+
+    for (i = 0; i < sort.guid_count; i++)
+    {
+        if (sort.guids[i].casemap >= casemap_words ||
+            (sort.guids[i].compr != ~0u && sort.guids[i].compr >= sort.compr_count) ||
+            sort.guids[i].except >= keys_count ||
+            sort.guids[i].ling_except >= keys_count)
+            goto invalid;
+    }
 
     locale_sorts = RtlAllocateHeap( GetProcessHeap(), HEAP_ZERO_MEMORY,
                                     locale_table->nb_lcnames * sizeof(*locale_sorts) );
+    if (!locale_sorts) return FALSE;
+    return TRUE;
+
+invalid:
+    ERR( "invalid sortdefault.nls table layout\n" );
+    memset( &sort, 0, sizeof(sort) );
+    return FALSE;
 }
 
 
@@ -1958,7 +2032,7 @@ void init_locale( HMODULE module )
 
     kernelbase_handle = module;
     load_locale_nls();
-    load_sortdefault_nls();
+    if (!load_sortdefault_nls()) return;
 
     if (system_lcid == LOCALE_CUSTOM_UNSPECIFIED) system_lcid = MAKELANGID( LANG_ENGLISH, SUBLANG_DEFAULT );
     system_locale = NlsValidateLocale( &system_lcid, 0 );
