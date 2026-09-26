@@ -442,7 +442,7 @@ void WINAPI __regs_QT_Thunk( I386_CONTEXT *context )
     if (argsize > 64)
 	argsize = 64; /* 32 WORDs */
 
-    WOWCallback16Ex( 0, WCB16_REGS, argsize, (void *)context->Esp, (DWORD *)&context16 );
+    WOWCallback16Ex( 0, WCB16_REGS, argsize, (void *)(UINT_PTR)context->Esp, (DWORD *)&context16 );
     context->Eax = context16.Eax;
     context->Edx = context16.Edx;
     context->Ecx = context16.Ecx;
@@ -506,7 +506,7 @@ void WINAPI __regs_FT_Prolog( I386_CONTEXT *context )
 
     /* Allocate 64-byte Thunk Buffer */
     context->Esp -= 64;
-    memset((char *)context->Esp, '\0', 64);
+    memset((char *)(UINT_PTR)context->Esp, '\0', 64);
 
     /* Store Flags (ECX) and Target Address (EDX) */
     /* Save other registers to be restored later */
@@ -558,7 +558,7 @@ void WINAPI __regs_FT_Thunk( I386_CONTEXT *context )
 
     argsize  = context->Ebp-context->Esp-0x40;
     if (argsize > sizeof(newstack)) argsize = sizeof(newstack);
-    oldstack = (LPBYTE)context->Esp;
+    oldstack = (LPBYTE)(UINT_PTR)context->Esp;
 
     memcpy( newstack, oldstack, argsize );
 
@@ -721,7 +721,7 @@ void WINAPI __regs_Common32ThkLS( I386_CONTEXT *context )
      *       the space. It is safe to do that since the register function prefix has reserved
      *       a lot more space than that below context->Esp.
      */
-    WOWCallback16Ex( 0, WCB16_REGS, argsize + 32, (LPBYTE)context->Esp - 32, (DWORD *)&context16 );
+    WOWCallback16Ex( 0, WCB16_REGS, argsize + 32, (LPBYTE)(UINT_PTR)context->Esp - 32, (DWORD *)&context16 );
     context->Eax = context16.Eax;
 
     /* Clean up caller's stack frame */
@@ -767,14 +767,14 @@ void WINAPI __regs_OT_32ThkLSF( I386_CONTEXT *context )
     context16.Eip   = LOWORD(context->Edx);
     context16.Ebp   = CURRENT_SP + FIELD_OFFSET(STACK16FRAME,bp);
 
-    argsize = 2 * *(WORD *)context->Esp + 2;
+    argsize = 2 * *(WORD *)(UINT_PTR)context->Esp + 2;
 
-    WOWCallback16Ex( 0, WCB16_REGS, argsize, (void *)context->Esp, (DWORD *)&context16 );
+    WOWCallback16Ex( 0, WCB16_REGS, argsize, (void *)(UINT_PTR)context->Esp, (DWORD *)&context16 );
     context->Eax = context16.Eax;
     context->Edx = context16.Edx;
 
     /* Copy modified buffers back to 32-bit stack */
-    memcpy( (LPBYTE)context->Esp,
+    memcpy( (LPBYTE)(UINT_PTR)context->Esp,
             (LPBYTE)CURRENT_STACK16 - argsize, argsize );
 
     context->Esp +=   LOWORD(context16.Esp) - (CURRENT_SP - argsize);
@@ -876,7 +876,7 @@ void WINAPI __regs_FT_PrologPrime( I386_CONTEXT *context )
     _write_ftprolog( relayCode, *(DWORD **)(relayCode+targetTableOffset) );
 
     /* Jump to the call stub just created */
-    context->Eip = (DWORD)relayCode;
+    context->Eip = (DWORD)(UINT_PTR)relayCode;
 }
 DEFINE_REGS_ENTRYPOINT( FT_PrologPrime )
 
@@ -902,11 +902,11 @@ void WINAPI __regs_QT_ThunkPrime( I386_CONTEXT *context )
 
     /* Write QT_Thunk call stub */
     targetTableOffset = context->Edx;
-    relayCode = (LPBYTE)context->Eax;
+    relayCode = (LPBYTE)(UINT_PTR)context->Eax;
     _write_qtthunk( relayCode, *(DWORD **)(relayCode+targetTableOffset) );
 
     /* Jump to the call stub just created */
-    context->Eip = (DWORD)relayCode;
+    context->Eip = (DWORD)(UINT_PTR)relayCode;
 }
 DEFINE_REGS_ENTRYPOINT( QT_ThunkPrime )
 
@@ -997,7 +997,7 @@ DWORD WINAPIV SSCall(
  */
 void WINAPI __regs_W32S_BackTo32( I386_CONTEXT *context )
 {
-    LPDWORD stack = (LPDWORD)context->Esp;
+    LPDWORD stack = (LPDWORD)(UINT_PTR)context->Esp;
     FARPROC proc = (FARPROC)context->Eip;
 
     context->Eax = call_entry_point( proc, 10, stack + 1 );
@@ -1133,7 +1133,7 @@ void WINAPI __regs_FreeMappedBuffer(
 ) {
     if (context->Edi)
     {
-        DWORD *buffer = (DWORD *)context->Edi - 2;
+        DWORD *buffer = (DWORD *)(UINT_PTR)context->Edi - 2;
 
         UnMapLS(buffer[1]);
 
@@ -1192,7 +1192,7 @@ BOOL16 WINAPI IsPeFormat16(
  */
 void WINAPI __regs_K32Thk1632Prolog( I386_CONTEXT *context )
 {
-   LPBYTE code = (LPBYTE)context->Eip - 5;
+   LPBYTE code = (LPBYTE)(UINT_PTR)context->Eip - 5;
 
    /* Arrrgh! SYSTHUNK.DLL just has to re-implement another method
       of 16->32 thunks instead of using one of the standard methods!
@@ -1219,7 +1219,7 @@ void WINAPI __regs_K32Thk1632Prolog( I386_CONTEXT *context )
        && code[13] == 0x66 && code[14] == 0xCB)
    {
       DWORD argSize = context->Ebp - context->Esp;
-      char *stack16 = (char *)context->Esp - 4;
+      char *stack16 = (char *)(UINT_PTR)context->Esp - 4;
       STACK16FRAME *frame16 = (STACK16FRAME *)stack16 - 1;
       STACK32FRAME *frame32 = (STACK32FRAME *)kernel_get_thread_data()->stack;
       char *stack32 = (char *)frame32 - argSize;
@@ -1237,7 +1237,7 @@ void WINAPI __regs_K32Thk1632Prolog( I386_CONTEXT *context )
       CURRENT_SS = stackSel;
       CURRENT_SP = (DWORD)frame16 - stackBase;
 
-      context->Esp = (DWORD)stack32 + 4;
+      context->Esp = (DWORD)(UINT_PTR)stack32 + 4;
       context->Ebp = context->Esp + argSize;
 
       TRACE("after  SYSTHUNK hack: EBP: %08lx ESP: %08lx cur_stack: %04x:%04x\n",
@@ -1255,7 +1255,7 @@ DEFINE_REGS_ENTRYPOINT( K32Thk1632Prolog )
  */
 void WINAPI __regs_K32Thk1632Epilog( I386_CONTEXT *context )
 {
-   LPBYTE code = (LPBYTE)context->Eip - 13;
+   LPBYTE code = (LPBYTE)(UINT_PTR)context->Eip - 13;
 
    RestoreThunkLock(CURRENT_STACK16->entry_point);
 
@@ -1276,7 +1276,7 @@ void WINAPI __regs_K32Thk1632Epilog( I386_CONTEXT *context )
 
       kernel_get_thread_data()->stack = (SEGPTR)frame16->frame32;
 
-      context->Esp = (DWORD)stack16 + nArgsPopped;
+      context->Esp = (DWORD)(UINT_PTR)stack16 + nArgsPopped;
       context->Ebp = frame16->ebp;
 
       TRACE("after  SYSTHUNK hack: EBP: %08lx ESP: %08lx cur_stack: %04x:%04x\n",
@@ -1498,7 +1498,7 @@ void WINAPI C16ThkSL01(I386_CONTEXT *context)
     }
     else
     {
-        struct ThunkDataSL *td = (struct ThunkDataSL *)context->Edx;
+        struct ThunkDataSL *td = (struct ThunkDataSL *)(UINT_PTR)context->Edx;
         DWORD targetNr = LOWORD(context->Ecx) / 4;
         struct SLTargetDB *tdb;
 
