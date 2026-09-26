@@ -202,7 +202,7 @@
 @ stdcall OleCreateLink(ptr ptr long ptr ptr ptr ptr)
 @ stub OleCreateLinkEx
 @ stdcall OleCreateLinkFromData(ptr ptr long ptr ptr ptr ptr)
-@ stub OleCreateLinkFromDataEx
+@ stdcall OleCreateLinkFromDataEx(ptr ptr long long long ptr ptr ptr ptr ptr ptr ptr)
 @ stdcall OleCreateLinkToFile(ptr ptr long ptr ptr ptr ptr)
 @ stub OleCreateLinkToFileEx
 @ stdcall OleCreateMenuDescriptor(long ptr)
