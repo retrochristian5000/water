@@ -2466,7 +2466,7 @@ static HRESULT ole_create_configure_formats(IUnknown *object, ULONG count, DWORD
                                             DWORD *connections)
 {
     DWORD *cookies;
-    HRESULT hr;
+    HRESULT hr = S_OK;
     ULONG i;
 
     if (!(cookies = calloc(count, sizeof(*cookies))))
