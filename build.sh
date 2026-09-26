@@ -586,13 +586,6 @@ select_llvm_cache()
     printf '%s\n' "$llvm_cache"
 }
 
-llvm_source_revision()
-{
-    git_cmd=$(command -v git 2>/dev/null || true)
-    [ -n "$git_cmd" ] || return 1
-    "$git_cmd" -C "$LLVM_SOURCE_DIR" rev-parse HEAD 2>/dev/null
-}
-
 llvm_source_state_signature()
 {
     git_cmd=$(command -v git 2>/dev/null || true)
@@ -607,7 +600,7 @@ llvm_source_state_signature()
         printf 'DIFF='
         "$git_cmd" -C "$LLVM_SOURCE_DIR" diff --binary --no-ext-diff \
             --ignore-submodules=dirty HEAD -- 2>/dev/null |
-            cksum | awk '{ printf "%s:%s\\n", $1, $2 }'
+            cksum | awk '{ printf "%s:%s\n", $1, $2 }'
     fi
 }
 
