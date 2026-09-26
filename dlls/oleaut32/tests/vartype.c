@@ -1789,8 +1789,8 @@ static void test_VarUI4FromR8(void)
   CONVERT(VarUI4FromR8, make_nan()); EXPECT_OVERFLOW;
 
   CONVERT(VarUI4FromR8, -1.0);         EXPECT_OVERFLOW;
-  CONVERT(VarUI4FromR4, -0.51f);       EXPECT_OVERFLOW;
-  CONVERT(VarUI4FromR4, -0.5f);        EXPECT(0);
+  CONVERT(VarUI4FromR8, -0.51);        EXPECT_OVERFLOW;
+  CONVERT(VarUI4FromR8, -0.5);         EXPECT(0);
   CONVERT(VarUI4FromR8, 0.0);          EXPECT(0);
   CONVERT(VarUI4FromR8, 1.0);          EXPECT(1);
   CONVERT(VarUI4FromR8, 4294967295.0); EXPECT(4294967295ul);
