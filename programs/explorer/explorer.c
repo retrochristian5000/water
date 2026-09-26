@@ -628,12 +628,6 @@ static void update_window_size(explorer_info *info, int height, int width)
     IExplorerBrowser_SetRect(info->browser,NULL,new_rect);
 }
 
-static void do_exit(int code)
-{
-    OleUninitialize();
-    ExitProcess(code);
-}
-
 static LRESULT explorer_on_end_edit(explorer_info *info,NMCBEENDEDITW *edit_info)
 {
     LPITEMIDLIST pidl = NULL;
@@ -845,8 +839,6 @@ static LRESULT CALLBACK explorer_wnd_proc(HWND hwnd, UINT uMsg, WPARAM wParam, L
         SetWindowLongPtrW(hwnd,EXPLORER_INFO_INDEX,0);
         PostQuitMessage(0);
         break;
-    case WM_QUIT:
-        do_exit(wParam);
     case WM_NOTIFY:
         return explorer_on_notify(info,(NMHDR*)lParam);
     case WM_COMMAND:
@@ -1057,19 +1049,26 @@ int WINAPI wWinMain(HINSTANCE hinstance,
     if(FAILED(hres))
     {
         ERR( "Could not initialize COM\n" );
-        ExitProcess(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
     if(parameters.root[0] && !PathIsDirectoryW(parameters.root))
+    {
         if(ShellExecuteW(NULL,NULL,parameters.root,NULL,NULL,SW_SHOWDEFAULT) > (HINSTANCE)32)
-            ExitProcess(EXIT_SUCCESS);
+        {
+            OleUninitialize();
+            return EXIT_SUCCESS;
+        }
+    }
     init_info.dwSize = sizeof(INITCOMMONCONTROLSEX);
     init_info.dwICC = ICC_USEREX_CLASSES | ICC_BAR_CLASSES | ICC_COOL_CLASSES;
     if(!InitCommonControlsEx(&init_info))
     {
         ERR( "Could not initialize Comctl\n" );
-        ExitProcess(EXIT_FAILURE);
+        OleUninitialize();
+        return EXIT_FAILURE;
     }
     register_explorer_window_class();
     make_explorer_window(&parameters);
+    OleUninitialize();
     return 0;
 }
