@@ -65,7 +65,7 @@ BOOL DOSVM_RawWrite(BYTE drive, DWORD begin, DWORD nr_sect, BYTE *dataptr, BOOL 
  *
  * Handler for int 26h (absolute disk write).
  */
-void WINAPI DOSVM_Int26Handler( CONTEXT *context )
+void WINAPI DOSVM_Int26Handler( I386_CONTEXT *context )
 {
     WCHAR drivespec[] = {'A', ':', '\\', 0};
     BYTE *dataptr = ldt_get_ptr( context->SegDs, context->Ebx );
