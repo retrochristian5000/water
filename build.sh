@@ -21,7 +21,7 @@ PROFILE_FILE="$BUILD_DIR/.whp-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
-LLVM_BOOTSTRAP_RECIPE=3
+LLVM_BOOTSTRAP_RECIPE=4
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -887,8 +887,13 @@ llvm_bootstrap_config_signature()
     llvm_stage0_cc_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CC:-}" clang)
     llvm_stage0_cxx_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
     llvm_lld_backends_sig=$(select_llvm_lld_backends)
-    llvm_host_lld_sig=$(host_lld_path "$LLVM_BOOTSTRAP_DIR/bin" || true)
-    [ -n "$llvm_host_lld_sig" ] || llvm_host_lld_sig=none
+    llvm_host_lld_sig=none
+    case "$WATER_LLVM_LINKER:$(uname -s 2>/dev/null || true)" in
+        lld:*|auto:Linux|auto:FreeBSD|auto:NetBSD|auto:OpenBSD|auto:DragonFly|auto:SunOS|auto:Haiku)
+            llvm_host_lld_sig=$(host_lld_path "$LLVM_BOOTSTRAP_DIR/bin" || true)
+            [ -n "$llvm_host_lld_sig" ] || llvm_host_lld_sig=none
+            ;;
+    esac
 
     printf '%s\n' \
         "LLVM_BOOTSTRAP_RECIPE=$LLVM_BOOTSTRAP_RECIPE" \
@@ -1320,7 +1325,14 @@ setup_toolchain()
     export WHP_DARWIN_SDKROOT WHP_HOST_CC_REAL WHP_HOST_CXX_REAL
 
     WHP_HOST_LINKER=system
-    if [ "$WATER_LLVM_LINKER" != system ] && [ -n "$LLVM_BIN" ] && \
+    whp_try_host_lld=0
+    case "$WATER_LLVM_LINKER:$(uname -s 2>/dev/null || true)" in
+        lld:*|auto:Linux|auto:FreeBSD|auto:NetBSD|auto:OpenBSD|auto:DragonFly|auto:SunOS|auto:Haiku)
+            whp_try_host_lld=1
+            ;;
+    esac
+
+    if [ "$whp_try_host_lld" = 1 ] && [ -n "$LLVM_BIN" ] && \
        [ -z "${LD:-}" ] && ! linker_flag_is_explicit
     then
         whp_host_lld=$(host_lld_path "$LLVM_BIN" || true)
@@ -1353,6 +1365,7 @@ setup_toolchain()
     elif linker_flag_is_explicit; then
         WHP_HOST_LINKER="driver flags"
     fi
+    unset whp_try_host_lld
     export WHP_HOST_LINKER
     printf 'WHP host linker: %s\n' "$WHP_HOST_LINKER" >&2
 
