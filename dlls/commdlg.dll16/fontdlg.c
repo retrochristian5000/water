@@ -43,7 +43,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(commdlg);
 INT16 WINAPI FontFamilyEnumProc16( SEGPTR logfont, SEGPTR metrics,
                                    UINT16 nFontType, LPARAM lParam )
 {
-    FIXME( "%08lx %08lx %u %Ix\n", logfont, metrics, nFontType, lParam );
+    FIXME( "%08x %08x %u %Ix\n", (unsigned int)logfont, (unsigned int)metrics,
+           nFontType, (UINT_PTR)lParam );
     return 0;
 }
 
@@ -102,7 +103,7 @@ BOOL16 WINAPI ChooseFont16(LPCHOOSEFONT16 lpChFont)
         FIXME( "custom templates no longer supported, using default\n" );
 
     if (lpChFont->lpfnHook)
-        FIXME( "custom hook %p no longer supported\n", lpChFont->lpfnHook );
+        FIXME( "custom hook %08Ix no longer supported\n", (UINT_PTR)lpChFont->lpfnHook );
 
     if (!ChooseFontA( &cf32 )) return FALSE;
 

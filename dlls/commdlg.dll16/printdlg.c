@@ -124,9 +124,9 @@ BOOL16 WINAPI PrintDlg16( LPPRINTDLG16 lppd )
                        PD_ENABLESETUPTEMPLATE | PD_ENABLESETUPTEMPLATEHANDLE))
         FIXME( "custom templates no longer supported, using default\n" );
     if (lppd->Flags & PD_ENABLEPRINTHOOK)
-        FIXME( "custom print hook %p no longer supported\n", lppd->lpfnPrintHook );
+        FIXME( "custom print hook %08Ix no longer supported\n", (UINT_PTR)lppd->lpfnPrintHook );
     if (lppd->Flags & PD_ENABLESETUPHOOK)
-        FIXME( "custom setup hook %p no longer supported\n", lppd->lpfnSetupHook );
+        FIXME( "custom setup hook %08Ix no longer supported\n", (UINT_PTR)lppd->lpfnSetupHook );
 
     /* Generate failure with CDERR_STRUCTSIZE, when needed */
     if (lppd->lStructSize != sizeof(PRINTDLG16)) pd32.lStructSize--;

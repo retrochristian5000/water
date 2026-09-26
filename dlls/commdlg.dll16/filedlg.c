@@ -219,7 +219,8 @@ static LRESULT call_hook16( LPOFNHOOKPROC16 hook, HWND hwnd, UINT msg, WPARAM wp
     WOW16_CONTEXT context;
     WORD params[5];
 
-    TRACE( "%08Ix: %p %08x %x %Ix\n", (UINT_PTR)hook, hwnd, msg, wp, lp );
+    TRACE( "%08Ix: %p %08x %Ix %Ix\n", (UINT_PTR)hook, hwnd, msg,
+           (UINT_PTR)wp, (UINT_PTR)lp );
 
     memset( &context, 0, sizeof(context) );
     context.SegDs = context.SegEs = CURRENT_SS;
@@ -229,8 +230,8 @@ static LRESULT call_hook16( LPOFNHOOKPROC16 hook, HWND hwnd, UINT msg, WPARAM wp
     context.Eax   = context.SegDs;
 
     params[4] = HWND_16( hwnd );
-    params[3] = msg;
-    params[2] = wp;
+    params[3] = LOWORD( msg );
+    params[2] = LOWORD( wp );
     params[1] = HIWORD( lp );
     params[0] = LOWORD( lp );
     WOWCallback16Ex( 0, WCB16_REGS, sizeof(params), params, (DWORD *)&context );

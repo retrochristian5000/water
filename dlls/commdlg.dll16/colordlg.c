@@ -69,7 +69,7 @@ BOOL16 WINAPI ChooseColor16( LPCHOOSECOLOR16 cc16 )
     if (cc16->Flags & (CC_ENABLETEMPLATE | CC_ENABLETEMPLATEHANDLE))
         FIXME( "custom templates no longer supported, using default\n" );
     if (cc16->Flags & CC_ENABLEHOOK)
-        FIXME( "custom hook %p no longer supported\n", cc16->lpfnHook );
+        FIXME( "custom hook %08Ix no longer supported\n", (UINT_PTR)cc16->lpfnHook );
 
     if ((ret = ChooseColorA( &cc32 )))
     {
