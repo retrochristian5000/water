@@ -188,7 +188,7 @@ static LPVOID DPMI_xrealloc( LPVOID ptr, DWORD newsize )
  *
  * Handler for int 31h (DPMI).
  */
-void WINAPI DOSVM_Int31Handler( CONTEXT *context )
+void WINAPI DOSVM_Int31Handler( I386_CONTEXT *context )
 {
     RESET_CFLAG(context);
     switch(AX_reg(context))
