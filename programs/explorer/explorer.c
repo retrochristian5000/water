@@ -659,13 +659,33 @@ static LRESULT explorer_on_notify(explorer_info* info,NMHDR* notification)
     return 0;
 }
 
+static size_t serialized_pidl_size(const unsigned char *ptr, size_t remaining)
+{
+    size_t size = 0;
+
+    while (remaining >= sizeof(USHORT))
+    {
+        USHORT cb;
+
+        memcpy(&cb, ptr + size, sizeof(cb));
+        if (!cb) return size + sizeof(cb);
+        if (cb < sizeof(cb) || cb > remaining) return 0;
+
+        size += cb;
+        remaining -= cb;
+    }
+    return 0;
+}
+
 static BOOL handle_copydata(const explorer_info *info, const COPYDATASTRUCT *cds)
 {
     static const unsigned int magic = 0xe32ee32e;
     unsigned int i, flags, count;
     const ITEMIDLIST *child;
-    unsigned char *ptr;
+    const unsigned char *ptr;
+    size_t remaining, size;
     IShellView *sv;
+    HRESULT hr;
     SVSIF sv_flags;
 
     TRACE("\n");
@@ -673,24 +693,55 @@ static BOOL handle_copydata(const explorer_info *info, const COPYDATASTRUCT *cds
     /* For SHOpenFolderAndSelectItems() */
     if (cds->dwData != magic)
         return FALSE;
+    if (!info || !info->browser || !cds->lpData ||
+        cds->cbData < sizeof(count) + sizeof(flags))
+        return FALSE;
 
     ptr = cds->lpData;
+    remaining = cds->cbData;
+
     memcpy(&count, ptr, sizeof(count));
     ptr += sizeof(count);
+    remaining -= sizeof(count);
     memcpy(&flags, ptr, sizeof(flags));
     ptr += sizeof(flags);
+    remaining -= sizeof(flags);
+
+    /* Every serialized PIDL contains at least the terminating USHORT. */
+    if (count > remaining / sizeof(USHORT))
+        return FALSE;
+
+    /* Validate the complete packet before passing any PIDL to the shell view. */
+    {
+        const unsigned char *scan = ptr;
+        size_t scan_remaining = remaining;
+
+        for (i = 0; i < count; ++i)
+        {
+            size = serialized_pidl_size(scan, scan_remaining);
+            if (!size)
+                return FALSE;
+            scan += size;
+            scan_remaining -= size;
+        }
+    }
 
     sv_flags = flags & OFASI_EDIT ? SVSI_EDIT : SVSI_SELECT;
 
-    IExplorerBrowser_GetCurrentView(info->browser, &IID_IShellView, (void **)&sv);
+    hr = IExplorerBrowser_GetCurrentView(info->browser, &IID_IShellView, (void **)&sv);
+    if (FAILED(hr))
+        return FALSE;
+
     for (i = 0; i < count; ++i)
     {
         child = (const ITEMIDLIST *)ptr;
+        size = serialized_pidl_size(ptr, remaining);
         if (i == 0)
             IShellView_SelectItem(sv, child, sv_flags | SVSI_ENSUREVISIBLE | SVSI_FOCUSED | SVSI_DESELECTOTHERS);
         else
             IShellView_SelectItem(sv, child, sv_flags);
-        ptr += ILGetSize(child);
+        ptr += size;
+        remaining -= size;
     }
     IShellView_Release(sv);
     return TRUE;
