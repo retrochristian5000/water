@@ -178,10 +178,10 @@
 @ stub I_RemoteMain
 @ stdcall IsAccelerator(long long ptr ptr)
 @ stdcall IsEqualGUID(ptr ptr)
-@ stub IsValidIid
+@ stdcall IsValidIid(ptr)
 @ stdcall IsValidInterface(ptr)
-@ stub IsValidPtrIn
-@ stub IsValidPtrOut
+@ stdcall IsValidPtrIn(ptr long)
+@ stdcall IsValidPtrOut(ptr long)
 @ stdcall MkParseDisplayName(ptr wstr ptr ptr)
 @ stdcall MonikerCommonPrefixWith(ptr ptr ptr)
 @ stub MonikerRelativePathTo
