@@ -214,7 +214,7 @@ static void CREATESTRUCT32Ato16( const CREATESTRUCTA* from, CREATESTRUCT16* to )
     to->dwExStyle      = from->dwExStyle;
 }
 
-static LRESULT call_hook16( WNDPROC16 hook, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
+static LRESULT call_hook16( LPOFNHOOKPROC16 hook, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
 {
     WOW16_CONTEXT context;
     WORD params[5];
@@ -237,7 +237,7 @@ static LRESULT call_hook16( WNDPROC16 hook, HWND hwnd, UINT msg, WPARAM wp, LPAR
     return LOWORD( context.Eax );
 }
 
-static UINT_PTR CALLBACK call_hook_proc( WNDPROC16 hook, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
+static UINT_PTR CALLBACK call_hook_proc( LPOFNHOOKPROC16 hook, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
 {
     LRESULT ret = 0;
 
@@ -503,7 +503,7 @@ struct hook_frame
     struct hook_frame *previous;
 };
 
-static LONG hook_tls_index = TLS_OUT_OF_INDEXES;
+static LONG hook_tls_index = (LONG)TLS_OUT_OF_INDEXES;
 
 static DWORD get_hook_tls_index(void)
 {
