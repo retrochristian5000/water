@@ -385,7 +385,7 @@ void WINAPI DebugBreak16( I386_CONTEXT *context )
     rec.ExceptionCode    = EXCEPTION_BREAKPOINT;
     rec.ExceptionFlags   = 0;
     rec.ExceptionRecord  = NULL;
-    rec.ExceptionAddress = (LPVOID)context->Eip;
+    rec.ExceptionAddress = (LPVOID)(UINT_PTR)context->Eip;
     rec.NumberParameters = 0;
 #ifdef __i386__
     NtRaiseException( &rec, (CONTEXT *)context, TRUE );
