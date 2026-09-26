@@ -89,7 +89,6 @@ BOOL WINAPI DllMain( HINSTANCE hinst, DWORD reason, LPVOID reserved )
     case DLL_PROCESS_ATTACH:
         init_selectors();
         if (LoadLibrary16( "krnl386.exe" ) < 32) return FALSE;
-        MSDOS_InitConfig();
         /* fall through */
     case DLL_THREAD_ATTACH:
         thread_attach();
@@ -116,6 +115,9 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
 
     /* create the shared heap for broken win95 native dlls */
     HeapCreate( HEAP_SHARED, 0, 0 );
+
+    /* Parse the Win9x boot configuration outside the PE loader lock. */
+    MSDOS_InitConfig();
 
     /* setup emulation of protected instructions from 32-bit code */
     if (GetVersion() & 0x80000000) RtlAddVectoredExceptionHandler( TRUE, INSTR_vectored_handler );
