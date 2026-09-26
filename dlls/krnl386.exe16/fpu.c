@@ -29,7 +29,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(int);
  *  The actual work is done by a single routine.
  */
 
-static void FPU_ModifyCode(CONTEXT *context, BYTE Opcode);
+static void FPU_ModifyCode(I386_CONTEXT *context, BYTE Opcode);
 
 
 /**********************************************************************
@@ -40,7 +40,7 @@ static void FPU_ModifyCode(CONTEXT *context, BYTE Opcode);
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int34Handler(CONTEXT *context)
+void WINAPI DOSVM_Int34Handler(I386_CONTEXT *context)
 {
     TRACE("Int 0x34 called-- FP opcode 0xd8\n");
     FPU_ModifyCode(context, 0xd8);
@@ -55,7 +55,7 @@ void WINAPI DOSVM_Int34Handler(CONTEXT *context)
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int35Handler(CONTEXT *context)
+void WINAPI DOSVM_Int35Handler(I386_CONTEXT *context)
 {
     TRACE("Int 0x35 called-- FP opcode 0xd9\n");
     FPU_ModifyCode(context, 0xd9);
@@ -70,7 +70,7 @@ void WINAPI DOSVM_Int35Handler(CONTEXT *context)
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int36Handler(CONTEXT *context)
+void WINAPI DOSVM_Int36Handler(I386_CONTEXT *context)
 {
     TRACE("Int 0x36 called-- FP opcode 0xda\n");
     FPU_ModifyCode(context, 0xda);
@@ -85,7 +85,7 @@ void WINAPI DOSVM_Int36Handler(CONTEXT *context)
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int37Handler(CONTEXT *context)
+void WINAPI DOSVM_Int37Handler(I386_CONTEXT *context)
 {
     TRACE("Int 0x37 called-- FP opcode 0xdb\n");
     FPU_ModifyCode(context, 0xdb);
@@ -103,7 +103,7 @@ void WINAPI DOSVM_Int37Handler(CONTEXT *context)
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int38Handler(CONTEXT *context)
+void WINAPI DOSVM_Int38Handler(I386_CONTEXT *context)
 {
     TRACE("Int 0x38 called-- FP opcode 0xdc\n");
     FPU_ModifyCode(context, 0xdc);
@@ -118,7 +118,7 @@ void WINAPI DOSVM_Int38Handler(CONTEXT *context)
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int39Handler(CONTEXT *context)
+void WINAPI DOSVM_Int39Handler(I386_CONTEXT *context)
 {
     TRACE("Int 0x39 called-- FP opcode 0xdd\n");
     FPU_ModifyCode(context, 0xdd);
@@ -133,7 +133,7 @@ void WINAPI DOSVM_Int39Handler(CONTEXT *context)
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int3aHandler(CONTEXT *context)
+void WINAPI DOSVM_Int3aHandler(I386_CONTEXT *context)
 {
     TRACE("Int 0x3a called-- FP opcode 0xde\n");
     FPU_ModifyCode(context, 0xde);
@@ -148,7 +148,7 @@ void WINAPI DOSVM_Int3aHandler(CONTEXT *context)
  *  The interrupt list isn't specific about what this interrupt
  *  actually does. [ interrup.m ]
  */
-void WINAPI DOSVM_Int3bHandler(CONTEXT *context)
+void WINAPI DOSVM_Int3bHandler(I386_CONTEXT *context)
 {
     TRACE("Int 0x3b called-- FP opcode 0xdf\n");
     FPU_ModifyCode(context, 0xdf);
@@ -171,7 +171,7 @@ void WINAPI DOSVM_Int3bHandler(CONTEXT *context)
  *
  *  11011xxx should be the opcode instruction.
  */
-void WINAPI DOSVM_Int3cHandler(CONTEXT *context)
+void WINAPI DOSVM_Int3cHandler(I386_CONTEXT *context)
 {
     FIXME("Int 3C NOT Implemented\n");
     INT_BARF(context, 0x3c);
@@ -185,7 +185,7 @@ void WINAPI DOSVM_Int3cHandler(CONTEXT *context)
  *
  *  Opcode 0x90 is a NOP.  It just fills space where the 3D was.
  */
-void WINAPI DOSVM_Int3dHandler(CONTEXT *context)
+void WINAPI DOSVM_Int3dHandler(I386_CONTEXT *context)
 {
     TRACE("Int 0x3d called-- Standalone FWAIT\n");
     FPU_ModifyCode(context, 0x90);
@@ -203,7 +203,7 @@ void WINAPI DOSVM_Int3dHandler(CONTEXT *context)
  *  Direct access 4.0 modifies and does not restore this vector.
  *
  */
-void WINAPI DOSVM_Int3eHandler(CONTEXT *context)
+void WINAPI DOSVM_Int3eHandler(I386_CONTEXT *context)
 {
     FIXME("Int 3E NOT Implemented\n");
     INT_BARF(context, 0x3e);
@@ -219,7 +219,7 @@ void WINAPI DOSVM_Int3eHandler(CONTEXT *context)
  *
  *               Code thanks to Ove Kaaven
  */
-static void FPU_ModifyCode(CONTEXT *context, BYTE Opcode)
+static void FPU_ModifyCode(I386_CONTEXT *context, BYTE Opcode)
 {
     BYTE *code = ldt_get_ptr(context->SegCs, context->Eip);
 
