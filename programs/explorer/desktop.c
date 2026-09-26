@@ -1536,12 +1536,15 @@ static HRESULT WINAPI shellwindows_OnNavigate(IShellWindows *iface, LONG cookie,
         if (sw->windows[i].cookie == cookie)
         {
             size_t len = V_ARRAY(location)->rgsabound[0].cElements;
-            if (!(sw->windows[i].pidl = realloc(sw->windows[i].pidl, len)))
+            ITEMIDLIST *pidl;
+
+            if (!len || !(pidl = realloc(sw->windows[i].pidl, len)))
             {
                 LeaveCriticalSection(&sw->cs);
-                return E_OUTOFMEMORY;
+                return len ? E_OUTOFMEMORY : E_INVALIDARG;
             }
-            memcpy(sw->windows[i].pidl, V_ARRAY(location)->pvData, len);
+            memcpy(pidl, V_ARRAY(location)->pvData, len);
+            sw->windows[i].pidl = pidl;
 
             LeaveCriticalSection(&sw->cs);
             return S_OK;
