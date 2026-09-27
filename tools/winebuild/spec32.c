@@ -477,7 +477,8 @@ void output_exports( DLLSPEC *spec )
             output( "\t%s .L__wine_spec_forwards+%u\n", func_ptr, fwd_size );
             fwd_size += strlen(odp->link_name) + 1;
         }
-        else if ((odp->flags & FLAG_IMPORT) && (target.cpu == CPU_i386 || target.cpu == CPU_x86_64))
+        else if ((odp->flags & FLAG_IMPORT) &&
+                 (target.cpu == CPU_i386 || target.cpu == CPU_x86_64 || target.cpu == CPU_POWERPC))
         {
             name = odp->name ? odp->name : odp->export_name;
             if (name) output( "\t%s %s_%s\n", func_ptr, asm_name("__wine_spec_imp"), name );
@@ -612,6 +613,15 @@ void output_exports( DLLSPEC *spec )
         case CPU_x86_64:
             output( "\t.byte 0x48,0x8d,0xa4,0x24,0x00,0x00,0x00,0x00\n" );  /* hotpatch prolog */
             output( "\tjmp *__imp_%s(%%rip)\n", asm_name( get_link_name( odp )));
+            break;
+        case CPU_POWERPC:
+            output( "\tmr %s, %s\n", ppc_reg(0), ppc_reg(31) );
+            output( "\tlis %s, (__imp_%s+32768)@h\n", ppc_reg(31), asm_name( get_link_name( odp )) );
+            output( "\tla  %s, __imp_%s@l(%s)\n", ppc_reg(31), asm_name( get_link_name( odp )), ppc_reg(31) );
+            output( "\tlwz %s, 0(%s)\n", ppc_reg(31), ppc_reg(31) );
+            output( "\tmtctr %s\n", ppc_reg(31) );
+            output( "\tmr %s, %s\n", ppc_reg(31), ppc_reg(0) );
+            output( "\tbctr\n" );
             break;
         default:
             assert(0);

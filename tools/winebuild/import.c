@@ -153,20 +153,6 @@ static struct strarray as_files;
 static const char import_func_prefix[] = "__wine$func$";
 static const char import_ord_prefix[]  = "__wine$ord$";
 
-static inline const char *ppc_reg( int reg )
-{
-    static const char * const ppc_regs[32] =
-    {
-        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-        "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
-        "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31"
-    };
-
-    if (target.platform == PLATFORM_APPLE) return ppc_regs[reg];
-    return ppc_regs[reg] + 1;  /* GNU PowerPC syntax uses numeric register names by default. */
-}
-
 /* compare function names; helper for resolve_imports */
 static int name_cmp( const char **name, const char **entry )
 {
@@ -1173,8 +1159,24 @@ void output_stubs( DLLSPEC *spec )
             output( "\t.seh_endproc\n" );
             break;
         case CPU_POWERPC:
-            fatal_error( "PowerPC stub generation is not implemented; refusing to emit an empty stub for %s\n",
-                         exp_name ? exp_name : name );
+            /*
+             * Windows NT PowerPC passes the first two arguments in r3/r4.
+             * The stub helper never returns, so a tail branch is sufficient
+             * and avoids creating an unwindable stack frame here.
+             */
+            output( "\tlis %s, (.L__wine_spec_file_name+32768)@h\n", ppc_reg(3) );
+            output( "\tla  %s, .L__wine_spec_file_name@l(%s)\n", ppc_reg(3), ppc_reg(3) );
+            if (exp_name)
+            {
+                output( "\tlis %s, (.L%s_string+32768)@h\n", ppc_reg(4), name );
+                output( "\tla  %s, .L%s_string@l(%s)\n", ppc_reg(4), name, ppc_reg(4) );
+            }
+            else
+            {
+                output( "\tli  %s, 0\n", ppc_reg(4) );
+                output( "\tori %s, %s, %u\n", ppc_reg(4), ppc_reg(4), odp->ordinal );
+            }
+            output( "\tb %s\n", asm_name("__wine_spec_unimplemented_stub") );
             break;
         }
         output_function_size( name );
