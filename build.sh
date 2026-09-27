@@ -24,7 +24,7 @@ AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=2
+LLVM_LIBCXX_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -1508,10 +1508,10 @@ selected_libcxx_archs()
 libcxx_ms_target()
 {
     case "$1" in
-        i386)    printf '%s\n' i686-windows ;;
-        x86_64)  printf '%s\n' x86_64-windows ;;
-        aarch64) printf '%s\n' aarch64-windows ;;
-        arm64ec) printf '%s\n' arm64ec-windows ;;
+        i386)    printf '%s\n' i686-pc-windows-msvc ;;
+        x86_64)  printf '%s\n' x86_64-pc-windows-msvc ;;
+        aarch64) printf '%s\n' aarch64-pc-windows-msvc ;;
+        arm64ec) printf '%s\n' arm64ec-pc-windows-msvc ;;
         *)       return 1 ;;
     esac
 }
@@ -1606,7 +1606,7 @@ prepare_one_llvm_libcxx()
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
             "-DLLVM_DEFAULT_TARGET_TRIPLE=$whp_libcxx_target" \
             -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=OFF \
-            -DLLVM_ENABLE_RUNTIMES=libcxx \
+            -DLLVM_ENABLE_RUNTIMES:STRING=libcxx \
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_DOCS=OFF \
             -DLLIBCXX_ENABLE_SHARED=OFF \
@@ -1617,7 +1617,7 @@ prepare_one_llvm_libcxx()
             -DLLIBCXX_INCLUDE_BENCHMARKS=OFF \
             -DLLIBCXX_INCLUDE_DOCS=OFF \
             -DLLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
-            -DLLIBCXX_CXX_ABI=vcruntime \
+            -DLIBCXX_CXX_ABI:STRING=vcruntime \
             -DLLIBCXX_ABI_FORCE_MICROSOFT=ON \
             -DLLIBCXX_HAS_WIN32_THREAD_API=ON \
             -DLLIBCXX_HAS_PTHREAD_API=OFF \
@@ -1634,6 +1634,14 @@ prepare_one_llvm_libcxx()
         PATH="$LLVM_BIN:$PATH"
         export PATH
         "$whp_libcxx_cmake" "$@"
+
+        whp_libcxx_abi=$(sed -n 's/^LIBCXX_CXX_ABI:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        [ "$whp_libcxx_abi" = vcruntime ] ||
+            die "LLVM libc++ selected unexpected C++ ABI provider '${whp_libcxx_abi:-unknown}' for $whp_libcxx_target; expected vcruntime"
+        whp_libcxx_runtimes=$(sed -n 's/^LLVM_ENABLE_RUNTIMES:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        [ "$whp_libcxx_runtimes" = libcxx ] ||
+            die "LLVM runtime set changed unexpectedly to '${whp_libcxx_runtimes:-unknown}' for $whp_libcxx_target; expected libcxx only"
+
         "$whp_libcxx_cmake" --build "$whp_libcxx_build" --parallel "$(detect_jobs)" --target cxx_static
         PATH=$whp_libcxx_saved_path
         export PATH
@@ -1684,7 +1692,7 @@ EOF
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
-        whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
+        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
 }
 
 prepare_libcxx_provider()
