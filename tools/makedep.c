@@ -3843,10 +3843,24 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     if (!source->use_msvcrt) strarray_addall( &cflags, make->unix_cflags );
     if ((source->file->flags & FLAG_ARM64EC_X64) && !strcmp( archs.str[arch], "arm64ec" ))
     {
-        var_cc     = "$(x86_64_CC)";
-        var_cflags = "$(x86_64_CFLAGS)";
         strarray_add( &cflags, "-D__arm64ec_x64__" );
-        strarray_addall( &cflags, get_expanded_make_var_array( top_makefile, "x86_64_EXTRACFLAGS" ));
+        if (source->file->flags & FLAG_C_CXX)
+        {
+            var_cc     = "$(x86_64_CXX)";
+            var_cflags = "$(x86_64_CXXFLAGS)";
+            cxx_provider_cflags = get_expanded_make_var_array( top_makefile, "x86_64_CXX_PE_CFLAGS" );
+            if (make->external)
+                strarray_addall( &cflags, remove_warning_flags(
+                    get_expanded_make_var_array( top_makefile, "x86_64_EXTRACXXFLAGS" )));
+            else
+                strarray_addall( &cflags, get_expanded_make_var_array( top_makefile, "x86_64_EXTRACXXFLAGS" ));
+        }
+        else
+        {
+            var_cc     = "$(x86_64_CC)";
+            var_cflags = "$(x86_64_CFLAGS)";
+            strarray_addall( &cflags, get_expanded_make_var_array( top_makefile, "x86_64_EXTRACFLAGS" ));
+        }
     }
     else if (source->file->flags & FLAG_C_CXX)
     {

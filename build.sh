@@ -6,6 +6,7 @@ SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
+LLVM_LIBCXX_RUNTIME_DIR=${WHP_LIBCXX_RUNTIME_DIR:-"$BUILD_DIR/llvm-libcxx-pe"}
 LLVM_LINK_JOBS=${WHP_LLVM_LINK_JOBS:-2}
 WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-1}
 WHP_SUBMODULES=${WHP_SUBMODULES:-1}
@@ -23,6 +24,7 @@ AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=5
+LLVM_LIBCXX_RECIPE=1
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -76,9 +78,11 @@ Environment:
   WATER_KEEP_GOING      Continue independent work after errors: y or n (default: y)
   WHP_LLVM_SOURCE_DIR   LLVM source tree (default: ./toolchains/llvm-project)
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
+  WHP_LIBCXX_RUNTIME_DIR LLVM libc++ PE runtime cache (default: ./build/llvm-libcxx-pe)
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
   WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (default: auto)
+  WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
   WHP_LLVM_BOOTSTRAP_CC Stage-0 C compiler (default: prefer clang)
   WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
@@ -173,6 +177,7 @@ validate_profile()
     WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}
     WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
     WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}
+    WATER_LIBCXX=${WATER_LIBCXX:-llvm}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
     WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}
     BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
@@ -204,6 +209,10 @@ validate_profile()
     case "$WATER_LLVM_LINKER" in
         auto|lld|system) ;;
         *) die "WATER_LLVM_LINKER must be auto, lld, or system" ;;
+    esac
+    case "$WATER_LIBCXX" in
+        llvm|legacy) ;;
+        *) die "WATER_LIBCXX must be llvm or legacy" ;;
     esac
     case "$LLVM_LINK_JOBS" in
         ''|*[!0-9]*|0) die "WHP_LLVM_LINK_JOBS must be a positive integer" ;;
@@ -1409,10 +1418,318 @@ setup_toolchain()
     printf 'WHP C++ compiler: %s\n' "$CXX" >&2
 }
 
+llvm_libcxx_source_id()
+{
+    whp_libcxx_source_id=$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+    if [ -z "$whp_libcxx_source_id" ]; then
+        whp_libcxx_source_id=$(cksum "$LLVM_SOURCE_DIR/libcxx/include/__config" \
+            "$LLVM_SOURCE_DIR/libcxx/CMakeLists.txt" 2>/dev/null |
+            awk '{ printf "%s:%s;", $1, $2 }')
+    fi
+    printf '%s\n' "$whp_libcxx_source_id"
+    unset whp_libcxx_source_id
+}
+
+selected_libcxx_archs()
+{
+    whp_libcxx_archs=
+    whp_libcxx_archs_found=0
+
+    if [ "$WHP_CONFIGURE_ARCHS_SET" = 1 ]; then
+        whp_libcxx_archs=$WHP_CONFIGURE_ARCHS
+        whp_libcxx_archs_found=1
+    elif [ -f "$CONFIGURE_USER_ARGS_FILE" ]; then
+        while IFS= read -r whp_libcxx_arg || [ -n "$whp_libcxx_arg" ]; do
+            case "$whp_libcxx_arg" in
+                --enable-archs=*)
+                    whp_libcxx_archs=${whp_libcxx_arg#--enable-archs=}
+                    whp_libcxx_archs_found=1
+                    ;;
+                --disable-archs)
+                    whp_libcxx_archs=none
+                    whp_libcxx_archs_found=1
+                    ;;
+            esac
+        done < "$CONFIGURE_USER_ARGS_FILE"
+        unset whp_libcxx_arg
+    fi
+
+    if [ "$whp_libcxx_archs_found" = 0 ]; then
+        case "$WATER_ARCHS_MODE" in
+            none)
+                whp_libcxx_archs=none
+                ;;
+            custom)
+                for whp_libcxx_item in \
+                    WATER_ARCH_I386:i386 WATER_ARCH_X86_64:x86_64 WATER_ARCH_ARM:arm \
+                    WATER_ARCH_AARCH64:aarch64 WATER_ARCH_ARM64EC:arm64ec \
+                    WATER_ARCH_POWERPC:powerpc
+                do
+                    whp_libcxx_var=${whp_libcxx_item%%:*}
+                    whp_libcxx_arch=${whp_libcxx_item#*:}
+                    eval "whp_libcxx_value=\${$whp_libcxx_var:-y}"
+                    case "$whp_libcxx_value" in
+                        y|1)
+                            if [ -n "$whp_libcxx_archs" ]; then
+                                whp_libcxx_archs="$whp_libcxx_archs,$whp_libcxx_arch"
+                            else
+                                whp_libcxx_archs=$whp_libcxx_arch
+                            fi
+                            ;;
+                    esac
+                done
+                unset whp_libcxx_item whp_libcxx_var whp_libcxx_arch whp_libcxx_value
+                ;;
+            auto)
+                case "$(uname -m 2>/dev/null || true):$(uname -s 2>/dev/null || true)" in
+                    x86_64:Darwin|amd64:Darwin) whp_libcxx_archs=x86_64 ;;
+                    x86_64:*|amd64:*)            whp_libcxx_archs=i386,x86_64 ;;
+                    arm64:*|aarch64:*)           whp_libcxx_archs=aarch64 ;;
+                    i?86:*)                      whp_libcxx_archs=i386 ;;
+                    armv7*:*)                    whp_libcxx_archs=arm ;;
+                    ppc*:*|powerpc*:*)           whp_libcxx_archs=powerpc ;;
+                    *)                           whp_libcxx_archs=none ;;
+                esac
+                ;;
+        esac
+    fi
+
+    case "$whp_libcxx_archs" in
+        ""|none|no)
+            ;;
+        *)
+            printf '%s\n' "$whp_libcxx_archs" | tr ',' ' '
+            ;;
+    esac
+    unset whp_libcxx_archs whp_libcxx_archs_found
+}
+
+libcxx_ms_target()
+{
+    case "$1" in
+        i386)    printf '%s\n' i686-windows ;;
+        x86_64)  printf '%s\n' x86_64-windows ;;
+        aarch64) printf '%s\n' aarch64-windows ;;
+        arm64ec) printf '%s\n' arm64ec-windows ;;
+        *)       return 1 ;;
+    esac
+}
+
+prepare_one_llvm_libcxx()
+{
+    whp_libcxx_arch=$1
+    whp_libcxx_target=$(libcxx_ms_target "$whp_libcxx_arch") ||
+        die "no LLVM libc++ Microsoft-ABI target mapping for $whp_libcxx_arch"
+
+    eval "whp_libcxx_user_cflags=\${${whp_libcxx_arch}_CXX_PE_CFLAGS:-}"
+    eval "whp_libcxx_user_libs=\${${whp_libcxx_arch}_CXX_PE_LIBS:-}"
+    if [ -n "$whp_libcxx_user_cflags" ] || [ -n "$whp_libcxx_user_libs" ]; then
+        [ -n "$whp_libcxx_user_cflags" ] && [ -n "$whp_libcxx_user_libs" ] ||
+            die "$whp_libcxx_arch C++ provider override must set both ${whp_libcxx_arch}_CXX_PE_CFLAGS and ${whp_libcxx_arch}_CXX_PE_LIBS"
+        printf 'WHP libc++ %s: explicit provider override\n' "$whp_libcxx_arch" >&2
+        WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:override"
+        unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs
+        return
+    fi
+
+    [ -n "$LLVM_BIN" ] && [ -x "$LLVM_BIN/clang" ] && [ -x "$LLVM_BIN/clang++" ] ||
+        die "WATER_LIBCXX=llvm requires a usable Clang toolchain"
+    [ -f "$LLVM_SOURCE_DIR/runtimes/CMakeLists.txt" ] ||
+        die "LLVM runtimes source tree is missing: $LLVM_SOURCE_DIR/runtimes"
+
+    whp_libcxx_cmake=$(command -v cmake 2>/dev/null || true)
+    [ -n "$whp_libcxx_cmake" ] || die "CMake is required to build LLVM libc++"
+
+    whp_libcxx_ar=${AR:-}
+    [ -n "$whp_libcxx_ar" ] || whp_libcxx_ar=$(command -v llvm-ar 2>/dev/null || command -v ar 2>/dev/null || true)
+    [ -n "$whp_libcxx_ar" ] || die "an archiver is required to build LLVM libc++"
+    whp_libcxx_ranlib=${RANLIB:-}
+    [ -n "$whp_libcxx_ranlib" ] || whp_libcxx_ranlib=$(command -v llvm-ranlib 2>/dev/null || command -v ranlib 2>/dev/null || true)
+    [ -n "$whp_libcxx_ranlib" ] || die "ranlib is required to build LLVM libc++"
+
+    whp_libcxx_build="$LLVM_LIBCXX_RUNTIME_DIR/$whp_libcxx_arch"
+    whp_libcxx_provider="$whp_libcxx_build/provider"
+    whp_libcxx_state_file="$whp_libcxx_build/.whp-state"
+    whp_libcxx_headers="$whp_libcxx_build/include/c++/v1"
+    whp_libcxx_source=$(llvm_libcxx_source_id)
+    whp_libcxx_compiler=$("$LLVM_BIN/clang++" --version 2>/dev/null | sed -n '1p')
+    whp_libcxx_cmake_version=$("$whp_libcxx_cmake" --version 2>/dev/null | sed -n '1p')
+    whp_libcxx_signature=$(printf '%s\n' \
+        "LLVM_LIBCXX_RECIPE=$LLVM_LIBCXX_RECIPE" \
+        "LLVM_SOURCE=$whp_libcxx_source" \
+        "TARGET=$whp_libcxx_target" \
+        "CXX=$LLVM_BIN/clang++" \
+        "CXX_VERSION=$whp_libcxx_compiler" \
+        "AR=$whp_libcxx_ar" \
+        "RANLIB=$whp_libcxx_ranlib" \
+        "CMAKE=$whp_libcxx_cmake_version" \
+        "BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
+        "ABI=vcruntime" \
+        "THREAD_API=win32" \
+        "WATER_INCLUDE=$SOURCE_DIR/include")
+
+    whp_libcxx_cached=0
+    if [ -f "$whp_libcxx_state_file" ] &&
+       [ -f "$whp_libcxx_provider/libwhp-libcxx.a" ] &&
+       [ -f "$whp_libcxx_headers/__config_site" ] &&
+       [ "$(cat "$whp_libcxx_state_file")" = "$whp_libcxx_signature" ]; then
+        whp_libcxx_cached=1
+    fi
+
+    if [ "$whp_libcxx_cached" = 0 ]; then
+        rm -rf "$whp_libcxx_build"
+        mkdir -p "$whp_libcxx_build" "$whp_libcxx_provider"
+
+        set -- \
+            -S "$LLVM_SOURCE_DIR/runtimes" \
+            -B "$whp_libcxx_build" \
+            "-DCMAKE_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            "-DCMAKE_C_COMPILER=$LLVM_BIN/clang" \
+            "-DCMAKE_CXX_COMPILER=$LLVM_BIN/clang++" \
+            "-DCMAKE_C_COMPILER_TARGET=$whp_libcxx_target" \
+            "-DCMAKE_CXX_COMPILER_TARGET=$whp_libcxx_target" \
+            "-DCMAKE_AR=$whp_libcxx_ar" \
+            "-DCMAKE_RANLIB=$whp_libcxx_ranlib" \
+            -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DCMAKE_C_COMPILER_WORKS=ON \
+            -DCMAKE_CXX_COMPILER_WORKS=ON \
+            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$SOURCE_DIR/include/msvcrt" \
+            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$SOURCE_DIR/include/msvcrt" \
+            "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
+            "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
+            "-DLLVM_DEFAULT_TARGET_TRIPLE=$whp_libcxx_target" \
+            -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=OFF \
+            -DLLVM_ENABLE_RUNTIMES=libcxx \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLIBCXX_ENABLE_SHARED=OFF \
+            -DLLIBCXX_ENABLE_STATIC=ON \
+            -DLLIBCXX_INSTALL_STATIC_LIBRARY=OFF \
+            -DLLIBCXX_INSTALL_SHARED_LIBRARY=OFF \
+            -DLLIBCXX_INCLUDE_TESTS=OFF \
+            -DLLIBCXX_INCLUDE_BENCHMARKS=OFF \
+            -DLLIBCXX_INCLUDE_DOCS=OFF \
+            -DLLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
+            -DLLIBCXX_CXX_ABI=vcruntime \
+            -DLLIBCXX_ABI_FORCE_MICROSOFT=ON \
+            -DLLIBCXX_HAS_WIN32_THREAD_API=ON \
+            -DLLIBCXX_HAS_PTHREAD_API=OFF \
+            -DLLIBCXX_ENABLE_STATIC_ABI_LIBRARY=OFF \
+            -DLLIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY=OFF \
+            -DLIBCXX_STATIC_OUTPUT_NAME=whp-libcxx
+
+        whp_libcxx_ninja=$(find_existing_ninja)
+        if [ -n "$whp_libcxx_ninja" ]; then
+            set -- "$@" -G Ninja "-DCMAKE_MAKE_PROGRAM=$whp_libcxx_ninja"
+        fi
+
+        whp_libcxx_saved_path=$PATH
+        PATH="$LLVM_BIN:$PATH"
+        export PATH
+        "$whp_libcxx_cmake" "$@"
+        "$whp_libcxx_cmake" --build "$whp_libcxx_build" --parallel "$(detect_jobs)" --target cxx_static
+        PATH=$whp_libcxx_saved_path
+        export PATH
+
+        whp_libcxx_archive=$(find "$whp_libcxx_build" -type f \
+            \( -name 'libwhp-libcxx.a' -o -name 'libwhp-libcxx.lib' -o -name 'whp-libcxx.lib' \) \
+            -print | sed -n '1p')
+        [ -n "$whp_libcxx_archive" ] ||
+            die "LLVM libc++ did not produce a static archive for $whp_libcxx_arch"
+        [ -f "$whp_libcxx_headers/__config_site" ] ||
+            die "LLVM libc++ did not generate __config_site for $whp_libcxx_arch"
+        cp "$whp_libcxx_archive" "$whp_libcxx_provider/libwhp-libcxx.a"
+
+        whp_libcxx_probe="$whp_libcxx_build/.whp-libcxx-probe.cpp"
+        cat > "$whp_libcxx_probe" <<'EOF'
+#include <__config>
+#if _LIBCPP_VERSION < 240000
+# error WHP libc++ provider is older than the pinned LLVM libc++
+#endif
+#ifndef _LIBCPP_ABI_VCRUNTIME
+# error WHP libc++ provider is not using the vcruntime ABI
+#endif
+#include <string>
+int whp_libcxx_probe() { return std::string("whp").size() == 3 ? 0 : 1; }
+EOF
+        "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
+            -std=c++17 -fshort-wchar -D__WINE_PE_BUILD -nostdinc++ \
+            "-I$whp_libcxx_headers" \
+            -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
+            -c "$whp_libcxx_probe" -o "$whp_libcxx_build/.whp-libcxx-probe.o"
+        rm -f "$whp_libcxx_probe" "$whp_libcxx_build/.whp-libcxx-probe.o"
+
+        printf '%s\n' "$whp_libcxx_signature" > "$whp_libcxx_state_file"
+        printf 'WHP libc++ %s: built LLVM libc++ %s\n' "$whp_libcxx_arch" "$whp_libcxx_source" >&2
+    else
+        printf 'WHP libc++ %s: cached LLVM runtime\n' "$whp_libcxx_arch" >&2
+    fi
+
+    whp_libcxx_cflags="-nostdinc++ -I$whp_libcxx_headers"
+    whp_libcxx_libs="-L$whp_libcxx_provider -lwhp-libcxx vcruntime140"
+    export "${whp_libcxx_arch}_CXX_PE_CFLAGS=$whp_libcxx_cflags"
+    export "${whp_libcxx_arch}_CXX_PE_LIBS=$whp_libcxx_libs"
+    whp_libcxx_state_sum=$(cksum "$whp_libcxx_state_file" | awk '{ printf "%s:%s", $1, $2 }')
+    WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
+
+    unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs \
+        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib \
+        whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
+        whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
+        whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
+        whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
+}
+
+prepare_libcxx_provider()
+{
+    WHP_LIBCXX_STATE=$WATER_LIBCXX
+    export WHP_LIBCXX_STATE
+
+    if [ "$WATER_LIBCXX" = legacy ]; then
+        printf 'WHP libc++ provider: legacy Water libc++ (_LIBCPP_VERSION 8000)\n' >&2
+        return
+    fi
+
+    whp_libcxx_selected=$(selected_libcxx_archs)
+    whp_libcxx_prepare=
+    for whp_libcxx_arch in $whp_libcxx_selected
+    do
+        case "$whp_libcxx_arch" in
+            i386|x86_64|aarch64|arm64ec)
+                case " $whp_libcxx_prepare " in
+                    *" $whp_libcxx_arch "*) ;;
+                    *) whp_libcxx_prepare="$whp_libcxx_prepare $whp_libcxx_arch" ;;
+                esac
+                if [ "$whp_libcxx_arch" = arm64ec ]; then
+                    case " $whp_libcxx_prepare " in
+                        *" x86_64 "*) ;;
+                        *) whp_libcxx_prepare="$whp_libcxx_prepare x86_64" ;;
+                    esac
+                fi
+                ;;
+            arm)
+                printf 'WHP libc++ arm: legacy provider retained for armv7-windows-gnu ABI\n' >&2
+                ;;
+            powerpc)
+                printf 'WHP libc++ powerpc: legacy provider retained pending PowerPC COFF runtime support\n' >&2
+                ;;
+        esac
+    done
+
+    for whp_libcxx_arch in $whp_libcxx_prepare
+    do
+        prepare_one_llvm_libcxx "$whp_libcxx_arch"
+    done
+    export WHP_LIBCXX_STATE
+    unset whp_libcxx_selected whp_libcxx_prepare whp_libcxx_arch
+}
+
+
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=4" \
+        "WHP_PROFILE_SCHEMA=5" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -1420,6 +1737,8 @@ profile_signature()
         "WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}" \
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}" \
+        "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
+        "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
         "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
@@ -1758,6 +2077,7 @@ init_submodules
 prepare_ninja
 prepare_llvm_toolchain
 setup_toolchain
+prepare_libcxx_provider
 
 case "${1:-build}" in
     configure)
