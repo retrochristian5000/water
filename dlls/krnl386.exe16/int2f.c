@@ -155,7 +155,8 @@ void WINAPI DOSVM_Int2fHandler( I386_CONTEXT *context )
         switch (AL_reg(context))
         {
         case 0x00:   /* XMS v2+ installation check */
-            SET_AL( context, 0x80 );
+            DOSMEM_InitDosMemory();
+            SET_AL( context, xms16_sel ? 0x80 : 0 );
             break;
 
         case 0x10:   /* XMS v2+ get driver address */

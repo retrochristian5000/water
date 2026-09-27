@@ -61,6 +61,7 @@ struct xms_move
 #pragma pack(pop)
 
 static struct xms_block xms_blocks[XMS_MAX_HANDLES];
+static WORD xms_umb_segments[XMS_MAX_HANDLES];
 static BOOL xms_hma_in_use;
 static BOOL xms_global_a20;
 static BYTE xms_local_a20;
@@ -103,6 +104,36 @@ static WORD xms_find_free_handle(void)
     return 0;
 }
 
+static BOOL xms_track_umb(WORD segment)
+{
+    unsigned int i;
+
+    for (i = 0; i < XMS_MAX_HANDLES; i++)
+    {
+        if (!xms_umb_segments[i])
+        {
+            xms_umb_segments[i] = segment;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static BOOL xms_owns_umb(WORD segment, unsigned int *index)
+{
+    unsigned int i;
+
+    for (i = 0; i < XMS_MAX_HANDLES; i++)
+    {
+        if (xms_umb_segments[i] == segment)
+        {
+            if (index) *index = i;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 static DWORD xms_available_kb(void)
 {
     MEMORYSTATUSEX status;
@@ -130,7 +161,7 @@ static BOOL xms_move_pointer(WORD handle, DWORD offset, DWORD length,
     if (!handle)
     {
         linear = ((DWORD)HIWORD(offset) << 4) + LOWORD(offset);
-        if (linear > XMS_DOSMEM_LIMIT || length > XMS_DOSMEM_LIMIT - linear)
+        if (linear >= XMS_DOSMEM_LIMIT || length > XMS_DOSMEM_LIMIT - linear)
         {
             *error = offset_error;
             return FALSE;
@@ -198,13 +229,11 @@ void DOSVM_XMSHandler(I386_CONTEXT *context)
         break;
 
     case 0x04:  /* Global Disable A20 */
+        xms_global_a20 = FALSE;
         if (xms_local_a20)
             xms_failure( context, XMS_ERR_A20_STILL_ON );
         else
-        {
-            xms_global_a20 = FALSE;
             xms_success( context );
-        }
         break;
 
     case 0x05:  /* Local Enable A20 */
@@ -442,6 +471,15 @@ void DOSVM_XMSHandler(I386_CONTEXT *context)
 
         if (DOSMEM_AllocBlockHigh( paragraphs << 4, &segment, 0 ))
         {
+            if (!xms_track_umb( segment ))
+            {
+                DOSMEM_FreeBlock( DOSMEM_MapDosToLinear( (UINT)segment << 4 ) );
+                SET_AX( context, 0 );
+                SET_DX( context, DOSMEM_AvailableHigh() >> 4 );
+                SET_BL( context, XMS_ERR_UMB_NONE );
+                break;
+            }
+
             SET_AX( context, 1 );
             SET_BX( context, segment );
             SET_DX( context, paragraphs );
@@ -460,12 +498,16 @@ void DOSVM_XMSHandler(I386_CONTEXT *context)
     case 0x11:  /* Release Upper Memory Block */
     {
         WORD segment = DX_reg(context);
+        unsigned int index;
 
-        if (segment < 0xd000 || segment >= 0xf000 ||
+        if (!xms_owns_umb( segment, &index ) ||
             !DOSMEM_FreeBlock( DOSMEM_MapDosToLinear( (UINT)segment << 4 ) ))
             xms_failure( context, XMS_ERR_UMB_INVALID );
         else
+        {
+            xms_umb_segments[index] = 0;
             xms_success( context );
+        }
         break;
     }
 

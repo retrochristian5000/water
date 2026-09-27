@@ -329,9 +329,20 @@ static void DOSMEM_InitSegments(void)
      * Keep the historical Wine layout so callers can far-call ES:BX.
      */
     xms16_sel = GLOBAL_Alloc( GMEM_FIXED, sizeof(xms_stub), 0, code16_segment );
-    ptr = GlobalLock16( xms16_sel );
-    memcpy( ptr, xms_stub, sizeof(xms_stub) );
-    GlobalUnlock16( xms16_sel );
+    if (xms16_sel)
+    {
+        ptr = GlobalLock16( xms16_sel );
+        if (ptr)
+        {
+            memcpy( ptr, xms_stub, sizeof(xms_stub) );
+            GlobalUnlock16( xms16_sel );
+        }
+        else
+        {
+            GlobalFree16( xms16_sel );
+            xms16_sel = 0;
+        }
+    }
 
     /*
      * PM / offset N*5: Interrupt N in 16-bit protected mode.
