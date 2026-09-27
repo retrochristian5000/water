@@ -23,8 +23,8 @@ PROFILE_FILE="$BUILD_DIR/.whp-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
-LLVM_BOOTSTRAP_RECIPE=5
-LLVM_LIBCXX_RECIPE=1
+LLVM_BOOTSTRAP_RECIPE=6
+LLVM_LIBCXX_RECIPE=2
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -970,6 +970,7 @@ llvm_bootstrap_needs_update()
 {
     [ -x "$LLVM_BOOTSTRAP_DIR/bin/clang" ] || return 0
     [ -x "$LLVM_BOOTSTRAP_DIR/bin/llvm-dlltool" ] || return 0
+    [ -x "$LLVM_BOOTSTRAP_DIR/bin/llvm-rc" ] || return 0
     [ -f "$LLVM_BOOTSTRAP_STATE_FILE" ] || return 0
 
     llvm_source_state_signature >/dev/null 2>&1 || return 0
@@ -1149,7 +1150,7 @@ bootstrap_llvm()
         previous=$(cat "$LLVM_BOOTSTRAP_CONFIG_FILE")
         if [ "$current" = "$previous" ]; then
             llvm_configure=0
-            for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
+            for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
             do
                 if ! llvm_bootstrap_has_target "$whp_required_target"; then
                     printf 'WHP LLVM CMake: cached target %s is missing; regenerating\n' "$whp_required_target" >&2
@@ -1186,7 +1187,7 @@ bootstrap_llvm()
         printf 'WHP LLVM CMake: cached\n' >&2
     fi
 
-    for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
+    for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
     do
         llvm_bootstrap_has_target "$whp_required_target" ||
             die "LLVM bootstrap target '$whp_required_target' is missing after CMake generation"
@@ -1200,20 +1201,20 @@ bootstrap_llvm()
         case "$llvm_generator" in
             Ninja*)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip -- -k 0
+                    --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip -- -k 0
                 ;;
             *Makefiles*)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip -- -k
+                    --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip -- -k
                 ;;
             *)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
+                    --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
                 ;;
         esac
     else
         "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-            --target clang lld llvm-ar llvm-dlltool llvm-nm llvm-ranlib llvm-strip
+            --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
     fi
     unset llvm_generator
     PATH=$llvm_bootstrap_saved_path
@@ -1546,6 +1547,9 @@ prepare_one_llvm_libcxx()
     whp_libcxx_ranlib=${RANLIB:-}
     [ -n "$whp_libcxx_ranlib" ] || whp_libcxx_ranlib=$(command -v llvm-ranlib 2>/dev/null || command -v ranlib 2>/dev/null || true)
     [ -n "$whp_libcxx_ranlib" ] || die "ranlib is required to build LLVM libc++"
+    whp_libcxx_rc="$LLVM_BIN/llvm-rc"
+    [ -x "$whp_libcxx_rc" ] ||
+        die "WATER_LIBCXX=llvm requires llvm-rc in the selected LLVM toolchain: $whp_libcxx_rc"
 
     whp_libcxx_build="$LLVM_LIBCXX_RUNTIME_DIR/$whp_libcxx_arch"
     whp_libcxx_provider="$whp_libcxx_build/provider"
@@ -1562,6 +1566,7 @@ prepare_one_llvm_libcxx()
         "CXX_VERSION=$whp_libcxx_compiler" \
         "AR=$whp_libcxx_ar" \
         "RANLIB=$whp_libcxx_ranlib" \
+        "RC=$whp_libcxx_rc" \
         "CMAKE=$whp_libcxx_cmake_version" \
         "BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
         "ABI=vcruntime" \
@@ -1591,6 +1596,7 @@ prepare_one_llvm_libcxx()
             "-DCMAKE_CXX_COMPILER_TARGET=$whp_libcxx_target" \
             "-DCMAKE_AR=$whp_libcxx_ar" \
             "-DCMAKE_RANLIB=$whp_libcxx_ranlib" \
+            "-DCMAKE_RC_COMPILER=$whp_libcxx_rc" \
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
             -DCMAKE_C_COMPILER_WORKS=ON \
             -DCMAKE_CXX_COMPILER_WORKS=ON \
@@ -1674,7 +1680,7 @@ EOF
     WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
 
     unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs \
-        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib \
+        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc \
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
