@@ -1337,8 +1337,19 @@ void output_fake_module( DLLSPEC *spec )
     init_output_buffer();
 
     /* .text section */
-    if (spec->characteristics & IMAGE_FILE_DLL) put_data( dll_code_section, sizeof(dll_code_section) );
-    else put_data( exe_code_section, sizeof(exe_code_section) );
+    if (target.cpu == CPU_POWERPC)
+    {
+        /*
+         * PE/PowerPC is little-endian.  Return through r3 and lr instead of
+         * embedding the x86 placeholder code used by the legacy fake module.
+         */
+        put_dword( (spec->characteristics & IMAGE_FILE_DLL) ? 0x38600000 : 0x38600001 ); /* li r3,0/1 */
+        put_dword( 0x4e800020 );  /* blr */
+    }
+    else if (spec->characteristics & IMAGE_FILE_DLL)
+        put_data( dll_code_section, sizeof(dll_code_section) );
+    else
+        put_data( exe_code_section, sizeof(exe_code_section) );
     flush_output_to_section( ".text", -1, 0x60000020 /* CNT_CODE|MEM_EXECUTE|MEM_READ */ );
 
     if (spec->type == SPEC_WIN16)
