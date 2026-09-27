@@ -1875,7 +1875,30 @@ static const char *get_make_variable( const struct makefile *make, const char *n
 /*******************************************************************
  *         get_expanded_make_variable
  */
-static char *get_expanded_make_variable( const struct makefile *make, const char *name )
+static const char *get_make_variable_arch_override( const struct makefile *make, const char *name,
+                                                    unsigned int arch )
+{
+    const char *ret;
+
+    if (arch)
+    {
+        ret = get_make_variable( make, strmake( "%s_%s", archs.str[arch], name ));
+        if (ret && *skip_spaces( ret )) return ret;
+    }
+    return get_make_variable( make, name );
+}
+
+
+/*******************************************************************
+ *         get_expanded_make_variable_arch
+ *
+ * Expand a normal make variable while allowing nested references to use
+ * architecture-specific overrides.  For example, an IMPORTS value containing
+ * $(CXX_PE_LIBS) can resolve x86_64_CXX_PE_LIBS when emitting x86_64 rules and
+ * fall back to CXX_PE_LIBS when no override is configured.
+ */
+static char *get_expanded_make_variable_arch( const struct makefile *make, const char *name,
+                                              unsigned int arch )
 {
     const char *var;
     char *p, *end, *expand, *tmp;
@@ -1891,7 +1914,7 @@ static char *get_expanded_make_variable( const struct makefile *make, const char
             if (!(end = strchr( p + 2, ')' ))) fatal_error( "syntax error in '%s'\n", expand );
             *end++ = 0;
             if (strchr( p + 2, ':' )) fatal_error( "pattern replacement not supported for '%s'\n", p + 2 );
-            var = get_make_variable( make, p + 2 );
+            var = get_make_variable_arch_override( make, p + 2, arch );
             tmp = replace_substr( expand, p, end - p, var ? var : "" );
             /* switch to the new string */
             p = tmp + (p - expand);
@@ -1919,14 +1942,24 @@ static char *get_expanded_make_variable( const struct makefile *make, const char
 
 
 /*******************************************************************
- *         get_expanded_make_var_array
+ *         get_expanded_make_variable
  */
-static struct strarray get_expanded_make_var_array( const struct makefile *make, const char *name )
+static char *get_expanded_make_variable( const struct makefile *make, const char *name )
+{
+    return get_expanded_make_variable_arch( make, name, 0 );
+}
+
+
+/*******************************************************************
+ *         get_expanded_make_var_array_arch
+ */
+static struct strarray get_expanded_make_var_array_arch( const struct makefile *make, const char *name,
+                                                         unsigned int arch )
 {
     struct strarray ret = empty_strarray;
     char *value, *token;
 
-    if ((value = get_expanded_make_variable( make, name )))
+    if ((value = get_expanded_make_variable_arch( make, name, arch )))
         for (token = strtok( value, " \t" ); token; token = strtok( NULL, " \t" ))
             strarray_add( &ret, token );
     return ret;
@@ -1934,15 +1967,31 @@ static struct strarray get_expanded_make_var_array( const struct makefile *make,
 
 
 /*******************************************************************
+ *         get_expanded_make_var_array
+ */
+static struct strarray get_expanded_make_var_array( const struct makefile *make, const char *name )
+{
+    return get_expanded_make_var_array_arch( make, name, 0 );
+}
+
+
+/*******************************************************************
  *         get_expanded_file_local_var
  */
-static struct strarray get_expanded_file_local_var( const struct makefile *make, const char *file,
-                                                    const char *name )
+static struct strarray get_expanded_file_local_var_arch( const struct makefile *make, const char *file,
+                                                         const char *name, unsigned int arch )
 {
     char *p, *var = strmake( "%s_%s", file, name );
 
     for (p = var; *p; p++) if (!isalnum( *p )) *p = '_';
-    return get_expanded_make_var_array( make, var );
+    return get_expanded_make_var_array_arch( make, var, arch );
+}
+
+
+static struct strarray get_expanded_file_local_var( const struct makefile *make, const char *file,
+                                                    const char *name )
+{
+    return get_expanded_file_local_var_arch( make, file, name, 0 );
 }
 
 
@@ -3586,25 +3635,26 @@ static void output_source_spec( struct makefile *make, struct incl_file *source,
  */
 static void output_source_testdll( struct makefile *make, struct incl_file *source, const char *obj )
 {
-    struct strarray imports = get_expanded_file_local_var( make, obj, "IMPORTS" );
     struct strarray dll_flags = empty_strarray;
-    struct strarray default_imports = empty_strarray;
     struct strarray all_libs, dep_libs;
     const char *dll_name, *obj_name, *res_name, *output_rsrc, *output_file, *ext = ".dll";
     struct incl_file *spec_file = find_src_file( make, strmake( "%s.spec", obj ));
     unsigned int arch, link_arch;
 
-    if (!imports.count) imports = make->imports;
     strarray_addall( &dll_flags, make->extradllflags );
     strarray_addall( &dll_flags, get_expanded_file_local_var( make, obj, "EXTRADLLFLAGS" ));
-    default_imports = get_default_imports( make, imports, strarray_exists( dll_flags, "-nodefaultlibs" ));
     if (strarray_exists( dll_flags, "-mconsole" )) ext = ".exe";
 
     for (arch = 0; arch < archs.count; arch++)
     {
         const char *hybrid_obj_name = NULL;
+        struct strarray imports, default_imports;
 
         if (!is_multiarch( arch ) || !get_link_arch( make, arch, &link_arch)) continue;
+
+        imports = get_expanded_file_local_var_arch( make, obj, "IMPORTS", arch );
+        if (!imports.count) imports = get_expanded_make_var_array_arch( make, "IMPORTS", arch );
+        default_imports = get_default_imports( make, imports, strarray_exists( dll_flags, "-nodefaultlibs" ));
 
         all_libs = dep_libs = empty_strarray;
         strarray_addall( &all_libs, add_import_libs( make, &dep_libs, imports, IMPORT_TYPE_DIRECT, arch ) );
@@ -3750,7 +3800,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
 {
     const char *obj_name, *var_cc, *var_cflags;
     struct compile_command *cmd;
-    struct strarray cflags = empty_strarray, pch_flags = empty_strarray;
+    struct strarray cflags = empty_strarray, cxx_provider_cflags = empty_strarray, pch_flags = empty_strarray;
     bool use_pch;
 
     if (make->disabled[arch] && !(source->file->flags & FLAG_C_IMPLIB)) return;
@@ -3802,6 +3852,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     {
         var_cc     = arch_make_variable( "CXX", arch );
         var_cflags = arch_make_variable( "CXXFLAGS", arch );
+        cxx_provider_cflags = get_expanded_arch_var_array( top_makefile, "CXX_PE_CFLAGS", arch );
         if (make->external)
             strarray_addall( &cflags, remove_warning_flags( extra_cxxflags[arch] ));
         else
@@ -3866,6 +3917,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
         output( " " );
     }
     output( "%s -c -o $@ %s", var_cc, source->filename );
+    output_filenames( cxx_provider_cflags );
     output_filenames( defines );
     output_filenames( cflags );
     output_filenames( pch_flags );
@@ -3895,6 +3947,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
         const char *sast_name = strmake( "%s%s.sarif", source->arch ? "" : arch_dirs[arch], obj );
         output( "%s: %s\n", obj_dir_path( make, sast_name ), source->filename );
         output( "\t%s%s -o $@ %s", cmd_prefix( "SAST" ), var_cc, source->filename );
+        output_filenames( cxx_provider_cflags );
         output_filenames( defines );
         output_filenames( cflags );
         output_filename( "--analyze" );
@@ -3912,6 +3965,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     cmd->source = source->filename;
     cmd->obj = obj_dir_path( make, obj_name );
     cmd->args = empty_strarray;
+    strarray_addall( &cmd->args, cxx_provider_cflags );
     strarray_addall( &cmd->args, defines );
     strarray_addall( &cmd->args, cflags );
     strarray_addall( &cmd->args, pch_flags );
@@ -4047,7 +4101,8 @@ static void output_module( struct makefile *make, unsigned int arch )
     struct strarray default_imports = empty_strarray;
     struct strarray all_libs = empty_strarray;
     struct strarray dep_libs = empty_strarray;
-    struct strarray imports = make->imports;
+    struct strarray imports = get_expanded_make_var_array_arch( make, "IMPORTS", arch );
+    struct strarray delayimports = get_expanded_make_var_array_arch( make, "DELAYIMPORTS", arch );
     const char *p, *module_name;
     char *spec_file = NULL;
     unsigned int link_arch;
@@ -4073,13 +4128,13 @@ static void output_module( struct makefile *make, unsigned int arch )
                                                strarray_exists( make->extradllflags, "-nodefaultlibs" ));
 
         strarray_addall( &all_libs, add_import_libs( make, &dep_libs, imports, IMPORT_TYPE_DIRECT, arch ));
-        strarray_addall( &all_libs, add_import_libs( make, &dep_libs, make->delayimports, IMPORT_TYPE_DELAYED, arch ));
+        strarray_addall( &all_libs, add_import_libs( make, &dep_libs, delayimports, IMPORT_TYPE_DELAYED, arch ));
         strarray_addall( &all_libs, add_import_libs( make, &dep_libs, default_imports, IMPORT_TYPE_DEFAULT, arch ) );
         if (!arch) strarray_addall( &all_libs, libs );
 
         if (delay_load_flags[arch])
         {
-            STRARRAY_FOR_EACH( imp, &make->delayimports )
+            STRARRAY_FOR_EACH( imp, &delayimports )
             {
                 struct makefile *import = get_import_lib( imp );
                 if (import) strarray_add( &all_libs, strmake( "%s%s", delay_load_flags[arch], import->module ));
@@ -4237,7 +4292,8 @@ static void output_test_module( struct makefile *make, unsigned int arch )
     char *basemodule = replace_extension( make->testdll, ".dll", "" );
     char *stripped = arch_module_name( strmake( "%s_test-stripped.exe", basemodule ), arch );
     char *testmodule = arch_module_name( strmake( "%s_test.exe", basemodule ), arch );
-    struct strarray default_imports = get_default_imports( make, make->imports, false );
+    struct strarray imports = get_expanded_make_var_array_arch( make, "IMPORTS", arch );
+    struct strarray default_imports = get_default_imports( make, imports, false );
     struct strarray dep_libs = empty_strarray;
     struct strarray all_libs = empty_strarray;
     struct makefile *parent = get_parent_makefile( make );
@@ -4245,7 +4301,7 @@ static void output_test_module( struct makefile *make, unsigned int arch )
 
     if (!get_link_arch( make, arch, &link_arch )) return;
 
-    strarray_addall( &all_libs, add_import_libs( make, &dep_libs, make->imports, IMPORT_TYPE_DIRECT, arch ) );
+    strarray_addall( &all_libs, add_import_libs( make, &dep_libs, imports, IMPORT_TYPE_DIRECT, arch ) );
     strarray_addall( &all_libs, add_import_libs( make, &dep_libs, default_imports, IMPORT_TYPE_DEFAULT, arch ) );
 
     strarray_add( &make->all_targets[arch], testmodule );
