@@ -1044,6 +1044,31 @@ static void output_external_link_imports( DLLSPEC *spec )
     output_function_size( "__wine_spec_external_link_thunks" );
 }
 
+/* Output a Windows NT PowerPC function descriptor and its code symbol. */
+static void output_ppc_pe_function_header( const char *name )
+{
+    const char *symbol = asm_name( name );
+    const char *code = strmake( "..%s", symbol );
+
+    /*
+     * NT PowerPC function symbols name two-word descriptors in .reldata.
+     * Direct branches target the separate "..name" code symbol.
+     */
+    output( "\t.reldata\n" );
+    output( "\t.balign 4\n" );
+    output( "\t.globl %s\n", symbol );
+    output( "%s:\n", symbol );
+    output( "\t.long %s\n", code );
+    output( "\t.long .toc\n" );
+
+    output( "\t.text\n" );
+    output( "\t.balign 4\n" );
+    output( "\t.globl %s\n", code );
+    output( "\t.function %s\n", code );
+    output( "%s:\n", code );
+}
+
+
 /*******************************************************************
  *         output_stubs
  *
@@ -1067,7 +1092,8 @@ void output_stubs( DLLSPEC *spec )
 
         name = get_link_name( odp );
         exp_name = odp->name ? odp->name : odp->export_name;
-        output_function_header( name, 0 );
+        if (target.cpu == CPU_POWERPC && is_pe()) output_ppc_pe_function_header( name );
+        else output_function_header( name, 0 );
 
         switch (target.cpu)
         {
@@ -1176,7 +1202,7 @@ void output_stubs( DLLSPEC *spec )
                 output( "\tli  %s, 0\n", ppc_reg(4) );
                 output( "\tori %s, %s, %u\n", ppc_reg(4), ppc_reg(4), odp->ordinal );
             }
-            output( "\tb %s\n", asm_name("__wine_spec_unimplemented_stub") );
+            output( "\tb ..%s\n", asm_name("__wine_spec_unimplemented_stub") );
             break;
         }
         output_function_size( name );
