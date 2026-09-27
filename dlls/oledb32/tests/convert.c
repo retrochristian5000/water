@@ -2779,6 +2779,19 @@ static void test_converttoui1(void)
     ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
     ok(dst == 0xfe, "got %08x\n", dst);
 
+    {
+        DATE date = 42.0;
+
+        dst = 0x12;
+        dst_len = 0x1234;
+        hr = IDataConvert_DataConvert(convert, DBTYPE_DATE, DBTYPE_UI1, sizeof(date), &dst_len, &date,
+                &dst, sizeof(dst), 0, &dst_status, 0, 0, 0);
+        ok(hr == S_OK, "got %08lx\n", hr);
+        ok(dst_status == DBSTATUS_S_OK, "got %08lx\n", dst_status);
+        ok(dst_len == sizeof(dst), "got %Id\n", dst_len);
+        ok(dst == 42, "got %u\n", dst);
+    }
+
     dst_len = 44;
     V_VT(&v) = VT_NULL;
     hr = IDataConvert_DataConvert(convert, DBTYPE_VARIANT, DBTYPE_UI1, 0, &dst_len, &v, &dst, sizeof(dst), 0, &dst_status, 0, 0, 0);
