@@ -566,7 +566,12 @@ static int parse_input_file( DLLSPEC *spec )
 
 static void check_target(void)
 {
-    if (is_pe()) return;
+    if (is_pe())
+    {
+        if (target.cpu == CPU_POWERPC && force_pointer_size == 8)
+            fatal_error( "64-bit PowerPC PE is not supported; Windows PowerPC uses the 32-bit PE ABI.\n" );
+        return;
+    }
     if (target.cpu == CPU_i386 || target.cpu == CPU_x86_64) return;
     fatal_error( "Non-PE builds are not supported on this platform.\n" );
 }

@@ -633,6 +633,10 @@ void output_res_o_file( DLLSPEC *spec )
             strarray_add( &args, "-F" );
             strarray_add( &args, "pe-x86-64" );
             break;
+        case CPU_POWERPC:
+            strarray_add( &args, "-F" );
+            strarray_add( &args, "pe-powerpcle" );
+            break;
         default:
             break;
     }

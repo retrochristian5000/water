@@ -344,7 +344,12 @@ struct strarray get_as_command(void)
         return args;
     }
 
-    if (force_pointer_size)
+    if (target.cpu == CPU_POWERPC && is_pe())
+    {
+        strarray_add( &args, "-a32" );
+        strarray_add( &args, "-mlittle" );
+    }
+    else if (force_pointer_size)
     {
         switch (target.platform)
         {
@@ -383,7 +388,13 @@ struct strarray get_ld_command(void)
 
     strarray_addall( &args, ld_command );
 
-    if (force_pointer_size)
+    if (target.cpu == CPU_POWERPC && is_pe())
+    {
+        strarray_add( &args, "-m" );
+        strarray_add( &args, "ppcpe" );
+        strarray_add( &args, "-EL" );
+    }
+    else if (force_pointer_size)
     {
         switch (target.platform)
         {
