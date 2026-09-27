@@ -40,6 +40,7 @@ typedef void (WINAPI *INTPROC)(I386_CONTEXT *);
 
 extern WORD DOSVM_psp;     /* psp of current DOS task */
 extern WORD int16_sel;
+extern WORD xms16_sel;
 
 #define ADD_LOWORD(dw,val)  ((dw) = ((dw) & 0xffff0000) | LOWORD((DWORD)(dw)+(val)))
 
@@ -208,6 +209,7 @@ void WINAPI DOSVM_Int26Handler( I386_CONTEXT * );
 
 /* int2f.c */
 extern void WINAPI DOSVM_Int2fHandler(I386_CONTEXT *);
+extern void        DOSVM_XMSHandler(I386_CONTEXT *);
 
 /* int31.c */
 extern void WINAPI DOSVM_Int31Handler(I386_CONTEXT *);

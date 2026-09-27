@@ -36,4 +36,5 @@ SOURCES = \
 	thunk.c \
 	utthunk.c \
 	vxd.c \
-	wowthunk.c
+	wowthunk.c \
+	xms.c

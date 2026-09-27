@@ -44,6 +44,7 @@ WORD DOSMEM_BiosSysSeg;   /* BIOS ROM segment at 0xf000:0 */
 
 WORD DOSVM_psp = 0;
 WORD int16_sel = 0;
+WORD xms16_sel = 0;
 
 /* DOS memory highest address (including HMA) */
 #define DOSMEM_SIZE             0x110000
@@ -313,8 +314,24 @@ static void DOSMEM_Collapse( MCB* mcb )
  */
 static void DOSMEM_InitSegments(void)
 {
+    static const BYTE xms_stub[] =
+    {
+        0xeb, 0x03,             /* jmp +3: leave a hookable five-byte prefix */
+        0x90, 0x90, 0x90,       /* nop; nop; nop */
+        0xcd, 0x31,             /* int 31h: enter the host XMS dispatcher */
+        0xcb                    /* retf */
+    };
     LPSTR ptr;
     int   i;
+
+    /*
+     * XMS / offset 0: the control entry returned by INT 2fh/AX=4310h.
+     * Keep the historical Wine layout so callers can far-call ES:BX.
+     */
+    xms16_sel = GLOBAL_Alloc( GMEM_FIXED, sizeof(xms_stub), 0, code16_segment );
+    ptr = GlobalLock16( xms16_sel );
+    memcpy( ptr, xms_stub, sizeof(xms_stub) );
+    GlobalUnlock16( xms16_sel );
 
     /*
      * PM / offset N*5: Interrupt N in 16-bit protected mode.

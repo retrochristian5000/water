@@ -346,6 +346,17 @@ BOOL DOSVM_EmulateInterruptPM( I386_CONTEXT *context, BYTE intnum )
 
     DOSMEM_InitDosMemory();
 
+    /*
+     * The XMS control entry is a tiny 16-bit stub containing INT 31h; RETF.
+     * Dispatch it before the normal DPMI path so the caller's register set is
+     * handed directly to the XMS implementation.
+     */
+    if (intnum == 0x31 && context->SegCs == xms16_sel)
+    {
+        DOSVM_XMSHandler( context );
+        return TRUE;
+    }
+
     if (context->SegCs == int16_sel)
     {
         /* Restore original flags stored into the stack by the caller. */
