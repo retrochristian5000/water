@@ -136,16 +136,16 @@ static BOOL xms_owns_umb(WORD segment, unsigned int *index)
 
 static DWORD xms_available_kb(void)
 {
-    MEMORYSTATUSEX status;
-    ULONGLONG available;
+    MEMORYSTATUS status;
+    DWORD available;
 
     memset( &status, 0, sizeof(status) );
     status.dwLength = sizeof(status);
-    if (!GlobalMemoryStatusEx( &status )) return 0;
+    GlobalMemoryStatus( &status );
 
-    available = status.ullAvailVirtual >> 10;
+    available = status.dwAvailVirtual >> 10;
     if (available > 0xffff) available = 0xffff;
-    return (DWORD)available;
+    return available;
 }
 
 static BOOL xms_move_pointer(WORD handle, DWORD offset, DWORD length,
