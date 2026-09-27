@@ -87,7 +87,7 @@ Environment:
   WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
   BOOTSTRAP_NINJA        Pinned WHP Ninja policy: auto, y, or n
-  WHP_GIT_UPDATE        Fast-forward Water from its configured upstream: 1 or 0 (default: 1)
+  WHP_GIT_UPDATE        Rebase Water onto its configured upstream: 1 or 0 (default: 1)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
   AUTOCONF              Autoconf program used to generate ./configure
@@ -341,8 +341,8 @@ update_repository()
     command -v git >/dev/null 2>&1 ||
         die "git is required to update the Water source tree"
 
-    printf 'WHP source update: git pull --ff-only\n' >&2
-    git -C "$SOURCE_DIR" pull --ff-only
+    printf 'WHP source update: git pull --rebase --recurse-submodules=no\n' >&2
+    git -C "$SOURCE_DIR" pull --rebase --recurse-submodules=no
 }
 
 init_submodules()
