@@ -1084,7 +1084,6 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         [window setHidesOnDeactivate:NO];
         [window setReleasedWhenClosed:NO];
 
-        [window setOneShot:YES];
         [window disableCursorRects];
         [window setShowsResizeIndicator:NO];
         [window setHasShadow:wf->shadow];
@@ -1099,7 +1098,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         window->resizable = wf->resizable;
         window->_lastDisplayTime = [[NSDate distantPast] timeIntervalSinceReferenceDate];
 
-        [window registerForDraggedTypes:@[(NSString*)kUTTypeData, (NSString*)kUTTypeContent]];
+        [window registerForDraggedTypes:@[@"public.data" /* UTTypeData */, @"public.content" /* UTTypeContent */]];
 
         contentView = [[[WineContentView alloc] initWithFrame:NSZeroRect] autorelease];
         if (!contentView)
@@ -2433,7 +2432,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         NSImage* dockIcon = [[[NSImage alloc] initWithSize:NSMakeSize(256, 256)] autorelease];
         [dockIcon lockFocus];
 
-        CGContextRef cgcontext = [[NSGraphicsContext currentContext] graphicsPort];
+        CGContextRef cgcontext = [[NSGraphicsContext currentContext] CGContext];
 
         CGRect rect = CGRectMake(8, 8, 240, 240);
         size_t width = CGImageGetWidth(windowImage);
