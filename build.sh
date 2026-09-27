@@ -1542,9 +1542,9 @@ prepare_llvm_msvcrt_headers()
         return
     fi
 
-    whp_msvcrt_tmp="$whp_msvcrt_overlay.tmp.$"
-    rm -rf "$whp_msvcrt_tmp"
-    mkdir -p "$whp_msvcrt_tmp"
+    mkdir -p "$LLVM_LIBCXX_RUNTIME_DIR"
+    whp_msvcrt_tmp=$(mktemp -d "${whp_msvcrt_overlay}.tmp.XXXXXX") ||
+        die "failed to create filtered MSVCRT staging directory"
 
     find "$whp_msvcrt_source" -type f -name '*.h' -print |
     LC_ALL=C sort |
