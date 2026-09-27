@@ -1550,7 +1550,7 @@ prepare_llvm_msvcrt_headers()
     LC_ALL=C sort |
     while IFS= read -r whp_msvcrt_header; do
         whp_msvcrt_rel=${whp_msvcrt_header#"$whp_msvcrt_source"/}
-        whp_msvcrt_dir=$(dirname -- "$whp_msvcrt_rel")
+        whp_msvcrt_dir=$(dirname "$whp_msvcrt_rel")
         mkdir -p "$whp_msvcrt_tmp/$whp_msvcrt_dir"
         cp -f "$whp_msvcrt_header" "$whp_msvcrt_tmp/$whp_msvcrt_rel"
     done
