@@ -24,7 +24,7 @@ AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=4
+LLVM_LIBCXX_RECIPE=5
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -1630,6 +1630,7 @@ prepare_one_llvm_libcxx()
         "BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
         "ABI=vcruntime" \
         "THREAD_API=win32" \
+        "AUTO_LINK=disabled" \
         "WATER_INCLUDE=$SOURCE_DIR/include")
 
     whp_libcxx_cached=0
@@ -1727,7 +1728,7 @@ prepare_one_llvm_libcxx()
 int whp_libcxx_probe() { return std::string("whp").size() == 3 ? 0 : 1; }
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
-            -std=c++17 -fshort-wchar -D__WINE_PE_BUILD -nostdinc++ \
+            -std=c++17 -fshort-wchar -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK -nostdinc++ \
             "-I$whp_libcxx_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
             -c "$whp_libcxx_probe" -o "$whp_libcxx_build/.whp-libcxx-probe.o"
@@ -1739,7 +1740,9 @@ EOF
         printf 'WHP libc++ %s: cached LLVM runtime\n' "$whp_libcxx_arch" >&2
     fi
 
-    whp_libcxx_cflags="-nostdinc++ -I$whp_libcxx_headers"
+    # Microsoft-ABI libc++ headers otherwise inject /DEFAULTLIB:c++.lib.
+    # Water links its private, renamed libc++ provider explicitly instead.
+    whp_libcxx_cflags="-D_LIBCPP_NO_AUTO_LINK -nostdinc++ -I$whp_libcxx_headers"
     whp_libcxx_libs="-L$whp_libcxx_provider -lwhp-libcxx vcruntime140"
     export "${whp_libcxx_arch}_CXX_PE_CFLAGS=$whp_libcxx_cflags"
     export "${whp_libcxx_arch}_CXX_PE_LIBS=$whp_libcxx_libs"
