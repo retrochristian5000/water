@@ -393,7 +393,7 @@ int WINAPI WinMain( HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show 
     memset( &class, 0, sizeof(class) );
     class.lpfnWndProc = wndproc;
     class.hInstance = instance;
-    class.hCursor = LoadCursorA( NULL, IDC_ARROW );
+    class.hCursor = LoadCursorA( NULL, MAKEINTRESOURCEA(32512) );
     class.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
     class.lpszClassName = "WaterSndVol32";
 
