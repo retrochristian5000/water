@@ -24,7 +24,7 @@ AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=3
+LLVM_LIBCXX_RECIPE=4
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -1516,6 +1516,57 @@ libcxx_ms_target()
     esac
 }
 
+prepare_llvm_msvcrt_headers()
+{
+    whp_msvcrt_source="$SOURCE_DIR/include/msvcrt"
+    whp_msvcrt_overlay="$LLVM_LIBCXX_RUNTIME_DIR/msvcrt-headers"
+    whp_msvcrt_state_file="$whp_msvcrt_overlay/.whp-state"
+
+    [ -d "$whp_msvcrt_source" ] ||
+        die "Water MSVCRT header tree is missing: $whp_msvcrt_source"
+
+    whp_msvcrt_state=$(
+        find "$whp_msvcrt_source" -type f -name '*.h' -print |
+        LC_ALL=C sort |
+        while IFS= read -r whp_msvcrt_header; do
+            cksum "$whp_msvcrt_header"
+        done |
+        cksum |
+        awk '{ printf "%s:%s", $1, $2 }'
+    )
+
+    if [ -f "$whp_msvcrt_state_file" ] &&
+       [ "$(cat "$whp_msvcrt_state_file")" = "$whp_msvcrt_state" ]; then
+        printf '%s\n' "$whp_msvcrt_overlay"
+        unset whp_msvcrt_source whp_msvcrt_overlay whp_msvcrt_state_file whp_msvcrt_state whp_msvcrt_header
+        return
+    fi
+
+    whp_msvcrt_tmp="$whp_msvcrt_overlay.tmp.$"
+    rm -rf "$whp_msvcrt_tmp"
+    mkdir -p "$whp_msvcrt_tmp"
+
+    find "$whp_msvcrt_source" -type f -name '*.h' -print |
+    LC_ALL=C sort |
+    while IFS= read -r whp_msvcrt_header; do
+        whp_msvcrt_rel=${whp_msvcrt_header#"$whp_msvcrt_source"/}
+        whp_msvcrt_dir=$(dirname -- "$whp_msvcrt_rel")
+        mkdir -p "$whp_msvcrt_tmp/$whp_msvcrt_dir"
+        cp -f "$whp_msvcrt_header" "$whp_msvcrt_tmp/$whp_msvcrt_rel"
+    done
+
+    printf '%s\n' "$whp_msvcrt_state" > "$whp_msvcrt_tmp/.whp-state"
+    rm -rf "$whp_msvcrt_overlay"
+    mv "$whp_msvcrt_tmp" "$whp_msvcrt_overlay"
+
+    [ ! -e "$whp_msvcrt_overlay/__config" ] ||
+        die "filtered MSVCRT headers unexpectedly contain legacy libc++ __config"
+
+    printf '%s\n' "$whp_msvcrt_overlay"
+    unset whp_msvcrt_source whp_msvcrt_overlay whp_msvcrt_state_file whp_msvcrt_state \
+        whp_msvcrt_tmp whp_msvcrt_header whp_msvcrt_rel whp_msvcrt_dir
+}
+
 prepare_one_llvm_libcxx()
 {
     whp_libcxx_arch=$1
@@ -1551,6 +1602,13 @@ prepare_one_llvm_libcxx()
     [ -x "$whp_libcxx_rc" ] ||
         die "WATER_LIBCXX=llvm requires llvm-rc in the selected LLVM toolchain: $whp_libcxx_rc"
 
+    whp_libcxx_crt_headers=$(prepare_llvm_msvcrt_headers)
+    [ -f "$whp_libcxx_crt_headers/corecrt.h" ] &&
+    [ -f "$whp_libcxx_crt_headers/vcruntime_exception.h" ] &&
+    [ -f "$whp_libcxx_crt_headers/vcruntime_typeinfo.h" ] &&
+    [ -f "$whp_libcxx_crt_headers/new.h" ] ||
+        die "filtered MSVCRT header set is incomplete"
+
     whp_libcxx_build="$LLVM_LIBCXX_RUNTIME_DIR/$whp_libcxx_arch"
     whp_libcxx_provider="$whp_libcxx_build/provider"
     whp_libcxx_state_file="$whp_libcxx_build/.whp-state"
@@ -1567,6 +1625,7 @@ prepare_one_llvm_libcxx()
         "AR=$whp_libcxx_ar" \
         "RANLIB=$whp_libcxx_ranlib" \
         "RC=$whp_libcxx_rc" \
+        "CRT_HEADERS=$(cat "$whp_libcxx_crt_headers/.whp-state")" \
         "CMAKE=$whp_libcxx_cmake_version" \
         "BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
         "ABI=vcruntime" \
@@ -1600,8 +1659,8 @@ prepare_one_llvm_libcxx()
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
             -DCMAKE_C_COMPILER_WORKS=ON \
             -DCMAKE_CXX_COMPILER_WORKS=ON \
-            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$SOURCE_DIR/include/msvcrt" \
-            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$SOURCE_DIR/include/msvcrt" \
+            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$whp_libcxx_crt_headers" \
             "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
             "-DLLVM_DEFAULT_TARGET_TRIPLE=$whp_libcxx_target" \
@@ -1688,7 +1747,7 @@ EOF
     WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
 
     unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs \
-        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc \
+        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc whp_libcxx_crt_headers \
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
