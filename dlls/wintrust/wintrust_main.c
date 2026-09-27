@@ -1074,7 +1074,8 @@ BOOL WINAPI WINTRUST_AddCert(CRYPT_PROVIDER_DATA *data, DWORD idxSigner,
 BOOL WINAPI WINTRUST_AddPrivData(CRYPT_PROVIDER_DATA *data,
  CRYPT_PROVIDER_PRIVDATA *pPrivData2Add)
 {
-    BOOL ret = FALSE;
+    CRYPT_PROVIDER_PRIVDATA *privdata;
+    DWORD i;
 
     TRACE("(%p, %p)\n", data, pPrivData2Add);
 
@@ -1084,23 +1085,27 @@ BOOL WINAPI WINTRUST_AddPrivData(CRYPT_PROVIDER_DATA *data,
         WARN("invalid struct size\n");
         return FALSE;
     }
-    data->pasProvPrivData = realloc(data->pasProvPrivData,
-     (data->csProvPrivData + 1) * sizeof(*data->pasProvPrivData));
-    if (data->pasProvPrivData)
+
+    for (i = 0; i < data->csProvPrivData; i++)
+        if (IsEqualGUID(&pPrivData2Add->gProviderID,
+         &data->pasProvPrivData[i].gProviderID))
+            break;
+
+    if (i == data->csProvPrivData)
     {
-        DWORD i;
-
-        for (i = 0; i < data->csProvPrivData; i++)
-            if (IsEqualGUID(&pPrivData2Add->gProviderID, &data->pasProvPrivData[i]))
-                break;
-
-        data->pasProvPrivData[i] = *pPrivData2Add;
-        if (i == data->csProvPrivData)
-            data->csProvPrivData++;
+        privdata = realloc(data->pasProvPrivData,
+         (data->csProvPrivData + 1) * sizeof(*data->pasProvPrivData));
+        if (!privdata)
+        {
+            SetLastError(ERROR_OUTOFMEMORY);
+            return FALSE;
+        }
+        data->pasProvPrivData = privdata;
+        data->csProvPrivData++;
     }
-    else
-        SetLastError(ERROR_OUTOFMEMORY);
-    return ret;
+
+    data->pasProvPrivData[i] = *pPrivData2Add;
+    return TRUE;
 }
 
 /***********************************************************************

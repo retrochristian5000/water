@@ -224,6 +224,46 @@ static void test_utils(SAFE_PROVIDER_FUNCTIONS *funcs)
             skip("CertCreateCertificateContext failed: %08lx\n", GetLastError());
         funcs->pfnFree(data.pasSigners);
     }
+
+    {
+        static const GUID provider_id =
+            {0x12345678, 0x1234, 0x5678, {0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78}};
+        CRYPT_PROVIDER_PRIVDATA privdata = {0};
+        DWORD payload1 = 0x12345678, payload2 = 0x87654321;
+
+        privdata.cbStruct = sizeof(privdata);
+        privdata.gProviderID = provider_id;
+        privdata.cbProvData = sizeof(payload1);
+        privdata.pvProvData = &payload1;
+
+        ret = funcs->pfnAddPrivData2Chain(&data, &privdata);
+        ok(ret, "pfnAddPrivData2Chain failed: %08lx\n", GetLastError());
+        ok(data.csProvPrivData == 1, "Expected 1 private-data entry, got %ld\n",
+         data.csProvPrivData);
+        ok(data.pasProvPrivData != NULL, "Expected pasProvPrivData to be allocated\n");
+
+        if (data.pasProvPrivData)
+        {
+            ok(IsEqualGUID(&data.pasProvPrivData[0].gProviderID, &provider_id),
+             "Unexpected provider ID\n");
+            ok(data.pasProvPrivData[0].pvProvData == &payload1,
+             "Unexpected provider-private payload\n");
+
+            privdata.cbProvData = sizeof(payload2);
+            privdata.pvProvData = &payload2;
+            ret = funcs->pfnAddPrivData2Chain(&data, &privdata);
+            ok(ret, "pfnAddPrivData2Chain replacement failed: %08lx\n", GetLastError());
+            ok(data.csProvPrivData == 1,
+             "Same GUID should replace the private-data entry, got %ld entries\n",
+             data.csProvPrivData);
+            ok(data.pasProvPrivData[0].pvProvData == &payload2,
+             "Provider-private payload was not replaced\n");
+
+            funcs->pfnFree(data.pasProvPrivData);
+            data.pasProvPrivData = NULL;
+            data.csProvPrivData = 0;
+        }
+    }
 }
 
 static void testInitialize(SAFE_PROVIDER_FUNCTIONS *funcs, GUID *actionID)
