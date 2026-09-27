@@ -1,0 +1,5 @@
+MODULE    = netware.drv16
+EXTRADLLFLAGS = -m16
+
+SOURCES = \
+	netware.c
