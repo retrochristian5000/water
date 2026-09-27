@@ -603,6 +603,7 @@ SOURCES = \
 	msvcrt/dirent.h \
 	msvcrt/dos.h \
 	msvcrt/eh.h \
+	msvcrt/ehdata.h \
 	msvcrt/errno.h \
 	msvcrt/exception \
 	msvcrt/experimental/__config \
