@@ -247,19 +247,137 @@ BOOL WINAPI GetFileNameFromBrowseAW(
     return GetFileNameFromBrowseA(hwndOwner, lpstrFile, nMaxFile, lpstrInitialDir, lpstrDefExt, lpstrFilter, lpstrTitle);
 }
 
+#define SHELLSTATE_DESKTOPHTML_FLAG 0x00000040
+#define SHELLSTATE_WIN98_SIZE       0x0000001c
+#define SHELLSTATE_WIN98_VERSION    9
+
+static BOOL shellstate_get_desktop_html(BOOL *enabled)
+{
+    static const WCHAR explorer_keyW[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+    HKEY key;
+    DWORD type, size = 0, flags;
+    BYTE *data;
+    LONG ret;
+
+    *enabled = FALSE;
+
+    ret = RegOpenKeyExW(HKEY_CURRENT_USER, explorer_keyW, 0, KEY_QUERY_VALUE, &key);
+    if (ret != ERROR_SUCCESS)
+        return FALSE;
+
+    ret = RegQueryValueExW(key, L"ShellState", NULL, &type, NULL, &size);
+    if (ret != ERROR_SUCCESS || type != REG_BINARY || size < 2 * sizeof(DWORD))
+    {
+        RegCloseKey(key);
+        return FALSE;
+    }
+
+    if (!(data = HeapAlloc(GetProcessHeap(), 0, size)))
+    {
+        RegCloseKey(key);
+        return FALSE;
+    }
+
+    ret = RegQueryValueExW(key, L"ShellState", NULL, &type, data, &size);
+    RegCloseKey(key);
+    if (ret != ERROR_SUCCESS)
+    {
+        HeapFree(GetProcessHeap(), 0, data);
+        return FALSE;
+    }
+
+    memcpy(&flags, data + sizeof(DWORD), sizeof(flags));
+    *enabled = !!(flags & SHELLSTATE_DESKTOPHTML_FLAG);
+    HeapFree(GetProcessHeap(), 0, data);
+    return TRUE;
+}
+
+static BOOL shellstate_set_desktop_html(BOOL enabled)
+{
+    static const WCHAR explorer_keyW[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+    static const WCHAR shellstateW[] = L"ShellState";
+    HKEY key;
+    DWORD type, size = 0, flags;
+    BYTE *data = NULL;
+    LONG ret;
+    DWORD_PTR result;
+
+    ret = RegCreateKeyExW(HKEY_CURRENT_USER, explorer_keyW, 0, NULL, 0,
+                          KEY_QUERY_VALUE | KEY_SET_VALUE, NULL, &key, NULL);
+    if (ret != ERROR_SUCCESS)
+        return FALSE;
+
+    ret = RegQueryValueExW(key, shellstateW, NULL, &type, NULL, &size);
+    if (ret == ERROR_SUCCESS && type == REG_BINARY && size >= 2 * sizeof(DWORD))
+    {
+        if (!(data = HeapAlloc(GetProcessHeap(), 0, size)))
+        {
+            RegCloseKey(key);
+            return FALSE;
+        }
+
+        ret = RegQueryValueExW(key, shellstateW, NULL, &type, data, &size);
+        if (ret != ERROR_SUCCESS)
+        {
+            HeapFree(GetProcessHeap(), 0, data);
+            data = NULL;
+        }
+    }
+
+    if (!data)
+    {
+        DWORD legacy[7] = {SHELLSTATE_WIN98_SIZE, 0, 0, 0, 0, 1, SHELLSTATE_WIN98_VERSION};
+
+        size = sizeof(legacy);
+        if (!(data = HeapAlloc(GetProcessHeap(), 0, size)))
+        {
+            RegCloseKey(key);
+            return FALSE;
+        }
+        memcpy(data, legacy, size);
+    }
+
+    memcpy(&flags, data + sizeof(DWORD), sizeof(flags));
+    if (enabled)
+        flags |= SHELLSTATE_DESKTOPHTML_FLAG;
+    else
+        flags &= ~SHELLSTATE_DESKTOPHTML_FLAG;
+    memcpy(data + sizeof(DWORD), &flags, sizeof(flags));
+
+    ret = RegSetValueExW(key, shellstateW, 0, REG_BINARY, data, size);
+    HeapFree(GetProcessHeap(), 0, data);
+    RegCloseKey(key);
+
+    if (ret != ERROR_SUCCESS)
+        return FALSE;
+
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"ShellState",
+                        SMTO_ABORTIFHUNG, 2000, &result);
+    return TRUE;
+}
+
 /*************************************************************************
  * SHGetSetSettings				[SHELL32.68]
  */
 VOID WINAPI SHGetSetSettings(LPSHELLSTATE lpss, DWORD dwMask, BOOL bSet)
 {
-  if(bSet)
-  {
-    FIXME("%p 0x%08lx TRUE\n", lpss, dwMask);
-  }
-  else
-  {
-    SHGetSettings((LPSHELLFLAGSTATE)lpss,dwMask);
-  }
+    if (!lpss)
+        return;
+
+    if (bSet)
+    {
+        DWORD unsupported = dwMask & ~SSF_DESKTOPHTML;
+
+        if (dwMask & SSF_DESKTOPHTML)
+            shellstate_set_desktop_html(lpss->fDesktopHTML);
+
+        if (unsupported)
+            FIXME("%p unsupported mask 0x%08lx TRUE\n", lpss, unsupported);
+    }
+    else
+    {
+        SHGetSettings((LPSHELLFLAGSTATE)lpss, dwMask);
+    }
 }
 
 /*************************************************************************
@@ -277,6 +395,14 @@ VOID WINAPI SHGetSettings(LPSHELLFLAGSTATE lpsfs, DWORD dwMask)
 	DWORD	dwDataSize = sizeof (DWORD);
 
 	TRACE("(%p 0x%08lx)\n",lpsfs,dwMask);
+
+    if (SSF_DESKTOPHTML & dwMask)
+    {
+        BOOL enabled = FALSE;
+
+        shellstate_get_desktop_html(&enabled);
+        lpsfs->fDesktopHTML = enabled;
+    }
 
 	if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
 				 0, 0, 0, KEY_ALL_ACCESS, 0, &hKey, 0))
