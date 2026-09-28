@@ -199,6 +199,16 @@ static void DOSMEM_FillBiosSegments(void)
     BYTE *pBiosROMTable = pBiosSys+0xe6f5;
     BIOSDATA *pBiosData = DOSVM_BiosData();
     static const char bios_date[] = "13/01/99";
+    WCHAR root[] = {'C', ':', '\\', 0};
+    BYTE hard_disks = 0;
+    unsigned int i;
+
+    for (i = 2; i < MAX_DOS_DRIVES; ++i)
+    {
+        root[0] = 'A' + i;
+        if (GetDriveTypeW(root) == DRIVE_FIXED && hard_disks != 0xff)
+            ++hard_disks;
+    }
 
       /* Clear all unused values */
     memset( pBiosData, 0, sizeof(*pBiosData) );
@@ -218,7 +228,7 @@ static void DOSMEM_FillBiosSegments(void)
     pBiosData->VideoPageStartAddr   = 0xb800;
     pBiosData->VideoCtrlAddr        = 0x3d4;
     pBiosData->Ticks                = DOSMEM_GetTicksSinceMidnight();
-    pBiosData->NbHardDisks          = 2;
+    pBiosData->NbHardDisks          = hard_disks;
     pBiosData->KbdBufferStart       = 0x1e;
     pBiosData->KbdBufferEnd         = 0x3e;
     pBiosData->RowsOnScreenMinus1   = 24;
