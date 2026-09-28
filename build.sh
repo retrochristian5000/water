@@ -1786,6 +1786,41 @@ prepare_llvm_msvcrt_headers()
         whp_msvcrt_tmp whp_msvcrt_header whp_msvcrt_rel whp_msvcrt_dir
 }
 
+audit_llvm_libcxx_archive()
+{
+    whp_libcxx_audit_archive=$1
+    whp_libcxx_audit_target=$2
+    whp_libcxx_audit_nm=$3
+
+    if ! "$whp_libcxx_audit_nm" --defined-only --demangle "$whp_libcxx_audit_archive" 2>/dev/null |
+         grep -F 'std::__1::mutex::lock' >/dev/null; then
+        printf 'WHP libc++ %s: archive is missing std::__1::mutex::lock\n' "$whp_libcxx_audit_target" >&2
+        unset whp_libcxx_audit_archive whp_libcxx_audit_target whp_libcxx_audit_nm
+        return 1
+    fi
+
+    whp_libcxx_audit_strings=$(command -v strings 2>/dev/null || true)
+    if [ -n "$whp_libcxx_audit_strings" ]; then
+        for whp_libcxx_audit_defaultlib in \
+            msvcrt.lib msvcrtd.lib msvcprt.lib msvcprtd.lib \
+            libcmt.lib libcmtd.lib libcpmt.lib libcpmtd.lib oldnames.lib
+        do
+            if "$whp_libcxx_audit_strings" "$whp_libcxx_audit_archive" 2>/dev/null |
+               grep -F "$whp_libcxx_audit_defaultlib" >/dev/null; then
+                printf 'WHP libc++ %s: archive embeds forbidden MSVC default library %s\n' \
+                    "$whp_libcxx_audit_target" "$whp_libcxx_audit_defaultlib" >&2
+                unset whp_libcxx_audit_archive whp_libcxx_audit_target whp_libcxx_audit_nm \
+                    whp_libcxx_audit_strings whp_libcxx_audit_defaultlib
+                return 1
+            fi
+        done
+    fi
+
+    unset whp_libcxx_audit_archive whp_libcxx_audit_target whp_libcxx_audit_nm \
+        whp_libcxx_audit_strings whp_libcxx_audit_defaultlib
+    return 0
+}
+
 prepare_one_llvm_libcxx()
 {
     whp_libcxx_arch=$1
@@ -1855,6 +1890,7 @@ prepare_one_llvm_libcxx()
         "THREADS=enabled" \
         "STATIC_VISIBILITY=disabled" \
         "MSVC_DEFAULTLIB=omitted" \
+        "RTLIB_DEFAULTLIB=omitted" \
         "AUTO_LINK=disabled" \
         "WATER_INCLUDE=$SOURCE_DIR/include")
 
@@ -1863,11 +1899,11 @@ prepare_one_llvm_libcxx()
        [ -f "$whp_libcxx_provider/libwhp-libcxx.a" ] &&
        [ -f "$whp_libcxx_headers/__config_site" ] &&
        [ "$(cat "$whp_libcxx_state_file")" = "$whp_libcxx_signature" ]; then
-        if "$whp_libcxx_nm" --defined-only --demangle "$whp_libcxx_provider/libwhp-libcxx.a" 2>/dev/null |
-           grep -F 'std::__1::mutex::lock' >/dev/null; then
+        if audit_llvm_libcxx_archive "$whp_libcxx_provider/libwhp-libcxx.a" \
+             "$whp_libcxx_target" "$whp_libcxx_nm"; then
             whp_libcxx_cached=1
         else
-            printf 'WHP libc++ %s: cached runtime is missing std::mutex; rebuilding\n' "$whp_libcxx_arch" >&2
+            printf 'WHP libc++ %s: cached runtime failed ABI/archive audit; rebuilding\n' "$whp_libcxx_arch" >&2
         fi
     fi
 
@@ -1890,8 +1926,8 @@ prepare_one_llvm_libcxx()
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
             -DCMAKE_C_COMPILER_WORKS=ON \
             -DCMAKE_CXX_COMPILER_WORKS=ON \
-            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib --no-default-config -idirafter$whp_libcxx_crt_headers" \
-            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
             "-DCMAKE_MSVC_RUNTIME_LIBRARY=" \
             "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
@@ -1940,6 +1976,9 @@ prepare_one_llvm_libcxx()
         whp_libcxx_hermetic=$(sed -n 's/^LIBCXX_HERMETIC_STATIC_LIBRARY:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
         [ "$whp_libcxx_hermetic" = ON ] ||
             die "LLVM libc++ disabled hermetic static-library mode for $whp_libcxx_target"
+        whp_libcxx_msvc_runtime=$(sed -n 's/^CMAKE_MSVC_RUNTIME_LIBRARY:[^=]*=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        [ -z "$whp_libcxx_msvc_runtime" ] ||
+            die "CMake injected MSVC runtime '$whp_libcxx_msvc_runtime' for $whp_libcxx_target"
 
         whp_libcxx_jobs=${WHP_LIBCXX_JOBS:-$(detect_jobs)}
         case "$whp_libcxx_jobs" in
@@ -1957,22 +1996,9 @@ prepare_one_llvm_libcxx()
         [ -f "$whp_libcxx_headers/__config_site" ] ||
             die "LLVM libc++ did not generate __config_site for $whp_libcxx_arch"
         cp "$whp_libcxx_archive" "$whp_libcxx_provider/libwhp-libcxx.a"
-        if ! "$whp_libcxx_nm" --defined-only --demangle "$whp_libcxx_provider/libwhp-libcxx.a" 2>/dev/null |
-             grep -F 'std::__1::mutex::lock' >/dev/null; then
-            die "LLVM libc++ static archive does not define std::__1::mutex::lock for $whp_libcxx_target"
-        fi
-        whp_libcxx_strings=$(command -v strings 2>/dev/null || true)
-        if [ -n "$whp_libcxx_strings" ]; then
-            for whp_libcxx_defaultlib in \
-                msvcrt.lib msvcrtd.lib msvcprt.lib msvcprtd.lib \
-                libcmt.lib libcmtd.lib libcpmt.lib libcpmtd.lib oldnames.lib
-            do
-                if "$whp_libcxx_strings" "$whp_libcxx_provider/libwhp-libcxx.a" 2>/dev/null |
-                   grep -F "$whp_libcxx_defaultlib" >/dev/null; then
-                    die "LLVM libc++ archive embeds MSVC default library $whp_libcxx_defaultlib for $whp_libcxx_target; Water uses lib*.a CRT imports"
-                fi
-            done
-        fi
+        audit_llvm_libcxx_archive "$whp_libcxx_provider/libwhp-libcxx.a" \
+            "$whp_libcxx_target" "$whp_libcxx_nm" ||
+            die "LLVM libc++ archive failed Water's Microsoft-ABI static-provider audit for $whp_libcxx_target"
 
         whp_libcxx_probe="$whp_libcxx_build/.whp-libcxx-probe.cpp"
         cat > "$whp_libcxx_probe" <<'EOF'
@@ -1992,7 +2018,7 @@ int whp_libcxx_probe(std::mutex& mutex) {
 }
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
-            -std=c++17 -fshort-wchar -fms-omit-default-lib \
+            -std=c++17 -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib \
             -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK \
             -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ \
             "-I$whp_libcxx_headers" \
@@ -2020,8 +2046,8 @@ EOF
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
-        whp_libcxx_strings whp_libcxx_defaultlib \
-        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_hermetic whp_libcxx_jobs \
+        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_hermetic \
+        whp_libcxx_msvc_runtime whp_libcxx_jobs \
         whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
 }
 
