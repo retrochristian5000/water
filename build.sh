@@ -373,14 +373,13 @@ init_submodules()
 
     # Ninja initializes its own source lazily only when its bootstrap path
     # is selected. Keep unconditional submodule work to build-required modules.
-    whp_submodules="libs/fluidsynth"
+    whp_submodules="libs/fluidsynth toolchains/bash"
     if [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
 
-    # WHP Bash is staged from its pinned git object by prepare_bash_toolchain().
-    # Do not checkout/update the mutable Bash worktree here: local or generated
-    # files in that submodule must never block an incremental Water build.
+    # Bash is updated with the other pinned build submodules here, then
+    # prepare_bash_toolchain() stages its immutable Water-gitlink snapshot.
     git -C "$SOURCE_DIR" submodule sync --recursive
     git -C "$SOURCE_DIR" submodule update --init --recursive $whp_submodules
     unset whp_submodules
