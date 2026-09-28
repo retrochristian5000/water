@@ -8,6 +8,8 @@ LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
 LLVM_LIBCXX_RUNTIME_DIR=${WHP_LIBCXX_RUNTIME_DIR:-"$BUILD_DIR/llvm-libcxx-pe"}
 BASH_SOURCE_DIR=${WHP_BASH_SOURCE_DIR:-"$SOURCE_DIR/toolchains/bash"}
+BASH_STAGE_DIR=${WHP_BASH_STAGE_DIR:-"$BUILD_DIR/bash-source"}
+BASH_EFFECTIVE_SOURCE_DIR=$BASH_SOURCE_DIR
 BASH_BOOTSTRAP_DIR=${WHP_BASH_BUILD_DIR:-"$BUILD_DIR/bash-bootstrap"}
 LLVM_LINK_JOBS=${WHP_LLVM_LINK_JOBS:-2}
 WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-1}
@@ -85,6 +87,7 @@ Environment:
   WHP_LIBCXX_RUNTIME_DIR LLVM libc++ PE runtime cache (default: ./build/llvm-libcxx-pe)
   WHP_BASH_SOURCE_DIR   WHP Bash source tree (default: ./toolchains/bash)
   WHP_BASH_BUILD_DIR    Cached WHP Bash host-tool build (default: ./build/bash-bootstrap)
+  WHP_BASH_STAGE_DIR    Immutable pinned Bash source snapshot (default: ./build/bash-source)
   WHP_BASH_CMD          Explicit Bash executable for bootstrap orchestration
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
@@ -370,26 +373,9 @@ init_submodules()
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
 
-    if [ -z "${WHP_BASH_CMD:-}" ] &&
-       [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ]; then
-        case "$WATER_BASH_BOOTSTRAP" in
-            y|1)
-                whp_submodules="$whp_submodules toolchains/bash"
-                ;;
-            auto)
-                if [ "$WATER_LIBCXX" = llvm ]; then
-                    whp_bash_archs=$(selected_llvm_libcxx_archs)
-                    set -- $whp_bash_archs
-                    whp_bash_jobs=$(detect_jobs)
-                    if [ "$#" -gt 1 ] && [ "$whp_bash_jobs" -gt 1 ]; then
-                        whp_submodules="$whp_submodules toolchains/bash"
-                    fi
-                    unset whp_bash_archs whp_bash_jobs
-                fi
-                ;;
-        esac
-    fi
-
+    # WHP Bash is staged from its pinned git object by prepare_bash_toolchain().
+    # Do not checkout/update the mutable Bash worktree here: local or generated
+    # files in that submodule must never block an incremental Water build.
     git -C "$SOURCE_DIR" submodule sync --recursive
     git -C "$SOURCE_DIR" submodule update --init --recursive $whp_submodules
     unset whp_submodules
@@ -1570,40 +1556,92 @@ selected_llvm_libcxx_archs()
     unset whp_libcxx_selected whp_libcxx_prepare whp_libcxx_arch
 }
 
+bash_pinned_revision()
+{
+    [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] || return 1
+    [ -d "$SOURCE_DIR/.git" ] || return 1
+    git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/bash 2>/dev/null |
+        awk '$2 == "commit" { print $3; exit }'
+}
+
+stage_pinned_bash_source()
+{
+    BASH_EFFECTIVE_SOURCE_DIR=$BASH_SOURCE_DIR
+
+    [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] || {
+        export BASH_EFFECTIVE_SOURCE_DIR
+        return 0
+    }
+    [ -d "$SOURCE_DIR/.git" ] || {
+        export BASH_EFFECTIVE_SOURCE_DIR
+        return 0
+    }
+
+    whp_bash_expected=$(bash_pinned_revision)
+    [ -n "$whp_bash_expected" ] || {
+        printf 'WHP Bash: Water gitlink is unavailable; using source path directly\n' >&2
+        export BASH_EFFECTIVE_SOURCE_DIR
+        unset whp_bash_expected
+        return 0
+    }
+
+    if ! git -C "$BASH_SOURCE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+        [ "$WHP_SUBMODULES" = 1 ] ||
+            die "WHP Bash submodule is not initialized and WHP_SUBMODULES=0"
+        git -C "$SOURCE_DIR" submodule update --init --depth 1 --no-fetch toolchains/bash 2>/dev/null ||
+        git -C "$SOURCE_DIR" submodule update --init --depth 1 toolchains/bash
+    fi
+
+    if ! git -C "$BASH_SOURCE_DIR" cat-file -e "$whp_bash_expected^{commit}" 2>/dev/null; then
+        [ "$WHP_SUBMODULES" = 1 ] ||
+            die "pinned WHP Bash commit $whp_bash_expected is unavailable and WHP_SUBMODULES=0"
+        printf 'WHP Bash: fetching pinned source object %s\n' "$whp_bash_expected" >&2
+        git -C "$BASH_SOURCE_DIR" fetch --no-tags --depth 1 origin "$whp_bash_expected"
+    fi
+
+    whp_bash_stage_state="$BASH_STAGE_DIR/.whp-source"
+    if [ -f "$whp_bash_stage_state" ] &&
+       [ "$(cat "$whp_bash_stage_state")" = "$whp_bash_expected" ] &&
+       [ -f "$BASH_STAGE_DIR/configure" ]; then
+        BASH_EFFECTIVE_SOURCE_DIR=$BASH_STAGE_DIR
+        export BASH_EFFECTIVE_SOURCE_DIR
+        printf 'WHP Bash source: cached pinned snapshot %s\n' "$whp_bash_expected" >&2
+        unset whp_bash_expected whp_bash_stage_state
+        return 0
+    fi
+
+    whp_bash_stage_tmp="$BASH_STAGE_DIR.tmp.$$"
+    rm -rf "$whp_bash_stage_tmp"
+    mkdir -p "$whp_bash_stage_tmp"
+    if ! git -C "$BASH_SOURCE_DIR" archive "$whp_bash_expected" |
+         tar -xf - -C "$whp_bash_stage_tmp"; then
+        rm -rf "$whp_bash_stage_tmp"
+        die "failed to stage pinned WHP Bash source $whp_bash_expected"
+    fi
+    printf '%s\n' "$whp_bash_expected" > "$whp_bash_stage_tmp/.whp-source"
+    rm -rf "$BASH_STAGE_DIR"
+    mv "$whp_bash_stage_tmp" "$BASH_STAGE_DIR"
+
+    BASH_EFFECTIVE_SOURCE_DIR=$BASH_STAGE_DIR
+    export BASH_EFFECTIVE_SOURCE_DIR
+    printf 'WHP Bash source: staged pinned snapshot %s\n' "$whp_bash_expected" >&2
+    unset whp_bash_expected whp_bash_stage_state whp_bash_stage_tmp
+}
+
 bash_source_id()
 {
     whp_bash_source_id=
-    if [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] &&
-       [ -d "$SOURCE_DIR/.git" ]; then
-        whp_bash_source_id=$(git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/bash 2>/dev/null |
-            awk '$2 == "commit" { print $3; exit }')
-    elif [ -d "$BASH_SOURCE_DIR" ]; then
-        whp_bash_source_id=$(git -C "$BASH_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+    if [ -f "$BASH_EFFECTIVE_SOURCE_DIR/.whp-source" ]; then
+        whp_bash_source_id=$(cat "$BASH_EFFECTIVE_SOURCE_DIR/.whp-source")
+    elif [ -d "$BASH_EFFECTIVE_SOURCE_DIR" ]; then
+        whp_bash_source_id=$(git -C "$BASH_EFFECTIVE_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
     fi
-    if [ -z "$whp_bash_source_id" ] && [ -f "$BASH_SOURCE_DIR/configure" ]; then
-        whp_bash_source_id=$(cksum "$BASH_SOURCE_DIR/configure" "$BASH_SOURCE_DIR/patchlevel.h" 2>/dev/null |
+    if [ -z "$whp_bash_source_id" ] && [ -f "$BASH_EFFECTIVE_SOURCE_DIR/configure" ]; then
+        whp_bash_source_id=$(cksum "$BASH_EFFECTIVE_SOURCE_DIR/configure"             "$BASH_EFFECTIVE_SOURCE_DIR/patchlevel.h" 2>/dev/null |
             awk '{ printf "%s:%s;", $1, $2 }')
     fi
     printf '%s\n' "$whp_bash_source_id"
     unset whp_bash_source_id
-}
-
-verify_bash_source()
-{
-    [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] || return 0
-    [ -d "$SOURCE_DIR/.git" ] || return 0
-
-    whp_bash_expected=$(git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/bash 2>/dev/null |
-        awk '$2 == "commit" { print $3; exit }')
-    whp_bash_actual=$(git -C "$BASH_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
-    [ -n "$whp_bash_expected" ] && [ "$whp_bash_actual" = "$whp_bash_expected" ] ||
-        die "WHP Bash checkout does not match the Water gitlink: ${whp_bash_actual:-missing} != ${whp_bash_expected:-missing}"
-
-    git -C "$BASH_SOURCE_DIR" diff --quiet --no-ext-diff &&
-    git -C "$BASH_SOURCE_DIR" diff --cached --quiet --no-ext-diff ||
-        die "WHP Bash submodule has tracked changes; commit them in the Bash fork and update the Water gitlink"
-
-    unset whp_bash_expected whp_bash_actual
 }
 
 validate_bash_executor()
@@ -1617,9 +1655,8 @@ validate_bash_executor()
 
 bootstrap_bash()
 {
-    [ -f "$BASH_SOURCE_DIR/configure" ] ||
-        die "WHP Bash source tree is missing: $BASH_SOURCE_DIR"
-    verify_bash_source
+    [ -f "$BASH_EFFECTIVE_SOURCE_DIR/configure" ] ||
+        die "WHP Bash source tree is missing: $BASH_EFFECTIVE_SOURCE_DIR"
 
     whp_bash_make=${MAKE:-}
     if [ -z "$whp_bash_make" ]; then
@@ -1660,7 +1697,7 @@ bootstrap_bash()
     (
         cd "$BASH_BOOTSTRAP_DIR"
         CONFIG_SHELL=/bin/sh CC="$whp_bash_cc" CFLAGS="${CFLAGS_FOR_BUILD:--O2}" \
-            "$BASH_SOURCE_DIR/configure" \
+            "$BASH_EFFECTIVE_SOURCE_DIR/configure" \
                 --enable-minimal-config \
                 --enable-job-control \
                 --disable-nls \
@@ -1692,6 +1729,7 @@ prepare_bash_toolchain()
             return
             ;;
         y|1)
+            stage_pinned_bash_source
             bootstrap_bash
             return
             ;;
@@ -1707,8 +1745,8 @@ prepare_bash_toolchain()
             fi
             unset whp_bash_archs whp_bash_jobs
 
-            if [ ! -f "$BASH_SOURCE_DIR/configure" ]; then
-                printf 'WHP Bash: source unavailable; continuing with serial bootstrap\n' >&2
+            if ! ( stage_pinned_bash_source ); then
+                printf 'WHP Bash: pinned source staging failed; continuing serially\n' >&2
                 return
             fi
             if ! ( bootstrap_bash ); then
