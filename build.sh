@@ -30,7 +30,7 @@ LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
 LLVM_LIBCXX_RECIPE=7
-BASH_BOOTSTRAP_RECIPE=2
+BASH_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -98,6 +98,11 @@ Environment:
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
   BOOTSTRAP_NINJA        Pinned WHP Ninja policy: auto, y, or n
   WATER_BASH_BOOTSTRAP   Pinned WHP Bash policy: auto, y, or n
+  CC_FOR_BUILD           Host C compiler for bootstrap/build tools (default: CC)
+  CPPFLAGS_FOR_BUILD     Host preprocessor flags for bootstrap/build tools
+  CFLAGS_FOR_BUILD       Host compile flags for bootstrap/build tools
+  LDFLAGS_FOR_BUILD      Host link flags for bootstrap/build tools
+  LIBS_FOR_BUILD         Host libraries for bootstrap/build tools
   WHP_GIT_UPDATE        Rebase Water onto its configured upstream: 1 or 0 (default: 1)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
@@ -1691,6 +1696,10 @@ bootstrap_bash()
     [ -n "$whp_bash_cc" ] || whp_bash_cc=$(command -v clang 2>/dev/null || command -v cc 2>/dev/null || true)
     [ -n "$whp_bash_cc" ] || die "a host C compiler is required to bootstrap WHP Bash"
     whp_bash_cc_version=$("$whp_bash_cc" --version 2>/dev/null | sed -n '1p')
+    whp_bash_cppflags=${CPPFLAGS_FOR_BUILD:-${CPPFLAGS:-}}
+    whp_bash_cflags=${CFLAGS_FOR_BUILD:-${CFLAGS:--O2}}
+    whp_bash_ldflags=${LDFLAGS_FOR_BUILD:-${LDFLAGS:-}}
+    whp_bash_libs=${LIBS_FOR_BUILD:-${LIBS:-}}
     whp_bash_source=$(bash_source_id)
     [ -n "$whp_bash_source" ] || die "could not identify the WHP Bash source revision"
     whp_bash_signature=$(printf '%s\n' \
@@ -1699,7 +1708,10 @@ bootstrap_bash()
         "CC=$whp_bash_cc" \
         "CC_VERSION=$whp_bash_cc_version" \
         "SDKROOT=${SDKROOT:-}" \
-        "CFLAGS=${CFLAGS_FOR_BUILD:--O2}" \
+        "CPPFLAGS=$whp_bash_cppflags" \
+        "CFLAGS=$whp_bash_cflags" \
+        "LDFLAGS=$whp_bash_ldflags" \
+        "LIBS=$whp_bash_libs" \
         "FEATURES=minimal,job-control,no-nls,system-malloc")
 
     if [ -x "$BASH_BOOTSTRAP_DIR/bash" ] &&
@@ -1710,7 +1722,8 @@ bootstrap_bash()
         CONFIG_SHELL=$WHP_BASH_CMD
         export WHP_BASH_CMD CONFIG_SHELL
         printf 'WHP Bash: cached %s\n' "$whp_bash_source" >&2
-        unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_source whp_bash_signature
+        unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_cppflags whp_bash_cflags \
+            whp_bash_ldflags whp_bash_libs whp_bash_source whp_bash_signature
         return
     fi
 
@@ -1719,7 +1732,12 @@ bootstrap_bash()
     whp_bash_jobs=$(detect_jobs)
     (
         cd "$BASH_BOOTSTRAP_DIR"
-        CONFIG_SHELL=/bin/sh CC="$whp_bash_cc" CFLAGS="${CFLAGS_FOR_BUILD:--O2}" \
+        CONFIG_SHELL=/bin/sh \
+            CC="$whp_bash_cc" CC_FOR_BUILD="$whp_bash_cc" \
+            CPPFLAGS="$whp_bash_cppflags" CPPFLAGS_FOR_BUILD="$whp_bash_cppflags" \
+            CFLAGS="$whp_bash_cflags" CFLAGS_FOR_BUILD="$whp_bash_cflags" \
+            LDFLAGS="$whp_bash_ldflags" LDFLAGS_FOR_BUILD="$whp_bash_ldflags" \
+            LIBS="$whp_bash_libs" LIBS_FOR_BUILD="$whp_bash_libs" \
             "$BASH_EFFECTIVE_SOURCE_DIR/configure" \
                 --enable-minimal-config \
                 --enable-job-control \
@@ -1734,7 +1752,8 @@ bootstrap_bash()
     CONFIG_SHELL=$WHP_BASH_CMD
     export WHP_BASH_CMD CONFIG_SHELL
     printf 'WHP Bash: built %s\n' "$whp_bash_source" >&2
-    unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_source whp_bash_signature whp_bash_jobs
+    unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_cppflags whp_bash_cflags \
+        whp_bash_ldflags whp_bash_libs whp_bash_source whp_bash_signature whp_bash_jobs
 }
 
 prepare_bash_toolchain()
