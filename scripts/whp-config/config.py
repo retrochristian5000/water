@@ -91,7 +91,13 @@ OPTIONS = (
     Option('WATER_LLVM_PCH', 'LLVM toolchain', 'LLVM precompiled headers', 'bool', 'n'),
     Option('WATER_LLVM_LINKER', 'LLVM toolchain', 'Host linker policy', 'choice',
            'auto', ('auto', 'lld', 'system')),
+    Option('WATER_LIBCXX', 'LLVM toolchain', 'PE libc++ provider', 'choice',
+           'llvm', ('llvm', 'legacy')),
 
+    Option('BOOTSTRAP_NINJA', 'Build behavior', 'Pinned WHP Ninja executor', 'choice',
+           'auto', ('auto', 'y', 'n')),
+    Option('WATER_BASH_BOOTSTRAP', 'Build behavior', 'Pinned WHP Bash executor', 'choice',
+           'auto', ('auto', 'y', 'n')),
     Option('WATER_WIN16', 'Build behavior', 'Win16 support', 'choice',
            'auto', ('auto', 'y', 'n')),
     Option('WATER_WIN64', 'Build behavior', 'Win64-only build', 'choice',
