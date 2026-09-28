@@ -105,9 +105,9 @@ static WCHAR *read_ram_target(const WCHAR *filename)
 {
     HANDLE file;
     DWORD size, read;
-    char *buffer, *start, *end;
+    char *buffer, *start, *end = NULL;
     WCHAR *target;
-    int chars;
+    int bytes, chars;
 
     file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -170,14 +170,15 @@ static WCHAR *read_ram_target(const WCHAR *filename)
         return NULL;
     }
 
-    chars = MultiByteToWideChar(CP_ACP, 0, start, end - start, NULL, 0);
+    bytes = (int)(end - start);
+    chars = MultiByteToWideChar(CP_ACP, 0, start, bytes, NULL, 0);
     if (!chars || !(target = HeapAlloc(GetProcessHeap(), 0, (chars + 1) * sizeof(*target))))
     {
         HeapFree(GetProcessHeap(), 0, buffer);
         return NULL;
     }
 
-    MultiByteToWideChar(CP_ACP, 0, start, end - start, target, chars);
+    MultiByteToWideChar(CP_ACP, 0, start, bytes, target, chars);
     target[chars] = 0;
     HeapFree(GetProcessHeap(), 0, buffer);
 
@@ -249,7 +250,8 @@ done:
         IMediaEvent_Release(event);
     if (control)
         IMediaControl_Release(control);
-    HeapFree(GetProcessHeap(), 0, resolved);
+    if (resolved)
+        HeapFree(GetProcessHeap(), 0, resolved);
 
     TRACE("playback ended, hr %#lx\n", hr);
     return hr;
