@@ -1625,8 +1625,8 @@ stage_pinned_bash_source()
         return 0
     fi
 
-    whp_bash_stage_tmp="$BASH_STAGE_DIR.tmp.$"
-    whp_bash_stage_archive="$BASH_STAGE_DIR.archive.$"
+    whp_bash_stage_tmp="$BASH_STAGE_DIR.tmp.$$"
+    whp_bash_stage_archive="$BASH_STAGE_DIR.archive.$$"
     rm -rf "$whp_bash_stage_tmp"
     rm -f "$whp_bash_stage_archive"
     mkdir -p "$whp_bash_stage_tmp"
