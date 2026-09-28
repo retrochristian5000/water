@@ -3,7 +3,20 @@
  */
 
 #include "windows.h"
+#include "msconf.h"
 #include "wine/test.h"
+
+C_ASSERT(CONF_VERSION == 0x0002);
+C_ASSERT(CONFERR_SUCCESS == 0);
+C_ASSERT(offsetof(CONFADDRA, dwIp) == offsetof(CONFADDRA, psz));
+C_ASSERT(offsetof(CONFADDRW, dwIp) == offsetof(CONFADDRW, psz));
+#ifdef UNICODE
+C_ASSERT(sizeof(CONFADDR) == sizeof(CONFADDRW));
+C_ASSERT(sizeof(CONFINFO) == sizeof(CONFINFOW));
+#else
+C_ASSERT(sizeof(CONFADDR) == sizeof(CONFADDRA));
+C_ASSERT(sizeof(CONFINFO) == sizeof(CONFINFOA));
+#endif
 
 START_TEST(msconf)
 {

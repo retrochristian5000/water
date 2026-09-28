@@ -43,7 +43,7 @@ extern "C" {
 #define CONFERR_NOT_IMPLEMENTED     ERROR_CALL_NOT_IMPLEMENTED
 #define CONFERR_INVALID_HWND        ERROR_INVALID_WINDOW_HANDLE
 #define CONFERR_INTERNAL            (CONFERR_BASE + 99)
-#define CONFERR_SUCCESS             ERROR_SUCCESS
+#define CONFERR_SUCCESS             0
 
 typedef DWORD CONFERR;
 typedef HANDLE HCONF;
@@ -52,17 +52,7 @@ typedef LONG (CALLBACK *CONFNOTIFYPROC)(HCONF, DWORD, DWORD, LPVOID, LPVOID, DWO
 
 #include <pshpack4.h>
 
-typedef struct _CONFADDRA
-{
-    DWORD dwSize;
-    DWORD dwAddrType;
-    union
-    {
-        DWORD dwIp;
-        LPCSTR psz;
-    };
-} CONFADDRA, *LPCONFADDRA;
-
+#ifndef ANSI_ONLY
 typedef struct _CONFADDRW
 {
     DWORD dwSize;
@@ -73,6 +63,28 @@ typedef struct _CONFADDRW
         LPCWSTR psz;
     };
 } CONFADDRW, *LPCONFADDRW;
+#endif
+
+#ifndef UNICODE_ONLY
+typedef struct _CONFADDRA
+{
+    DWORD dwSize;
+    DWORD dwAddrType;
+    union
+    {
+        DWORD dwIp;
+        LPCSTR psz;
+    };
+} CONFADDRA, *LPCONFADDRA;
+#endif
+
+#ifdef UNICODE
+typedef CONFADDRW CONFADDR;
+typedef LPCONFADDRW LPCONFADDR;
+#else
+typedef CONFADDRA CONFADDR;
+typedef LPCONFADDRA LPCONFADDR;
+#endif
 
 #define CONF_ADDR_UNKNOWN      0x0000
 #define CONF_ADDR_IP           0x0001
@@ -93,17 +105,7 @@ typedef struct tagConfDest
 #define CONF_DF_DATA_SEGMENT_BEGIN  0x0400
 #define CONF_DF_DATA_SEGMENT_END    0x0800
 
-typedef struct _CONFINFOA
-{
-    DWORD dwSize;
-    HCONF hConf;
-    DWORD dwMediaType;
-    DWORD dwState;
-    DWORD cUsers;
-    DWORD dwGCCID;
-    CHAR szConferenceName[CONF_MAX_CONFERENCENAME];
-} CONFINFOA, *LPCONFINFOA;
-
+#ifndef ANSI_ONLY
 typedef struct _CONFINFOW
 {
     DWORD dwSize;
@@ -114,6 +116,28 @@ typedef struct _CONFINFOW
     DWORD dwGCCID;
     WCHAR szConferenceName[CONF_MAX_CONFERENCENAME];
 } CONFINFOW, *LPCONFINFOW;
+#endif
+
+#ifndef UNICODE_ONLY
+typedef struct _CONFINFOA
+{
+    DWORD dwSize;
+    HCONF hConf;
+    DWORD dwMediaType;
+    DWORD dwState;
+    DWORD cUsers;
+    DWORD dwGCCID;
+    CHAR szConferenceName[CONF_MAX_CONFERENCENAME];
+} CONFINFOA, *LPCONFINFOA;
+#endif
+
+#ifdef UNICODE
+typedef CONFINFOW CONFINFO;
+typedef LPCONFINFOW LPCONFINFO;
+#else
+typedef CONFINFOA CONFINFO;
+typedef LPCONFINFOA LPCONFINFO;
+#endif
 
 #define CONF_MT_DATA   0x0001
 #define CONF_MT_AUDIO  0x0002
@@ -125,15 +149,7 @@ typedef struct _CONFINFOW
 #define CONF_CS_ACTIVE        0x0002
 #define CONF_CS_STOPPING      0x0003
 
-typedef struct _CONFUSERINFOA
-{
-    DWORD dwSize;
-    DWORD dwUserId;
-    DWORD dwFlags;
-    DWORD dwReserved;
-    CHAR szUserName[CONF_MAX_USERNAME];
-} CONFUSERINFOA, *LPCONFUSERINFOA;
-
+#ifndef ANSI_ONLY
 typedef struct _CONFUSERINFOW
 {
     DWORD dwSize;
@@ -142,23 +158,55 @@ typedef struct _CONFUSERINFOW
     DWORD dwReserved;
     WCHAR szUserName[CONF_MAX_USERNAME];
 } CONFUSERINFOW, *LPCONFUSERINFOW;
+#endif
+
+#ifndef UNICODE_ONLY
+typedef struct _CONFUSERINFOA
+{
+    DWORD dwSize;
+    DWORD dwUserId;
+    DWORD dwFlags;
+    DWORD dwReserved;
+    CHAR szUserName[CONF_MAX_USERNAME];
+} CONFUSERINFOA, *LPCONFUSERINFOA;
+#endif
+
+#ifdef UNICODE
+typedef CONFUSERINFOW CONFUSERINFO;
+typedef LPCONFUSERINFOW LPCONFUSERINFO;
+#else
+typedef CONFUSERINFOA CONFUSERINFO;
+typedef LPCONFUSERINFOA LPCONFUSERINFO;
+#endif
 
 #define CONF_UF_DATA   0x00000001
 #define CONF_UF_AUDIO  0x00000002
 #define CONF_UF_VIDEO  0x00000004
 #define CONF_UF_LOCAL  0x00010000
 
-typedef struct _CONFRECDIRA
-{
-    DWORD dwSize;
-    CHAR szRecDir[MAX_PATH];
-} CONFRECDIRA, *LPCONFRECDIRA;
-
+#ifndef ANSI_ONLY
 typedef struct _CONFRECDIRW
 {
     DWORD dwSize;
     WCHAR szRecDir[MAX_PATH];
 } CONFRECDIRW, *LPCONFRECDIRW;
+#endif
+
+#ifndef UNICODE_ONLY
+typedef struct _CONFRECDIRA
+{
+    DWORD dwSize;
+    CHAR szRecDir[MAX_PATH];
+} CONFRECDIRA, *LPCONFRECDIRA;
+#endif
+
+#ifdef UNICODE
+typedef CONFRECDIRW CONFRECDIR;
+typedef LPCONFRECDIRW LPCONFRECDIR;
+#else
+typedef CONFRECDIRA CONFRECDIR;
+typedef LPCONFRECDIRA LPCONFRECDIR;
+#endif
 
 typedef struct _CONFNOTIFY
 {
@@ -169,15 +217,7 @@ typedef struct _CONFNOTIFY
     CONFNOTIFYPROC pfnNotifyProc;
 } CONFNOTIFY, *LPCONFNOTIFY;
 
-typedef struct _CONFGUIDA
-{
-    DWORD dwSize;
-    GUID guid;
-    LPCSTR pszApplication;
-    LPCSTR pszCommandLine;
-    LPCSTR pszDirectory;
-} CONFGUIDA, *LPCONFGUIDA;
-
+#ifndef ANSI_ONLY
 typedef struct _CONFGUIDW
 {
     DWORD dwSize;
@@ -186,23 +226,28 @@ typedef struct _CONFGUIDW
     LPCWSTR pszCommandLine;
     LPCWSTR pszDirectory;
 } CONFGUIDW, *LPCONFGUIDW;
+#endif
 
-typedef struct _CONFFILEINFOA
+#ifndef UNICODE_ONLY
+typedef struct _CONFGUIDA
 {
     DWORD dwSize;
-    DWORD dwFileId;
-    DWORD dwReserved1;
-    DWORD dwFileSize;
-    DWORD dwReserved2;
-    DWORD dwBytesTransferred;
-    DWORD dwFileAttributes;
-    FILETIME ftCreationTime;
-    FILETIME ftLastAccessTime;
-    FILETIME ftLastWriteTime;
-    CHAR szFileNameSrc[MAX_PATH];
-    CHAR szFileNameDest[MAX_PATH];
-} CONFFILEINFOA, *LPCONFFILEINFOA;
+    GUID guid;
+    LPCSTR pszApplication;
+    LPCSTR pszCommandLine;
+    LPCSTR pszDirectory;
+} CONFGUIDA, *LPCONFGUIDA;
+#endif
 
+#ifdef UNICODE
+typedef CONFGUIDW CONFGUID;
+typedef LPCONFGUIDW LPCONFGUID;
+#else
+typedef CONFGUIDA CONFGUID;
+typedef LPCONFGUIDA LPCONFGUID;
+#endif
+
+#ifndef ANSI_ONLY
 typedef struct _CONFFILEINFOW
 {
     DWORD dwSize;
@@ -218,6 +263,33 @@ typedef struct _CONFFILEINFOW
     WCHAR szFileNameSrc[MAX_PATH];
     WCHAR szFileNameDest[MAX_PATH];
 } CONFFILEINFOW, *LPCONFFILEINFOW;
+#endif
+
+#ifndef UNICODE_ONLY
+typedef struct _CONFFILEINFOA
+{
+    DWORD dwSize;
+    DWORD dwFileId;
+    DWORD dwReserved1;
+    DWORD dwFileSize;
+    DWORD dwReserved2;
+    DWORD dwBytesTransferred;
+    DWORD dwFileAttributes;
+    FILETIME ftCreationTime;
+    FILETIME ftLastAccessTime;
+    FILETIME ftLastWriteTime;
+    CHAR szFileNameSrc[MAX_PATH];
+    CHAR szFileNameDest[MAX_PATH];
+} CONFFILEINFOA, *LPCONFFILEINFOA;
+#endif
+
+#ifdef UNICODE
+typedef CONFFILEINFOW CONFFILEINFO;
+typedef LPCONFFILEINFOW LPCONFFILEINFO;
+#else
+typedef CONFFILEINFOA CONFFILEINFO;
+typedef LPCONFFILEINFOA LPCONFFILEINFO;
+#endif
 
 #include <poppack.h>
 
@@ -263,14 +335,20 @@ typedef struct _CONFFILEINFOW
 #define CONFN_FILERECEIVE_COMPLETE  0x0123
 #define CONFN_FILERECEIVE_ERROR     0x0124
 
-DWORD WINAPI ConferenceConnectA(HCONF *, LPCONFADDRA, LPCONFINFOA, LPCONFNOTIFY);
-DWORD WINAPI ConferenceConnectW(HCONF *, LPCONFADDRW, LPCONFINFOW, LPCONFNOTIFY);
-DWORD WINAPI ConferenceSendFileA(HCONF, LPCONFDEST, LPCSTR, DWORD);
+#ifndef ANSI_ONLY
+DWORD WINAPI ConferenceConnectW(HCONF *, LPCONFADDRW, LPCONFINFO, LPCONFNOTIFY);
 DWORD WINAPI ConferenceSendFileW(HCONF, LPCONFDEST, LPCWSTR, DWORD);
-DWORD WINAPI ConferenceGetInfoA(HCONF, DWORD, LPVOID);
 DWORD WINAPI ConferenceGetInfoW(HCONF, DWORD, LPVOID);
-DWORD WINAPI ConferenceSetInfoA(HCONF, DWORD, LPVOID);
 DWORD WINAPI ConferenceSetInfoW(HCONF, DWORD, LPVOID);
+#endif
+
+#ifndef UNICODE_ONLY
+DWORD WINAPI ConferenceConnectA(HCONF *, LPCONFADDRA, LPCONFINFO, LPCONFNOTIFY);
+DWORD WINAPI ConferenceSendFileA(HCONF, LPCONFDEST, LPCSTR, DWORD);
+DWORD WINAPI ConferenceGetInfoA(HCONF, DWORD, LPVOID);
+DWORD WINAPI ConferenceSetInfoA(HCONF, DWORD, LPVOID);
+#endif
+
 DWORD WINAPI ConferenceListen(DWORD);
 DWORD WINAPI ConferenceDisconnect(HCONF);
 DWORD WINAPI ConferenceSetNotify(HCONF, LPCONFNOTIFY, HCONFNOTIFY *);
@@ -281,35 +359,11 @@ DWORD WINAPI ConferenceLaunchRemote(HCONF, LPCONFDEST, DWORD);
 DWORD WINAPI ConferenceShareWindow(HCONF, HWND, DWORD);
 
 #ifdef UNICODE
-#define CONFADDR        CONFADDRW
-#define LPCONFADDR      LPCONFADDRW
-#define CONFINFO        CONFINFOW
-#define LPCONFINFO      LPCONFINFOW
-#define CONFUSERINFO    CONFUSERINFOW
-#define LPCONFUSERINFO  LPCONFUSERINFOW
-#define CONFRECDIR      CONFRECDIRW
-#define LPCONFRECDIR    LPCONFRECDIRW
-#define CONFGUID        CONFGUIDW
-#define LPCONFGUID      LPCONFGUIDW
-#define CONFFILEINFO    CONFFILEINFOW
-#define LPCONFFILEINFO  LPCONFFILEINFOW
 #define ConferenceConnect  ConferenceConnectW
 #define ConferenceSendFile ConferenceSendFileW
 #define ConferenceGetInfo  ConferenceGetInfoW
 #define ConferenceSetInfo  ConferenceSetInfoW
 #else
-#define CONFADDR        CONFADDRA
-#define LPCONFADDR      LPCONFADDRA
-#define CONFINFO        CONFINFOA
-#define LPCONFINFO      LPCONFINFOA
-#define CONFUSERINFO    CONFUSERINFOA
-#define LPCONFUSERINFO  LPCONFUSERINFOA
-#define CONFRECDIR      CONFRECDIRA
-#define LPCONFRECDIR    LPCONFRECDIRA
-#define CONFGUID        CONFGUIDA
-#define LPCONFGUID      LPCONFGUIDA
-#define CONFFILEINFO    CONFFILEINFOA
-#define LPCONFFILEINFO  LPCONFFILEINFOA
 #define ConferenceConnect  ConferenceConnectA
 #define ConferenceSendFile ConferenceSendFileA
 #define ConferenceGetInfo  ConferenceGetInfoA
