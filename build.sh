@@ -1588,6 +1588,24 @@ bash_source_id()
     unset whp_bash_source_id
 }
 
+verify_bash_source()
+{
+    [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] || return 0
+    [ -d "$SOURCE_DIR/.git" ] || return 0
+
+    whp_bash_expected=$(git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/bash 2>/dev/null |
+        awk '$2 == "commit" { print $3; exit }')
+    whp_bash_actual=$(git -C "$BASH_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+    [ -n "$whp_bash_expected" ] && [ "$whp_bash_actual" = "$whp_bash_expected" ] ||
+        die "WHP Bash checkout does not match the Water gitlink: ${whp_bash_actual:-missing} != ${whp_bash_expected:-missing}"
+
+    git -C "$BASH_SOURCE_DIR" diff --quiet --no-ext-diff &&
+    git -C "$BASH_SOURCE_DIR" diff --cached --quiet --no-ext-diff ||
+        die "WHP Bash submodule has tracked changes; commit them in the Bash fork and update the Water gitlink"
+
+    unset whp_bash_expected whp_bash_actual
+}
+
 validate_bash_executor()
 {
     whp_bash_cmd=$1
@@ -1601,6 +1619,7 @@ bootstrap_bash()
 {
     [ -f "$BASH_SOURCE_DIR/configure" ] ||
         die "WHP Bash source tree is missing: $BASH_SOURCE_DIR"
+    verify_bash_source
 
     whp_bash_make=${MAKE:-}
     if [ -z "$whp_bash_make" ]; then
