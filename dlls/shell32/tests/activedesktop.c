@@ -212,7 +212,7 @@ static void test_active_desktop_components(void)
         return;
     }
 
-    type = COMP_TYPE_HTMLDOC;
+    type = 0x2000 | COMP_TYPE_PICTURE;
     RegSetValueExW(key, L"Flags", 0, REG_DWORD, (const BYTE *)&type, sizeof(type));
     set_string(key, L"FriendlyName", friendlyW);
     set_string(key, L"Source", sourceW);
@@ -244,7 +244,7 @@ static void test_active_desktop_components(void)
     if (SUCCEEDED(hr))
     {
         ok(component.dwID == id, "expected id %#lx, got %#lx\n", id, component.dwID);
-        ok(component.iComponentType == COMP_TYPE_HTMLDOC, "unexpected component type %d\n",
+        ok(component.iComponentType == COMP_TYPE_PICTURE, "unexpected component type %d\n",
            component.iComponentType);
         ok(!lstrcmpW(component.wszFriendlyName, friendlyW), "unexpected friendly name %s\n",
            wine_dbgstr_w(component.wszFriendlyName));
