@@ -124,7 +124,8 @@ static BOOL int13_get_drive(BYTE bios_drive, struct int13_drive *drive)
     if (GetDiskFreeSpaceW(root, &sectors_per_cluster, &bytes_per_sector,
             &free_clusters, &total_clusters))
     {
-        total_sectors = (ULONGLONG)sectors_per_cluster * total_clusters;
+        total_sectors = (ULONGLONG)sectors_per_cluster * bytes_per_sector * total_clusters / 512;
+        (void)free_clusters;
 
         if (bios_drive < 0x80)
         {
@@ -178,9 +179,10 @@ static BYTE *int13_get_buffer(I386_CONTEXT *context)
 static void int13_get_drive_parameters(I386_CONTEXT *context)
 {
     struct int13_drive drive;
+    BYTE bios_drive = DL_reg(context);
     DWORD max_cylinder;
 
-    if (!int13_get_drive(DL_reg(context), &drive))
+    if (!int13_get_drive(bios_drive, &drive))
     {
         int13_set_status(context, 0x07);
         return;
@@ -190,8 +192,8 @@ static void int13_get_drive_parameters(I386_CONTEXT *context)
     SET_CH(context, max_cylinder & 0xff);
     SET_CL(context, drive.sectors_per_track | ((max_cylinder >> 2) & 0xc0));
     SET_DH(context, drive.heads - 1);
-    SET_DL(context, int13_drive_count(DL_reg(context) >= 0x80));
-    SET_BL(context, DL_reg(context) < 0x80 ? 4 : 0);
+    SET_DL(context, int13_drive_count(bios_drive >= 0x80));
+    SET_BL(context, bios_drive < 0x80 ? 4 : 0);
     int13_set_status(context, 0x00);
 }
 
