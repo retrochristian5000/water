@@ -175,7 +175,8 @@ static void test_active_desktop_state(void)
         win_skip("Active Desktop is unavailable, hr %#lx\n", hr);
 
     restore_shell_state(&saved);
-    HeapFree(GetProcessHeap(), 0, saved.data);
+    if (saved.data)
+        HeapFree(GetProcessHeap(), 0, saved.data);
 }
 
 static void test_active_desktop_components(void)
