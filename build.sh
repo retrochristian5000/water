@@ -1625,16 +1625,21 @@ stage_pinned_bash_source()
         return 0
     fi
 
-    whp_bash_stage_tmp="$BASH_STAGE_DIR.tmp.$$"
+    whp_bash_stage_tmp="$BASH_STAGE_DIR.tmp.$"
+    whp_bash_stage_archive="$BASH_STAGE_DIR.archive.$"
     rm -rf "$whp_bash_stage_tmp"
+    rm -f "$whp_bash_stage_archive"
     mkdir -p "$whp_bash_stage_tmp"
-    if ! git -C "$BASH_SOURCE_DIR" archive "$whp_bash_expected" |
-         tar -xf - -C "$whp_bash_stage_tmp"; then
+    if ! git -C "$BASH_SOURCE_DIR" archive --format=tar \
+         -o "$whp_bash_stage_archive" "$whp_bash_expected" ||
+       ! tar -xf "$whp_bash_stage_archive" -C "$whp_bash_stage_tmp"; then
         rm -rf "$whp_bash_stage_tmp"
+        rm -f "$whp_bash_stage_archive"
         printf 'WHP Bash: failed to stage pinned source %s\n' "$whp_bash_expected" >&2
-        unset whp_bash_expected whp_bash_stage_state whp_bash_stage_tmp
+        unset whp_bash_expected whp_bash_stage_state whp_bash_stage_tmp whp_bash_stage_archive
         return 1
     fi
+    rm -f "$whp_bash_stage_archive"
     printf '%s\n' "$whp_bash_expected" > "$whp_bash_stage_tmp/.whp-source"
     rm -rf "$BASH_STAGE_DIR"
     mv "$whp_bash_stage_tmp" "$BASH_STAGE_DIR"
@@ -1642,7 +1647,7 @@ stage_pinned_bash_source()
     BASH_EFFECTIVE_SOURCE_DIR=$BASH_STAGE_DIR
     export BASH_EFFECTIVE_SOURCE_DIR
     printf 'WHP Bash source: staged pinned snapshot %s\n' "$whp_bash_expected" >&2
-    unset whp_bash_expected whp_bash_stage_state whp_bash_stage_tmp
+    unset whp_bash_expected whp_bash_stage_state whp_bash_stage_tmp whp_bash_stage_archive
 }
 
 bash_source_id()
@@ -1654,7 +1659,8 @@ bash_source_id()
         whp_bash_source_id=$(git -C "$BASH_EFFECTIVE_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
     fi
     if [ -z "$whp_bash_source_id" ] && [ -f "$BASH_EFFECTIVE_SOURCE_DIR/configure" ]; then
-        whp_bash_source_id=$(cksum "$BASH_EFFECTIVE_SOURCE_DIR/configure"             "$BASH_EFFECTIVE_SOURCE_DIR/patchlevel.h" 2>/dev/null |
+        whp_bash_source_id=$(cksum "$BASH_EFFECTIVE_SOURCE_DIR/configure" \
+            "$BASH_EFFECTIVE_SOURCE_DIR/patchlevel.h" 2>/dev/null |
             awk '{ printf "%s:%s;", $1, $2 }')
     fi
     printf '%s\n' "$whp_bash_source_id"
