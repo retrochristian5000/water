@@ -29,7 +29,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=11
+LLVM_LIBCXX_RECIPE=12
 BASH_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -2100,6 +2100,7 @@ prepare_one_llvm_libcxx()
         "THREAD_API=win32" \
         "THREADS=enabled" \
         "STATIC_VISIBILITY=disabled" \
+        "SITE_DEFINES=_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS" \
         "MSVC_DEFAULTLIB=omitted" \
         "RTLIB_DEFAULTLIB=omitted" \
         "AUTO_LINK=disabled" \
@@ -2160,6 +2161,7 @@ prepare_one_llvm_libcxx()
             -DLLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
             -DLIBCXX_CXX_ABI:STRING=vcruntime \
             -DLLIBCXX_ABI_FORCE_MICROSOFT=ON \
+            -DLIBCXX_EXTRA_SITE_DEFINES:STRING=_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS \
             -DLIBCXX_ENABLE_THREADS=ON \
             -DLIBCXX_HERMETIC_STATIC_LIBRARY=ON \
             -DLLIBCXX_HAS_WIN32_THREAD_API=ON \
@@ -2187,6 +2189,9 @@ prepare_one_llvm_libcxx()
         whp_libcxx_threads=$(sed -n 's/^LIBCXX_ENABLE_THREADS:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
         [ "$whp_libcxx_threads" = ON ] ||
             die "LLVM libc++ disabled threads for $whp_libcxx_target"
+        whp_libcxx_site_defines=$(sed -n 's/^LIBCXX_EXTRA_SITE_DEFINES:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        [ "$whp_libcxx_site_defines" = _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS ] ||
+            die "LLVM libc++ lost Water's static visibility site define for $whp_libcxx_target"
         whp_libcxx_hermetic=$(sed -n 's/^LIBCXX_HERMETIC_STATIC_LIBRARY:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
         [ "$whp_libcxx_hermetic" = ON ] ||
             die "LLVM libc++ disabled hermetic static-library mode for $whp_libcxx_target"
@@ -2209,6 +2214,8 @@ prepare_one_llvm_libcxx()
             die "LLVM libc++ did not produce a static archive for $whp_libcxx_arch"
         [ -f "$whp_libcxx_headers/__config_site" ] ||
             die "LLVM libc++ did not generate __config_site for $whp_libcxx_arch"
+        grep -F '#define _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS' "$whp_libcxx_headers/__config_site" >/dev/null ||
+            die "LLVM libc++ __config_site did not disable DLL visibility annotations for $whp_libcxx_target"
         cp "$whp_libcxx_archive" "$whp_libcxx_provider/libwhp-libcxx.a"
         audit_llvm_libcxx_archive "$whp_libcxx_provider/libwhp-libcxx.a" \
             "$whp_libcxx_target" "$whp_libcxx_nm" ||
@@ -2275,7 +2282,7 @@ EOF
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
-        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_hermetic \
+        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_site_defines whp_libcxx_hermetic \
         whp_libcxx_msvc_runtime whp_libcxx_jobs \
         whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
 }
