@@ -362,8 +362,34 @@ init_submodules()
 {
     [ "$WHP_SUBMODULES" = 1 ] || return 0
     command -v git >/dev/null 2>&1 || die "git is required to initialize Water submodules"
+
+    whp_submodules="libs/fluidsynth toolchains/ninja-builder"
+    if [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
+        whp_submodules="$whp_submodules toolchains/llvm-project"
+    fi
+
+    if [ -z "${WHP_BASH_CMD:-}" ]; then
+        case "$WATER_BASH_BOOTSTRAP" in
+            y|1)
+                whp_submodules="$whp_submodules toolchains/bash"
+                ;;
+            auto)
+                if [ "$WATER_LIBCXX" = llvm ]; then
+                    whp_bash_archs=$(selected_llvm_libcxx_archs)
+                    set -- $whp_bash_archs
+                    whp_bash_jobs=$(detect_jobs)
+                    if [ "$#" -gt 1 ] && [ "$whp_bash_jobs" -gt 1 ]; then
+                        whp_submodules="$whp_submodules toolchains/bash"
+                    fi
+                    unset whp_bash_archs whp_bash_jobs
+                fi
+                ;;
+        esac
+    fi
+
     git -C "$SOURCE_DIR" submodule sync --recursive
-    git -C "$SOURCE_DIR" submodule update --init --recursive
+    git -C "$SOURCE_DIR" submodule update --init --recursive $whp_submodules
+    unset whp_submodules
 }
 
 detect_jobs()
@@ -1641,12 +1667,13 @@ prepare_bash_toolchain()
             [ "$WATER_LIBCXX" = llvm ] || return
             whp_bash_archs=$(selected_llvm_libcxx_archs)
             set -- $whp_bash_archs
-            if [ "$#" -lt 2 ]; then
-                printf 'WHP Bash: skipped; libc++ provider graph is not parallel\n' >&2
-                unset whp_bash_archs
+            whp_bash_jobs=$(detect_jobs)
+            if [ "$#" -lt 2 ] || [ "$whp_bash_jobs" -lt 2 ]; then
+                printf 'WHP Bash: skipped; bootstrap has no useful parallel work\n' >&2
+                unset whp_bash_archs whp_bash_jobs
                 return
             fi
-            unset whp_bash_archs
+            unset whp_bash_archs whp_bash_jobs
             ;;
     esac
 
