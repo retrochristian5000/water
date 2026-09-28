@@ -44,12 +44,60 @@ HRESULT WINAPI WMCreateSyncReaderPriv(IWMSyncReader **reader)
     return winegstreamer_create_wm_sync_reader(NULL, (void **)reader);
 }
 
+static BOOL wm_extension_equal(const WCHAR *extension, SIZE_T length, const WCHAR *expected)
+{
+    SIZE_T i;
+
+    for (i = 0; i < length && expected[i]; ++i)
+    {
+        WCHAR a = extension[i], b = expected[i];
+
+        if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+        if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+        if (a != b) return FALSE;
+    }
+
+    return i == length && !expected[i];
+}
+
 HRESULT WINAPI WMCheckURLExtension(const WCHAR *url)
 {
-    FIXME("(%s): stub\n", wine_dbgstr_w(url));
+    static const WCHAR * const extensions[] =
+    {
+        L".asf", L".asx", L".wax", L".wm", L".wma", L".wmv", L".wmx", L".wvx", L".mp3"
+    };
+    const WCHAR *end, *extension = NULL, *p;
+    SIZE_T length;
+    unsigned int i;
+
+    TRACE("(%s)\n", wine_dbgstr_w(url));
 
     if (!url)
         return E_INVALIDARG;
+
+    for (end = url; *end && *end != '?' && *end != '#'; ++end)
+        ;
+
+    for (p = end; p > url; --p)
+    {
+        if (p[-1] == '.')
+        {
+            extension = p - 1;
+            break;
+        }
+        if (p[-1] == '/' || p[-1] == '\\')
+            break;
+    }
+
+    if (!extension)
+        return NS_E_INVALID_NAME;
+
+    length = end - extension;
+    for (i = 0; i < ARRAY_SIZE(extensions); ++i)
+    {
+        if (wm_extension_equal(extension, length, extensions[i]))
+            return S_OK;
+    }
 
     return NS_E_INVALID_NAME;
 }

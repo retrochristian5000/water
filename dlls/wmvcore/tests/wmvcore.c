@@ -390,11 +390,13 @@ static void test_urlextension(void)
     hr = WMCheckURLExtension(L"test.mkv");
     ok(hr == NS_E_INVALID_NAME, "WMCheckURLExtension failed 0x%08lx\n", hr);
     hr = WMCheckURLExtension(L"test.mp3");
-    todo_wine ok(hr == S_OK, "WMCheckURLExtension failed 0x%08lx\n", hr);
+    ok(hr == S_OK, "WMCheckURLExtension failed 0x%08lx\n", hr);
     hr = WMCheckURLExtension(L"abcd://test/test.wmv");
-    todo_wine ok(hr == S_OK, "WMCheckURLExtension failed 0x%08lx\n", hr);
+    ok(hr == S_OK, "WMCheckURLExtension failed 0x%08lx\n", hr);
     hr = WMCheckURLExtension(L"http://test/t.asf?alt=t.mkv");
-    todo_wine ok(hr == S_OK, "WMCheckURLExtension failed 0x%08lx\n", hr);
+    ok(hr == S_OK, "WMCheckURLExtension failed 0x%08lx\n", hr);
+    hr = WMCheckURLExtension(L"TEST.WMA#fragment");
+    ok(hr == S_OK, "WMCheckURLExtension failed 0x%08lx\n", hr);
 }
 
 static void test_iscontentprotected(void)
