@@ -1194,9 +1194,26 @@ static HRESULT WINAPI active_desktop_SetPattern(IActiveDesktop *iface, PCWSTR pa
 
 static HRESULT WINAPI active_desktop_GetDesktopItemOptions(IActiveDesktop *iface, LPCOMPONENTSOPT options, DWORD reserved)
 {
-    FIXME("%p, %p, %#lx.\n", iface, options, reserved);
+    SHELLSTATE state;
 
-    return E_NOTIMPL;
+    TRACE("%p, %p, %#lx.\n", iface, options, reserved);
+
+    if (!options)
+        return E_POINTER;
+    if (reserved || options->dwSize < sizeof(*options))
+        return E_INVALIDARG;
+
+    memset(&state, 0, sizeof(state));
+    SHGetSetSettings(&state, SSF_DESKTOPHTML, FALSE);
+
+    options->fActiveDesktop = state.fDesktopHTML;
+    /*
+     * The Windows 98 shell uses the same Active Desktop state as the gate
+     * for the component host. Keep the two booleans coherent until the
+     * component-enable state is buffered independently.
+     */
+    options->fEnableComponents = state.fDesktopHTML;
+    return S_OK;
 }
 
 static HRESULT WINAPI active_desktop_SetDesktopItemOptions(IActiveDesktop *iface, LPCCOMPONENTSOPT options, DWORD reserved)
