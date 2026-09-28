@@ -893,6 +893,33 @@ DECLARE_INTERFACE_(IActiveDesktop, IUnknown)
 };
 #undef INTERFACE
 
+typedef IActiveDesktop *LPACTIVEDESKTOP;
+
+#ifdef COBJMACROS
+#define IActiveDesktop_QueryInterface(p,a,b)            (p)->lpVtbl->QueryInterface(p,a,b)
+#define IActiveDesktop_AddRef(p)                        (p)->lpVtbl->AddRef(p)
+#define IActiveDesktop_Release(p)                       (p)->lpVtbl->Release(p)
+#define IActiveDesktop_ApplyChanges(p,a)                (p)->lpVtbl->ApplyChanges(p,a)
+#define IActiveDesktop_GetWallpaper(p,a,b,c)            (p)->lpVtbl->GetWallpaper(p,a,b,c)
+#define IActiveDesktop_SetWallpaper(p,a,b)              (p)->lpVtbl->SetWallpaper(p,a,b)
+#define IActiveDesktop_GetWallpaperOptions(p,a,b)       (p)->lpVtbl->GetWallpaperOptions(p,a,b)
+#define IActiveDesktop_SetWallpaperOptions(p,a,b)       (p)->lpVtbl->SetWallpaperOptions(p,a,b)
+#define IActiveDesktop_GetPattern(p,a,b,c)              (p)->lpVtbl->GetPattern(p,a,b,c)
+#define IActiveDesktop_SetPattern(p,a,b)                (p)->lpVtbl->SetPattern(p,a,b)
+#define IActiveDesktop_GetDesktopItemOptions(p,a,b)     (p)->lpVtbl->GetDesktopItemOptions(p,a,b)
+#define IActiveDesktop_SetDesktopItemOptions(p,a,b)     (p)->lpVtbl->SetDesktopItemOptions(p,a,b)
+#define IActiveDesktop_AddDesktopItem(p,a,b)            (p)->lpVtbl->AddDesktopItem(p,a,b)
+#define IActiveDesktop_AddDesktopItemWithUI(p,a,b,c)    (p)->lpVtbl->AddDesktopItemWithUI(p,a,b,c)
+#define IActiveDesktop_ModifyDesktopItem(p,a,b)         (p)->lpVtbl->ModifyDesktopItem(p,a,b)
+#define IActiveDesktop_RemoveDesktopItem(p,a,b)         (p)->lpVtbl->RemoveDesktopItem(p,a,b)
+#define IActiveDesktop_GetDesktopItemCount(p,a,b)       (p)->lpVtbl->GetDesktopItemCount(p,a,b)
+#define IActiveDesktop_GetDesktopItem(p,a,b,c)          (p)->lpVtbl->GetDesktopItem(p,a,b,c)
+#define IActiveDesktop_GetDesktopItemByID(p,a,b,c)      (p)->lpVtbl->GetDesktopItemByID(p,a,b,c)
+#define IActiveDesktop_GenerateDesktopItemHtml(p,a,b,c) (p)->lpVtbl->GenerateDesktopItemHtml(p,a,b,c)
+#define IActiveDesktop_AddUrl(p,a,b,c,d)                (p)->lpVtbl->AddUrl(p,a,b,c,d)
+#define IActiveDesktop_GetDesktopItemBySource(p,a,b,c)  (p)->lpVtbl->GetDesktopItemBySource(p,a,b,c)
+#endif
+
 #endif /* _WININET_ */
 
 /****************************************************************************
