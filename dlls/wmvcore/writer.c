@@ -23,10 +23,148 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(wmvcore);
 
+struct writer_buffer
+{
+    INSSBuffer INSSBuffer_iface;
+    LONG refcount;
+    DWORD capacity;
+    DWORD length;
+    BYTE data[];
+};
+
+static inline struct writer_buffer *impl_from_INSSBuffer(INSSBuffer *iface)
+{
+    return CONTAINING_RECORD(iface, struct writer_buffer, INSSBuffer_iface);
+}
+
+static HRESULT WINAPI writer_buffer_QueryInterface(INSSBuffer *iface, REFIID iid, void **out)
+{
+    if (!out)
+        return E_POINTER;
+
+    if (IsEqualIID(iid, &IID_IUnknown) || IsEqualIID(iid, &IID_INSSBuffer))
+    {
+        *out = iface;
+        INSSBuffer_AddRef(iface);
+        return S_OK;
+    }
+
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI writer_buffer_AddRef(INSSBuffer *iface)
+{
+    struct writer_buffer *buffer = impl_from_INSSBuffer(iface);
+    return InterlockedIncrement(&buffer->refcount);
+}
+
+static ULONG WINAPI writer_buffer_Release(INSSBuffer *iface)
+{
+    struct writer_buffer *buffer = impl_from_INSSBuffer(iface);
+    ULONG refcount = InterlockedDecrement(&buffer->refcount);
+
+    if (!refcount)
+        free(buffer);
+
+    return refcount;
+}
+
+static HRESULT WINAPI writer_buffer_GetLength(INSSBuffer *iface, DWORD *length)
+{
+    struct writer_buffer *buffer = impl_from_INSSBuffer(iface);
+
+    if (!length)
+        return E_POINTER;
+
+    *length = buffer->length;
+    return S_OK;
+}
+
+static HRESULT WINAPI writer_buffer_SetLength(INSSBuffer *iface, DWORD length)
+{
+    struct writer_buffer *buffer = impl_from_INSSBuffer(iface);
+
+    if (length > buffer->capacity)
+        return E_INVALIDARG;
+
+    buffer->length = length;
+    return S_OK;
+}
+
+static HRESULT WINAPI writer_buffer_GetMaxLength(INSSBuffer *iface, DWORD *length)
+{
+    struct writer_buffer *buffer = impl_from_INSSBuffer(iface);
+
+    if (!length)
+        return E_POINTER;
+
+    *length = buffer->capacity;
+    return S_OK;
+}
+
+static HRESULT WINAPI writer_buffer_GetBuffer(INSSBuffer *iface, BYTE **data)
+{
+    struct writer_buffer *buffer = impl_from_INSSBuffer(iface);
+
+    if (!data)
+        return E_POINTER;
+
+    *data = buffer->data;
+    return S_OK;
+}
+
+static HRESULT WINAPI writer_buffer_GetBufferAndLength(INSSBuffer *iface, BYTE **data, DWORD *length)
+{
+    struct writer_buffer *buffer = impl_from_INSSBuffer(iface);
+
+    if (!data || !length)
+        return E_POINTER;
+
+    *data = buffer->data;
+    *length = buffer->length;
+    return S_OK;
+}
+
+static const INSSBufferVtbl writer_buffer_vtbl =
+{
+    writer_buffer_QueryInterface,
+    writer_buffer_AddRef,
+    writer_buffer_Release,
+    writer_buffer_GetLength,
+    writer_buffer_SetLength,
+    writer_buffer_GetMaxLength,
+    writer_buffer_GetBuffer,
+    writer_buffer_GetBufferAndLength,
+};
+
+static HRESULT writer_buffer_create(DWORD capacity, INSSBuffer **out)
+{
+    struct writer_buffer *buffer;
+
+    if (!out)
+        return E_POINTER;
+
+    *out = NULL;
+    if (!(buffer = malloc(offsetof(struct writer_buffer, data) + capacity)))
+        return E_OUTOFMEMORY;
+
+    buffer->INSSBuffer_iface.lpVtbl = &writer_buffer_vtbl;
+    buffer->refcount = 1;
+    buffer->capacity = capacity;
+    buffer->length = 0;
+
+    *out = &buffer->INSSBuffer_iface;
+    return S_OK;
+}
+
 typedef struct {
     IWMWriter IWMWriter_iface;
     IWMWriterAdvanced3 IWMWriterAdvanced3_iface;
     LONG ref;
+    IWMWriterSink **sinks;
+    DWORD sink_count;
+    DWORD sink_capacity;
 } WMWriter;
 
 static inline WMWriter *impl_from_IWMWriter(IWMWriter *iface)
@@ -80,8 +218,15 @@ static ULONG WINAPI WMWriter_Release(IWMWriter *iface)
 
     TRACE("(%p) ref=%ld\n", This, ref);
 
-    if(!ref)
+    if (!ref)
+    {
+        DWORD i;
+
+        for (i = 0; i < This->sink_count; ++i)
+            IWMWriterSink_Release(This->sinks[i]);
+        free(This->sinks);
         free(This);
+    }
 
     return ref;
 }
@@ -160,8 +305,9 @@ static HRESULT WINAPI WMWriter_EndWriting(IWMWriter *iface)
 static HRESULT WINAPI WMWriter_AllocateSample(IWMWriter *iface, DWORD size, INSSBuffer **sample)
 {
     WMWriter *This = impl_from_IWMWriter(iface);
-    FIXME("(%p)->(%ld %p)\n", This, size, sample);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%lu %p)\n", This, size, sample);
+    return writer_buffer_create(size, sample);
 }
 
 static HRESULT WINAPI WMWriter_WriteSample(IWMWriter *iface, DWORD dwInputNum, QWORD cnsSampleTime,
@@ -224,29 +370,83 @@ static ULONG WINAPI WMWriterAdvanced_Release(IWMWriterAdvanced3 *iface)
 static HRESULT WINAPI WMWriterAdvanced_GetSinkCount(IWMWriterAdvanced3 *iface, DWORD *sinks)
 {
     WMWriter *This = impl_from_IWMWriterAdvanced3(iface);
-    FIXME("(%p)->(%p)\n", This, sinks);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%p)\n", This, sinks);
+
+    if (!sinks)
+        return E_POINTER;
+
+    *sinks = This->sink_count;
+    return S_OK;
 }
 
 static HRESULT WINAPI WMWriterAdvanced_GetSink(IWMWriterAdvanced3 *iface, DWORD sink_num, IWMWriterSink **sink)
 {
     WMWriter *This = impl_from_IWMWriterAdvanced3(iface);
-    FIXME("(%p)->(%lu %p)\n", This, sink_num, sink);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%lu %p)\n", This, sink_num, sink);
+
+    if (!sink)
+        return E_POINTER;
+
+    *sink = NULL;
+    if (sink_num >= This->sink_count)
+        return E_INVALIDARG;
+
+    IWMWriterSink_AddRef((*sink = This->sinks[sink_num]));
+    return S_OK;
 }
 
 static HRESULT WINAPI WMWriterAdvanced_AddSink(IWMWriterAdvanced3 *iface, IWMWriterSink *sink)
 {
     WMWriter *This = impl_from_IWMWriterAdvanced3(iface);
-    FIXME("(%p)->(%p)\n", This, sink);
-    return E_NOTIMPL;
+    IWMWriterSink **sinks;
+    DWORD capacity;
+
+    TRACE("(%p)->(%p)\n", This, sink);
+
+    if (!sink)
+        return E_INVALIDARG;
+
+    if (This->sink_count == This->sink_capacity)
+    {
+        capacity = This->sink_capacity ? This->sink_capacity * 2 : 4;
+        if (!(sinks = realloc(This->sinks, capacity * sizeof(*sinks))))
+            return E_OUTOFMEMORY;
+
+        This->sinks = sinks;
+        This->sink_capacity = capacity;
+    }
+
+    IWMWriterSink_AddRef(sink);
+    This->sinks[This->sink_count++] = sink;
+    return S_OK;
 }
 
 static HRESULT WINAPI WMWriterAdvanced_RemoveSink(IWMWriterAdvanced3 *iface, IWMWriterSink *sink)
 {
     WMWriter *This = impl_from_IWMWriterAdvanced3(iface);
-    FIXME("(%p)->(%p)\n", This, sink);
-    return E_NOTIMPL;
+    DWORD i;
+
+    TRACE("(%p)->(%p)\n", This, sink);
+
+    if (!sink)
+        return E_INVALIDARG;
+
+    for (i = 0; i < This->sink_count; ++i)
+    {
+        if (This->sinks[i] != sink)
+            continue;
+
+        IWMWriterSink_Release(This->sinks[i]);
+        if (i + 1 < This->sink_count)
+            memmove(&This->sinks[i], &This->sinks[i + 1],
+                    (This->sink_count - i - 1) * sizeof(*This->sinks));
+        --This->sink_count;
+        return S_OK;
+    }
+
+    return E_INVALIDARG;
 }
 
 static HRESULT WINAPI WMWriterAdvanced_WriteStreamSample(IWMWriterAdvanced3 *iface, WORD stream_num,
@@ -358,8 +558,11 @@ HRESULT WINAPI WMCreateWriter(IUnknown *reserved, IWMWriter **writer)
 
     TRACE("(%p %p)\n", reserved, writer);
 
-    ret = malloc(sizeof(*ret));
-    if(!ret)
+    if (!writer || reserved)
+        return E_INVALIDARG;
+
+    *writer = NULL;
+    if (!(ret = calloc(1, sizeof(*ret))))
         return E_OUTOFMEMORY;
 
     ret->IWMWriter_iface.lpVtbl = &WMWriterVtbl;

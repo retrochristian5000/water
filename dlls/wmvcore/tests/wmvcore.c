@@ -318,6 +318,69 @@ static void test_WMCreateWriterPriv(void)
     IWMWriter_Release(writer2);
 }
 
+static void test_wmwriter_buffer(void)
+{
+    IWMWriterAdvanced *advanced;
+    INSSBuffer *buffer;
+    IWMWriter *writer;
+    BYTE *data;
+    DWORD size;
+    HRESULT hr;
+
+    hr = WMCreateWriter(NULL, &writer);
+    ok(hr == S_OK, "got %#lx\n", hr);
+    if (FAILED(hr))
+        return;
+
+    hr = IWMWriter_AllocateSample(writer, 32, &buffer);
+    ok(hr == S_OK, "got %#lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        size = 0xdeadbeef;
+        hr = INSSBuffer_GetLength(buffer, &size);
+        ok(hr == S_OK, "got %#lx\n", hr);
+        ok(size == 0, "got length %lu\n", size);
+
+        size = 0xdeadbeef;
+        hr = INSSBuffer_GetMaxLength(buffer, &size);
+        ok(hr == S_OK, "got %#lx\n", hr);
+        ok(size == 32, "got max length %lu\n", size);
+
+        data = NULL;
+        hr = INSSBuffer_GetBuffer(buffer, &data);
+        ok(hr == S_OK, "got %#lx\n", hr);
+        ok(!!data, "expected a buffer\n");
+
+        hr = INSSBuffer_SetLength(buffer, 17);
+        ok(hr == S_OK, "got %#lx\n", hr);
+
+        data = NULL;
+        size = 0xdeadbeef;
+        hr = INSSBuffer_GetBufferAndLength(buffer, &data, &size);
+        ok(hr == S_OK, "got %#lx\n", hr);
+        ok(!!data, "expected a buffer\n");
+        ok(size == 17, "got length %lu\n", size);
+
+        hr = INSSBuffer_SetLength(buffer, 33);
+        ok(hr == E_INVALIDARG, "got %#lx\n", hr);
+
+        INSSBuffer_Release(buffer);
+    }
+
+    hr = IWMWriter_QueryInterface(writer, &IID_IWMWriterAdvanced, (void **)&advanced);
+    ok(hr == S_OK, "got %#lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        size = 0xdeadbeef;
+        hr = IWMWriterAdvanced_GetSinkCount(advanced, &size);
+        ok(hr == S_OK, "got %#lx\n", hr);
+        ok(size == 0, "got sink count %lu\n", size);
+        IWMWriterAdvanced_Release(advanced);
+    }
+
+    IWMWriter_Release(writer);
+}
+
 static void test_urlextension(void)
 {
     HRESULT hr;
@@ -4379,6 +4442,7 @@ START_TEST(wmvcore)
     test_wmwriter_interfaces();
     test_profile_manager_interfaces();
     test_WMCreateWriterPriv();
+    test_wmwriter_buffer();
     test_urlextension();
     test_iscontentprotected();
     test_sync_reader_allocator();
