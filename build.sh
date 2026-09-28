@@ -363,7 +363,9 @@ init_submodules()
     [ "$WHP_SUBMODULES" = 1 ] || return 0
     command -v git >/dev/null 2>&1 || die "git is required to initialize Water submodules"
 
-    whp_submodules="libs/fluidsynth toolchains/ninja-builder"
+    # Ninja initializes its own source lazily only when its bootstrap path
+    # is selected. Keep unconditional submodule work to build-required modules.
+    whp_submodules="libs/fluidsynth"
     if [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
