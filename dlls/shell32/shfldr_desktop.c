@@ -1063,7 +1063,8 @@ static void active_desktop_query_binary(HKEY key, const WCHAR *name, void *buffe
     DWORD type, actual = 0;
 
     if (RegQueryValueExW(key, name, NULL, &type, NULL, &actual) != ERROR_SUCCESS ||
-        type != REG_BINARY || actual != size)
+        (type != REG_BINARY && !(type == REG_DWORD && size == sizeof(DWORD))) ||
+        actual != size)
         return;
 
     actual = size;
