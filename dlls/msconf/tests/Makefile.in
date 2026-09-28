@@ -1,0 +1,4 @@
+TESTDLL = msconf.dll
+
+SOURCES = \
+	msconf.c

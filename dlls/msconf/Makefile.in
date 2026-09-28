@@ -1,0 +1,4 @@
+MODULE    = msconf.dll
+
+SOURCES = \
+	msconf.c
