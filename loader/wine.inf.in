@@ -224,6 +224,12 @@ Control="System\CurrentControlSet\Control"
 [Classes]
 HKCR,.asx,,2,"ASXFile"
 HKCR,.asx,"Content Type",2,"video/x-ms-asf"
+HKCR,.ra,,2,"RealPlayer.RA"
+HKCR,.ra,"Content Type",2,"audio/x-pn-realaudio"
+HKCR,.ram,,2,"RealPlayer.RAM"
+HKCR,.ram,"Content Type",2,"audio/x-pn-realaudio"
+HKCR,.rm,,2,"RealPlayer.RM"
+HKCR,.rm,"Content Type",2,"audio/x-pn-realaudio"
 HKCR,.chm,,2,"chm.file"
 HKCR,.cpl,,2,"cplfile"
 HKCR,.crt,,2,"CERFile"
@@ -241,9 +247,16 @@ HKCR,*\shellex\ContextMenuHandlers,,16
 HKCR,AppID\{B8C54A54-355E-11D3-83EB-00A0C92A2F2D},,2,"Windows Media Player"
 HKCR,Applications\icwconn1.exe,,2,"Internet Connection Wizard"
 HKCR,Applications\nsplayer.exe,,2,"NetShow Player"
+HKCR,Applications\rvplayer.exe,,2,"RealPlayer"
 HKCR,Applications\wmplayer.exe,,2,"Windows Media Player"
 HKCR,ASXFile,,2,"Active Streaming File Format"
 HKCR,ASXFile\shell\open\command,,2,"""%16422%\Microsoft NetShow\Player\nsplayer.exe"" ""%1"""
+HKCR,RealPlayer.RA,,2,"RealAudio Clip"
+HKCR,RealPlayer.RA\shell\open\command,,2,"""%16422%\Real\Player\rvplayer.exe"" ""%1"""
+HKCR,RealPlayer.RAM,,2,"RealPlayer Metafile"
+HKCR,RealPlayer.RAM\shell\open\command,,2,"""%16422%\Real\Player\rvplayer.exe"" ""%1"""
+HKCR,RealPlayer.RM,,2,"RealMedia Clip"
+HKCR,RealPlayer.RM\shell\open\command,,2,"""%16422%\Real\Player\rvplayer.exe"" ""%1"""
 HKCR,CERfile,,2,"Security Certificate"
 HKCR,CERfile\shell\open\command,,2,"%11%\rundll32.exe cryptext.dll,CryptExtOpenCER %1"
 HKCR,chm.file,,2,"Compiled HTML Help File"
@@ -309,6 +322,9 @@ HKCR,ftp\shell\open\command,,2,"""%11%\winebrowser.exe"" ""%1"""
 HKCR,http\shell\open\command,,2,"""%11%\winebrowser.exe"" ""%1"""
 HKCR,https\shell\open\command,,2,"""%11%\winebrowser.exe"" ""%1"""
 HKCR,mailto\shell\open\command,,2,"""%11%\winebrowser.exe"" ""%1"""
+HKCR,pnm,,2,"RealPlayer Streaming Protocol"
+HKCR,pnm,"URL Protocol",2,""
+HKCR,pnm\shell\open\command,,2,"""%16422%\Real\Player\rvplayer.exe"" ""%1"""
 
 [ContentIndex]
 HKLM,System\CurrentControlSet\Control\ContentIndex\Language\Neutral,"WBreakerClass",,"{369647e0-17b0-11ce-9950-00aa004bbb1f}"
@@ -589,6 +605,8 @@ HKLM,%CurrentVersion%\App Paths\ICWCONN1.EXE,,2,"%16422%\Internet Explorer\Conne
 HKLM,%CurrentVersion%\App Paths\ICWCONN1.EXE,"Path",2,"%16422%\Internet Explorer\Connection Wizard"
 HKLM,%CurrentVersion%\App Paths\wmplayer.exe,,2,"%16422%\Windows Media Player\wmplayer.exe"
 HKLM,%CurrentVersion%\App Paths\wmplayer.exe,"Path",2,"%16422%\Windows Media Player"
+HKLM,%CurrentVersion%\App Paths\rvplayer.exe,,2,"%16422%\Real\Player\rvplayer.exe"
+HKLM,%CurrentVersion%\App Paths\rvplayer.exe,"Path",2,"%16422%\Real\Player"
 HKLM,Software\Microsoft\Internet Connection Wizard,"InstallationDirectory",2,"%16422%\Internet Explorer\Connection Wizard"
 HKLM,Software\Microsoft\MediaPlayer,"Installation DirectoryLFN",2,"%16422%\Windows Media Player"
 HKLM,Software\Microsoft\MediaPlayer\PlayerUpgrade,"PlayerVersion",2,"12,0,7601,18840"
@@ -803,6 +821,7 @@ HKLM,SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86,"Version",2,"14.42.344
 16422,Internet Explorer,iexplore.exe
 16422,Internet Explorer\Connection Wizard,icwconn1.exe
 16422,Microsoft NetShow\Player,nsplayer.exe
+16422,Real\Player,rvplayer.exe
 16422,Windows Media Player,wmplayer.exe
 16422,Windows NT\Accessories,wordpad.exe
 16427,Microsoft Shared\Ink,inkobj.dll
@@ -875,6 +894,7 @@ HKLM,SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86,"Version",2,"14.42.344
 16422,Internet Explorer,iexplore.exe
 16422,Internet Explorer\Connection Wizard,icwconn1.exe
 16422,Microsoft NetShow\Player,nsplayer.exe
+16422,Real\Player,rvplayer.exe
 16422,Windows Media Player,wmplayer.exe
 16422,Windows NT\Accessories,wordpad.exe
 16427,Microsoft Shared\TextConv,
