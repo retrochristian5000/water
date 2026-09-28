@@ -1559,7 +1559,7 @@ selected_llvm_libcxx_archs()
 bash_pinned_revision()
 {
     [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] || return 1
-    [ -d "$SOURCE_DIR/.git" ] || return 1
+    git -C "$SOURCE_DIR" rev-parse --git-dir >/dev/null 2>&1 || return 1
     git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/bash 2>/dev/null |
         awk '$2 == "commit" { print $3; exit }'
 }
@@ -1572,10 +1572,10 @@ stage_pinned_bash_source()
         export BASH_EFFECTIVE_SOURCE_DIR
         return 0
     }
-    [ -d "$SOURCE_DIR/.git" ] || {
+    if ! git -C "$SOURCE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
         export BASH_EFFECTIVE_SOURCE_DIR
         return 0
-    }
+    fi
 
     whp_bash_expected=$(bash_pinned_revision)
     [ -n "$whp_bash_expected" ] || {
