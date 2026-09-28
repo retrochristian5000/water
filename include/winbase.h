@@ -19,6 +19,9 @@
 #ifndef __WINE_WINBASE_H
 #define __WINE_WINBASE_H
 
+#ifndef RC_INVOKED
+#include <stdarg.h>
+#endif
 #include <winerror.h>
 
 #ifdef __cplusplus
