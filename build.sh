@@ -370,7 +370,8 @@ init_submodules()
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
 
-    if [ -z "${WHP_BASH_CMD:-}" ]; then
+    if [ -z "${WHP_BASH_CMD:-}" ] &&
+       [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ]; then
         case "$WATER_BASH_BOOTSTRAP" in
             y|1)
                 whp_submodules="$whp_submodules toolchains/bash"
