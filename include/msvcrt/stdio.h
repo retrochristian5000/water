@@ -10,11 +10,13 @@
 
 /*
  * stdio.h declares the v*printf/v*scanf families with va_list in its public
- * interface.  Keep that type available directly instead of relying on the
+ * interface. Keep that type available directly instead of relying on the
  * transitive corecrt_wstdio.h include, which can be suppressed by its own
  * include state in legacy/Win16 builds.
  */
+#ifndef RC_INVOKED
 #include <stdarg.h>
+#endif
 #include <corecrt_wstdio.h>
 
 /* file._flag flags */
