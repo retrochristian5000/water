@@ -2576,7 +2576,7 @@ UINT macdrv_OpenGLInit(UINT version, const struct opengl_funcs *opengl_funcs, co
     }
 
 #define LOAD_FUNCPTR(func) \
-        if (!(p##func = dlsym(opengl_handle, #func))) \
+        if (!MACDRV_DLSYM_FUNCTION(p##func, opengl_handle, #func)) \
         { \
             ERR( "%s not found in libGL, disabling OpenGL.\n", #func ); \
             goto failed; \
@@ -2705,12 +2705,12 @@ static BOOL macdrv_context_destroy(void *private)
 static void *macdrv_get_proc_address(const char *name)
 {
     /* redirect some standard OpenGL functions */
-    if (!strcmp(name, "glCopyPixels")) return macdrv_glCopyPixels;
-    if (!strcmp(name, "glGetString")) return macdrv_glGetString;
-    if (!strcmp(name, "glReadPixels")) return macdrv_glReadPixels;
+    if (!strcmp(name, "glCopyPixels")) return MACDRV_FUNCTION_POINTER_AS_DATA(macdrv_glCopyPixels);
+    if (!strcmp(name, "glGetString")) return MACDRV_FUNCTION_POINTER_AS_DATA(macdrv_glGetString);
+    if (!strcmp(name, "glReadPixels")) return MACDRV_FUNCTION_POINTER_AS_DATA(macdrv_glReadPixels);
 
     /* redirect some OpenGL extension functions */
-    if (!strcmp(name, "glCopyColorTable")) return macdrv_glCopyColorTable;
+    if (!strcmp(name, "glCopyColorTable")) return MACDRV_FUNCTION_POINTER_AS_DATA(macdrv_glCopyColorTable);
     return dlsym(opengl_handle, name);
 }
 

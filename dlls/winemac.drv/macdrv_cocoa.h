@@ -66,6 +66,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 
+#include "darwin_abi.h"
 #include "macdrv_res.h"
 
 

@@ -598,8 +598,8 @@ static CFDataRef get_edid_from_dcpav_service_proxy(uint32_t vendor_number, uint3
             void *handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY | RTLD_LOCAL);
             if (handle)
             {
-                pIOAVServiceCreateWithService = dlsym(handle, "IOAVServiceCreateWithService");
-                pIOAVServiceCopyEDID = dlsym(handle, "IOAVServiceCopyEDID");
+                MACDRV_DLSYM_FUNCTION(pIOAVServiceCreateWithService, handle, "IOAVServiceCreateWithService");
+                MACDRV_DLSYM_FUNCTION(pIOAVServiceCopyEDID, handle, "IOAVServiceCopyEDID");
             }
         });
 

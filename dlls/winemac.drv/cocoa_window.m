@@ -2412,7 +2412,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         dispatch_once(&once, ^{
             void *h = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY | RTLD_LOCAL);
             if (h)
-                pCGWindowListCreateImageFromArray = dlsym(h, "CGWindowListCreateImageFromArray");
+                MACDRV_DLSYM_FUNCTION(pCGWindowListCreateImageFromArray, h, "CGWindowListCreateImageFromArray");
         });
 
         if (!pCGWindowListCreateImageFromArray)
