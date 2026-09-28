@@ -146,6 +146,8 @@ static HRESULT writer_buffer_create(DWORD capacity, INSSBuffer **out)
         return E_POINTER;
 
     *out = NULL;
+    if ((size_t)capacity > ~(size_t)0 - offsetof(struct writer_buffer, data))
+        return E_OUTOFMEMORY;
     if (!(buffer = malloc(offsetof(struct writer_buffer, data) + capacity)))
         return E_OUTOFMEMORY;
 
