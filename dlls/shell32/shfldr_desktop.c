@@ -1092,8 +1092,17 @@ static HRESULT active_desktop_read_component(HKEY key, DWORD id, LPCOMPONENT com
     value.csiRestored.dwSize = sizeof(value.csiRestored);
 
     if (RegQueryValueExW(key, L"Flags", NULL, &type, (BYTE *)&flags, &size) == ERROR_SUCCESS &&
-        type == REG_DWORD && size == sizeof(flags) && flags <= COMP_TYPE_MAX)
-        value.iComponentType = flags;
+        type == REG_DWORD && size == sizeof(flags))
+    {
+        /*
+         * Windows 98 stores the COMP_TYPE_* value in the low nibble while
+         * preserving additional component state in the upper flag bits.
+         */
+        DWORD component_type = flags & 0x0f;
+
+        if (component_type <= COMP_TYPE_MAX)
+            value.iComponentType = component_type;
+    }
 
     active_desktop_query_string(key, L"FriendlyName", value.wszFriendlyName, ARRAY_SIZE(value.wszFriendlyName));
     active_desktop_query_string(key, L"Source", value.wszSource, ARRAY_SIZE(value.wszSource));
