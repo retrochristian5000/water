@@ -29,7 +29,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=7
+LLVM_LIBCXX_RECIPE=8
 BASH_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -1814,6 +1814,101 @@ libcxx_ms_target()
     esac
 }
 
+prepare_llvm_windows_sdk_headers()
+{
+    whp_win_sdk_idl="$SOURCE_DIR/include/unknwn.idl"
+    whp_win_sdk_overlay="$LLVM_LIBCXX_RUNTIME_DIR/windows-sdk-headers"
+    whp_win_sdk_state_file="$whp_win_sdk_overlay/.whp-state"
+
+    [ -f "$whp_win_sdk_idl" ] ||
+        die "Water IUnknown IDL is missing: $whp_win_sdk_idl"
+
+    # libc++'s MSVC exception_ptr implementation needs IUnknown before Water's
+    # main build has had a chance to run WIDL. Keep this bootstrap projection
+    # tied to the authoritative IDL instead of making libc++ depend on a header
+    # that is generated later in the build.
+    grep -F 'uuid(00000000-0000-0000-C000-000000000046)' "$whp_win_sdk_idl" >/dev/null ||
+        die "Water IUnknown IDL has an unexpected interface UUID"
+    grep -F 'virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) = 0;' "$whp_win_sdk_idl" >/dev/null ||
+        die "Water IUnknown IDL is missing QueryInterface"
+    grep -F 'virtual ULONG STDMETHODCALLTYPE AddRef(void) = 0;' "$whp_win_sdk_idl" >/dev/null ||
+        die "Water IUnknown IDL is missing AddRef"
+    grep -F 'virtual ULONG STDMETHODCALLTYPE Release(void) = 0;' "$whp_win_sdk_idl" >/dev/null ||
+        die "Water IUnknown IDL is missing Release"
+
+    whp_win_sdk_state=$(printf '%s\n' \
+        "RECIPE=$LLVM_LIBCXX_RECIPE" \
+        "UNKNWN_IDL=$(cksum "$whp_win_sdk_idl" | awk '{ printf "%s:%s", $1, $2 }')" |
+        cksum | awk '{ printf "%s:%s", $1, $2 }')
+
+    if [ -f "$whp_win_sdk_state_file" ] &&
+       [ -f "$whp_win_sdk_overlay/unknwn.h" ] &&
+       [ "$(cat "$whp_win_sdk_state_file")" = "$whp_win_sdk_state" ]; then
+        printf '%s\n' "$whp_win_sdk_overlay"
+        unset whp_win_sdk_idl whp_win_sdk_overlay whp_win_sdk_state_file whp_win_sdk_state
+        return
+    fi
+
+    mkdir -p "$LLVM_LIBCXX_RUNTIME_DIR"
+    whp_win_sdk_tmp=$(mktemp -d "${whp_win_sdk_overlay}.tmp.XXXXXX") ||
+        die "failed to create libc++ Windows SDK bootstrap directory"
+
+    cat > "$whp_win_sdk_tmp/unknwn.h" <<'EOF'
+#ifndef __WHP_BOOTSTRAP_UNKNWN_H
+#define __WHP_BOOTSTRAP_UNKNWN_H
+
+/*
+ * Bootstrap projection of Water's include/unknwn.idl for LLVM libc++.
+ * The normal Water build remains responsible for the full WIDL-generated
+ * Windows SDK header set.
+ */
+#include <windef.h>
+
+#ifndef __IUnknown_INTERFACE_DEFINED__
+#define __IUnknown_INTERFACE_DEFINED__
+
+typedef struct IUnknown IUnknown;
+typedef IUnknown *LPUNKNOWN;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+
+EXTERN_C const IID IID_IUnknown;
+
+struct DECLSPEC_UUID("00000000-0000-0000-c000-000000000046") DECLSPEC_NOVTABLE IUnknown
+{
+    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) = 0;
+    virtual ULONG STDMETHODCALLTYPE AddRef(void) = 0;
+    virtual ULONG STDMETHODCALLTYPE Release(void) = 0;
+};
+
+#else
+
+typedef struct IUnknownVtbl
+{
+    HRESULT (STDMETHODCALLTYPE *QueryInterface)(IUnknown *This, REFIID riid, void **ppvObject);
+    ULONG (STDMETHODCALLTYPE *AddRef)(IUnknown *This);
+    ULONG (STDMETHODCALLTYPE *Release)(IUnknown *This);
+} IUnknownVtbl;
+
+struct IUnknown
+{
+    const IUnknownVtbl *lpVtbl;
+};
+
+#endif
+#endif
+
+#endif
+EOF
+
+    printf '%s\n' "$whp_win_sdk_state" > "$whp_win_sdk_tmp/.whp-state"
+    rm -rf "$whp_win_sdk_overlay"
+    mv "$whp_win_sdk_tmp" "$whp_win_sdk_overlay"
+
+    printf '%s\n' "$whp_win_sdk_overlay"
+    unset whp_win_sdk_idl whp_win_sdk_overlay whp_win_sdk_state_file whp_win_sdk_state whp_win_sdk_tmp
+}
+
 prepare_llvm_msvcrt_headers()
 {
     whp_msvcrt_source="$SOURCE_DIR/include/msvcrt"
@@ -1938,6 +2033,10 @@ prepare_one_llvm_libcxx()
     [ -x "$whp_libcxx_nm" ] ||
         die "WATER_LIBCXX=llvm requires llvm-nm in the selected LLVM toolchain: $whp_libcxx_nm"
 
+    whp_libcxx_sdk_headers=$(prepare_llvm_windows_sdk_headers)
+    [ -f "$whp_libcxx_sdk_headers/unknwn.h" ] ||
+        die "libc++ Windows SDK bootstrap is incomplete"
+
     whp_libcxx_crt_headers=$(prepare_llvm_msvcrt_headers)
     [ -f "$whp_libcxx_crt_headers/corecrt.h" ] &&
     [ -f "$whp_libcxx_crt_headers/vcruntime_exception.h" ] &&
@@ -1961,6 +2060,7 @@ prepare_one_llvm_libcxx()
         "AR=$whp_libcxx_ar" \
         "RANLIB=$whp_libcxx_ranlib" \
         "RC=$whp_libcxx_rc" \
+        "SDK_HEADERS=$(cat "$whp_libcxx_sdk_headers/.whp-state")" \
         "CRT_HEADERS=$(cat "$whp_libcxx_crt_headers/.whp-state")" \
         "CMAKE=$whp_libcxx_cmake_version" \
         "BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
@@ -2008,8 +2108,8 @@ prepare_one_llvm_libcxx()
             "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
             "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
             "-DCMAKE_MSVC_RUNTIME_LIBRARY=" \
-            "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
-            "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
+            "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
+            "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
             "-DLLVM_DEFAULT_TARGET_TRIPLE=$whp_libcxx_target" \
             -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=OFF \
             -DLLVM_ENABLE_RUNTIMES:STRING=libcxx \
@@ -2082,6 +2182,7 @@ prepare_one_llvm_libcxx()
         whp_libcxx_probe="$whp_libcxx_build/.whp-libcxx-probe.cpp"
         cat > "$whp_libcxx_probe" <<'EOF'
 #include <__config>
+#include <unknwn.h>
 #if _LIBCPP_VERSION < 240000
 # error WHP libc++ provider is older than the pinned LLVM libc++
 #endif
@@ -2101,6 +2202,7 @@ EOF
             -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK \
             -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ \
             "-I$whp_libcxx_headers" \
+            -isystem "$whp_libcxx_sdk_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
             -c "$whp_libcxx_probe" -o "$whp_libcxx_build/.whp-libcxx-probe.o"
         rm -f "$whp_libcxx_probe" "$whp_libcxx_build/.whp-libcxx-probe.o"
@@ -2121,7 +2223,7 @@ EOF
     WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
 
     unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs \
-        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc whp_libcxx_nm whp_libcxx_crt_headers \
+        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc whp_libcxx_nm whp_libcxx_sdk_headers whp_libcxx_crt_headers \
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
@@ -2165,7 +2267,8 @@ prepare_libcxx_provider()
         whp_libcxx_jobs=$((whp_libcxx_total_jobs / whp_libcxx_parallel))
         [ "$whp_libcxx_jobs" -gt 0 ] || whp_libcxx_jobs=1
 
-        # Materialize the shared header overlay once before parallel workers.
+        # Materialize shared header overlays once before parallel workers.
+        prepare_llvm_windows_sdk_headers >/dev/null
         prepare_llvm_msvcrt_headers >/dev/null
         printf 'WHP libc++: %s providers in parallel (%s workers, %s jobs each)\n' \
             "$whp_libcxx_count" "$whp_libcxx_parallel" "$whp_libcxx_jobs" >&2
