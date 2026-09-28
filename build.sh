@@ -29,7 +29,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=8
+LLVM_LIBCXX_RECIPE=9
 BASH_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -1816,12 +1816,23 @@ libcxx_ms_target()
 
 prepare_llvm_windows_sdk_headers()
 {
+    whp_win_sdk_wtypes_idl="$SOURCE_DIR/include/wtypes.idl"
+    whp_win_sdk_wtypesbase_idl="$SOURCE_DIR/include/wtypesbase.idl"
     whp_win_sdk_idl="$SOURCE_DIR/include/unknwn.idl"
     whp_win_sdk_overlay="$LLVM_LIBCXX_RUNTIME_DIR/windows-sdk-headers"
     whp_win_sdk_state_file="$whp_win_sdk_overlay/.whp-state"
 
+    [ -f "$whp_win_sdk_wtypes_idl" ] ||
+        die "Water COM types IDL is missing: $whp_win_sdk_wtypes_idl"
+    [ -f "$whp_win_sdk_wtypesbase_idl" ] ||
+        die "Water COM base types IDL is missing: $whp_win_sdk_wtypesbase_idl"
     [ -f "$whp_win_sdk_idl" ] ||
         die "Water IUnknown IDL is missing: $whp_win_sdk_idl"
+
+    grep -F 'import "wtypesbase.idl";' "$whp_win_sdk_wtypes_idl" >/dev/null ||
+        die "Water wtypes.idl no longer imports wtypesbase.idl"
+    grep -F 'import "wtypes.idl";' "$whp_win_sdk_idl" >/dev/null ||
+        die "Water unknwn.idl no longer imports wtypes.idl"
 
     # libc++'s MSVC exception_ptr implementation needs IUnknown before Water's
     # main build has had a chance to run WIDL. Keep this bootstrap projection
@@ -1838,20 +1849,39 @@ prepare_llvm_windows_sdk_headers()
 
     whp_win_sdk_state=$(printf '%s\n' \
         "RECIPE=$LLVM_LIBCXX_RECIPE" \
+        "WTYPESBASE_IDL=$(cksum "$whp_win_sdk_wtypesbase_idl" | awk '{ printf "%s:%s", $1, $2 }')" \
+        "WTYPES_IDL=$(cksum "$whp_win_sdk_wtypes_idl" | awk '{ printf "%s:%s", $1, $2 }')" \
         "UNKNWN_IDL=$(cksum "$whp_win_sdk_idl" | awk '{ printf "%s:%s", $1, $2 }')" |
         cksum | awk '{ printf "%s:%s", $1, $2 }')
 
     if [ -f "$whp_win_sdk_state_file" ] &&
+       [ -f "$whp_win_sdk_overlay/wtypes.h" ] &&
        [ -f "$whp_win_sdk_overlay/unknwn.h" ] &&
        [ "$(cat "$whp_win_sdk_state_file")" = "$whp_win_sdk_state" ]; then
         printf '%s\n' "$whp_win_sdk_overlay"
-        unset whp_win_sdk_idl whp_win_sdk_overlay whp_win_sdk_state_file whp_win_sdk_state
+        unset whp_win_sdk_wtypes_idl whp_win_sdk_wtypesbase_idl whp_win_sdk_idl \
+            whp_win_sdk_overlay whp_win_sdk_state_file whp_win_sdk_state
         return
     fi
 
     mkdir -p "$LLVM_LIBCXX_RUNTIME_DIR"
     whp_win_sdk_tmp=$(mktemp -d "${whp_win_sdk_overlay}.tmp.XXXXXX") ||
         die "failed to create libc++ Windows SDK bootstrap directory"
+
+    cat > "$whp_win_sdk_tmp/wtypes.h" <<'EOF'
+#ifndef __WHP_BOOTSTRAP_WTYPES_H
+#define __WHP_BOOTSTRAP_WTYPES_H
+
+/*
+ * Bootstrap projection of Water's include/wtypes.idl and wtypesbase.idl.
+ * libc++ only needs the fundamental Windows/COM types before Water's WIDL
+ * phase materializes the complete generated SDK header.
+ */
+#include <windef.h>
+#include <guiddef.h>
+
+#endif
+EOF
 
     cat > "$whp_win_sdk_tmp/unknwn.h" <<'EOF'
 #ifndef __WHP_BOOTSTRAP_UNKNWN_H
@@ -1862,7 +1892,7 @@ prepare_llvm_windows_sdk_headers()
  * The normal Water build remains responsible for the full WIDL-generated
  * Windows SDK header set.
  */
-#include <windef.h>
+#include <wtypes.h>
 
 #ifndef __IUnknown_INTERFACE_DEFINED__
 #define __IUnknown_INTERFACE_DEFINED__
@@ -1906,7 +1936,8 @@ EOF
     mv "$whp_win_sdk_tmp" "$whp_win_sdk_overlay"
 
     printf '%s\n' "$whp_win_sdk_overlay"
-    unset whp_win_sdk_idl whp_win_sdk_overlay whp_win_sdk_state_file whp_win_sdk_state whp_win_sdk_tmp
+    unset whp_win_sdk_wtypes_idl whp_win_sdk_wtypesbase_idl whp_win_sdk_idl \
+        whp_win_sdk_overlay whp_win_sdk_state_file whp_win_sdk_state whp_win_sdk_tmp
 }
 
 prepare_llvm_msvcrt_headers()
@@ -2034,6 +2065,7 @@ prepare_one_llvm_libcxx()
         die "WATER_LIBCXX=llvm requires llvm-nm in the selected LLVM toolchain: $whp_libcxx_nm"
 
     whp_libcxx_sdk_headers=$(prepare_llvm_windows_sdk_headers)
+    [ -f "$whp_libcxx_sdk_headers/wtypes.h" ] &&
     [ -f "$whp_libcxx_sdk_headers/unknwn.h" ] ||
         die "libc++ Windows SDK bootstrap is incomplete"
 
@@ -2182,6 +2214,7 @@ prepare_one_llvm_libcxx()
         whp_libcxx_probe="$whp_libcxx_build/.whp-libcxx-probe.cpp"
         cat > "$whp_libcxx_probe" <<'EOF'
 #include <__config>
+#include <wtypes.h>
 #include <unknwn.h>
 #if _LIBCPP_VERSION < 240000
 # error WHP libc++ provider is older than the pinned LLVM libc++
