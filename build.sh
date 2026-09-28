@@ -29,7 +29,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=10
+LLVM_LIBCXX_RECIPE=11
 BASH_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -2122,6 +2122,9 @@ prepare_one_llvm_libcxx()
         rm -rf "$whp_libcxx_build"
         mkdir -p "$whp_libcxx_build" "$whp_libcxx_provider"
 
+        # Match libc++'s warning-enabled configuration: do not mark headers as
+        # system headers while building the runtime. This avoids Clang diagnosing
+        # #pragma GCC system_header when an internal header is a primary file.
         set -- \
             -S "$LLVM_SOURCE_DIR/runtimes" \
             -B "$whp_libcxx_build" \
@@ -2138,7 +2141,7 @@ prepare_one_llvm_libcxx()
             -DCMAKE_C_COMPILER_WORKS=ON \
             -DCMAKE_CXX_COMPILER_WORKS=ON \
             "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
-            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
             "-DCMAKE_MSVC_RUNTIME_LIBRARY=" \
             "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
