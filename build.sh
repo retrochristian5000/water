@@ -1573,9 +1573,12 @@ selected_llvm_libcxx_archs()
 bash_source_id()
 {
     whp_bash_source_id=
-    if [ -d "$SOURCE_DIR/.git" ]; then
+    if [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] &&
+       [ -d "$SOURCE_DIR/.git" ]; then
         whp_bash_source_id=$(git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/bash 2>/dev/null |
             awk '$2 == "commit" { print $3; exit }')
+    elif [ -d "$BASH_SOURCE_DIR" ]; then
+        whp_bash_source_id=$(git -C "$BASH_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
     fi
     if [ -z "$whp_bash_source_id" ] && [ -f "$BASH_SOURCE_DIR/configure" ]; then
         whp_bash_source_id=$(cksum "$BASH_SOURCE_DIR/configure" "$BASH_SOURCE_DIR/patchlevel.h" 2>/dev/null |
@@ -1669,6 +1672,10 @@ prepare_bash_toolchain()
         n|0)
             return
             ;;
+        y|1)
+            bootstrap_bash
+            return
+            ;;
         auto)
             [ "$WATER_LIBCXX" = llvm ] || return
             whp_bash_archs=$(selected_llvm_libcxx_archs)
@@ -1680,10 +1687,22 @@ prepare_bash_toolchain()
                 return
             fi
             unset whp_bash_archs whp_bash_jobs
+
+            if [ ! -f "$BASH_SOURCE_DIR/configure" ]; then
+                printf 'WHP Bash: source unavailable; continuing with serial bootstrap\n' >&2
+                return
+            fi
+            if ! ( bootstrap_bash ); then
+                printf 'WHP Bash: optional bootstrap failed; continuing serially\n' >&2
+                return
+            fi
+
+            WHP_BASH_CMD="$BASH_BOOTSTRAP_DIR/bash"
+            validate_bash_executor "$WHP_BASH_CMD"
+            CONFIG_SHELL=$WHP_BASH_CMD
+            export WHP_BASH_CMD CONFIG_SHELL
             ;;
     esac
-
-    bootstrap_bash
 }
 
 libcxx_ms_target()
