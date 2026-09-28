@@ -12,6 +12,7 @@
 #define COBJMACROS
 
 #include <windows.h>
+#include <wchar.h>
 #include <wininet.h>
 #include <shlobj.h>
 #include <shlguid.h>
@@ -73,6 +74,108 @@ static void set_string(HKEY key, const WCHAR *name, const WCHAR *value)
     DWORD size = (lstrlenW(value) + 1) * sizeof(*value);
     LONG ret = RegSetValueExW(key, name, 0, REG_SZ, (const BYTE *)value, size);
     ok(ret == ERROR_SUCCESS, "RegSetValueExW(%s) failed: %ld\n", wine_dbgstr_w(name), ret);
+}
+
+struct saved_reg_value
+{
+    BOOL present;
+    DWORD type;
+    DWORD size;
+    BYTE *data;
+};
+
+static void save_shell_state(struct saved_reg_value *saved)
+{
+    static const WCHAR explorer_keyW[] =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+    HKEY key;
+    LONG ret;
+
+    memset(saved, 0, sizeof(*saved));
+
+    ret = RegOpenKeyExW(HKEY_CURRENT_USER, explorer_keyW, 0, KEY_QUERY_VALUE, &key);
+    if (ret != ERROR_SUCCESS)
+        return;
+
+    ret = RegQueryValueExW(key, L"ShellState", NULL, &saved->type, NULL, &saved->size);
+    if (ret == ERROR_SUCCESS)
+    {
+        saved->present = TRUE;
+        if (saved->size && (saved->data = HeapAlloc(GetProcessHeap(), 0, saved->size)))
+            RegQueryValueExW(key, L"ShellState", NULL, &saved->type, saved->data, &saved->size);
+    }
+
+    RegCloseKey(key);
+}
+
+static void restore_shell_state(const struct saved_reg_value *saved)
+{
+    static const WCHAR explorer_keyW[] =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+    HKEY key;
+    DWORD_PTR result;
+
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, explorer_keyW, 0, NULL, 0,
+                        KEY_SET_VALUE, NULL, &key, NULL) != ERROR_SUCCESS)
+        return;
+
+    if (saved->present)
+        RegSetValueExW(key, L"ShellState", 0, saved->type, saved->data, saved->size);
+    else
+        RegDeleteValueW(key, L"ShellState");
+
+    RegCloseKey(key);
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"ShellState",
+                        SMTO_ABORTIFHUNG, 2000, &result);
+}
+
+static void test_active_desktop_state(void)
+{
+    struct saved_reg_value saved;
+    COMPONENTSOPT options;
+    IActiveDesktop *desktop;
+    SHELLSTATE state;
+    BOOL original, toggled;
+    HRESULT hr;
+
+    save_shell_state(&saved);
+
+    memset(&state, 0, sizeof(state));
+    SHGetSetSettings(&state, SSF_DESKTOPHTML, FALSE);
+    original = state.fDesktopHTML;
+    toggled = !original;
+
+    memset(&state, 0, sizeof(state));
+    state.fDesktopHTML = toggled;
+    SHGetSetSettings(&state, SSF_DESKTOPHTML, TRUE);
+
+    memset(&state, 0, sizeof(state));
+    SHGetSetSettings(&state, SSF_DESKTOPHTML, FALSE);
+    ok(state.fDesktopHTML == toggled, "expected Active Desktop state %d, got %d\n",
+       toggled, state.fDesktopHTML);
+
+    hr = CoCreateInstance(&CLSID_ActiveDesktop, NULL, CLSCTX_INPROC_SERVER,
+                          &IID_IActiveDesktop, (void **)&desktop);
+    if (SUCCEEDED(hr))
+    {
+        memset(&options, 0, sizeof(options));
+        options.dwSize = sizeof(options);
+        hr = IActiveDesktop_GetDesktopItemOptions(desktop, &options, 0);
+        ok(hr == S_OK, "GetDesktopItemOptions failed: %#lx\n", hr);
+        if (SUCCEEDED(hr))
+        {
+            ok(options.fActiveDesktop == toggled, "expected fActiveDesktop %d, got %d\n",
+               toggled, options.fActiveDesktop);
+            ok(options.fEnableComponents == toggled, "expected fEnableComponents %d, got %d\n",
+               toggled, options.fEnableComponents);
+        }
+        IActiveDesktop_Release(desktop);
+    }
+    else
+        win_skip("Active Desktop is unavailable, hr %#lx\n", hr);
+
+    restore_shell_state(&saved);
+    HeapFree(GetProcessHeap(), 0, saved.data);
 }
 
 static void test_active_desktop_components(void)
@@ -204,6 +307,7 @@ START_TEST(activedesktop)
 {
     HRESULT hr = CoInitialize(NULL);
 
+    test_active_desktop_state();
     test_active_desktop_components();
 
     if (SUCCEEDED(hr))
