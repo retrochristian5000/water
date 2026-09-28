@@ -1,0 +1,11 @@
+MODULE    = rvplayer.exe
+
+IMPORTS   = strmiids ole32 oleaut32 user32 uuid
+
+EXTRADLLFLAGS = -mwindows -municode
+
+VER_FILEDESCRIPTION_STR = "RealPlayer compatibility frontend"
+VER_PRODUCTVERSION      = 4,0,20,155
+
+SOURCES = \
+	main.c
