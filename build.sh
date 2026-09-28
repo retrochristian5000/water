@@ -29,7 +29,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=9
+LLVM_LIBCXX_RECIPE=10
 BASH_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -2137,8 +2137,8 @@ prepare_one_llvm_libcxx()
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
             -DCMAKE_C_COMPILER_WORKS=ON \
             -DCMAKE_CXX_COMPILER_WORKS=ON \
-            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
-            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
             "-DCMAKE_MSVC_RUNTIME_LIBRARY=" \
             "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
@@ -2216,6 +2216,7 @@ prepare_one_llvm_libcxx()
 #include <__config>
 #include <wtypes.h>
 #include <unknwn.h>
+#include <windows.h>
 #if _LIBCPP_VERSION < 240000
 # error WHP libc++ provider is older than the pinned LLVM libc++
 #endif
@@ -2232,8 +2233,8 @@ int whp_libcxx_probe(std::mutex& mutex) {
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
             -std=c++17 -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib \
-            -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK \
-            -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ \
+            -D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX \
+            -D_LIBCPP_NO_AUTO_LINK -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ \
             "-I$whp_libcxx_headers" \
             -isystem "$whp_libcxx_sdk_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
