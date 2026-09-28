@@ -30,7 +30,7 @@ LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
 LLVM_LIBCXX_RECIPE=7
-BASH_BOOTSTRAP_RECIPE=1
+BASH_BOOTSTRAP_RECIPE=2
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -1586,17 +1586,32 @@ stage_pinned_bash_source()
     }
 
     if ! git -C "$BASH_SOURCE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-        [ "$WHP_SUBMODULES" = 1 ] ||
-            die "WHP Bash submodule is not initialized and WHP_SUBMODULES=0"
-        git -C "$SOURCE_DIR" submodule update --init --depth 1 --no-fetch toolchains/bash 2>/dev/null ||
-        git -C "$SOURCE_DIR" submodule update --init --depth 1 toolchains/bash
+        if [ "$WHP_SUBMODULES" != 1 ]; then
+            printf 'WHP Bash: submodule is not initialized and WHP_SUBMODULES=0\n' >&2
+            unset whp_bash_expected
+            return 1
+        fi
+        if ! git -C "$SOURCE_DIR" submodule update --init --depth 1 --no-fetch toolchains/bash 2>/dev/null &&
+           ! git -C "$SOURCE_DIR" submodule update --init --depth 1 toolchains/bash; then
+            printf 'WHP Bash: failed to initialize pinned submodule source\n' >&2
+            unset whp_bash_expected
+            return 1
+        fi
     fi
 
     if ! git -C "$BASH_SOURCE_DIR" cat-file -e "$whp_bash_expected^{commit}" 2>/dev/null; then
-        [ "$WHP_SUBMODULES" = 1 ] ||
-            die "pinned WHP Bash commit $whp_bash_expected is unavailable and WHP_SUBMODULES=0"
+        if [ "$WHP_SUBMODULES" != 1 ]; then
+            printf 'WHP Bash: pinned commit %s is unavailable and WHP_SUBMODULES=0\n' \
+                "$whp_bash_expected" >&2
+            unset whp_bash_expected
+            return 1
+        fi
         printf 'WHP Bash: fetching pinned source object %s\n' "$whp_bash_expected" >&2
-        git -C "$BASH_SOURCE_DIR" fetch --no-tags --depth 1 origin "$whp_bash_expected"
+        if ! git -C "$BASH_SOURCE_DIR" fetch --no-tags --depth 1 origin "$whp_bash_expected"; then
+            printf 'WHP Bash: failed to fetch pinned source object %s\n' "$whp_bash_expected" >&2
+            unset whp_bash_expected
+            return 1
+        fi
     fi
 
     whp_bash_stage_state="$BASH_STAGE_DIR/.whp-source"
@@ -1616,7 +1631,9 @@ stage_pinned_bash_source()
     if ! git -C "$BASH_SOURCE_DIR" archive "$whp_bash_expected" |
          tar -xf - -C "$whp_bash_stage_tmp"; then
         rm -rf "$whp_bash_stage_tmp"
-        die "failed to stage pinned WHP Bash source $whp_bash_expected"
+        printf 'WHP Bash: failed to stage pinned source %s\n' "$whp_bash_expected" >&2
+        unset whp_bash_expected whp_bash_stage_state whp_bash_stage_tmp
+        return 1
     fi
     printf '%s\n' "$whp_bash_expected" > "$whp_bash_stage_tmp/.whp-source"
     rm -rf "$BASH_STAGE_DIR"
@@ -1745,7 +1762,7 @@ prepare_bash_toolchain()
             fi
             unset whp_bash_archs whp_bash_jobs
 
-            if ! ( stage_pinned_bash_source ); then
+            if ! stage_pinned_bash_source; then
                 printf 'WHP Bash: pinned source staging failed; continuing serially\n' >&2
                 return
             fi
