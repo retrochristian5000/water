@@ -2522,9 +2522,17 @@ static HRESULT WINAPI shellbrowser_SendControlMsg(IShellBrowser *iface, UINT id,
 
 static HRESULT WINAPI shellbrowser_QueryActiveShellView(IShellBrowser *iface, IShellView **view)
 {
-    TRACE("%p\n", view);
+    struct shellbrowserwindow *This = impl_from_IShellBrowser(iface);
 
-    *view = desktopshellbrowserwindow.view;
+    TRACE("%p, %p\n", This, view);
+
+    if (!view)
+        return E_POINTER;
+
+    *view = This->view;
+    if (!*view)
+        return E_FAIL;
+
     IShellView_AddRef(*view);
     return S_OK;
 }
