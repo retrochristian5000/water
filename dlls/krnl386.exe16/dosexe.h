@@ -193,6 +193,9 @@ extern void WINAPI DOSVM_Int3cHandler(I386_CONTEXT *);
 extern void WINAPI DOSVM_Int3dHandler(I386_CONTEXT *);
 extern void WINAPI DOSVM_Int3eHandler(I386_CONTEXT *);
 
+/* int13.c */
+extern void WINAPI DOSVM_Int13Handler(I386_CONTEXT *);
+
 /* int15.c */
 extern void WINAPI DOSVM_Int15Handler(I386_CONTEXT *);
 
