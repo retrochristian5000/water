@@ -2223,11 +2223,22 @@ prepare_one_llvm_libcxx()
 #if _LIBCPP_VERSION < 240000
 # error WHP libc++ provider is older than the pinned LLVM libc++
 #endif
+#ifndef _LIBCPP_OBJECT_FORMAT_COFF
+# error WHP libc++ provider did not select the COFF object model
+#endif
+#ifndef _LIBCPP_ABI_MICROSOFT
+# error WHP libc++ provider did not select the Microsoft C++ ABI
+#endif
 #ifndef _LIBCPP_ABI_VCRUNTIME
 # error WHP libc++ provider is not using the vcruntime ABI
 #endif
+#ifndef _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS
+# error WHP static libc++ provider unexpectedly enabled DLL visibility annotations
+#endif
+#include <cstddef>
 #include <mutex>
 #include <string>
+static_assert(__is_same(std::size_t, decltype(sizeof(0))), "WHP libc++ std::size_t ABI mismatch");
 int whp_libcxx_probe(std::mutex& mutex) {
     mutex.lock();
     mutex.unlock();
@@ -2237,7 +2248,7 @@ EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
             -std=c++17 -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib \
             -D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX \
-            -D_LIBCPP_NO_AUTO_LINK -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ \
+            -D_LIBCPP_NO_AUTO_LINK -nostdinc++ \
             "-I$whp_libcxx_headers" \
             -isystem "$whp_libcxx_sdk_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
@@ -2252,7 +2263,7 @@ EOF
 
     # Microsoft-ABI libc++ headers default to DLL import annotations and
     # /DEFAULTLIB:c++.lib. Water consumes a private static provider instead.
-    whp_libcxx_cflags="-D_LIBCPP_NO_AUTO_LINK -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ -I$whp_libcxx_headers"
+    whp_libcxx_cflags="-D_LIBCPP_NO_AUTO_LINK -nostdinc++ -I$whp_libcxx_headers"
     whp_libcxx_libs="-L$whp_libcxx_provider -lwhp-libcxx vcruntime140"
     export "${whp_libcxx_arch}_CXX_PE_CFLAGS=$whp_libcxx_cflags"
     export "${whp_libcxx_arch}_CXX_PE_LIBS=$whp_libcxx_libs"
