@@ -382,7 +382,11 @@ static int spawn(struct strarray args, int ignore_errors)
     int status;
     const char *cmd;
 
-    cmd = args.str[0] = find_binary( args.str[0] );
+    if (!args.count || !args.str[0] || !args.str[0][0])
+        error( "No command specified\n" );
+    if (!(cmd = find_binary( args.str[0] )))
+        error( "Could not find %s\n", args.str[0] );
+    args.str[0] = cmd;
     if (verbose) strarray_trace( args );
 
     if ((status = strarray_spawn( args )) && !ignore_errors)
@@ -400,7 +404,12 @@ static const char *get_target_name( enum target_cpu cpu )
 {
     if (cpu != target.cpu)
     {
-        const char *suffix = strchr( target_alias, '-' );
+        const char *suffix;
+
+        if (!target_alias)
+            error( "Cannot derive the %s target without an explicit target specification\n",
+                   get_cpu_name( cpu ) );
+        suffix = strchr( target_alias, '-' );
         if (!suffix) suffix = "";
         return strmake( "%s%s", get_cpu_name( cpu ), suffix );
     }
@@ -1592,7 +1601,8 @@ static int is_option( struct strarray args, int i, const char *option, const cha
 {
     if (!strcmp( args.str[i], option ))
     {
-        if (args.count == i) error( "option %s requires an argument\n", args.str[i] );
+        if ((unsigned int)i + 1 >= args.count)
+            error( "option %s requires an argument\n", args.str[i] );
         *option_arg = args.str[i + 1];
         return 1;
     }
@@ -1609,17 +1619,38 @@ static struct strarray read_args_from_file( const char *name )
     struct strarray args = empty_strarray;
     char *input_buffer = NULL, *iter, *end, *opt, *out;
     struct stat st;
+    size_t size, offset = 0;
+    ssize_t ret;
     int fd;
 
-    if ((fd = open( name, O_RDONLY | O_BINARY )) == -1) error( "Cannot open %s\n", name );
-    fstat( fd, &st );
-    if (st.st_size)
+    if ((fd = open( name, O_RDONLY | O_BINARY )) == -1)
+        error( "Cannot open %s: %s\n", name, strerror( errno ) );
+    if (fstat( fd, &st ) == -1)
+        error( "Cannot stat %s: %s\n", name, strerror( errno ) );
+    if (st.st_size < 0)
+        error( "Invalid size for %s\n", name );
+    if (!st.st_size)
     {
-        input_buffer = xmalloc( st.st_size + 1 );
-        if (read( fd, input_buffer, st.st_size ) != st.st_size) error( "Cannot read %s\n", name );
+        close( fd );
+        return args;
+    }
+
+    size = st.st_size;
+    input_buffer = xmalloc( size + 1 );
+    while (offset < size)
+    {
+        ret = read( fd, input_buffer + offset, size - offset );
+        if (ret < 0)
+        {
+            if (errno == EINTR) continue;
+            error( "Cannot read %s: %s\n", name, strerror( errno ) );
+        }
+        if (!ret) error( "Unexpected end of file while reading %s\n", name );
+        offset += ret;
     }
     close( fd );
-    end = input_buffer + st.st_size;
+    input_buffer[size] = 0;
+    end = input_buffer + size;
     for (iter = input_buffer; iter < end; iter++)
     {
         char quote = 0;
@@ -1732,7 +1763,8 @@ int main(int argc, char **argv)
 	    }
 	    if (next_is_arg)
             {
-                if (i + 1 >= args.count) error("option -%c requires an argument\n", args.str[i][1]);
+                if ((unsigned int)i + 1 >= args.count)
+                    error( "option %s requires an argument\n", args.str[i] );
                 option_arg = args.str[i+1];
             }
 
@@ -1970,6 +2002,8 @@ int main(int argc, char **argv)
                             }
                             if (!strcmp(Wl.str[j], "--out-implib"))
                             {
+                                if (j + 1 >= Wl.count)
+                                    error( "linker option --out-implib requires an argument\n" );
                                 output_implib = xstrdup( Wl.str[++j] );
                                 continue;
                             }
