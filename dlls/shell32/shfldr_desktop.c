@@ -1059,11 +1059,14 @@ static void active_desktop_query_string(HKEY key, const WCHAR *name, WCHAR *buff
 
 static void active_desktop_query_binary(HKEY key, const WCHAR *name, void *buffer, DWORD size)
 {
-    DWORD type, actual = size;
+    DWORD type, actual = 0;
 
-    if (RegQueryValueExW(key, name, NULL, &type, buffer, &actual) != ERROR_SUCCESS ||
+    if (RegQueryValueExW(key, name, NULL, &type, NULL, &actual) != ERROR_SUCCESS ||
         type != REG_BINARY || actual != size)
-        memset(buffer, 0, size);
+        return;
+
+    actual = size;
+    RegQueryValueExW(key, name, NULL, &type, buffer, &actual);
 }
 
 static HRESULT active_desktop_read_component(HKEY key, DWORD id, LPCOMPONENT component)
