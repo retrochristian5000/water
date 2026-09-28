@@ -1625,7 +1625,8 @@ bootstrap_bash()
        [ "$(cat "$BASH_BOOTSTRAP_STATE_FILE")" = "$whp_bash_signature" ]; then
         validate_bash_executor "$BASH_BOOTSTRAP_DIR/bash"
         WHP_BASH_CMD="$BASH_BOOTSTRAP_DIR/bash"
-        export WHP_BASH_CMD
+        CONFIG_SHELL=$WHP_BASH_CMD
+        export WHP_BASH_CMD CONFIG_SHELL
         printf 'WHP Bash: cached %s\n' "$whp_bash_source" >&2
         unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_source whp_bash_signature
         return
@@ -1648,7 +1649,8 @@ bootstrap_bash()
     validate_bash_executor "$BASH_BOOTSTRAP_DIR/bash"
     printf '%s\n' "$whp_bash_signature" > "$BASH_BOOTSTRAP_STATE_FILE"
     WHP_BASH_CMD="$BASH_BOOTSTRAP_DIR/bash"
-    export WHP_BASH_CMD
+    CONFIG_SHELL=$WHP_BASH_CMD
+    export WHP_BASH_CMD CONFIG_SHELL
     printf 'WHP Bash: built %s\n' "$whp_bash_source" >&2
     unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_source whp_bash_signature whp_bash_jobs
 }
@@ -1657,7 +1659,8 @@ prepare_bash_toolchain()
 {
     if [ -n "${WHP_BASH_CMD:-}" ]; then
         validate_bash_executor "$WHP_BASH_CMD"
-        export WHP_BASH_CMD
+        CONFIG_SHELL=$WHP_BASH_CMD
+        export WHP_BASH_CMD CONFIG_SHELL
         printf 'WHP Bash: explicit executor %s\n' "$WHP_BASH_CMD" >&2
         return
     fi
