@@ -7,6 +7,8 @@ BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
 LLVM_LIBCXX_RUNTIME_DIR=${WHP_LIBCXX_RUNTIME_DIR:-"$BUILD_DIR/llvm-libcxx-pe"}
+BASH_SOURCE_DIR=${WHP_BASH_SOURCE_DIR:-"$SOURCE_DIR/toolchains/bash"}
+BASH_BOOTSTRAP_DIR=${WHP_BASH_BUILD_DIR:-"$BUILD_DIR/bash-bootstrap"}
 LLVM_LINK_JOBS=${WHP_LLVM_LINK_JOBS:-2}
 WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-1}
 WHP_SUBMODULES=${WHP_SUBMODULES:-1}
@@ -23,8 +25,10 @@ PROFILE_FILE="$BUILD_DIR/.whp-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
+BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
 LLVM_LIBCXX_RECIPE=6
+BASH_BOOTSTRAP_RECIPE=1
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -79,6 +83,9 @@ Environment:
   WHP_LLVM_SOURCE_DIR   LLVM source tree (default: ./toolchains/llvm-project)
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LIBCXX_RUNTIME_DIR LLVM libc++ PE runtime cache (default: ./build/llvm-libcxx-pe)
+  WHP_BASH_SOURCE_DIR   WHP Bash source tree (default: ./toolchains/bash)
+  WHP_BASH_BUILD_DIR    Cached WHP Bash host-tool build (default: ./build/bash-bootstrap)
+  WHP_BASH_CMD          Explicit Bash executable for bootstrap orchestration
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
   WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (default: auto)
@@ -87,6 +94,7 @@ Environment:
   WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
   BOOTSTRAP_NINJA        Pinned WHP Ninja policy: auto, y, or n
+  WATER_BASH_BOOTSTRAP   Pinned WHP Bash policy: auto, y, or n
   WHP_GIT_UPDATE        Rebase Water onto its configured upstream: 1 or 0 (default: 1)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
@@ -178,6 +186,7 @@ validate_profile()
     WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
     WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}
     WATER_LIBCXX=${WATER_LIBCXX:-llvm}
+    WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
     WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}
     BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
@@ -213,6 +222,10 @@ validate_profile()
     case "$WATER_LIBCXX" in
         llvm|legacy) ;;
         *) die "WATER_LIBCXX must be llvm or legacy" ;;
+    esac
+    case "$WATER_BASH_BOOTSTRAP" in
+        auto|y|n|0|1) ;;
+        *) die "WATER_BASH_BOOTSTRAP must be auto, y, or n" ;;
     esac
     case "$LLVM_LINK_JOBS" in
         ''|*[!0-9]*|0) die "WHP_LLVM_LINK_JOBS must be a positive integer" ;;
@@ -347,12 +360,10 @@ update_repository()
 
 init_submodules()
 {
-    if [ "$WHP_SUBMODULES" = 1 ] &&
-       [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
-        command -v git >/dev/null 2>&1 || die "git is required to initialize Water submodules"
-        git -C "$SOURCE_DIR" submodule sync --recursive
-        git -C "$SOURCE_DIR" submodule update --init --recursive
-    fi
+    [ "$WHP_SUBMODULES" = 1 ] || return 0
+    command -v git >/dev/null 2>&1 || die "git is required to initialize Water submodules"
+    git -C "$SOURCE_DIR" submodule sync --recursive
+    git -C "$SOURCE_DIR" submodule update --init --recursive
 }
 
 detect_jobs()
@@ -1505,6 +1516,143 @@ selected_libcxx_archs()
     unset whp_libcxx_archs whp_libcxx_archs_found
 }
 
+selected_llvm_libcxx_archs()
+{
+    whp_libcxx_selected=$(selected_libcxx_archs)
+    whp_libcxx_prepare=
+    for whp_libcxx_arch in $whp_libcxx_selected
+    do
+        case "$whp_libcxx_arch" in
+            i386|x86_64|aarch64|arm64ec)
+                case " $whp_libcxx_prepare " in
+                    *" $whp_libcxx_arch "*) ;;
+                    *) whp_libcxx_prepare="$whp_libcxx_prepare $whp_libcxx_arch" ;;
+                esac
+                if [ "$whp_libcxx_arch" = arm64ec ]; then
+                    case " $whp_libcxx_prepare " in
+                        *" x86_64 "*) ;;
+                        *) whp_libcxx_prepare="$whp_libcxx_prepare x86_64" ;;
+                    esac
+                fi
+                ;;
+        esac
+    done
+    printf '%s\n' "$whp_libcxx_prepare"
+    unset whp_libcxx_selected whp_libcxx_prepare whp_libcxx_arch
+}
+
+bash_source_id()
+{
+    whp_bash_source_id=
+    if [ -d "$SOURCE_DIR/.git" ]; then
+        whp_bash_source_id=$(git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/bash 2>/dev/null |
+            awk '$2 == "commit" { print $3; exit }')
+    fi
+    if [ -z "$whp_bash_source_id" ] && [ -f "$BASH_SOURCE_DIR/configure" ]; then
+        whp_bash_source_id=$(cksum "$BASH_SOURCE_DIR/configure" "$BASH_SOURCE_DIR/patchlevel.h" 2>/dev/null |
+            awk '{ printf "%s:%s;", $1, $2 }')
+    fi
+    printf '%s\n' "$whp_bash_source_id"
+    unset whp_bash_source_id
+}
+
+validate_bash_executor()
+{
+    whp_bash_cmd=$1
+    [ -x "$whp_bash_cmd" ] || die "selected Bash executable is not usable: $whp_bash_cmd"
+    "$whp_bash_cmd" --noprofile --norc -c ': & wait -n' >/dev/null 2>&1 ||
+        die "selected Bash executable does not support wait -n: $whp_bash_cmd"
+    unset whp_bash_cmd
+}
+
+bootstrap_bash()
+{
+    [ -f "$BASH_SOURCE_DIR/configure" ] ||
+        die "WHP Bash source tree is missing: $BASH_SOURCE_DIR"
+
+    whp_bash_make=${MAKE:-}
+    if [ -z "$whp_bash_make" ]; then
+        whp_bash_make=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
+    fi
+    [ -n "$whp_bash_make" ] || die "make is required to bootstrap WHP Bash"
+
+    whp_bash_cc=${CC_FOR_BUILD:-${CC:-}}
+    [ -n "$whp_bash_cc" ] || whp_bash_cc=$(command -v clang 2>/dev/null || command -v cc 2>/dev/null || true)
+    [ -n "$whp_bash_cc" ] || die "a host C compiler is required to bootstrap WHP Bash"
+    whp_bash_cc_version=$("$whp_bash_cc" --version 2>/dev/null | sed -n '1p')
+    whp_bash_source=$(bash_source_id)
+    [ -n "$whp_bash_source" ] || die "could not identify the WHP Bash source revision"
+    whp_bash_signature=$(printf '%s\n' \
+        "BASH_BOOTSTRAP_RECIPE=$BASH_BOOTSTRAP_RECIPE" \
+        "BASH_SOURCE=$whp_bash_source" \
+        "CC=$whp_bash_cc" \
+        "CC_VERSION=$whp_bash_cc_version" \
+        "SDKROOT=${SDKROOT:-}" \
+        "CFLAGS=${CFLAGS_FOR_BUILD:--O2}" \
+        "FEATURES=minimal,job-control,no-nls,system-malloc")
+
+    if [ -x "$BASH_BOOTSTRAP_DIR/bash" ] &&
+       [ -f "$BASH_BOOTSTRAP_STATE_FILE" ] &&
+       [ "$(cat "$BASH_BOOTSTRAP_STATE_FILE")" = "$whp_bash_signature" ]; then
+        validate_bash_executor "$BASH_BOOTSTRAP_DIR/bash"
+        WHP_BASH_CMD="$BASH_BOOTSTRAP_DIR/bash"
+        export WHP_BASH_CMD
+        printf 'WHP Bash: cached %s\n' "$whp_bash_source" >&2
+        unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_source whp_bash_signature
+        return
+    fi
+
+    rm -rf "$BASH_BOOTSTRAP_DIR"
+    mkdir -p "$BASH_BOOTSTRAP_DIR"
+    whp_bash_jobs=$(detect_jobs)
+    (
+        cd "$BASH_BOOTSTRAP_DIR"
+        CONFIG_SHELL=/bin/sh CC="$whp_bash_cc" CFLAGS="${CFLAGS_FOR_BUILD:--O2}" \
+            "$BASH_SOURCE_DIR/configure" \
+                --enable-minimal-config \
+                --enable-job-control \
+                --disable-nls \
+                --without-bash-malloc
+        "$whp_bash_make" -j"$whp_bash_jobs" bash
+    )
+
+    validate_bash_executor "$BASH_BOOTSTRAP_DIR/bash"
+    printf '%s\n' "$whp_bash_signature" > "$BASH_BOOTSTRAP_STATE_FILE"
+    WHP_BASH_CMD="$BASH_BOOTSTRAP_DIR/bash"
+    export WHP_BASH_CMD
+    printf 'WHP Bash: built %s\n' "$whp_bash_source" >&2
+    unset whp_bash_make whp_bash_cc whp_bash_cc_version whp_bash_source whp_bash_signature whp_bash_jobs
+}
+
+prepare_bash_toolchain()
+{
+    if [ -n "${WHP_BASH_CMD:-}" ]; then
+        validate_bash_executor "$WHP_BASH_CMD"
+        export WHP_BASH_CMD
+        printf 'WHP Bash: explicit executor %s\n' "$WHP_BASH_CMD" >&2
+        return
+    fi
+
+    case "$WATER_BASH_BOOTSTRAP" in
+        n|0)
+            return
+            ;;
+        auto)
+            [ "$WATER_LIBCXX" = llvm ] || return
+            whp_bash_archs=$(selected_llvm_libcxx_archs)
+            set -- $whp_bash_archs
+            if [ "$#" -lt 2 ]; then
+                printf 'WHP Bash: skipped; libc++ provider graph is not parallel\n' >&2
+                unset whp_bash_archs
+                return
+            fi
+            unset whp_bash_archs
+            ;;
+    esac
+
+    bootstrap_bash
+}
+
 libcxx_ms_target()
 {
     case "$1" in
@@ -1720,7 +1868,11 @@ prepare_one_llvm_libcxx()
         [ "$whp_libcxx_hermetic" = ON ] ||
             die "LLVM libc++ disabled hermetic static-library mode for $whp_libcxx_target"
 
-        "$whp_libcxx_cmake" --build "$whp_libcxx_build" --parallel "$(detect_jobs)" --target cxx_static
+        whp_libcxx_jobs=${WHP_LIBCXX_JOBS:-$(detect_jobs)}
+        case "$whp_libcxx_jobs" in
+            ''|*[!0-9]*|0) die "WHP_LIBCXX_JOBS must be a positive integer" ;;
+        esac
+        "$whp_libcxx_cmake" --build "$whp_libcxx_build" --parallel "$whp_libcxx_jobs" --target cxx_static
         PATH=$whp_libcxx_saved_path
         export PATH
 
@@ -1782,7 +1934,7 @@ EOF
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
-        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_hermetic \
+        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_hermetic whp_libcxx_jobs \
         whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
 }
 
@@ -1797,22 +1949,9 @@ prepare_libcxx_provider()
     fi
 
     whp_libcxx_selected=$(selected_libcxx_archs)
-    whp_libcxx_prepare=
     for whp_libcxx_arch in $whp_libcxx_selected
     do
         case "$whp_libcxx_arch" in
-            i386|x86_64|aarch64|arm64ec)
-                case " $whp_libcxx_prepare " in
-                    *" $whp_libcxx_arch "*) ;;
-                    *) whp_libcxx_prepare="$whp_libcxx_prepare $whp_libcxx_arch" ;;
-                esac
-                if [ "$whp_libcxx_arch" = arm64ec ]; then
-                    case " $whp_libcxx_prepare " in
-                        *" x86_64 "*) ;;
-                        *) whp_libcxx_prepare="$whp_libcxx_prepare x86_64" ;;
-                    esac
-                fi
-                ;;
             arm)
                 printf 'WHP libc++ arm: legacy provider retained for armv7-windows-gnu ABI\n' >&2
                 ;;
@@ -1821,13 +1960,66 @@ prepare_libcxx_provider()
                 ;;
         esac
     done
+    whp_libcxx_prepare=$(selected_llvm_libcxx_archs)
 
-    for whp_libcxx_arch in $whp_libcxx_prepare
-    do
-        prepare_one_llvm_libcxx "$whp_libcxx_arch"
-    done
+    set -- $whp_libcxx_prepare
+    whp_libcxx_count=$#
+    if [ "$whp_libcxx_count" -gt 1 ] && [ -n "${WHP_BASH_CMD:-}" ]; then
+        whp_libcxx_total_jobs=$(detect_jobs)
+        whp_libcxx_parallel=$whp_libcxx_count
+        if [ "$whp_libcxx_parallel" -gt "$whp_libcxx_total_jobs" ]; then
+            whp_libcxx_parallel=$whp_libcxx_total_jobs
+        fi
+        whp_libcxx_jobs=$((whp_libcxx_total_jobs / whp_libcxx_parallel))
+        [ "$whp_libcxx_jobs" -gt 0 ] || whp_libcxx_jobs=1
+
+        # Materialize the shared header overlay once before parallel workers.
+        prepare_llvm_msvcrt_headers >/dev/null
+        printf 'WHP libc++: %s providers in parallel (%s workers, %s jobs each)\n' \
+            "$whp_libcxx_count" "$whp_libcxx_parallel" "$whp_libcxx_jobs" >&2
+
+        "$WHP_BASH_CMD" --noprofile --norc -c '
+            script=$1
+            limit=$2
+            jobs=$3
+            shift 3
+            running=0
+            failed=0
+            for arch
+            do
+                WHP_GIT_UPDATE=0 WHP_SUBMODULES=0 WHP_RECONFIGURE=0 WHP_LIBCXX_JOBS=$jobs \
+                    "$script" __libcxx_one "$arch" &
+                running=$((running + 1))
+                if [ "$running" -ge "$limit" ]; then
+                    wait -n || failed=1
+                    running=$((running - 1))
+                fi
+            done
+            while [ "$running" -gt 0 ]
+            do
+                wait -n || failed=1
+                running=$((running - 1))
+            done
+            exit "$failed"
+        ' whp-libcxx "$SOURCE_DIR/build.sh" "$whp_libcxx_parallel" "$whp_libcxx_jobs" $whp_libcxx_prepare ||
+            die "parallel LLVM libc++ provider bootstrap failed"
+
+        # Re-enter each provider in the parent shell. Cache hits are cheap and
+        # publish the architecture-specific CXX_PE_* variables to configure.
+        for whp_libcxx_arch in $whp_libcxx_prepare
+        do
+            prepare_one_llvm_libcxx "$whp_libcxx_arch"
+        done
+    else
+        for whp_libcxx_arch in $whp_libcxx_prepare
+        do
+            prepare_one_llvm_libcxx "$whp_libcxx_arch"
+        done
+    fi
+
     export WHP_LIBCXX_STATE
-    unset whp_libcxx_selected whp_libcxx_prepare whp_libcxx_arch
+    unset whp_libcxx_selected whp_libcxx_prepare whp_libcxx_arch whp_libcxx_count \
+        whp_libcxx_total_jobs whp_libcxx_parallel whp_libcxx_jobs
 }
 
 
@@ -1843,6 +2035,7 @@ profile_signature()
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}" \
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
+        "WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
@@ -2150,6 +2343,14 @@ run_build()
 }
 
 case "${1:-build}" in
+    __libcxx_one)
+        [ "$#" -eq 2 ] || die "__libcxx_one requires exactly one architecture"
+        load_whp_config
+        validate_profile
+        setup_toolchain
+        prepare_one_llvm_libcxx "$2"
+        exit 0
+        ;;
     -h|--help|help)
         usage
         exit 0
@@ -2182,6 +2383,7 @@ init_submodules
 prepare_ninja
 prepare_llvm_toolchain
 setup_toolchain
+prepare_bash_toolchain
 prepare_libcxx_provider
 
 case "${1:-build}" in
