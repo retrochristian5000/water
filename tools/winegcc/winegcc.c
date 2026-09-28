@@ -536,6 +536,27 @@ static int try_link( struct strarray link_tool, const char *cflags )
     return ret;
 }
 
+static void add_windows_crt_nodefaultlibs( struct strarray *args )
+{
+    static const char * const libs[] =
+    {
+        "msvcrt.lib", "msvcrtd.lib",
+        "msvcprt.lib", "msvcprtd.lib",
+        "libcmt.lib", "libcmtd.lib",
+        "libcpmt.lib", "libcpmtd.lib",
+        "ucrt.lib", "ucrtd.lib",
+        "vcruntime.lib", "vcruntimed.lib",
+        "oldnames.lib", "c++.lib", "libc++.lib"
+    };
+    unsigned int i;
+
+    for (i = 0; i < ARRAY_SIZE(libs); i++)
+    {
+        strarray_add( args, "-Xlinker" );
+        strarray_add( args, strmake( "-nodefaultlib:%s", libs[i] ));
+    }
+}
+
 static struct strarray get_link_args( const char *output_name )
 {
     struct strarray link_args = get_translator();
@@ -631,6 +652,13 @@ static struct strarray get_link_args( const char *output_name )
     case PLATFORM_WINDOWS:
         strarray_add( &link_args, "-nodefaultlibs" );
         strarray_add( &link_args, "-nostdlib" );
+        /*
+         * Water supplies PE runtime dependencies explicitly as lib*.a import
+         * archives.  Ignore MSVC /DEFAULTLIB records embedded by compatible
+         * compilers or headers so the linker does not escape that dependency
+         * graph by searching for host-style msvcrt.lib and friends.
+         */
+        add_windows_crt_nodefaultlibs( &link_args );
 
         if (is_shared || is_win16_app)
         {
