@@ -1303,6 +1303,8 @@ typedef struct
     UINT :15; /* Required for proper binary layout with gcc */
 } SHELLSTATE, *LPSHELLSTATE;
 
+WINSHELLAPI VOID WINAPI SHGetSetSettings(LPSHELLSTATE lpss, DWORD dwMask, BOOL bSet);
+
 /**********************************************************************
  * SHGetSettings ()
  */
