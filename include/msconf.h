@@ -60,7 +60,7 @@ typedef struct _CONFADDRA
     {
         DWORD dwIp;
         LPCSTR psz;
-    } u;
+    };
 } CONFADDRA, *LPCONFADDRA;
 
 typedef struct _CONFADDRW
@@ -71,7 +71,7 @@ typedef struct _CONFADDRW
     {
         DWORD dwIp;
         LPCWSTR psz;
-    } u;
+    };
 } CONFADDRW, *LPCONFADDRW;
 
 #define CONF_ADDR_UNKNOWN      0x0000
