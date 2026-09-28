@@ -21,6 +21,9 @@
 #ifndef __WINE_WINTERNL_H
 #define __WINE_WINTERNL_H
 
+#ifndef RC_INVOKED
+#include <stdarg.h>
+#endif
 #include <ntdef.h>
 #include <windef.h>
 
