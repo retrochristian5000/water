@@ -501,6 +501,7 @@ SOURCES = \
 	msado15_backcompat.idl \
 	msasn1.h \
 	mscat.h \
+	msconf.h \
 	mscoree.idl \
 	msctf.idl \
 	msdadc.idl \
