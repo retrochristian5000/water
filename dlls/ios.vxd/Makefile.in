@@ -1,0 +1,4 @@
+MODULE    = ios.vxd
+
+SOURCES = \
+	ios.c

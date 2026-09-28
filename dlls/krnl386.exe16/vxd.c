@@ -63,6 +63,7 @@ static struct vxd_module vxd_modules[MAX_VXD_MODULES];
 static struct vxdcall_service vxd_services[] =
 {
     { {'v','m','m','.','v','x','d',0},             0x0001, NULL, NULL },
+    { {'i','o','s','.','v','x','d',0},             0x0010, NULL, NULL },
     { {'v','w','i','n','3','2','.','v','x','d',0}, 0x002a, NULL, NULL },
     { {'p','p','p','m','a','c','.','v','x','d',0}, 0x0499, NULL, NULL }
 };
