@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <wchar.h>
 
 #define COBJMACROS
 #include "winerror.h"
