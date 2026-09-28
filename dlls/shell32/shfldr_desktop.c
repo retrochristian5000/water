@@ -940,6 +940,173 @@ HRESULT WINAPI ISF_Desktop_Constructor (
     return IShellFolder2_QueryInterface( &cached_sf->IShellFolder2_iface, riid, ppv );
 }
 
+
+static const WCHAR active_desktop_componentsW[] =
+    L"Software\\Microsoft\\Internet Explorer\\Desktop\\Components";
+
+static BOOL active_desktop_component_name_id(const WCHAR *name, DWORD *id)
+{
+    WCHAR *end;
+    unsigned long value;
+
+    if (!name[0])
+        return FALSE;
+
+    value = wcstoul(name, &end, 10);
+    if (*end || value > ~(DWORD)0)
+        return FALSE;
+
+    if (id)
+        *id = value;
+    return TRUE;
+}
+
+static HRESULT active_desktop_open_component(int index, HKEY *component_key, DWORD *id)
+{
+    HKEY components;
+    WCHAR name[32];
+    DWORD subkey_index = 0, component_index = 0;
+    LONG ret;
+
+    if (index < 0 || !component_key)
+        return E_INVALIDARG;
+
+    ret = RegOpenKeyExW(HKEY_CURRENT_USER, active_desktop_componentsW, 0, KEY_READ, &components);
+    if (ret == ERROR_FILE_NOT_FOUND)
+        return E_INVALIDARG;
+    if (ret != ERROR_SUCCESS)
+        return HRESULT_FROM_WIN32(ret);
+
+    for (;;)
+    {
+        DWORD length = ARRAY_SIZE(name);
+        DWORD component_id;
+
+        ret = RegEnumKeyExW(components, subkey_index++, name, &length, NULL, NULL, NULL, NULL);
+        if (ret == ERROR_NO_MORE_ITEMS)
+            break;
+        if (ret != ERROR_SUCCESS)
+        {
+            RegCloseKey(components);
+            return HRESULT_FROM_WIN32(ret);
+        }
+
+        if (!active_desktop_component_name_id(name, &component_id))
+            continue;
+
+        if (component_index++ != (DWORD)index)
+            continue;
+
+        ret = RegOpenKeyExW(components, name, 0, KEY_READ, component_key);
+        RegCloseKey(components);
+        if (ret != ERROR_SUCCESS)
+            return HRESULT_FROM_WIN32(ret);
+
+        if (id)
+            *id = component_id;
+        return S_OK;
+    }
+
+    RegCloseKey(components);
+    return E_INVALIDARG;
+}
+
+static HRESULT active_desktop_open_component_id(ULONG_PTR id, HKEY *component_key)
+{
+    HKEY components;
+    WCHAR name[32];
+    LONG ret;
+
+    if (!component_key || id > ~(DWORD)0)
+        return E_INVALIDARG;
+
+    swprintf(name, ARRAY_SIZE(name), L"%lu", (DWORD)id);
+
+    ret = RegOpenKeyExW(HKEY_CURRENT_USER, active_desktop_componentsW, 0, KEY_READ, &components);
+    if (ret == ERROR_FILE_NOT_FOUND)
+        return E_INVALIDARG;
+    if (ret != ERROR_SUCCESS)
+        return HRESULT_FROM_WIN32(ret);
+
+    ret = RegOpenKeyExW(components, name, 0, KEY_READ, component_key);
+    RegCloseKey(components);
+
+    if (ret == ERROR_FILE_NOT_FOUND)
+        return E_INVALIDARG;
+    if (ret != ERROR_SUCCESS)
+        return HRESULT_FROM_WIN32(ret);
+
+    return S_OK;
+}
+
+static void active_desktop_query_string(HKEY key, const WCHAR *name, WCHAR *buffer, DWORD count)
+{
+    DWORD type, size = count * sizeof(*buffer);
+
+    if (!count)
+        return;
+
+    buffer[0] = 0;
+    if (RegQueryValueExW(key, name, NULL, &type, (BYTE *)buffer, &size) != ERROR_SUCCESS ||
+        (type != REG_SZ && type != REG_EXPAND_SZ))
+    {
+        buffer[0] = 0;
+        return;
+    }
+
+    buffer[count - 1] = 0;
+}
+
+static void active_desktop_query_binary(HKEY key, const WCHAR *name, void *buffer, DWORD size)
+{
+    DWORD type, actual = size;
+
+    if (RegQueryValueExW(key, name, NULL, &type, buffer, &actual) != ERROR_SUCCESS ||
+        type != REG_BINARY || actual != size)
+        memset(buffer, 0, size);
+}
+
+static HRESULT active_desktop_read_component(HKEY key, DWORD id, LPCOMPONENT component)
+{
+    COMPONENT value;
+    DWORD caller_size, flags = COMP_TYPE_WEBSITE, type, size = sizeof(flags);
+
+    if (!component)
+        return E_POINTER;
+
+    caller_size = component->dwSize;
+    if (caller_size < sizeof(IE4COMPONENT))
+        return E_INVALIDARG;
+
+    memset(&value, 0, sizeof(value));
+    value.dwSize = caller_size >= sizeof(value) ? sizeof(value) : sizeof(IE4COMPONENT);
+    value.dwID = id;
+    value.iComponentType = COMP_TYPE_WEBSITE;
+    value.fChecked = TRUE;
+    value.cpPos.dwSize = sizeof(value.cpPos);
+    value.csiOriginal.dwSize = sizeof(value.csiOriginal);
+    value.csiRestored.dwSize = sizeof(value.csiRestored);
+
+    if (RegQueryValueExW(key, L"Flags", NULL, &type, (BYTE *)&flags, &size) == ERROR_SUCCESS &&
+        type == REG_DWORD && size == sizeof(flags) && flags <= COMP_TYPE_MAX)
+        value.iComponentType = flags;
+
+    active_desktop_query_string(key, L"FriendlyName", value.wszFriendlyName, ARRAY_SIZE(value.wszFriendlyName));
+    active_desktop_query_string(key, L"Source", value.wszSource, ARRAY_SIZE(value.wszSource));
+    active_desktop_query_string(key, L"SubscribedURL", value.wszSubscribedURL, ARRAY_SIZE(value.wszSubscribedURL));
+    active_desktop_query_binary(key, L"Position", &value.cpPos, sizeof(value.cpPos));
+
+    if (caller_size >= sizeof(COMPONENT))
+    {
+        active_desktop_query_binary(key, L"CurrentState", &value.dwCurItemState, sizeof(value.dwCurItemState));
+        active_desktop_query_binary(key, L"OriginalStateInfo", &value.csiOriginal, sizeof(value.csiOriginal));
+        active_desktop_query_binary(key, L"RestoredStateInfo", &value.csiRestored, sizeof(value.csiRestored));
+    }
+
+    memcpy(component, &value, min(caller_size, (DWORD)sizeof(value)));
+    return S_OK;
+}
+
 static HRESULT WINAPI active_desktop_QueryInterface(IActiveDesktop *iface, REFIID riid, void **obj)
 {
     TRACE("%p, %s, %p.\n", iface, debugstr_guid(riid), obj);
@@ -1066,23 +1233,83 @@ static HRESULT WINAPI active_desktop_RemoveDesktopItem(IActiveDesktop *iface, LP
 
 static HRESULT WINAPI active_desktop_GetDesktopItemCount(IActiveDesktop *iface, int *count, DWORD reserved)
 {
-    FIXME("%p, %p, %#lx.\n", iface, count, reserved);
+    HKEY components;
+    WCHAR name[32];
+    DWORD subkey_index = 0;
+    LONG ret;
 
-    return E_NOTIMPL;
+    TRACE("%p, %p, %#lx.\n", iface, count, reserved);
+
+    if (!count)
+        return E_POINTER;
+    if (reserved)
+        return E_INVALIDARG;
+
+    *count = 0;
+    ret = RegOpenKeyExW(HKEY_CURRENT_USER, active_desktop_componentsW, 0, KEY_READ, &components);
+    if (ret == ERROR_FILE_NOT_FOUND)
+        return S_OK;
+    if (ret != ERROR_SUCCESS)
+        return HRESULT_FROM_WIN32(ret);
+
+    for (;;)
+    {
+        DWORD length = ARRAY_SIZE(name);
+
+        ret = RegEnumKeyExW(components, subkey_index++, name, &length, NULL, NULL, NULL, NULL);
+        if (ret == ERROR_NO_MORE_ITEMS)
+            break;
+        if (ret != ERROR_SUCCESS)
+        {
+            RegCloseKey(components);
+            return HRESULT_FROM_WIN32(ret);
+        }
+
+        if (active_desktop_component_name_id(name, NULL))
+            ++*count;
+    }
+
+    RegCloseKey(components);
+    return S_OK;
 }
 
 static HRESULT WINAPI active_desktop_GetDesktopItem(IActiveDesktop *iface, int index, LPCOMPONENT component, DWORD reserved)
 {
-    FIXME("%p, %d, %p, %#lx.\n", iface, index, component, reserved);
+    HKEY key;
+    DWORD id;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("%p, %d, %p, %#lx.\n", iface, index, component, reserved);
+
+    if (reserved)
+        return E_INVALIDARG;
+
+    hr = active_desktop_open_component(index, &key, &id);
+    if (FAILED(hr))
+        return hr;
+
+    hr = active_desktop_read_component(key, id, component);
+    RegCloseKey(key);
+    return hr;
 }
 
 static HRESULT WINAPI active_desktop_GetDesktopItemByID(IActiveDesktop *iface, ULONG_PTR id, LPCOMPONENT component, DWORD reserved)
 {
-    FIXME("%p, %Ix, %p, %#lx.\n", iface, id, component, reserved);
+    HKEY key;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("%p, %Ix, %p, %#lx.\n", iface, id, component, reserved);
+
+    if (reserved)
+        return E_INVALIDARG;
+
+    hr = active_desktop_open_component_id(id, &key);
+    if (FAILED(hr))
+        return hr;
+
+    hr = active_desktop_read_component(key, (DWORD)id, component);
+    RegCloseKey(key);
+    return hr;
 }
 
 static HRESULT WINAPI active_desktop_GenerateDesktopItemHtml(IActiveDesktop *iface, PCWSTR filename, LPCOMPONENT component, DWORD reserved)
@@ -1101,9 +1328,44 @@ static HRESULT WINAPI active_desktop_AddUrl(IActiveDesktop *iface, HWND hwnd, PC
 
 static HRESULT WINAPI active_desktop_GetDesktopItemBySource(IActiveDesktop *iface, PCWSTR source, LPCOMPONENT component, DWORD reserved)
 {
-    FIXME("%p, %s, %p, %#lx.\n", iface, debugstr_w(source), component, reserved);
+    COMPONENT current;
+    int count, index;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("%p, %s, %p, %#lx.\n", iface, debugstr_w(source), component, reserved);
+
+    if (!source || !component)
+        return E_INVALIDARG;
+    if (reserved)
+        return E_INVALIDARG;
+
+    hr = active_desktop_GetDesktopItemCount(iface, &count, 0);
+    if (FAILED(hr))
+        return hr;
+
+    for (index = 0; index < count; ++index)
+    {
+        memset(&current, 0, sizeof(current));
+        current.dwSize = sizeof(current);
+
+        hr = active_desktop_GetDesktopItem(iface, index, &current, 0);
+        if (FAILED(hr))
+            continue;
+
+        if (!lstrcmpiW(current.wszSource, source))
+        {
+            DWORD caller_size = component->dwSize;
+
+            if (caller_size < sizeof(IE4COMPONENT))
+                return E_INVALIDARG;
+
+            memcpy(component, &current, min(caller_size, (DWORD)sizeof(current)));
+            component->dwSize = caller_size >= sizeof(current) ? sizeof(current) : sizeof(IE4COMPONENT);
+            return S_OK;
+        }
+    }
+
+    return E_INVALIDARG;
 }
 
 static const IActiveDesktopVtbl active_desktop_vtbl =
