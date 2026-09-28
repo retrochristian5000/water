@@ -29,7 +29,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=12
+LLVM_LIBCXX_RECIPE=13
 BASH_BOOTSTRAP_RECIPE=3
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -2100,7 +2100,7 @@ prepare_one_llvm_libcxx()
         "THREAD_API=win32" \
         "THREADS=enabled" \
         "STATIC_VISIBILITY=disabled" \
-        "SITE_DEFINES=_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS" \
+        "SITE_DEFINES=_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS,_LIBCPP_NO_ABI_TAG" \
         "MSVC_DEFAULTLIB=omitted" \
         "RTLIB_DEFAULTLIB=omitted" \
         "AUTO_LINK=disabled" \
@@ -2161,7 +2161,7 @@ prepare_one_llvm_libcxx()
             -DLLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
             -DLIBCXX_CXX_ABI:STRING=vcruntime \
             -DLLIBCXX_ABI_FORCE_MICROSOFT=ON \
-            -DLIBCXX_EXTRA_SITE_DEFINES:STRING=_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS \
+            "-DLIBCXX_EXTRA_SITE_DEFINES:STRING=_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS;_LIBCPP_NO_ABI_TAG" \
             -DLIBCXX_ENABLE_THREADS=ON \
             -DLIBCXX_HERMETIC_STATIC_LIBRARY=ON \
             -DLLIBCXX_HAS_WIN32_THREAD_API=ON \
@@ -2190,8 +2190,14 @@ prepare_one_llvm_libcxx()
         [ "$whp_libcxx_threads" = ON ] ||
             die "LLVM libc++ disabled threads for $whp_libcxx_target"
         whp_libcxx_site_defines=$(sed -n 's/^LIBCXX_EXTRA_SITE_DEFINES:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
-        [ "$whp_libcxx_site_defines" = _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS ] ||
-            die "LLVM libc++ lost Water's static visibility site define for $whp_libcxx_target"
+        case ";$whp_libcxx_site_defines;" in
+            *";_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS;"*) ;;
+            *) die "LLVM libc++ lost Water's static visibility site define for $whp_libcxx_target" ;;
+        esac
+        case ";$whp_libcxx_site_defines;" in
+            *";_LIBCPP_NO_ABI_TAG;"*) ;;
+            *) die "LLVM libc++ lost Water's Microsoft-ABI no-abi-tag site define for $whp_libcxx_target" ;;
+        esac
         whp_libcxx_hermetic=$(sed -n 's/^LIBCXX_HERMETIC_STATIC_LIBRARY:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
         [ "$whp_libcxx_hermetic" = ON ] ||
             die "LLVM libc++ disabled hermetic static-library mode for $whp_libcxx_target"
@@ -2242,6 +2248,9 @@ prepare_one_llvm_libcxx()
 #ifndef _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS
 # error WHP static libc++ provider unexpectedly enabled DLL visibility annotations
 #endif
+#ifndef _LIBCPP_NO_ABI_TAG
+# error WHP Microsoft-ABI libc++ provider unexpectedly enabled Itanium ABI tags
+#endif
 #include <cstddef>
 #include <mutex>
 #include <string>
@@ -2254,6 +2263,7 @@ int whp_libcxx_probe(std::mutex& mutex) {
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
             -std=c++17 -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib \
+            -Werror=ignored-attributes -Werror=unknown-attributes \
             -D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN -DNOMINMAX \
             -D_LIBCPP_NO_AUTO_LINK -nostdinc++ \
             "-I$whp_libcxx_headers" \
@@ -2270,7 +2280,7 @@ EOF
 
     # Microsoft-ABI libc++ headers default to DLL import annotations and
     # /DEFAULTLIB:c++.lib. Water consumes a private static provider instead.
-    whp_libcxx_cflags="-D_LIBCPP_NO_AUTO_LINK -nostdinc++ -I$whp_libcxx_headers"
+    whp_libcxx_cflags="-D_LIBCPP_NO_AUTO_LINK -D_LIBCPP_NO_ABI_TAG -nostdinc++ -I$whp_libcxx_headers"
     whp_libcxx_libs="-L$whp_libcxx_provider -lwhp-libcxx vcruntime140"
     export "${whp_libcxx_arch}_CXX_PE_CFLAGS=$whp_libcxx_cflags"
     export "${whp_libcxx_arch}_CXX_PE_LIBS=$whp_libcxx_libs"
