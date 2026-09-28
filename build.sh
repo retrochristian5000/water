@@ -27,7 +27,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=6
+LLVM_LIBCXX_RECIPE=7
 BASH_BOOTSTRAP_RECIPE=1
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -1854,6 +1854,7 @@ prepare_one_llvm_libcxx()
         "THREAD_API=win32" \
         "THREADS=enabled" \
         "STATIC_VISIBILITY=disabled" \
+        "MSVC_DEFAULTLIB=omitted" \
         "AUTO_LINK=disabled" \
         "WATER_INCLUDE=$SOURCE_DIR/include")
 
@@ -1889,8 +1890,9 @@ prepare_one_llvm_libcxx()
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
             -DCMAKE_C_COMPILER_WORKS=ON \
             -DCMAKE_CXX_COMPILER_WORKS=ON \
-            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$whp_libcxx_crt_headers" \
-            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -fshort-wchar -fms-omit-default-lib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=" \
             "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$SOURCE_DIR/include" \
             "-DLLVM_DEFAULT_TARGET_TRIPLE=$whp_libcxx_target" \
@@ -1959,6 +1961,18 @@ prepare_one_llvm_libcxx()
              grep -F 'std::__1::mutex::lock' >/dev/null; then
             die "LLVM libc++ static archive does not define std::__1::mutex::lock for $whp_libcxx_target"
         fi
+        whp_libcxx_strings=$(command -v strings 2>/dev/null || true)
+        if [ -n "$whp_libcxx_strings" ]; then
+            for whp_libcxx_defaultlib in \
+                msvcrt.lib msvcrtd.lib msvcprt.lib msvcprtd.lib \
+                libcmt.lib libcmtd.lib libcpmt.lib libcpmtd.lib oldnames.lib
+            do
+                if "$whp_libcxx_strings" "$whp_libcxx_provider/libwhp-libcxx.a" 2>/dev/null |
+                   grep -F "$whp_libcxx_defaultlib" >/dev/null; then
+                    die "LLVM libc++ archive embeds MSVC default library $whp_libcxx_defaultlib for $whp_libcxx_target; Water uses lib*.a CRT imports"
+                fi
+            done
+        fi
 
         whp_libcxx_probe="$whp_libcxx_build/.whp-libcxx-probe.cpp"
         cat > "$whp_libcxx_probe" <<'EOF'
@@ -1978,7 +1992,8 @@ int whp_libcxx_probe(std::mutex& mutex) {
 }
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
-            -std=c++17 -fshort-wchar -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK \
+            -std=c++17 -fshort-wchar -fms-omit-default-lib \
+            -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK \
             -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ \
             "-I$whp_libcxx_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
@@ -2005,6 +2020,7 @@ EOF
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
+        whp_libcxx_strings whp_libcxx_defaultlib \
         whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_hermetic whp_libcxx_jobs \
         whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
 }
