@@ -24,7 +24,7 @@ AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=6
-LLVM_LIBCXX_RECIPE=5
+LLVM_LIBCXX_RECIPE=6
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
 
@@ -1601,6 +1601,9 @@ prepare_one_llvm_libcxx()
     whp_libcxx_rc="$LLVM_BIN/llvm-rc"
     [ -x "$whp_libcxx_rc" ] ||
         die "WATER_LIBCXX=llvm requires llvm-rc in the selected LLVM toolchain: $whp_libcxx_rc"
+    whp_libcxx_nm="$LLVM_BIN/llvm-nm"
+    [ -x "$whp_libcxx_nm" ] ||
+        die "WATER_LIBCXX=llvm requires llvm-nm in the selected LLVM toolchain: $whp_libcxx_nm"
 
     whp_libcxx_crt_headers=$(prepare_llvm_msvcrt_headers)
     [ -f "$whp_libcxx_crt_headers/corecrt.h" ] &&
@@ -1630,6 +1633,8 @@ prepare_one_llvm_libcxx()
         "BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
         "ABI=vcruntime" \
         "THREAD_API=win32" \
+        "THREADS=enabled" \
+        "STATIC_VISIBILITY=disabled" \
         "AUTO_LINK=disabled" \
         "WATER_INCLUDE=$SOURCE_DIR/include")
 
@@ -1638,7 +1643,12 @@ prepare_one_llvm_libcxx()
        [ -f "$whp_libcxx_provider/libwhp-libcxx.a" ] &&
        [ -f "$whp_libcxx_headers/__config_site" ] &&
        [ "$(cat "$whp_libcxx_state_file")" = "$whp_libcxx_signature" ]; then
-        whp_libcxx_cached=1
+        if "$whp_libcxx_nm" --defined-only --demangle "$whp_libcxx_provider/libwhp-libcxx.a" 2>/dev/null |
+           grep -F 'std::__1::mutex::lock' >/dev/null; then
+            whp_libcxx_cached=1
+        else
+            printf 'WHP libc++ %s: cached runtime is missing std::mutex; rebuilding\n' "$whp_libcxx_arch" >&2
+        fi
     fi
 
     if [ "$whp_libcxx_cached" = 0 ]; then
@@ -1679,6 +1689,8 @@ prepare_one_llvm_libcxx()
             -DLLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
             -DLIBCXX_CXX_ABI:STRING=vcruntime \
             -DLLIBCXX_ABI_FORCE_MICROSOFT=ON \
+            -DLIBCXX_ENABLE_THREADS=ON \
+            -DLIBCXX_HERMETIC_STATIC_LIBRARY=ON \
             -DLLIBCXX_HAS_WIN32_THREAD_API=ON \
             -DLLIBCXX_HAS_PTHREAD_API=OFF \
             -DLLIBCXX_ENABLE_STATIC_ABI_LIBRARY=OFF \
@@ -1701,6 +1713,12 @@ prepare_one_llvm_libcxx()
         whp_libcxx_runtimes=$(sed -n 's/^LLVM_ENABLE_RUNTIMES:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
         [ "$whp_libcxx_runtimes" = libcxx ] ||
             die "LLVM runtime set changed unexpectedly to '${whp_libcxx_runtimes:-unknown}' for $whp_libcxx_target; expected libcxx only"
+        whp_libcxx_threads=$(sed -n 's/^LIBCXX_ENABLE_THREADS:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        [ "$whp_libcxx_threads" = ON ] ||
+            die "LLVM libc++ disabled threads for $whp_libcxx_target"
+        whp_libcxx_hermetic=$(sed -n 's/^LIBCXX_HERMETIC_STATIC_LIBRARY:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        [ "$whp_libcxx_hermetic" = ON ] ||
+            die "LLVM libc++ disabled hermetic static-library mode for $whp_libcxx_target"
 
         "$whp_libcxx_cmake" --build "$whp_libcxx_build" --parallel "$(detect_jobs)" --target cxx_static
         PATH=$whp_libcxx_saved_path
@@ -1714,6 +1732,10 @@ prepare_one_llvm_libcxx()
         [ -f "$whp_libcxx_headers/__config_site" ] ||
             die "LLVM libc++ did not generate __config_site for $whp_libcxx_arch"
         cp "$whp_libcxx_archive" "$whp_libcxx_provider/libwhp-libcxx.a"
+        if ! "$whp_libcxx_nm" --defined-only --demangle "$whp_libcxx_provider/libwhp-libcxx.a" 2>/dev/null |
+             grep -F 'std::__1::mutex::lock' >/dev/null; then
+            die "LLVM libc++ static archive does not define std::__1::mutex::lock for $whp_libcxx_target"
+        fi
 
         whp_libcxx_probe="$whp_libcxx_build/.whp-libcxx-probe.cpp"
         cat > "$whp_libcxx_probe" <<'EOF'
@@ -1724,11 +1746,17 @@ prepare_one_llvm_libcxx()
 #ifndef _LIBCPP_ABI_VCRUNTIME
 # error WHP libc++ provider is not using the vcruntime ABI
 #endif
+#include <mutex>
 #include <string>
-int whp_libcxx_probe() { return std::string("whp").size() == 3 ? 0 : 1; }
+int whp_libcxx_probe(std::mutex& mutex) {
+    mutex.lock();
+    mutex.unlock();
+    return std::string("whp").size() == 3 ? 0 : 1;
+}
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
-            -std=c++17 -fshort-wchar -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK -nostdinc++ \
+            -std=c++17 -fshort-wchar -D__WINE_PE_BUILD -D_LIBCPP_NO_AUTO_LINK \
+            -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ \
             "-I$whp_libcxx_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
             -c "$whp_libcxx_probe" -o "$whp_libcxx_build/.whp-libcxx-probe.o"
@@ -1740,9 +1768,9 @@ EOF
         printf 'WHP libc++ %s: cached LLVM runtime\n' "$whp_libcxx_arch" >&2
     fi
 
-    # Microsoft-ABI libc++ headers otherwise inject /DEFAULTLIB:c++.lib.
-    # Water links its private, renamed libc++ provider explicitly instead.
-    whp_libcxx_cflags="-D_LIBCPP_NO_AUTO_LINK -nostdinc++ -I$whp_libcxx_headers"
+    # Microsoft-ABI libc++ headers default to DLL import annotations and
+    # /DEFAULTLIB:c++.lib. Water consumes a private static provider instead.
+    whp_libcxx_cflags="-D_LIBCPP_NO_AUTO_LINK -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -nostdinc++ -I$whp_libcxx_headers"
     whp_libcxx_libs="-L$whp_libcxx_provider -lwhp-libcxx vcruntime140"
     export "${whp_libcxx_arch}_CXX_PE_CFLAGS=$whp_libcxx_cflags"
     export "${whp_libcxx_arch}_CXX_PE_LIBS=$whp_libcxx_libs"
@@ -1750,11 +1778,12 @@ EOF
     WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
 
     unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs \
-        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc whp_libcxx_crt_headers \
+        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc whp_libcxx_nm whp_libcxx_crt_headers \
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
-        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
+        whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_hermetic \
+        whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
 }
 
 prepare_libcxx_provider()
