@@ -179,6 +179,7 @@ struct shellbrowserwindow
     IServiceProvider IServiceProvider_iface;
     IShellBrowser IShellBrowser_iface;
     IShellView *view;
+    HWND hwnd;
 };
 
 static struct shellwindows shellwindows;
@@ -205,7 +206,7 @@ static inline struct shellbrowserwindow *impl_from_IShellBrowser(IShellBrowser *
 }
 
 static void shellwindows_init(void);
-static void desktopshellbrowserwindow_init(void);
+static void desktopshellbrowserwindow_init(HWND hwnd);
 
 static RECT get_icon_rect( unsigned int index )
 {
@@ -1317,7 +1318,7 @@ void manage_desktop( WCHAR *arg )
         }
     }
 
-    desktopshellbrowserwindow_init();
+    desktopshellbrowserwindow_init(hwnd);
     shellwindows_init();
 
     /* Ideally we would set the window of an IShellView here, but we never
@@ -2037,8 +2038,14 @@ static HRESULT WINAPI webbrowser_get_Name(IWebBrowser2 *iface, BSTR *Name)
 static HRESULT WINAPI webbrowser_get_HWND(IWebBrowser2 *iface, SHANDLE_PTR *pHWND)
 {
     struct shellbrowserwindow *This = impl_from_IWebBrowser2(iface);
-    FIXME("(%p)->(%p)\n", This, pHWND);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%p)\n", This, pHWND);
+
+    if (!pHWND)
+        return E_POINTER;
+
+    *pHWND = (SHANDLE_PTR)This->hwnd;
+    return This->hwnd ? S_OK : E_FAIL;
 }
 
 static HRESULT WINAPI webbrowser_get_FullName(IWebBrowser2 *iface, BSTR *FullName)
@@ -2433,8 +2440,15 @@ static ULONG WINAPI shellbrowser_Release(IShellBrowser *iface)
 
 static HRESULT WINAPI shellbrowser_GetWindow(IShellBrowser *iface, HWND *phwnd)
 {
-    FIXME("%p\n", phwnd);
-    return E_NOTIMPL;
+    struct shellbrowserwindow *This = impl_from_IShellBrowser(iface);
+
+    TRACE("%p, %p\n", This, phwnd);
+
+    if (!phwnd)
+        return E_POINTER;
+
+    *phwnd = This->hwnd;
+    return This->hwnd ? S_OK : E_FAIL;
 }
 
 static HRESULT WINAPI shellbrowser_ContextSensitiveHelp(IShellBrowser *iface, BOOL mode)
@@ -2549,18 +2563,20 @@ static const IShellBrowserVtbl shellbrowservtbl = {
     shellbrowser_SetToolbarItems
 };
 
-static void desktopshellbrowserwindow_init(void)
+static void desktopshellbrowserwindow_init(HWND hwnd)
 {
     IShellFolder *folder;
 
     desktopshellbrowserwindow.IWebBrowser2_iface.lpVtbl = &webbrowser2vtbl;
     desktopshellbrowserwindow.IServiceProvider_iface.lpVtbl = &serviceprovidervtbl;
     desktopshellbrowserwindow.IShellBrowser_iface.lpVtbl = &shellbrowservtbl;
+    desktopshellbrowserwindow.hwnd = hwnd;
 
     if (FAILED(SHGetDesktopFolder(&folder)))
         return;
 
-    IShellFolder_CreateViewObject(folder, NULL, &IID_IShellView, (void**)&desktopshellbrowserwindow.view);
+    IShellFolder_CreateViewObject(folder, hwnd, &IID_IShellView, (void **)&desktopshellbrowserwindow.view);
+    IShellFolder_Release(folder);
 }
 
 static void shellwindows_init(void)
