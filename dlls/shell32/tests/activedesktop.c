@@ -229,7 +229,7 @@ static void test_active_desktop_components(void)
     position.fCanResizeX = TRUE;
     position.fCanResizeY = TRUE;
     RegSetValueExW(key, L"Position", 0, REG_BINARY, (const BYTE *)&position, sizeof(position));
-    RegSetValueExW(key, L"CurrentState", 0, REG_BINARY,
+    RegSetValueExW(key, L"CurrentState", 0, REG_DWORD,
                    (const BYTE *)&current_state, sizeof(current_state));
     RegCloseKey(key);
 
