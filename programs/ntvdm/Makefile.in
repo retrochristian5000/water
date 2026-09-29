@@ -1,0 +1,7 @@
+MODULE    = ntvdm.exe
+IMPORTS   = kernel advapi32
+
+EXTRADLLFLAGS = -mconsole
+
+SOURCES = \
+	ntvdm.c

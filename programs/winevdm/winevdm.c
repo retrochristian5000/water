@@ -28,13 +28,10 @@
 #include "wine/winbase16.h"
 #include "winuser.h"
 #include "wincon.h"
-#include "winreg.h"
-#include "wine/doskeyb.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(winevdm);
 
-#define DOSBOX "dosbox"
 
 /*** PIF file structures ***/
 #pragma pack(push,1)
@@ -107,126 +104,7 @@ typedef struct {
 /***********************************************************************
  *           start_dosbox
  */
-static BOOL get_dos_keyboard( char layout[WINE_DOS_KEYB_MAX_LAYOUT + 1], DWORD *codepage )
-{
-    WCHAR layoutW[WINE_DOS_KEYB_MAX_LAYOUT + 1];
-    DWORD type, size;
-    HKEY key;
-    unsigned int i;
-
-    *codepage = 0;
-    if (RegOpenKeyExW( HKEY_CURRENT_USER, WINE_DOS_KEYB_REGKEY, 0, KEY_QUERY_VALUE, &key ))
-        return FALSE;
-
-    size = sizeof(layoutW);
-    if (RegQueryValueExW( key, WINE_DOS_KEYB_LAYOUT_VALUE, NULL, &type,
-                          (BYTE *)layoutW, &size ) != ERROR_SUCCESS ||
-        type != REG_SZ || !layoutW[0])
-    {
-        RegCloseKey( key );
-        return FALSE;
-    }
-    layoutW[ARRAY_SIZE(layoutW) - 1] = 0;
-
-    for (i = 0; layoutW[i]; i++)
-    {
-        if (i >= WINE_DOS_KEYB_MAX_LAYOUT ||
-            !((layoutW[i] >= L'A' && layoutW[i] <= L'Z') ||
-              (layoutW[i] >= L'a' && layoutW[i] <= L'z')))
-        {
-            RegCloseKey( key );
-            return FALSE;
-        }
-        layout[i] = (char)layoutW[i];
-    }
-    if (i != 2)
-    {
-        RegCloseKey( key );
-        return FALSE;
-    }
-    layout[i] = 0;
-
-    size = sizeof(*codepage);
-    if (RegQueryValueExW( key, WINE_DOS_KEYB_CODEPAGE_VALUE, NULL, &type,
-                          (BYTE *)codepage, &size ) != ERROR_SUCCESS ||
-        type != REG_DWORD || size != sizeof(*codepage) || !*codepage || *codepage > 65535)
-        *codepage = 0;
-
-    RegCloseKey( key );
-    return TRUE;
-}
-
-
-static void start_dosbox( const char *appname, const char *args )
-{
-    const WCHAR *config_dir = _wgetenv( L"WINECONFIGDIR" );
-    WCHAR path[MAX_PATH], config[MAX_PATH];
-    HANDLE file;
-    char *p, *prefix, *buffer, app[MAX_PATH];
-    char keyb_layout[WINE_DOS_KEYB_MAX_LAYOUT + 1];
-    int i;
-    NTSTATUS ret = STATUS_OBJECT_NAME_NOT_FOUND;
-    DWORD written, drives = GetLogicalDrives(), keyb_codepage;
-    BOOL have_keyb = get_dos_keyboard( keyb_layout, &keyb_codepage );
-
-    if (!config_dir || !(prefix = wine_get_unix_file_name( config_dir ))) return;
-    if (!GetTempPathW( MAX_PATH, path )) return;
-    if (!GetTempFileNameW( path, L"cfg", 0, config )) return;
-    if (!GetCurrentDirectoryW( MAX_PATH, path )) return;
-    if (!GetShortPathNameA( appname, app, MAX_PATH )) return;
-    GetShortPathNameW( path, path, MAX_PATH );
-    file = CreateFileW( config, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, 0 );
-    if (file == INVALID_HANDLE_VALUE) return;
-
-    buffer = HeapAlloc( GetProcessHeap(), 0, sizeof("[autoexec]") +
-                        sizeof("mount -z c") + sizeof("config -securemode") +
-                        26 * (strlen(prefix) + sizeof("mount c /dosdevices/c:")) +
-                        4 * lstrlenW( path ) +
-                        sizeof("keyb ABCDE 65535") +
-                        6 + strlen( app ) + strlen( args ) + 20 );
-    p = buffer;
-    p += sprintf( p, "[autoexec]\n" );
-    for (i = 25; i >= 0; i--)
-        if (!(drives & (1 << i)))
-        {
-            p += sprintf( p, "mount -z %c\n", 'a' + i );
-            break;
-        }
-    for (i = 0; i <= 25; i++)
-    {
-        if (!(drives & (1 << i))) continue;
-        p += sprintf( p, "mount %c %s/dosdevices/%c:\n", 'a' + i, prefix, 'a' + i );
-    }
-    p += sprintf( p, "%c:\ncd ", path[0] );
-    p += WideCharToMultiByte( CP_UNIXCP, 0, path + 2, -1, p, 4 * lstrlenW(path), NULL, NULL ) - 1;
-    if (have_keyb)
-    {
-        WINE_TRACE( "applying DOS keyboard layout %s, code page %lu\n",
-                    keyb_layout, keyb_codepage );
-        p += sprintf( p, "\nkeyb %s", keyb_layout );
-        if (keyb_codepage) p += sprintf( p, " %lu", keyb_codepage );
-    }
-    p += sprintf( p, "\nconfig -securemode\n" );
-    p += sprintf( p, "%s %s\n", app, args );
-    p += sprintf( p, "exit\n" );
-    if (WriteFile( file, buffer, strlen(buffer), &written, NULL ) && written == strlen(buffer))
-    {
-        const char *args[5];
-        char *config_file = wine_get_unix_file_name( config );
-        args[0] = DOSBOX;
-        args[1] = "-userconf";
-        args[2] = "-conf";
-        args[3] = config_file;
-        args[4] = NULL;
-        ret = __wine_unix_spawnvp( (char **)args, TRUE );
-    }
-    CloseHandle( file );
-    DeleteFileW( config );
-    HeapFree( GetProcessHeap(), 0, buffer );
-    if (FAILED(ret)) MESSAGE( "winevdm: %s is a DOS application, you need to install DOSBox.\n", appname );
-    ExitProcess( ret );
-}
-
+static void start_ntvdm( const char *appname, const char *args );
 
 /***********************************************************************
  *           read_pif_file
@@ -370,7 +248,7 @@ static VOID pif_cmd( char *filename, char *cmdline)
      * - hot key's
      * - etc.
      */ 
-    start_dosbox( progpath, cmdline );
+    start_ntvdm( progpath, cmdline );
 }
 
 /***********************************************************************
@@ -484,6 +362,96 @@ static char *build_command_line( char **argv )
 }
 
 
+static char *append_ntvdm_arg( char *dst, const char *src )
+{
+    unsigned int backslashes = 0;
+
+    *dst++ = '"';
+    while (*src)
+    {
+        if (*src == '\\')
+        {
+            *dst++ = *src++;
+            backslashes++;
+            continue;
+        }
+
+        if (*src == '"')
+        {
+            while (backslashes--) *dst++ = '\\';
+            *dst++ = '\\';
+            *dst++ = *src++;
+            backslashes = 0;
+            continue;
+        }
+
+        backslashes = 0;
+        *dst++ = *src++;
+    }
+
+    while (backslashes--) *dst++ = '\\';
+    *dst++ = '"';
+    return dst;
+}
+
+
+/***********************************************************************
+ *           start_ntvdm
+ *
+ * Hand DOS execution to Water's NTVDM host.  Keeping this process boundary
+ * separate from the Win16 loader lets NTVDM replace its temporary DOSBox
+ * backend incrementally.
+ */
+static void start_ntvdm( const char *appname, const char *args )
+{
+    STARTUPINFOA startup;
+    PROCESS_INFORMATION process;
+    char ntvdm[MAX_PATH], *command, *p;
+    DWORD exit_code = 1;
+    SIZE_T size;
+
+    if (!SearchPathA( NULL, "ntvdm.exe", NULL, ARRAY_SIZE(ntvdm), ntvdm, NULL ))
+    {
+        WINE_MESSAGE( "winevdm: ntvdm.exe is unavailable\n" );
+        ExitProcess( 1 );
+    }
+
+    size = 2 * strlen(ntvdm) + 2 * strlen(appname) + strlen(args) + 32;
+    if (!(command = HeapAlloc( GetProcessHeap(), 0, size ))) ExitProcess( 1 );
+
+    p = command;
+    p = append_ntvdm_arg( p, ntvdm );
+    memcpy( p, " --app-name ", 12 );
+    p += 12;
+    p = append_ntvdm_arg( p, appname );
+    if (*args)
+    {
+        *p++ = ' ';
+        strcpy( p, args );
+    }
+    else *p = 0;
+
+    ZeroMemory( &startup, sizeof(startup) );
+    startup.cb = sizeof(startup);
+    ZeroMemory( &process, sizeof(process) );
+
+    WINE_TRACE( "starting NTVDM: %s\n", debugstr_a(command) );
+
+    if (CreateProcessA( ntvdm, command, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process ))
+    {
+        WaitForSingleObject( process.hProcess, INFINITE );
+        GetExitCodeProcess( process.hProcess, &exit_code );
+        CloseHandle( process.hThread );
+        CloseHandle( process.hProcess );
+    }
+    else
+        WINE_MESSAGE( "winevdm: unable to start ntvdm.exe: error %lu\n", GetLastError() );
+
+    HeapFree( GetProcessHeap(), 0, command );
+    ExitProcess( exit_code );
+}
+
+
 /***********************************************************************
  *           usage
  */
@@ -563,7 +531,7 @@ int main( int argc, char *argv[] )
                 pif_cmd( appname, cmdline + 1);
             else
                 /* try DOS format */
-                start_dosbox( appname, cmdline + 1 );
+                start_ntvdm( appname, cmdline + 1 );
         }
 
         WINE_MESSAGE( "winevdm: can't exec '%s': ", appname );
