@@ -329,7 +329,7 @@ static INT21_BOOT_CONFIG boot_config;
  */
 static void INT21_InitMemoryConfig(void)
 {
-    RTL_OSVERSIONINFOEXW info;
+    BYTE dos_major;
 
     if (memory_config_initialized) return;
     memory_config_initialized = TRUE;
@@ -343,12 +343,14 @@ static void INT21_InitMemoryConfig(void)
         return;
     }
 
-    info.dwOSVersionInfoSize = sizeof(info);
-    if (!RtlGetVersion( &info ) && info.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
+    dos_major = HIBYTE(HIWORD(GetVersion16()));
+    if (dos_major >= 7)
     {
         umb_linked = TRUE;
-        TRACE( "Win9x DOS=UMB default: UMB chain linked\n" );
+        TRACE( "DOS %u.x Win9x UMB default: UMB chain linked\n", dos_major );
     }
+    else
+        TRACE( "DOS %u.x: UMB chain remains unlinked without DOS=UMB\n", dos_major );
 }
 
 static LONG INT21_WriteStdout( const void *buffer, DWORD size )
@@ -441,15 +443,17 @@ static BYTE INT21_GetBootDrive(void)
  *
  * Read the CONFIG.SYS directives for which Water already has real backing
  * state.  Do not pretend to install DEVICE drivers or implement FILES,
- * FCBS, STACKS, COUNTRY, or SHELL here.  For DOS 6+ multi-config files,
- * only global lines and [common] are unconditionally safe to apply.
+ * FCBS, STACKS, COUNTRY, or SHELL here.  DOS 6+ publishes the selected
+ * multi-config block through the CONFIG environment variable, so apply that
+ * block in addition to global lines and every [common] block.
  */
 static void INT21_LoadBootConfig(void)
 {
     static const DWORD max_config_size = 64 * 1024;
     char path[] = "C:\\CONFIG.SYS";
+    char selected[72];
     HANDLE file;
-    DWORD size, read;
+    DWORD size, read, selected_len;
     char *buffer, *line;
     BYTE boot_drive;
     BOOL active = TRUE;
@@ -460,6 +464,11 @@ static void INT21_LoadBootConfig(void)
     boot_config.buffers_lookahead = 1;
     boot_config.last_drive = 0;
     boot_config.umb_linked = -1;
+
+    selected_len = GetEnvironmentVariableA( "CONFIG", selected, sizeof(selected) );
+    if (!selected_len || selected_len >= sizeof(selected)) selected[0] = 0;
+    TRACE( "CONFIG.SYS selected block: %s\n",
+           selected[0] ? debugstr_a(selected) : "(none)" );
 
     boot_drive = INT21_GetBootDrive();
     if (!boot_drive || boot_drive > MAX_DOS_DRIVES) return;
@@ -533,7 +542,8 @@ static void INT21_LoadBootConfig(void)
                        (section_end[-1] == ' ' || section_end[-1] == '\t'))
                     section_end--;
                 *section_end = 0;
-                active = !_stricmp( p + 1, "common" );
+                active = !_stricmp( p + 1, "common" ) ||
+                         (selected[0] && !_stricmp( p + 1, selected ));
             }
             else active = FALSE;
             line = next;
