@@ -33,6 +33,7 @@
 #include "winternl.h"
 #include "ddk/ntddk.h"
 #include "kernel16_private.h"
+#include "win386.h"
 #include "wine/exception.h"
 #include "wine/debug.h"
 
@@ -393,6 +394,28 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
 }
 
 
+/*
+ * Water uses one KRNL386 binary for several historical personalities.
+ * DOS-based Windows 3.0/3.1 enhanced mode must not see the later NT WOW,
+ * Win95, or Win98 KERNEL extension ordinals that happen to exist in that
+ * unified binary.
+ */
+static BOOL win386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
+{
+    const BYTE *name;
+
+    if (!WIN386_QuerySession( NULL ) || !module->ne_restab) return FALSE;
+
+    name = (const BYTE *)module + module->ne_restab;
+    if (*name != 6 || _strnicmp( (const char *)name + 1, "KERNEL", 6 )) return FALSE;
+
+    return ordinal == 495 ||
+           (ordinal >= 500 && ordinal <= 568) ||
+           (ordinal >= 600 && ordinal <= 653) ||
+           (ordinal >= 700 && ordinal <= 704);
+}
+
+
 /***********************************************************************
  *		NE_GetEntryPoint
  */
@@ -413,6 +436,12 @@ FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
     ET_BUNDLE *bundle;
 
     if (!(pModule = NE_GetPtr( hModule ))) return 0;
+
+    if (win386_hides_kernel_ordinal( pModule, ordinal ))
+    {
+        TRACE( "hiding post-Windows-3.1 KERNEL ordinal %u from WIN386 session\n", ordinal );
+        return 0;
+    }
 
     bundle = (ET_BUNDLE *)((BYTE *)pModule + pModule->ne_enttab);
     while ((ordinal < bundle->first + 1) || (ordinal > bundle->last))
