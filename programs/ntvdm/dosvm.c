@@ -43,12 +43,14 @@ static BOOL build_environment(struct dos_process *process, const char *path)
     BYTE *env;
     char short_path[MAX_PATH];
     SIZE_T path_len, capacity;
+    DWORD short_len;
     WORD strings = 1;
 
     env = dos_linear(process, DOS_ENV_SEGMENT, 0, 0x1000);
     if (!env) return FALSE;
 
-    if (!GetShortPathNameA(path, short_path, ARRAY_SIZE(short_path)))
+    short_len = GetShortPathNameA(path, short_path, ARRAY_SIZE(short_path));
+    if (!short_len || short_len >= ARRAY_SIZE(short_path))
     {
         if (strlen(path) >= ARRAY_SIZE(short_path)) return FALSE;
         strcpy(short_path, path);
@@ -152,7 +154,7 @@ static BOOL load_com(HANDLE file, struct dos_process *process)
 {
     LARGE_INTEGER size;
     BYTE *image, *stack;
-    DWORD read;
+    DWORD image_size, read;
 
     if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 ||
         size.QuadPart > DOS_COM_MAX_IMAGE_SIZE)
@@ -161,11 +163,12 @@ static BOOL load_com(HANDLE file, struct dos_process *process)
         return FALSE;
     }
 
-    image = dos_linear(process, DOS_PSP_SEGMENT, DOS_COM_ENTRY_OFFSET, size.QuadPart);
+    image_size = size.QuadPart;
+    image = dos_linear(process, DOS_PSP_SEGMENT, DOS_COM_ENTRY_OFFSET, image_size);
     if (!image) return FALSE;
 
-    if (size.QuadPart &&
-        (!ReadFile(file, image, size.QuadPart, &read, NULL) || read != size.QuadPart))
+    if (image_size &&
+        (!ReadFile(file, image, image_size, &read, NULL) || read != image_size))
         return FALSE;
 
     /*
@@ -177,7 +180,7 @@ static BOOL load_com(HANDLE file, struct dos_process *process)
     stack[0] = 0;
     stack[1] = 0;
 
-    process->image_size = size.QuadPart;
+    process->image_size = image_size;
     process->cpu.cs = DOS_PSP_SEGMENT;
     process->cpu.ds = DOS_PSP_SEGMENT;
     process->cpu.es = DOS_PSP_SEGMENT;
