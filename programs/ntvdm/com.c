@@ -11,6 +11,13 @@
 #include "com.h"
 #include "dosvm.h"
 
+/*
+ * NT DOS uses FF00h as a full-buffer sentinel while loading a COM image.
+ * A short read succeeds; filling all FF00h bytes is treated as insufficient
+ * memory.  Keep this NT-specific quirk out of the shared DOS ABI constants.
+ */
+#define NTDOS_COM_MAX_IMAGE_SIZE 0xfeff
+
 BOOL dos_load_com(HANDLE file, struct dos_process *process)
 {
     LARGE_INTEGER size;
@@ -24,7 +31,7 @@ BOOL dos_load_com(HANDLE file, struct dos_process *process)
      * reports insufficient memory instead of accepting the image.  Thus the
      * largest accepted COM file is FEFFh bytes.
      */
-    if (size.QuadPart > WINE_DOS_COM_MAX_IMAGE_SIZE)
+    if (size.QuadPart > NTDOS_COM_MAX_IMAGE_SIZE)
     {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return FALSE;
