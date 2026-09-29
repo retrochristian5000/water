@@ -2819,6 +2819,14 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
 
     if (count > ARRAY_SIZE(args))
     {
+        /*
+         * CallProc32W is the Pascal-form entry point, so its variable argument
+         * block is callee-cleaned.  Preserve the Win16 stack for malformed but
+         * physically representable calls; never trust a byte count that cannot
+         * fit in a 64K Win16 stack.
+         */
+        if (count <= (0xffffu - 3 * sizeof(DWORD)) / sizeof(DWORD))
+            stack16_pop( (3 + count) * sizeof(DWORD) );
         SetLastError( ERROR_INVALID_PARAMETER );
         return 0;
     }
