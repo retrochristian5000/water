@@ -105,15 +105,30 @@ static LPVOID DPMI_xalloc( DWORD len )
         ret = VirtualAlloc( NULL, len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
     else
     {
+        MEMORY_BASIC_INFORMATION mbi;
+
         ret = NULL;
-        for (; candidate <= 0xffffffffu; candidate += 0x10000)
+        for (;;)
         {
             end = candidate + len;
             if (end < candidate || end > 0x100000000ULL) break;
 
+            if (VirtualQuery( (void *)candidate, &mbi, sizeof(mbi) ) &&
+                mbi.State != MEM_FREE)
+            {
+                UINT_PTR next = (UINT_PTR)mbi.BaseAddress + mbi.RegionSize;
+
+                if (next <= candidate || next > 0xffff0000u) break;
+                candidate = (next + 0xffffu) & ~(UINT_PTR)0xffffu;
+                continue;
+            }
+
             ret = VirtualAlloc( (void *)candidate, len,
                                 MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
             if (ret) break;
+
+            if (candidate > 0xffff0000u) break;
+            candidate += 0x10000u;
         }
     }
 
