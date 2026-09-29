@@ -463,6 +463,12 @@ WORD WINAPI K32WOWHandle16( HANDLE handle, WOW_HANDLE_TYPE type )
 BOOL WINAPI K32WOWCallback16Ex( DWORD vpfn16, DWORD dwFlags,
                                 DWORD cbArgs, LPVOID pArgs, LPDWORD pdwRetCode )
 {
+    if (cbArgs > WCB16_MAX_CBARGS)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
     /*
      * Arguments must be prepared in the correct order by the caller
      * (both for PASCAL and CDECL calling convention), so we simply
