@@ -20,9 +20,11 @@
 WINE_DEFAULT_DEBUG_CHANNEL(ntvdm);
 
 typedef BOOL (WINAPI *w32_init_proc)(BOOL);
+typedef void (__cdecl *w32_register_dos_int21_proc)(void *);
 typedef HINSTANCE16 (WINAPI *load_library16_proc)(LPCSTR);
 typedef HINSTANCE16 (WINAPI *load_module16_proc)(LPCSTR, LPVOID);
 typedef SEGPTR (WINAPI *map_ls_proc)(void *);
+typedef void *(WINAPI *map_sl_proc)(SEGPTR);
 typedef VOID (WINAPI *release_thunk_lock_proc)(DWORD *);
 typedef VOID (WINAPI *restore_thunk_lock_proc)(DWORD);
 
@@ -31,9 +33,211 @@ struct wow_kernel_exports
     load_library16_proc load_library16;
     load_module16_proc load_module16;
     map_ls_proc map_ls;
+    map_sl_proc map_sl;
     release_thunk_lock_proc release_thunk_lock;
     restore_thunk_lock_proc restore_thunk_lock;
 };
+
+struct wow_dos_state
+{
+    BYTE current_drive;
+    char directory[26][MAX_PATH];
+};
+
+static struct wow_dos_state wow_dos;
+static map_sl_proc wow_map_sl;
+
+static void set_reg_word( DWORD *reg, WORD value )
+{
+    *reg = (*reg & 0xffff0000u) | value;
+}
+
+static void set_reg_low_byte( DWORD *reg, BYTE value )
+{
+    *reg = (*reg & 0xffffff00u) | value;
+}
+
+static void set_reg_high_byte( DWORD *reg, BYTE value )
+{
+    *reg = (*reg & 0xffff00ffu) | ((DWORD)value << 8);
+}
+
+static void wow_dos_success( I386_CONTEXT *context )
+{
+    context->EFlags &= ~1u;
+}
+
+static void wow_dos_error( I386_CONTEXT *context, DWORD error )
+{
+    if (!error) error = ERROR_INVALID_FUNCTION;
+    SetLastError( error );
+    set_reg_word( &context->Eax, (WORD)error );
+    context->EFlags |= 1;
+}
+
+static BOOL wow_dos_refresh_directory(void)
+{
+    char path[MAX_PATH];
+    DWORD len;
+    BYTE drive;
+
+    len = GetCurrentDirectoryA( ARRAY_SIZE(path), path );
+    if (!len || len >= ARRAY_SIZE(path) || path[1] != ':') return FALSE;
+
+    if (path[0] >= 'a' && path[0] <= 'z') path[0] -= 'a' - 'A';
+    if (path[0] < 'A' || path[0] > 'Z') return FALSE;
+
+    drive = path[0] - 'A';
+    wow_dos.current_drive = drive;
+    lstrcpynA( wow_dos.directory[drive], path, ARRAY_SIZE(wow_dos.directory[drive]) );
+    return TRUE;
+}
+
+static void wow_dos_init(void)
+{
+    memset( &wow_dos, 0, sizeof(wow_dos) );
+    if (!wow_dos_refresh_directory())
+    {
+        wow_dos.current_drive = 2;  /* C: */
+        lstrcpyA( wow_dos.directory[2], "C:\\" );
+    }
+}
+
+static BOOL wow_dos_select_drive( I386_CONTEXT *context )
+{
+    BYTE drive = LOWORD(context->Edx) & 0xff;
+    char root[] = "A:\\";
+    const char *directory;
+
+    if (drive < ARRAY_SIZE(wow_dos.directory))
+    {
+        root[0] += drive;
+        if (GetDriveTypeA( root ) != DRIVE_NO_ROOT_DIR)
+        {
+            directory = wow_dos.directory[drive][0] ? wow_dos.directory[drive] : root;
+            if (SetCurrentDirectoryA( directory ))
+            {
+                wow_dos.current_drive = drive;
+                wow_dos_refresh_directory();
+            }
+        }
+    }
+
+    /* DOS AH=0Eh reports the logical-drive count in AL and has no CF error. */
+    set_reg_low_byte( &context->Eax, ARRAY_SIZE(wow_dos.directory) );
+    wow_dos_success( context );
+    return TRUE;
+}
+
+static BOOL wow_dos_set_current_directory( I386_CONTEXT *context )
+{
+    const char *path;
+
+    if (!wow_map_sl ||
+        !(path = wow_map_sl( MAKESEGPTR( (WORD)context->SegDs, LOWORD(context->Edx) ) )))
+    {
+        wow_dos_error( context, ERROR_INVALID_ADDRESS );
+        return TRUE;
+    }
+
+    if (!SetCurrentDirectoryA( path ))
+    {
+        wow_dos_error( context, GetLastError() );
+        return TRUE;
+    }
+
+    wow_dos_refresh_directory();
+    wow_dos_success( context );
+    return TRUE;
+}
+
+static BOOL wow_dos_get_current_directory( I386_CONTEXT *context )
+{
+    BYTE requested = LOWORD(context->Edx) & 0xff;
+    BYTE drive = requested ? requested - 1 : wow_dos.current_drive;
+    char root[] = "A:\\";
+    const char *path, *relative;
+    char *buffer;
+
+    if (drive >= ARRAY_SIZE(wow_dos.directory) || !wow_map_sl ||
+        !(buffer = wow_map_sl( MAKESEGPTR( (WORD)context->SegDs, LOWORD(context->Esi) ) )))
+    {
+        wow_dos_error( context, ERROR_INVALID_DRIVE );
+        return TRUE;
+    }
+
+    if (!wow_dos.directory[drive][0])
+    {
+        root[0] += drive;
+        if (GetDriveTypeA( root ) == DRIVE_NO_ROOT_DIR)
+        {
+            wow_dos_error( context, ERROR_INVALID_DRIVE );
+            return TRUE;
+        }
+        lstrcpyA( wow_dos.directory[drive], root );
+    }
+
+    path = wow_dos.directory[drive];
+    relative = path;
+    if (path[1] == ':')
+    {
+        relative = path + 2;
+        while (*relative == '\\' || *relative == '/') relative++;
+    }
+
+    /* DOS AH=47h specifies a 64-byte caller buffer. */
+    lstrcpynA( buffer, relative, 64 );
+    set_reg_word( &context->Eax, 0x0100 );
+    wow_dos_success( context );
+    return TRUE;
+}
+
+static BOOL WINAPI wow_ntvdm_int21( I386_CONTEXT *context )
+{
+    SYSTEMTIME time;
+    BYTE function;
+
+    if (!context) return FALSE;
+    function = (context->Eax >> 8) & 0xff;
+
+    switch (function)
+    {
+    case 0x0e:  /* select default drive */
+        return wow_dos_select_drive( context );
+
+    case 0x19:  /* get default drive */
+        set_reg_low_byte( &context->Eax, wow_dos.current_drive );
+        wow_dos_success( context );
+        return TRUE;
+
+    case 0x2a:  /* get date */
+        GetLocalTime( &time );
+        set_reg_word( &context->Ecx, time.wYear );
+        set_reg_high_byte( &context->Edx, time.wMonth );
+        set_reg_low_byte( &context->Edx, time.wDay );
+        set_reg_low_byte( &context->Eax, time.wDayOfWeek );
+        wow_dos_success( context );
+        return TRUE;
+
+    case 0x2c:  /* get time */
+        GetLocalTime( &time );
+        set_reg_high_byte( &context->Ecx, time.wHour );
+        set_reg_low_byte( &context->Ecx, time.wMinute );
+        set_reg_high_byte( &context->Edx, time.wSecond );
+        set_reg_low_byte( &context->Edx, time.wMilliseconds / 10 );
+        wow_dos_success( context );
+        return TRUE;
+
+    case 0x3b:  /* set current directory */
+        return wow_dos_set_current_directory( context );
+
+    case 0x47:  /* get current directory */
+        return wow_dos_get_current_directory( context );
+
+    default:
+        return FALSE;
+    }
+}
 
 static char *build_win16_command_line( char **argv )
 {
@@ -127,13 +331,14 @@ static BOOL load_wow_kernel( HMODULE kernel, struct wow_kernel_exports *exports 
     exports->load_library16 = (load_library16_proc)GetProcAddress( kernel, "LoadLibrary16" );
     exports->load_module16 = (load_module16_proc)GetProcAddress( kernel, "LoadModule16" );
     exports->map_ls = (map_ls_proc)GetProcAddress( kernel, "MapLS" );
+    exports->map_sl = (map_sl_proc)GetProcAddress( kernel, "MapSL" );
     exports->release_thunk_lock =
         (release_thunk_lock_proc)GetProcAddress( kernel, "ReleaseThunkLock" );
     exports->restore_thunk_lock =
         (restore_thunk_lock_proc)GetProcAddress( kernel, "RestoreThunkLock" );
 
     return exports->load_library16 && exports->load_module16 && exports->map_ls &&
-           exports->release_thunk_lock && exports->restore_thunk_lock;
+           exports->map_sl && exports->release_thunk_lock && exports->restore_thunk_lock;
 }
 
 int wow_run_app( const char *appname, char **argv )
@@ -143,6 +348,7 @@ int wow_run_app( const char *appname, char **argv )
     STARTUPINFOA startup;
     HINSTANCE16 instance;
     w32_init_proc w32_init;
+    w32_register_dos_int21_proc register_dos_int21;
     HMODULE wow32, kernel;
     DWORD lock_count;
     WORD show_cmd[2];
@@ -168,6 +374,18 @@ int wow_run_app( const char *appname, char **argv )
         ERR( "unable to load KRNL386 NT WOW entry points\n" );
         return 1;
     }
+
+    register_dos_int21 =
+        (w32_register_dos_int21_proc)GetProcAddress( wow32, "__wine_W32RegisterDosInt21Handler" );
+    if (!register_dos_int21)
+    {
+        ERR( "WOW32 does not provide the NTVDM DOS service bridge\n" );
+        return 1;
+    }
+
+    wow_map_sl = kernel_exports.map_sl;
+    wow_dos_init();
+    register_dos_int21( wow_ntvdm_int21 );
 
     if (!(cmdline = build_win16_command_line( argv ))) return 1;
 
