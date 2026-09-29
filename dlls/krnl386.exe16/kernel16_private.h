@@ -227,6 +227,9 @@ extern HGLOBAL16 GLOBAL_Alloc( WORD flags, DWORD size, HGLOBAL16 hOwner, struct 
 extern DWORD __wine_emulate_instruction( EXCEPTION_RECORD *rec, I386_CONTEXT *context );
 extern LONG CALLBACK INSTR_vectored_handler( EXCEPTION_POINTERS *ptrs );
 
+/* kernel.c */
+extern BOOL kernel_is_nt_wow_session(void);
+
 /* msdos.c */
 extern void MSDOS_InitConfig(void);
 
