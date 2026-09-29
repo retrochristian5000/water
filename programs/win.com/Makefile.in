@@ -1,0 +1,7 @@
+MODULE = win.com
+IMPORTS = kernelbase
+
+EXTRADLLFLAGS = -mwindows
+
+SOURCES = \
+	main.c
