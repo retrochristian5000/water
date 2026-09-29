@@ -2639,8 +2639,10 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
  *           WOW16Call               (KERNEL.500)
  *
  * Bridge the NT WOW16CALL stack format to wow32.dll's W32Dispatch path.
- * The first argument is the byte count of the 16-bit API arguments.  The
- * thunk procedure address follows those bytes on the 16-bit stack.
+ * NT's thunk macro pushes the API argument-byte count, then the high and low
+ * words of wCallID.  Wine's varargs relay presents those fixed fields here as
+ * low call-ID word, high call-ID word, and byte count; VA_LIST16 starts at the
+ * original application arguments.
  */
 DWORD WINAPIV WOW16Call( WORD call_id_low, WORD call_id_high, WORD cb_args, VA_LIST16 args )
 {
@@ -2648,7 +2650,7 @@ DWORD WINAPIV WOW16Call( WORD call_id_low, WORD call_id_high, WORD cb_args, VA_L
     WINEVDMFRAME *frame;
     STACK16FRAME *stack = CURRENT_STACK16;
     HMODULE module;
-    DWORD calladdr, ret = 0, mutex_count;
+    DWORD call_id, ret = 0, mutex_count;
     SIZE_T frame_size;
     unsigned int i;
 
@@ -2677,7 +2679,7 @@ DWORD WINAPIV WOW16Call( WORD call_id_low, WORD call_id_high, WORD cb_args, VA_L
      * those fixed words here as low, high, byte-count and leaves the original
      * application arguments in the VA_LIST16.
      */
-    calladdr = MAKELONG( call_id_low, call_id_high );
+    call_id = MAKELONG( call_id_low, call_id_high );
 
     frame->wTDB = GetCurrentTask();
     frame->wLocalBP = stack->bp;
@@ -2688,7 +2690,7 @@ DWORD WINAPIV WOW16Call( WORD call_id_low, WORD call_id_high, WORD cb_args, VA_L
     frame->wCX = LOWORD( stack->ecx );
     frame->wES = stack->es;
     frame->wBP = LOWORD( stack->ebp );
-    frame->wCallID = calladdr;
+    frame->wCallID = call_id;
     frame->cbArgs = cb_args;
     frame->vpCSIP = MAKESEGPTR( stack->cs, stack->ip );
 
