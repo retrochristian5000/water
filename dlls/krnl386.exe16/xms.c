@@ -1,9 +1,10 @@
 /*
  * XMS 2.0 compatibility for Win16 DOS services
  *
- * Microsoft HIMEM.SYS exposes this interface through INT 2fh/AX=4300h
- * and AX=4310h.  Water does not load CONFIG.SYS device drivers, so the
- * surviving Win16 DOS layer provides the XMS control entry directly.
+ * Microsoft HIMEM.SYS owns the general XMS/HMA/A20 services. When EMM386 is
+ * loaded to provide UMBs, it answers the XMS upper-memory allocation calls.
+ * Water still exposes one compatibility entry point, but keeps those owners
+ * separate internally.
  */
 
 #include <string.h>
@@ -13,6 +14,7 @@
 #include "wine/winbase16.h"
 #include "wine/debug.h"
 #include "dosexe.h"
+#include "../../programs/emm386/emm386.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(xms);
 
@@ -38,9 +40,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(xms);
 #define XMS_ERR_LOCKED           0xab
 #define XMS_ERR_LOCK_OVERFLOW    0xac
 #define XMS_ERR_LOCK_FAILED      0xad
-#define XMS_ERR_UMB_SMALLER      0xb0
-#define XMS_ERR_UMB_NONE         0xb1
-#define XMS_ERR_UMB_INVALID      0xb2
 
 struct xms_block
 {
@@ -61,7 +60,6 @@ struct xms_move
 #pragma pack(pop)
 
 static struct xms_block xms_blocks[XMS_MAX_HANDLES];
-static WORD xms_umb_segments[XMS_MAX_HANDLES];
 static BOOL xms_hma_in_use;
 static BOOL xms_global_a20;
 static BYTE xms_local_a20;
@@ -102,36 +100,6 @@ static WORD xms_find_free_handle(void)
     for (i = 0; i < XMS_MAX_HANDLES; i++)
         if (!xms_blocks[i].global) return i + 1;
     return 0;
-}
-
-static BOOL xms_track_umb(WORD segment)
-{
-    unsigned int i;
-
-    for (i = 0; i < XMS_MAX_HANDLES; i++)
-    {
-        if (!xms_umb_segments[i])
-        {
-            xms_umb_segments[i] = segment;
-            return TRUE;
-        }
-    }
-    return FALSE;
-}
-
-static BOOL xms_owns_umb(WORD segment, unsigned int *index)
-{
-    unsigned int i;
-
-    for (i = 0; i < XMS_MAX_HANDLES; i++)
-    {
-        if (xms_umb_segments[i] == segment)
-        {
-            if (index) *index = i;
-            return TRUE;
-        }
-    }
-    return FALSE;
 }
 
 static DWORD xms_available_kb(void)
@@ -464,52 +432,13 @@ void DOSVM_XMSHandler(I386_CONTEXT *context)
         break;
     }
 
-    case 0x10:  /* Request Upper Memory Block */
-    {
-        UINT paragraphs = DX_reg(context);
-        WORD segment = 0;
-
-        if (DOSMEM_AllocBlockHigh( paragraphs << 4, &segment, 0 ))
-        {
-            if (!xms_track_umb( segment ))
-            {
-                DOSMEM_FreeBlock( DOSMEM_MapDosToLinear( (UINT)segment << 4 ) );
-                SET_AX( context, 0 );
-                SET_DX( context, DOSMEM_AvailableHigh() >> 4 );
-                SET_BL( context, XMS_ERR_UMB_NONE );
-                break;
-            }
-
-            SET_AX( context, 1 );
-            SET_BX( context, segment );
-            SET_DX( context, paragraphs );
-        }
-        else
-        {
-            UINT largest = DOSMEM_AvailableHigh() >> 4;
-
-            SET_AX( context, 0 );
-            SET_DX( context, largest );
-            SET_BL( context, largest ? XMS_ERR_UMB_SMALLER : XMS_ERR_UMB_NONE );
-        }
+    case 0x10:  /* Request Upper Memory Block -- EMM386 provider */
+        EMM386_XMSRequestUMB( context );
         break;
-    }
 
-    case 0x11:  /* Release Upper Memory Block */
-    {
-        WORD segment = DX_reg(context);
-        unsigned int index;
-
-        if (!xms_owns_umb( segment, &index ) ||
-            !DOSMEM_FreeBlock( DOSMEM_MapDosToLinear( (UINT)segment << 4 ) ))
-            xms_failure( context, XMS_ERR_UMB_INVALID );
-        else
-        {
-            xms_umb_segments[index] = 0;
-            xms_success( context );
-        }
+    case 0x11:  /* Release Upper Memory Block -- EMM386 provider */
+        EMM386_XMSReleaseUMB( context );
         break;
-    }
 
     default:
         WARN("XMS function %02x not implemented\n", AH_reg(context));

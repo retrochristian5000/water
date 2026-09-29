@@ -16,6 +16,7 @@ SOURCES = \
 	atom.c \
 	dosmem.c \
 	error.c \
+	emm386_compat.c \
 	file.c \
 	fpu.c \
 	global.c \
