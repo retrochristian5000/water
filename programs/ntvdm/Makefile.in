@@ -4,6 +4,7 @@ IMPORTS   = advapi32
 EXTRADLLFLAGS = -mconsole
 
 SOURCES = \
+	com.c \
 	dosvm.c \
 	doskrnl.c \
 	sb20.c \

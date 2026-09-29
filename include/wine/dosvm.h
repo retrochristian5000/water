@@ -14,7 +14,13 @@
 #define WINE_DOS_PSP_SEGMENT              0x1000
 #define WINE_DOS_ENV_SEGMENT              0x0f00
 #define WINE_DOS_COM_ENTRY_OFFSET         0x0100
-#define WINE_DOS_COM_MAX_IMAGE_SIZE       0xff00
+#define WINE_DOS_EXEC_HEADER_SIZE          0x001a
+/*
+ * NT DOS probes up to FF00h bytes for a COM image and treats a full read as
+ * "not enough memory"; FEFFh is therefore the largest accepted image.
+ */
+#define WINE_DOS_COM_MAX_IMAGE_SIZE       0xfeff
+#define WINE_DOS_COM_STACK_OFFSET         0xfffe
 #define WINE_DOS_COMMAND_TAIL_MAX         126
 
 #define WINE_DOS_PSP_FCB1_OFFSET          0x5c

@@ -12,6 +12,7 @@
 #include "winbase.h"
 
 #include "dosvm.h"
+#include "com.h"
 #include "doskrnl.h"
 #include "wine/debug.h"
 
@@ -25,7 +26,7 @@ C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, max_handles) == 0x32);
 C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, int21_retf) == 0x50);
 C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, data) == WINE_DOS_PSP_FCB1_OFFSET);
 
-static BYTE *dos_linear(struct dos_process *process, WORD segment, WORD offset, SIZE_T size)
+BYTE *dos_memory_ptr(struct dos_process *process, WORD segment, WORD offset, SIZE_T size)
 {
     SIZE_T linear = ((SIZE_T)segment << 4) + offset;
 
@@ -48,7 +49,7 @@ static BOOL build_environment(struct dos_process *process, const char *path)
     DWORD short_len;
     WORD strings = 1;
 
-    env = dos_linear(process, WINE_DOS_ENV_SEGMENT, 0, 0x1000);
+    env = dos_memory_ptr(process, WINE_DOS_ENV_SEGMENT, 0, 0x1000);
     if (!env) return FALSE;
 
     short_len = GetShortPathNameA(path, short_path, ARRAY_SIZE(short_path));
@@ -87,7 +88,7 @@ static BOOL build_psp(struct dos_process *process, const char *args)
         return FALSE;
     }
 
-    psp = (struct wine_dos_psp *)dos_linear(process, WINE_DOS_PSP_SEGMENT, 0, WINE_DOS_PSP_SIZE);
+    psp = (struct wine_dos_psp *)dos_memory_ptr(process, WINE_DOS_PSP_SEGMENT, 0, WINE_DOS_PSP_SIZE);
     if (!psp) return FALSE;
 
     memset(psp, 0, sizeof(*psp));
@@ -111,6 +112,8 @@ static BOOL build_psp(struct dos_process *process, const char *args)
     psp->max_handles = ARRAY_SIZE(psp->handles);
     psp->handle_table = MAKELONG(FIELD_OFFSET(struct wine_dos_psp, handles), WINE_DOS_PSP_SEGMENT);
     psp->previous_psp = 0xffffffff;
+    /* NT DOS reports 5.00 through the per-process SETVER field by default. */
+    psp->dos_version = 0x0005;
 
     psp->int21_retf[0] = 0xcd;
     psp->int21_retf[1] = 0x21;
@@ -137,60 +140,31 @@ static BOOL build_psp(struct dos_process *process, const char *args)
 
 static enum dos_image_kind detect_image_kind(HANDLE file)
 {
-    BYTE magic[2];
+    BYTE header[WINE_DOS_EXEC_HEADER_SIZE];
+    LARGE_INTEGER zero;
     DWORD read;
 
-    if (!ReadFile(file, magic, sizeof(magic), &read, NULL) || read != sizeof(magic))
+    zero.QuadPart = 0;
+    if (!ReadFile(file, header, sizeof(header), &read, NULL)) return DOS_IMAGE_INVALID;
+    if (!SetFilePointerEx(file, zero, NULL, FILE_BEGIN)) return DOS_IMAGE_INVALID;
+
+    /*
+     * NT DOS follows the DOS EXEC rule here: an empty file is invalid, but a
+     * short non-empty file is a COM image even when its first bytes are "MZ".
+     * Only a complete formatted DOS header is eligible for MZ classification.
+     */
+    if (!read)
+    {
+        SetLastError(ERROR_BAD_FORMAT);
         return DOS_IMAGE_INVALID;
+    }
+    if (read < WINE_DOS_EXEC_HEADER_SIZE) return DOS_IMAGE_COM;
 
-    SetFilePointer(file, 0, NULL, FILE_BEGIN);
-
-    if ((magic[0] == 'M' && magic[1] == 'Z') ||
-        (magic[0] == 'Z' && magic[1] == 'M'))
+    if ((header[0] == 'M' && header[1] == 'Z') ||
+        (header[0] == 'Z' && header[1] == 'M'))
         return DOS_IMAGE_MZ;
 
     return DOS_IMAGE_COM;
-}
-
-static BOOL load_com(HANDLE file, struct dos_process *process)
-{
-    LARGE_INTEGER size;
-    BYTE *image, *stack;
-    DWORD image_size, read;
-
-    if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 ||
-        size.QuadPart > WINE_DOS_COM_MAX_IMAGE_SIZE)
-    {
-        SetLastError(ERROR_BAD_FORMAT);
-        return FALSE;
-    }
-
-    image_size = size.QuadPart;
-    image = dos_linear(process, WINE_DOS_PSP_SEGMENT, WINE_DOS_COM_ENTRY_OFFSET, image_size);
-    if (!image) return FALSE;
-
-    if (image_size &&
-        (!ReadFile(file, image, image_size, &read, NULL) || read != image_size))
-        return FALSE;
-
-    /*
-     * DOS starts .COM files at PSP:0100 with all data segments at the PSP.
-     * The zero word at FFFEh lets a plain RET reach PSP:0000 / INT 20h.
-     */
-    stack = dos_linear(process, WINE_DOS_PSP_SEGMENT, 0xfffe, sizeof(WORD));
-    if (!stack) return FALSE;
-    stack[0] = 0;
-    stack[1] = 0;
-
-    process->image_size = image_size;
-    process->cpu.cs = WINE_DOS_PSP_SEGMENT;
-    process->cpu.ds = WINE_DOS_PSP_SEGMENT;
-    process->cpu.es = WINE_DOS_PSP_SEGMENT;
-    process->cpu.ss = WINE_DOS_PSP_SEGMENT;
-    process->cpu.ip = WINE_DOS_COM_ENTRY_OFFSET;
-    process->cpu.sp = 0xfffe;
-    process->cpu.flags = 0x0200;
-    return TRUE;
 }
 
 enum dos_image_kind dos_prepare_process(const char *path, const char *args,
@@ -234,7 +208,7 @@ enum dos_image_kind dos_prepare_process(const char *path, const char *args,
 
     if (!build_environment(process, path) ||
         !build_psp(process, args) ||
-        !load_com(file, process))
+        !dos_load_com(file, process))
     {
         CloseHandle(file);
         dos_release_process(process);

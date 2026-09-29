@@ -37,6 +37,7 @@ struct dos_process
     BOOL terminated;
 };
 
+BYTE *dos_memory_ptr(struct dos_process *process, WORD segment, WORD offset, SIZE_T size);
 enum dos_image_kind dos_prepare_process(const char *path, const char *args,
                                          struct dos_process *process);
 enum dos_interrupt_result dos_handle_interrupt(struct dos_process *process, BYTE vector);
