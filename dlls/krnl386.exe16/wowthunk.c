@@ -230,12 +230,22 @@ BOOL WINAPI K32WOWGetDescriptor( SEGPTR segptr, LPLDT_ENTRY ldtent )
  */
 LPVOID WINAPI K32WOWGetVDMPointer( DWORD vp, DWORD dwBytes, BOOL fProtectedMode )
 {
-    /* FIXME: add size check too */
+    if (fProtectedMode)
+    {
+        WORD sel = SELECTOROF( vp );
 
-    if ( fProtectedMode )
+        /*
+         * WOWGetVDMPointer expects a valid LDT selector.  MapSL() assumes the
+         * selector is usable and can otherwise turn a stale selector into a
+         * bogus linear address.
+         *
+         * Native retail WOW32 does not use dwBytes for selector-limit checking;
+         * that additional check is specific to checked/debug builds.
+         */
+        if (!ldt_is_valid( sel )) return NULL;
         return MapSL( vp );
-    else
-        return DOSMEM_MapRealToLinear( vp );
+    }
+    return DOSMEM_MapRealToLinear( vp );
 }
 
 /**********************************************************************
