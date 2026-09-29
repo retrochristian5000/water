@@ -27,6 +27,7 @@
 #include "winternl.h"
 #include "wownt32.h"
 #include "wine/winuser16.h"
+#include "wine/win386.h"
 
 #include "kernel16_private.h"
 #include "wine/debug.h"
@@ -119,6 +120,19 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     /* Parse the Win9x boot configuration outside the PE loader lock. */
     MSDOS_InitConfig();
 
+    /*
+     * A DOS-based Windows 3.x enhanced-mode session is owned by WIN386.EXE.
+     * KRNL386 consumes that explicit personality but does not create it; this
+     * keeps the Win3.x VMM path separate from NTVDM/WOW.
+     */
+    {
+        WORD version, current_vm, system_vm;
+
+        if (WIN386_QuerySession( &version, &current_vm, &system_vm ))
+            TRACE( "WIN386 enhanced mode %u.%02u, current VM %u, system VM %u\n",
+                   LOBYTE(version), HIBYTE(version), current_vm, system_vm );
+    }
+
     /* setup emulation of protected instructions from 32-bit code */
     if (GetVersion() & 0x80000000) RtlAddVectoredExceptionHandler( TRUE, INSTR_vectored_handler );
 
@@ -170,6 +184,32 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
 DWORD WINAPI GetVersion16(void)
 {
     static WORD dosver, winver;
+    WORD enhanced_version;
+
+    /*
+     * WIN386 is a DOS-based Windows personality, not NT WOW.  Prefer the
+     * explicit enhanced-mode session version over the host OS personality.
+     */
+    if (WIN386_QuerySession( &enhanced_version, NULL, NULL ))
+    {
+        WORD enhanced_dosver;
+
+        switch (enhanced_version)
+        {
+        case WATER_WIN386_VERSION_30:
+            enhanced_dosver = 0x0500;  /* DOS 5.0 compatibility */
+            break;
+        case WATER_WIN386_VERSION_31:
+        default:
+            enhanced_dosver = 0x0616;  /* DOS 6.22 compatibility */
+            break;
+        }
+
+        TRACE( "WIN386 personality: DOS %d.%02d Win %d.%02d\n",
+               HIBYTE(enhanced_dosver), LOBYTE(enhanced_dosver),
+               LOBYTE(enhanced_version), HIBYTE(enhanced_version) );
+        return MAKELONG( enhanced_version, enhanced_dosver );
+    }
 
     if (!dosver)  /* not determined yet */
     {
@@ -347,10 +387,18 @@ DWORD WINAPI GetWinFlags16(void)
     /* There doesn't seem to be any Pentium flag.  */
     result = cpuflags[processor_level] | WF_ENHANCED | WF_PMODE | WF_80x87 | WF_PAGING;
     if (processor_level >= 4) result |= WF_HASCPUID;
-    ovi.dwOSVersionInfoSize = sizeof(ovi);
-    GetVersionExA(&ovi);
-    if (ovi.dwPlatformId == VER_PLATFORM_WIN32_NT)
-        result |= WF_WIN32WOW; /* undocumented WF_WINNT */
+
+    /*
+     * An active WIN386 session is genuine DOS-based enhanced mode.  Do not
+     * leak the host's NT/WOW flag into that guest personality.
+     */
+    if (!WIN386_QuerySession( NULL, NULL, NULL ))
+    {
+        ovi.dwOSVersionInfoSize = sizeof(ovi);
+        GetVersionExA(&ovi);
+        if (ovi.dwPlatformId == VER_PLATFORM_WIN32_NT)
+            result |= WF_WIN32WOW; /* undocumented WF_WINNT */
+    }
     return result;
 }
 
@@ -365,6 +413,20 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
     {
         WARN("wrong OSVERSIONINFO size from app\n");
         return FALSE;
+    }
+
+    {
+        WORD version;
+
+        if (WIN386_QuerySession( &version, NULL, NULL ))
+        {
+            v->dwMajorVersion = LOBYTE(version);
+            v->dwMinorVersion = HIBYTE(version);
+            v->dwBuildNumber  = 0;
+            v->dwPlatformId   = VER_PLATFORM_WIN32s;
+            v->szCSDVersion[0] = 0;
+            return TRUE;
+        }
     }
 
     info.dwOSVersionInfoSize = sizeof(info);
