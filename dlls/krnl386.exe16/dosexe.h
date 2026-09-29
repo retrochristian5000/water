@@ -199,16 +199,12 @@ extern void WINAPI DOSVM_Int13Handler(I386_CONTEXT *);
 /* int15.c */
 extern void WINAPI DOSVM_Int15Handler(I386_CONTEXT *);
 
-/* int21.c */
+/* programs/ntdos.sys/int21.c (temporary KRNL386 bridge) */
 extern void WINAPI DOSVM_Int21Handler(I386_CONTEXT *);
 
-/* int25.c */
-BOOL DOSVM_RawRead( BYTE, DWORD, DWORD, BYTE *, BOOL );
-void WINAPI DOSVM_Int25Handler( I386_CONTEXT * );
-
-/* int26.c */
-BOOL DOSVM_RawWrite( BYTE, DWORD, DWORD, BYTE *, BOOL );
-void WINAPI DOSVM_Int26Handler( I386_CONTEXT * );
+/* programs/ntdos.sys/absdisk.c (temporary KRNL386 bridge) */
+void WINAPI DOSVM_Int25Handler(I386_CONTEXT *);
+void WINAPI DOSVM_Int26Handler(I386_CONTEXT *);
 
 /* int2f.c */
 extern void WINAPI DOSVM_Int2fHandler(I386_CONTEXT *);
