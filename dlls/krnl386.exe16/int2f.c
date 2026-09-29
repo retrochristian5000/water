@@ -31,7 +31,7 @@
 #include "ntddstor.h"
 #include "ntddcdrm.h"
 #include "dosexe.h"
-#include "wine/win386.h"
+#include "win386.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);
 
@@ -66,9 +66,9 @@ static void MSCDEX_Handler( I386_CONTEXT *context );
 static WORD get_windows_mux_version(void)
 {
     RTL_OSVERSIONINFOEXW info;
-    WORD version;
+    struct win386_session_info session;
 
-    if (WIN386_QuerySession( &version, NULL, NULL )) return version;
+    if (WIN386_QuerySession( &session )) return session.windows_version;
 
     info.dwOSVersionInfoSize = sizeof(info);
     if (!RtlGetVersion( &info ) && info.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
@@ -412,6 +412,7 @@ static void do_int2f_16( I386_CONTEXT *context )
 
     case 0x83:  /* Return Current Virtual Machine ID */
         {
+            struct win386_session_info session;
             WORD vm = WATER_WIN386_VM_SYSTEM;
 
             /*
@@ -419,7 +420,7 @@ static void do_int2f_16( I386_CONTEXT *context )
              * VM identity.  Outside that personality preserve the historical
              * Wine fallback of System VM 1.
              */
-            WIN386_QuerySession( NULL, &vm, NULL );
+            if (WIN386_QuerySession( &session )) vm = session.current_vm;
             SET_BX( context, vm );
         }
         break;

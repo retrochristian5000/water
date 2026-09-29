@@ -27,6 +27,9 @@
 #define WATER_WIN386_FLAG_ACTIVE 0x00000001
 #define WATER_WIN386_FLAG_VMM    0x00000002
 
+#define WATER_WIN386_SESSION_SIZE 32
+
+#pragma pack(push,4)
 struct water_win386_session
 {
     DWORD magic;
@@ -40,5 +43,6 @@ struct water_win386_session
     LONG next_vm;
     LONG active_vms;
 };
+#pragma pack(pop)
 
 #endif /* __WINE_WIN386_H */

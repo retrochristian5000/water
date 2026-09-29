@@ -11,12 +11,17 @@
 #include "windef.h"
 #include "winbase.h"
 #include "kernel16_private.h"
-#include "wine/win386.h"
+#include "win386.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(vxd);
 
-BOOL WIN386_QuerySession(WORD *version, WORD *current_vm, WORD *system_vm)
+C_ASSERT(sizeof(struct water_win386_session) == WATER_WIN386_SESSION_SIZE);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, windows_mux_version) == 16);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, dos_version) == 20);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, next_vm) == 24);
+
+BOOL WIN386_QuerySession(struct win386_session_info *info)
 {
     struct water_win386_session *state;
     char mapping_name[64], vm_text[16];
@@ -31,7 +36,7 @@ BOOL WIN386_QuerySession(WORD *version, WORD *current_vm, WORD *system_vm)
     mapping = OpenFileMappingA(FILE_MAP_READ, FALSE, mapping_name);
     if (!mapping) return FALSE;
 
-    state = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(*state));
+    state = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, WATER_WIN386_SESSION_SIZE);
     if (!state)
     {
         CloseHandle(mapping);
@@ -45,63 +50,28 @@ BOOL WIN386_QuerySession(WORD *version, WORD *current_vm, WORD *system_vm)
         !state->system_vm || !state->dos_version)
         goto done;
 
-    if (version) *version = state->windows_mux_version;
-    if (system_vm) *system_vm = state->system_vm;
-
-    len = GetEnvironmentVariableA(WATER_WIN386_VM_ENV, vm_text, ARRAY_SIZE(vm_text));
-    if (len && len < ARRAY_SIZE(vm_text))
+    if (info)
     {
-        char *end;
-        unsigned long parsed = strtoul(vm_text, &end, 10);
+        info->windows_version = state->windows_mux_version;
+        info->dos_version = state->dos_version;
+        info->system_vm = state->system_vm;
 
-        if (!*end && parsed >= state->system_vm &&
-            parsed < (unsigned long)state->next_vm && parsed < 0x10000)
-            vm = parsed;
+        len = GetEnvironmentVariableA(WATER_WIN386_VM_ENV, vm_text, ARRAY_SIZE(vm_text));
+        if (len && len < ARRAY_SIZE(vm_text))
+        {
+            char *end;
+            unsigned long parsed = strtoul(vm_text, &end, 10);
+
+            if (!*end && parsed >= state->system_vm &&
+                parsed < (unsigned long)state->next_vm && parsed < 0x10000)
+                vm = parsed;
+        }
+        info->current_vm = vm;
     }
 
-    if (current_vm) *current_vm = vm;
     ret = TRUE;
 
 done:
-    UnmapViewOfFile(state);
-    CloseHandle(mapping);
-    return ret;
-}
-
-
-BOOL WIN386_QueryDosVersion(WORD *dos_version)
-{
-    struct water_win386_session *state;
-    char mapping_name[64];
-    HANDLE mapping;
-    DWORD len;
-    BOOL ret = FALSE;
-
-    if (!dos_version) return FALSE;
-
-    len = GetEnvironmentVariableA(WATER_WIN386_SESSION_ENV, mapping_name, ARRAY_SIZE(mapping_name));
-    if (!len || len >= ARRAY_SIZE(mapping_name)) return FALSE;
-
-    mapping = OpenFileMappingA(FILE_MAP_READ, FALSE, mapping_name);
-    if (!mapping) return FALSE;
-
-    state = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(*state));
-    if (!state)
-    {
-        CloseHandle(mapping);
-        return FALSE;
-    }
-
-    if (state->magic == WATER_WIN386_MAGIC &&
-        state->abi_version == WATER_WIN386_ABI_VERSION &&
-        (state->flags & WATER_WIN386_FLAG_ACTIVE) &&
-        (state->flags & WATER_WIN386_FLAG_VMM) &&
-        state->dos_version)
-    {
-        *dos_version = state->dos_version;
-        ret = TRUE;
-    }
-
     UnmapViewOfFile(state);
     CloseHandle(mapping);
     return ret;

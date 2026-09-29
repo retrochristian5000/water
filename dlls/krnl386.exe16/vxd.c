@@ -32,6 +32,7 @@
 #include "winternl.h"
 #include "winioctl.h"
 #include "kernel16_private.h"
+#include "win386.h"
 #include "dosexe.h"
 #include "wine/debug.h"
 
@@ -92,9 +93,12 @@ static UINT W32S_offset;
 
 static WORD VXD_WinVersion(void)
 {
+    struct win386_session_info session;
     WORD version;
 
-    if (!WIN386_QuerySession( &version, NULL, NULL ))
+    if (WIN386_QuerySession( &session ))
+        version = session.windows_version;
+    else
         version = LOWORD(GetVersion16());
     return (version >> 8) | (version << 8);
 }

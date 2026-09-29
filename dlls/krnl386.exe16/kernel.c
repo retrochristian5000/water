@@ -27,9 +27,9 @@
 #include "winternl.h"
 #include "wownt32.h"
 #include "wine/winuser16.h"
-#include "wine/win386.h"
 
 #include "kernel16_private.h"
+#include "win386.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
@@ -126,26 +126,23 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
      * keeps the Win3.x VMM path separate from NTVDM/WOW.
      */
     {
-        WORD version, current_vm, system_vm;
+        struct win386_session_info session;
 
-        if (WIN386_QuerySession( &version, &current_vm, &system_vm ))
+        if (WIN386_QuerySession( &session ))
         {
-            WORD dos_version = 0;
-
-            WIN386_QueryDosVersion( &dos_version );
             TRACE( "WIN386 enhanced mode %u.%02u on DOS %u.%02u, current VM %u, system VM %u\n",
-                   LOBYTE(version), HIBYTE(version),
-                   HIBYTE(dos_version), LOBYTE(dos_version),
-                   current_vm, system_vm );
+                   LOBYTE(session.windows_version), HIBYTE(session.windows_version),
+                   HIBYTE(session.dos_version), LOBYTE(session.dos_version),
+                   session.current_vm, session.system_vm );
 
             /*
              * WIN386 loads KRNL386 into the System VM.  Refuse to turn a
              * secondary DOS VM into a Windows kernel VM accidentally.
              */
-            if (current_vm != system_vm)
+            if (session.current_vm != session.system_vm)
             {
                 ERR( "KRNL386 cannot initialize in WIN386 DOS VM %u (system VM is %u)\n",
-                     current_vm, system_vm );
+                     session.current_vm, session.system_vm );
                 done = FALSE;
                 return FALSE;
             }
@@ -211,22 +208,18 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
 DWORD WINAPI GetVersion16(void)
 {
     static WORD dosver, winver;
-    WORD enhanced_version;
+    struct win386_session_info session;
 
     /*
      * WIN386 is a DOS-based Windows personality, not NT WOW.  Prefer the
      * explicit enhanced-mode session version over the host OS personality.
      */
-    if (WIN386_QuerySession( &enhanced_version, NULL, NULL ))
+    if (WIN386_QuerySession( &session ))
     {
-        WORD enhanced_dosver;
-
-        if (!WIN386_QueryDosVersion( &enhanced_dosver )) return 0;
-
         TRACE( "WIN386 personality: DOS %d.%02d Win %d.%02d\n",
-               HIBYTE(enhanced_dosver), LOBYTE(enhanced_dosver),
-               LOBYTE(enhanced_version), HIBYTE(enhanced_version) );
-        return MAKELONG( enhanced_version, enhanced_dosver );
+               HIBYTE(session.dos_version), LOBYTE(session.dos_version),
+               LOBYTE(session.windows_version), HIBYTE(session.windows_version) );
+        return MAKELONG( session.windows_version, session.dos_version );
     }
 
     if (!dosver)  /* not determined yet */
@@ -410,7 +403,7 @@ DWORD WINAPI GetWinFlags16(void)
      * An active WIN386 session is genuine DOS-based enhanced mode.  Do not
      * leak the host's NT/WOW flag into that guest personality.
      */
-    if (!WIN386_QuerySession( NULL, NULL, NULL ))
+    if (!WIN386_QuerySession( NULL ))
     {
         ovi.dwOSVersionInfoSize = sizeof(ovi);
         GetVersionExA(&ovi);
@@ -434,12 +427,12 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
     }
 
     {
-        WORD version;
+        struct win386_session_info session;
 
-        if (WIN386_QuerySession( &version, NULL, NULL ))
+        if (WIN386_QuerySession( &session ))
         {
-            v->dwMajorVersion = LOBYTE(version);
-            v->dwMinorVersion = HIBYTE(version);
+            v->dwMajorVersion = LOBYTE(session.windows_version);
+            v->dwMinorVersion = HIBYTE(session.windows_version);
             v->dwBuildNumber  = 0;
             v->dwPlatformId   = VER_PLATFORM_WIN32s;
             v->szCSDVersion[0] = 0;
