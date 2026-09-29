@@ -408,7 +408,16 @@ HANDLE WINAPI K32WOWHandle32( WORD handle, WOW_HANDLE_TYPE type )
         return gdi_handle32( handle );
 
     case WOW_TYPE_HTASK:
-        return ((TDB *)GlobalLock16(handle))->teb->ClientId.UniqueThread;
+    {
+        TDB *task = GlobalLock16( handle );
+
+        if (!task || !task->teb)
+        {
+            SetLastError( ERROR_INVALID_HANDLE );
+            return NULL;
+        }
+        return task->teb->ClientId.UniqueThread;
+    }
 
     case WOW_TYPE_FULLHWND:
         FIXME( "conversion of full window handles not supported yet\n" );
