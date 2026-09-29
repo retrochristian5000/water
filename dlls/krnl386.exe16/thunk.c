@@ -148,6 +148,25 @@ extern void WINAPI FT_PrologPrime(void);
 extern void WINAPI QT_Thunk(void);
 extern void WINAPI QT_ThunkPrime(void);
 
+/*
+ * Generated thunk code is always x86 code. Its pointer/immediate fields are
+ * 32 bits wide even when Water itself is built for a 64-bit host. Use memcpy
+ * so unaligned instruction operands do not depend on host pointer size or
+ * alignment rules.
+ */
+static void put_x86_dword( BYTE *code, UINT_PTR value )
+{
+    DWORD dword = (DWORD)value;
+    memcpy( code, &dword, sizeof(dword) );
+}
+
+static DWORD get_x86_dword( const BYTE *code )
+{
+    DWORD dword;
+    memcpy( &dword, code, sizeof(dword) );
+    return dword;
+}
+
 /***********************************************************************
  *                                                                     *
  *                 Win95 internal thunks                               *
@@ -196,10 +215,10 @@ static void _write_ftprolog(LPBYTE relayCode ,DWORD *targetTable) {
 
 	x	= relayCode;
 	*x++	= 0x0f;*x++=0xb6;*x++=0xd1; /* movzbl edx,cl */
-	*x++	= 0x8B;*x++=0x14;*x++=0x95;*(DWORD**)x= targetTable;
-	x+=4;	/* mov edx, [4*edx + targetTable] */
-	*x++	= 0x68; *(void **)x = FT_Prolog;
-	x+=4; 	/* push FT_Prolog */
+	*x++	= 0x8B;*x++=0x14;*x++=0x95;put_x86_dword( x, (UINT_PTR)targetTable );
+	x += sizeof(DWORD);\t/* mov edx, [4*edx + targetTable] */
+	*x++	= 0x68; put_x86_dword( x, (UINT_PTR)FT_Prolog );
+	x += sizeof(DWORD); \t/* push FT_Prolog */
 	*x++	= 0xC3;		/* lret */
 	/* fill rest with 0xCC / int 3 */
 }
@@ -223,10 +242,10 @@ static void _write_qtthunk(
 	x	= relayCode;
 	*x++	= 0x33;*x++=0xC9; /* xor ecx,ecx */
 	*x++	= 0x8A;*x++=0x4D;*x++=0xFC; /* movb cl,[ebp-04] */
-	*x++	= 0x8B;*x++=0x14;*x++=0x8D;*(DWORD**)x= targetTable;
-	x+=4;	/* mov edx, [4*ecx + targetTable */
-	*x++	= 0xB8; *(void **)x = QT_Thunk;
-	x+=4; 	/* mov eax , QT_Thunk */
+	*x++	= 0x8B;*x++=0x14;*x++=0x8D;put_x86_dword( x, (UINT_PTR)targetTable );
+	x += sizeof(DWORD);\t/* mov edx, [4*ecx + targetTable */
+	*x++	= 0xB8; put_x86_dword( x, (UINT_PTR)QT_Thunk );
+	x += sizeof(DWORD); \t/* mov eax , QT_Thunk */
 	*x++	= 0xFF; *x++ = 0xE0;	/* jmp eax */
 	/* should fill the rest of the 32 bytes with 0xCC */
 }
@@ -831,8 +850,8 @@ LPVOID WINAPI ThunkInitLSF(
 
 	/* FIXME: add checks for valid code ... */
 	/* write pointers to kernel32.89 and kernel32.90 (+ordinal base of 1) */
-	*(void **)(thunk+0x35) = QT_ThunkPrime;
-	*(void **)(thunk+0x6D) = FT_PrologPrime;
+	put_x86_dword( thunk + 0x35, (UINT_PTR)QT_ThunkPrime );
+	put_x86_dword( thunk + 0x6D, (UINT_PTR)FT_PrologPrime );
 
 	if (!(addr = _loadthunk( dll16, thkbuf, dll32, NULL, len )))
 		return 0;
@@ -874,7 +893,7 @@ void WINAPI __regs_FT_PrologPrime( I386_CONTEXT *context )
     /* Write FT_Prolog call stub */
     targetTableOffset = stack32_pop(context);
     relayCode = (LPBYTE)stack32_pop(context);
-    _write_ftprolog( relayCode, *(DWORD **)(relayCode+targetTableOffset) );
+    _write_ftprolog( relayCode, (DWORD *)(UINT_PTR)get_x86_dword( relayCode + targetTableOffset ) );
 
     /* Jump to the call stub just created */
     context->Eip = (DWORD)(UINT_PTR)relayCode;
@@ -904,7 +923,7 @@ void WINAPI __regs_QT_ThunkPrime( I386_CONTEXT *context )
     /* Write QT_Thunk call stub */
     targetTableOffset = context->Edx;
     relayCode = (LPBYTE)(UINT_PTR)context->Eax;
-    _write_qtthunk( relayCode, *(DWORD **)(relayCode+targetTableOffset) );
+    _write_qtthunk( relayCode, (DWORD *)(UINT_PTR)get_x86_dword( relayCode + targetTableOffset ) );
 
     /* Jump to the call stub just created */
     context->Eip = (DWORD)(UINT_PTR)relayCode;
@@ -1429,7 +1448,7 @@ void WINAPI C16ThkSL(I386_CONTEXT *context)
     *x++ = 0x52;
     *x++ = 0x66; *x++ = 0x52;
     *x++ = 0x66; *x++ = 0x9A;
-    *(void **)x = __wine_call_from_16_thunk; x += sizeof(void *);
+    put_x86_dword( x, (UINT_PTR)__wine_call_from_16_thunk ); x += sizeof(DWORD);
     *(WORD *)x = get_cs(); x += sizeof(WORD);
 
     /* Jump to the stub code just created */
@@ -1478,7 +1497,7 @@ void WINAPI C16ThkSL01(I386_CONTEXT *context)
          */
 
         *x++ = 0x66; *x++ = 0x33; *x++ = 0xC0;
-        *x++ = 0x66; *x++ = 0xBA; *(void **)x = td; x += sizeof(void *);
+        *x++ = 0x66; *x++ = 0xBA; put_x86_dword( x, (UINT_PTR)td ); x += sizeof(DWORD);
         *x++ = 0x9A; *(DWORD *)x = procAddress; x += sizeof(DWORD);
 
         *x++ = 0x55;
@@ -1486,7 +1505,7 @@ void WINAPI C16ThkSL01(I386_CONTEXT *context)
         *x++ = 0x52;
         *x++ = 0x66; *x++ = 0x52;
         *x++ = 0x66; *x++ = 0x9A;
-        *(void **)x = __wine_call_from_16_thunk; x += sizeof(void *);
+        put_x86_dword( x, (UINT_PTR)__wine_call_from_16_thunk ); x += sizeof(DWORD);
         *(WORD *)x = get_cs(); x += sizeof(WORD);
 
         /* Jump to the stub code just created */
@@ -2203,8 +2222,8 @@ SEGPTR WINAPI Get16DLLAddress(HMODULE16 handle, LPSTR func_name)
 
      /* jmpl QT_Thunk */
     *thunk++ = 0xea;
-    *(void **)thunk = QT_Thunk;
-    thunk += sizeof(FARPROC16);
+    put_x86_dword( thunk, (UINT_PTR)QT_Thunk );
+    thunk += sizeof(DWORD);
     *(WORD *)thunk = get_cs();
 
     return MAKESEGPTR( code_sel32, (char *)thunk - (char *)ThunkletHeap );
