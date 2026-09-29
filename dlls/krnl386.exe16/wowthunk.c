@@ -579,7 +579,7 @@ BOOL16 WINAPI WOWKillRemoteTask16( SEGPTR block )
     static wowdebug_poll_proc poll;
     HMODULE module;
 
-    if (!block || !ldt_is_valid( SELECTOROF(block) ))
+    if (block && !ldt_is_valid( SELECTOROF(block) ))
     {
         WARN( "invalid WOWDEB communication block %08lx\n", block );
         return FALSE;

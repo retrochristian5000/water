@@ -99,6 +99,12 @@ WORD WINAPI WinMain16( HINSTANCE16 inst, HINSTANCE16 prev, LPSTR cmdline, WORD s
          */
         if (!WOWKillRemoteTask16( block16 ))
         {
+            /*
+             * Native NT removes WOWDEB from the ordinary task count when it
+             * hands the helper context to WOW32.  Water keeps the helper live,
+             * so explicitly leave once it is the final Win16 task.
+             */
+            if (GetNumTasks16() <= 1) break;
             WOWYield16();
             continue;
         }
@@ -135,4 +141,9 @@ WORD WINAPI WinMain16( HINSTANCE16 inst, HINSTANCE16 prev, LPSTR cmdline, WORD s
         header->dwReturnValue = ret;
         header->wSuccess = TRUE;
     }
+
+    /* Clear WOW32's process-local registration before releasing the block. */
+    WOWKillRemoteTask16( 0 );
+    GlobalFree16( block_handle );
+    return 0;
 }

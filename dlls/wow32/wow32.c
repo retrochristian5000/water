@@ -216,11 +216,12 @@ BOOL __cdecl __wine_WOWDebugPoll16( DWORD block )
 {
     DWORD previous;
 
-    if (!block) return FALSE;
-
     previous = InterlockedExchange( &wowdeb_remote_block, block );
     if (previous != block)
-        TRACE( "WOWDEB remote block registered at %08lx\n", block );
+    {
+        if (block) TRACE( "WOWDEB remote block registered at %08lx\n", block );
+        else if (previous) TRACE( "WOWDEB remote block %08lx unregistered\n", previous );
+    }
 
     return FALSE;
 }
