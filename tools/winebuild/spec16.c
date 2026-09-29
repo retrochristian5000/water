@@ -586,7 +586,7 @@ static void output_module16( DLLSPEC *spec )
     output( "\t.short 0\n" );                                  /* ne_cmovent */
     output( "\t.short 0\n" );                                  /* ne_align */
     output( "\t.short 0\n" );                                  /* ne_cres */
-    output( "\t.byte 0x02\n" );                                /* ne_exetyp = NE_OSFLAGS_WINDOWS */
+    output( "\t.byte 0x%02x\n", !strcmp( spec->dll_name, "kernel" ) ? 0x04 : 0x02 ); /* ne_exetyp */
     output( "\t.byte 0x08\n" );                                /* ne_flagsothers = NE_AFLAGS_FASTLOAD */
     output( "\t.short 0\n" );                                  /* ne_pretthunks */
     output( "\t.short 0\n" );                                  /* ne_psegrefbytes */
@@ -901,7 +901,7 @@ void output_fake_module16( DLLSPEC *spec )
     put_word( 0 );                         /* ne_cmovent */
     put_word( 0 );                         /* ne_align */
     put_word( 0 );                         /* ne_cres */
-    put_byte( 2 /*NE_OSFLAGS_WINDOWS*/ );  /* ne_exetyp */
+    put_byte( !strcmp( spec->dll_name, "kernel" ) ? 4 : 2 ); /* ne_exetyp */
     put_byte( 8 /*NE_AFLAGS_FASTLOAD*/ );  /* ne_flagsothers */
     put_word( 0 );                         /* ne_pretthunks */
     put_word( 0 );                         /* ne_psegrefbytes */

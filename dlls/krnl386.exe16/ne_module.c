@@ -970,8 +970,11 @@ static HMODULE16 build_module( const void *mapping, SIZE_T mapping_size, LPCSTR 
 
     if (mapping_size < sizeof(*mz_header)) return ERROR_BAD_FORMAT;
     if (mz_header->e_magic != IMAGE_DOS_SIGNATURE) return ERROR_BAD_FORMAT;
+    if (mz_header->e_lfanew < 0 ||
+        (SIZE_T)mz_header->e_lfanew < sizeof(*mz_header) ||
+        (SIZE_T)mz_header->e_lfanew > mapping_size - sizeof(*ne_header))
+        return ERROR_BAD_FORMAT;
     ne_header = (const IMAGE_OS2_HEADER *)((const char *)mapping + mz_header->e_lfanew);
-    if (mz_header->e_lfanew + sizeof(*ne_header) > mapping_size) return ERROR_BAD_FORMAT;
     if (ne_header->ne_magic == IMAGE_NT_SIGNATURE) return 21;  /* win32 exe */
     if (ne_header->ne_magic == IMAGE_OS2_SIGNATURE_LX)
     {
@@ -1314,6 +1317,19 @@ static HMODULE16 NE_DoLoadBuiltinModule( const IMAGE_DOS_HEADER *mz_header, cons
     pModule = GlobalLock16( hModule );
     pModule->ne_flags |= NE_FFLAGS_BUILTIN;
     pModule->owner32 = owner32;
+
+    /*
+     * The shared builtin backend services two historical KERNEL filenames.
+     * Keep the NE executable type tied to the image name: KRNL286 is a
+     * Windows NE image (02h), while KRNL386 is Windows/386 (04h).
+     */
+    if (is_kernel_module( pModule ))
+    {
+        if (file_name && is_kernel16_filename( file_name, "krnl286" ))
+            pModule->ne_exetyp = 0x02;
+        else if (file_name && is_kernel16_filename( file_name, "krnl386" ))
+            pModule->ne_exetyp = 0x04;
+    }
 
     /*
      * winebuild's synthetic Win16 NE header carries no historical expected
