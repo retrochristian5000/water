@@ -42,7 +42,7 @@ BOOL WIN386_QuerySession(WORD *version, WORD *current_vm, WORD *system_vm)
         state->abi_version != WATER_WIN386_ABI_VERSION ||
         !(state->flags & WATER_WIN386_FLAG_ACTIVE) ||
         !(state->flags & WATER_WIN386_FLAG_VMM) ||
-        !state->system_vm)
+        !state->system_vm || !state->dos_version)
         goto done;
 
     if (version) *version = state->windows_mux_version;
@@ -63,6 +63,45 @@ BOOL WIN386_QuerySession(WORD *version, WORD *current_vm, WORD *system_vm)
     ret = TRUE;
 
 done:
+    UnmapViewOfFile(state);
+    CloseHandle(mapping);
+    return ret;
+}
+
+
+BOOL WIN386_QueryDosVersion(WORD *dos_version)
+{
+    struct water_win386_session *state;
+    char mapping_name[64];
+    HANDLE mapping;
+    DWORD len;
+    BOOL ret = FALSE;
+
+    if (!dos_version) return FALSE;
+
+    len = GetEnvironmentVariableA(WATER_WIN386_SESSION_ENV, mapping_name, ARRAY_SIZE(mapping_name));
+    if (!len || len >= ARRAY_SIZE(mapping_name)) return FALSE;
+
+    mapping = OpenFileMappingA(FILE_MAP_READ, FALSE, mapping_name);
+    if (!mapping) return FALSE;
+
+    state = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(*state));
+    if (!state)
+    {
+        CloseHandle(mapping);
+        return FALSE;
+    }
+
+    if (state->magic == WATER_WIN386_MAGIC &&
+        state->abi_version == WATER_WIN386_ABI_VERSION &&
+        (state->flags & WATER_WIN386_FLAG_ACTIVE) &&
+        (state->flags & WATER_WIN386_FLAG_VMM) &&
+        state->dos_version)
+    {
+        *dos_version = state->dos_version;
+        ret = TRUE;
+    }
+
     UnmapViewOfFile(state);
     CloseHandle(mapping);
     return ret;

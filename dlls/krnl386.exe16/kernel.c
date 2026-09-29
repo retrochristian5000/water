@@ -130,8 +130,13 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
 
         if (WIN386_QuerySession( &version, &current_vm, &system_vm ))
         {
-            TRACE( "WIN386 enhanced mode %u.%02u, current VM %u, system VM %u\n",
-                   LOBYTE(version), HIBYTE(version), current_vm, system_vm );
+            WORD dos_version = 0;
+
+            WIN386_QueryDosVersion( &dos_version );
+            TRACE( "WIN386 enhanced mode %u.%02u on DOS %u.%02u, current VM %u, system VM %u\n",
+                   LOBYTE(version), HIBYTE(version),
+                   HIBYTE(dos_version), LOBYTE(dos_version),
+                   current_vm, system_vm );
 
             /*
              * WIN386 loads KRNL386 into the System VM.  Refuse to turn a
@@ -141,6 +146,7 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
             {
                 ERR( "KRNL386 cannot initialize in WIN386 DOS VM %u (system VM is %u)\n",
                      current_vm, system_vm );
+                done = FALSE;
                 return FALSE;
             }
         }
@@ -150,10 +156,18 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     if (GetVersion() & 0x80000000) RtlAddVectoredExceptionHandler( TRUE, INSTR_vectored_handler );
 
     /* Initialize 16-bit thunking entry points */
-    if (!WOWTHUNK_Init()) return FALSE;
+    if (!WOWTHUNK_Init())
+    {
+        done = FALSE;
+        return FALSE;
+    }
 
     /* Initialize DOS memory */
-    if (!DOSMEM_Init()) return FALSE;
+    if (!DOSMEM_Init())
+    {
+        done = FALSE;
+        return FALSE;
+    }
 
     /* Initialize special KERNEL entry points */
 
@@ -207,16 +221,7 @@ DWORD WINAPI GetVersion16(void)
     {
         WORD enhanced_dosver;
 
-        switch (enhanced_version)
-        {
-        case WATER_WIN386_VERSION_30:
-            enhanced_dosver = 0x0500;  /* DOS 5.0 compatibility */
-            break;
-        case WATER_WIN386_VERSION_31:
-        default:
-            enhanced_dosver = 0x0616;  /* DOS 6.22 compatibility */
-            break;
-        }
+        if (!WIN386_QueryDosVersion( &enhanced_dosver )) return 0;
 
         TRACE( "WIN386 personality: DOS %d.%02d Win %d.%02d\n",
                HIBYTE(enhanced_dosver), LOBYTE(enhanced_dosver),

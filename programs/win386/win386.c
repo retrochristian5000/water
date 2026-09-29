@@ -74,6 +74,29 @@ static char *build_command_line(char **argv)
     return buffer;
 }
 
+static BOOL parse_dos_version(const char *str, WORD *version)
+{
+    char *end;
+    unsigned long major, minor = 0;
+
+    if (!str || !*str) return FALSE;
+
+    major = strtoul(str, &end, 10);
+    if (end == str || major > 255) return FALSE;
+
+    if (*end == '.')
+    {
+        const char *minor_start = ++end;
+        minor = strtoul(minor_start, &end, 10);
+        if (end == minor_start || minor > 255) return FALSE;
+    }
+
+    if (*end) return FALSE;
+
+    *version = WATER_WIN386_DOS_VERSION(major, minor);
+    return TRUE;
+}
+
 static BOOL parse_version(const char *str, WORD *version)
 {
     if (!strcmp(str, "3.0") || !strcmp(str, "3.00"))
@@ -243,6 +266,8 @@ static int show_status(void)
     printf("Owner PID: %lu\n", state.owner_pid);
     printf("Windows mux version: %u.%02u\n",
            LOBYTE(state.windows_mux_version), HIBYTE(state.windows_mux_version));
+    printf("DOS version: %u.%02u\n",
+           HIBYTE(state.dos_version), LOBYTE(state.dos_version));
     printf("System VM: %u\n", state.system_vm);
     printf("Active VMs: %ld\n", state.active_vms);
     printf("Next VM: %ld\n", state.next_vm);
@@ -252,7 +277,7 @@ static int show_status(void)
     return 0;
 }
 
-static int run_system_vm(WORD version, char **argv)
+static int run_system_vm(WORD version, WORD dos_version, char **argv)
 {
     struct water_win386_session *state;
     PROCESS_INFORMATION process;
@@ -289,6 +314,7 @@ static int run_system_vm(WORD version, char **argv)
     state->owner_pid = GetCurrentProcessId();
     state->windows_mux_version = version;
     state->system_vm = WATER_WIN386_VM_SYSTEM;
+    state->dos_version = dos_version;
     state->next_vm = WATER_WIN386_VM_SYSTEM + 1;
     state->active_vms = 1;
 
@@ -300,8 +326,9 @@ static int run_system_vm(WORD version, char **argv)
     startup.cb = sizeof(startup);
     memset(&process, 0, sizeof(process));
 
-    TRACE("starting System VM %u, version %u.%02u: %s\n",
-          state->system_vm, LOBYTE(version), HIBYTE(version), debugstr_a(command));
+    TRACE("starting System VM %u, Windows %u.%02u, DOS %u.%02u: %s\n",
+          state->system_vm, LOBYTE(version), HIBYTE(version),
+          HIBYTE(dos_version), LOBYTE(dos_version), debugstr_a(command));
 
     if (CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process))
     {
@@ -329,7 +356,7 @@ static int run_system_vm(WORD version, char **argv)
 static void usage(void)
 {
     printf("Water Windows/386 enhanced-mode host\n\n"
-           "win386.exe --system-vm [--version 3.0|3.1] command [args...]\n"
+           "win386.exe --system-vm [--version 3.0|3.1] [--dos-version x.y] command [args...]\n"
            "win386.exe --dos-vm command [args...]\n"
            "win386.exe --status\n");
 }
@@ -337,6 +364,8 @@ static void usage(void)
 int main(int argc, char **argv)
 {
     WORD version = WATER_WIN386_VERSION_30;
+    WORD dos_version = 0;
+    BOOL dos_version_explicit = FALSE;
     int arg = 1;
 
     if (argc == 2 && !strcmp(argv[1], "--status")) return show_status();
@@ -350,15 +379,36 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (arg < argc && !strcmp(argv[arg], "--version"))
+    while (arg < argc)
     {
-        if (arg + 1 >= argc || !parse_version(argv[arg + 1], &version))
+        if (!strcmp(argv[arg], "--version"))
         {
-            fprintf(stderr, "win386: unsupported enhanced-mode version\n");
-            return 1;
+            if (arg + 1 >= argc || !parse_version(argv[arg + 1], &version))
+            {
+                fprintf(stderr, "win386: unsupported enhanced-mode version\n");
+                return 1;
+            }
+            arg += 2;
+            continue;
         }
-        arg += 2;
+
+        if (!strcmp(argv[arg], "--dos-version"))
+        {
+            if (arg + 1 >= argc || !parse_dos_version(argv[arg + 1], &dos_version))
+            {
+                fprintf(stderr, "win386: invalid DOS version\n");
+                return 1;
+            }
+            dos_version_explicit = TRUE;
+            arg += 2;
+            continue;
+        }
+        break;
     }
+
+    if (!dos_version_explicit)
+        dos_version = (version == WATER_WIN386_VERSION_30) ?
+                      WATER_WIN386_DOS_50 : WATER_WIN386_DOS_622;
 
     if (arg >= argc)
     {
@@ -366,5 +416,5 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    return run_system_vm(version, argv + arg);
+    return run_system_vm(version, dos_version, argv + arg);
 }
