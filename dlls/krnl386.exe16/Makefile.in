@@ -1,5 +1,8 @@
 MODULE    = krnl386.exe16
 PARENTSRC = ../../programs/ntvdm
+
+# NTVDM-owned host virtualization sources are compiled here temporarily for
+# the in-process WOW compatibility path. Do not move their ownership back.
 IMPORTLIB = kernel
 DELAYIMPORTS = user32
 
