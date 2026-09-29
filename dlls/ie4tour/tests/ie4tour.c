@@ -27,6 +27,23 @@ static HRESULT (WINAPI *pDllGetClassObject)(REFCLSID, REFIID, void **);
 static HRESULT (WINAPI *pDllRegisterServer)(void);
 static HRESULT (WINAPI *pDllUnregisterServer)(void);
 
+static void test_resources(HMODULE module)
+{
+    static const char *const names[] = { "welcome.htm", "tour.htm", "channels.htm" };
+    unsigned int i;
+
+    for (i = 0; i < ARRAY_SIZE(names); i++)
+    {
+        HRSRC resource = FindResourceA(module, names[i], "HTML");
+        ok(resource != NULL, "HTML resource %s is missing: %lu\n", names[i], GetLastError());
+        if (resource)
+        {
+            DWORD size = SizeofResource(module, resource);
+            ok(size != 0, "HTML resource %s is empty\n", names[i]);
+        }
+    }
+}
+
 static void test_exports(HMODULE module)
 {
     pDllCanUnloadNow = (void *)GetProcAddress(module, "DllCanUnloadNow");
@@ -201,6 +218,7 @@ START_TEST(ie4tour)
     if (!module) return;
 
     test_exports(module);
+    test_resources(module);
     if (pDllGetClassObject && pDllCanUnloadNow)
         test_runonce_object();
 

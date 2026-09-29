@@ -6,4 +6,5 @@ VER_OLESELFREGISTER = 1
 
 SOURCES = \
 	ie4tour.c \
-	ie4tour.idl
+	ie4tour.idl \
+	ie4tour.rc

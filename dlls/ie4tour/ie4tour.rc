@@ -1,0 +1,14 @@
+/*
+ * Clean-room IE4 Welcome Tour resource shell.
+ *
+ * Resource names intentionally match the historical res:// entry points.
+ */
+
+/* @makedep: welcome.htm */
+welcome.htm HTML "welcome.htm"
+
+/* @makedep: tour.htm */
+tour.htm HTML "tour.htm"
+
+/* @makedep: channels.htm */
+channels.htm HTML "channels.htm"
