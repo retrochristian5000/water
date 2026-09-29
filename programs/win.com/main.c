@@ -8,6 +8,7 @@
  */
 
 #include <windows.h>
+#include <string.h>
 
 static char *skip_blanks( char *p )
 {
