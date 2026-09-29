@@ -80,55 +80,56 @@ static void simulate_real_mode_interrupt( REALMODECALL *ctx, int num )
  * special virtualalloc, allocates linearly monoton growing memory.
  * (the usual VirtualAlloc does not satisfy that restriction)
  */
-static LPVOID DPMI_xalloc( DWORD len ) 
+static LPVOID DPMI_xalloc( DWORD len )
 {
-    LPVOID  ret;
-    LPVOID  oldlastv = lastvalloced;
+    LPVOID ret;
+    UINT_PTR candidate, end;
 
-    if (lastvalloced) 
-    {
-        int xflag = 0;
+    if (!len) return NULL;
 
-        ret = NULL;
-        while (!ret) 
-        {
-            ret = VirtualAlloc( lastvalloced, len,
-                                MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE );
-            if (!ret)
-                lastvalloced = (char *) lastvalloced + 0x10000;
+    /*
+     * DPMI 0.9 exposes a 32-bit linear address to the client.  On a wider
+     * host that address must still live below 4 GB; never truncate an
+     * arbitrary host VirtualAlloc result into the guest ABI.
+     *
+     * Keep Water's historical monotonically-growing preference, but search
+     * explicitly in the low 32-bit address space when the host pointer is
+     * wider than DWORD.
+     */
+    if (!lastvalloced)
+        candidate = sizeof(void *) > sizeof(DWORD) ? 0x10000000u : 0;
+    else
+        candidate = (UINT_PTR)lastvalloced;
 
-            /* we failed to allocate one in the first round.
-             * try non-linear
-             */
-            if (!xflag && (lastvalloced<oldlastv)) 
-            { 
-                /* wrapped */
-                FIXME( "failed to allocate linearly growing memory (%lu bytes), "
-                       "using non-linear growing...\n", len );
-                xflag++;
-            }
-
-            /* if we even fail to allocate something in the next
-             * round, return NULL
-             */
-            if ((xflag==1) && (lastvalloced >= oldlastv))
-                xflag++;
-
-            if ((xflag==2) && (lastvalloced < oldlastv)) {
-                FIXME( "failed to allocate any memory of %lu bytes!\n", len );
-                return NULL;
-            }
-        }
-    } 
+    if (sizeof(void *) <= sizeof(DWORD) && !candidate)
+        ret = VirtualAlloc( NULL, len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
     else
     {
-        ret = VirtualAlloc( NULL, len, 
-                            MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE );
+        ret = NULL;
+        for (; candidate <= 0xffffffffu; candidate += 0x10000)
+        {
+            end = candidate + len;
+            if (end < candidate || end > 0x100000000ULL) break;
+
+            ret = VirtualAlloc( (void *)candidate, len,
+                                MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
+            if (ret) break;
+        }
     }
 
-    lastvalloced = (LPVOID)(((DWORD)ret+len+0xffff)&~0xffff);
+    if (!ret || (UINT_PTR)ret > 0xffffffffu ||
+        len > 0x100000000ULL - (UINT_PTR)ret)
+    {
+        if (ret) VirtualFree( ret, 0, MEM_RELEASE );
+        WARN( "unable to allocate %lu-byte DPMI block in 32-bit VDM address space\n", len );
+        return NULL;
+    }
+
+    end = ((UINT_PTR)ret + len + 0xffffu) & ~(UINT_PTR)0xffffu;
+    lastvalloced = end <= 0xffffffffu ? (LPVOID)end : NULL;
     return ret;
 }
+
 
 /**********************************************************************
  *          DPMI_xfree
@@ -529,10 +530,10 @@ void WINAPI DOSVM_Int31Handler( I386_CONTEXT *context )
             } 
             else 
             {
-                SET_BX( context, HIWORD(ptr) );
-                SET_CX( context, LOWORD(ptr) );
-                SET_SI( context, HIWORD(ptr) );
-                SET_DI( context, LOWORD(ptr) );
+                SET_BX( context, HIWORD((DWORD)(UINT_PTR)ptr) );
+                SET_CX( context, LOWORD((DWORD)(UINT_PTR)ptr) );
+                SET_SI( context, HIWORD((DWORD)(UINT_PTR)ptr) );
+                SET_DI( context, LOWORD((DWORD)(UINT_PTR)ptr) );
             }
             break;
         }
@@ -541,7 +542,7 @@ void WINAPI DOSVM_Int31Handler( I386_CONTEXT *context )
         {
             DWORD handle = MAKELONG( DI_reg(context), SI_reg(context) );
             TRACE( "free memory block (0x%08lx)\n", handle );
-            DPMI_xfree( (void *)handle );
+            DPMI_xfree( (void *)(UINT_PTR)handle );
         }
         break;
 
@@ -553,16 +554,16 @@ void WINAPI DOSVM_Int31Handler( I386_CONTEXT *context )
 
             TRACE( "resize memory block (0x%08lx, %lu bytes)\n", handle, size );
 
-            ptr = DPMI_xrealloc( (void *)handle, size );
+            ptr = DPMI_xrealloc( (void *)(UINT_PTR)handle, size );
             if (!ptr)
             {
                 SET_AX( context, 0x8012 );  /* linear memory not available */
                 SET_CFLAG(context);
             } else {
-                SET_BX( context, HIWORD(ptr) );
-                SET_CX( context, LOWORD(ptr) );
-                SET_SI( context, HIWORD(ptr) );
-                SET_DI( context, LOWORD(ptr) );
+                SET_BX( context, HIWORD((DWORD)(UINT_PTR)ptr) );
+                SET_CX( context, LOWORD((DWORD)(UINT_PTR)ptr) );
+                SET_SI( context, HIWORD((DWORD)(UINT_PTR)ptr) );
+                SET_DI( context, LOWORD((DWORD)(UINT_PTR)ptr) );
             }
         }
         break;
