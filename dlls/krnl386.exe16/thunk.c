@@ -2713,7 +2713,7 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
  */
 DWORD WINAPIV WOW16Call( WORD call_id_low, WORD call_id_high, WORD cb_args, VA_LIST16 args )
 {
-    WOW32_DISPATCH_FRAME_PROC dispatch;
+    static WOW32_DISPATCH_FRAME_PROC dispatch;
     WINEVDMFRAME *frame;
     STACK16FRAME *stack = CURRENT_STACK16;
     HMODULE module;
@@ -2768,17 +2768,26 @@ DWORD WINAPIV WOW16Call( WORD call_id_low, WORD call_id_high, WORD cb_args, VA_L
      */
     stack16_pop( 3 * sizeof(WORD) + cb_args );
 
-    module = GetModuleHandleA( "wow32.dll" );
-    if (!module) module = LoadLibraryA( "wow32.dll" );
+    /*
+     * NTVDM owns WOW32 lifetime.  Native NT initializes the 32-bit WOW side
+     * before KRNL386 begins dispatching calls, and KRNL386 keeps a stable
+     * target rather than loading WOW32 as a side effect of an API thunk.
+     */
+    if (!dispatch)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            dispatch = (WOW32_DISPATCH_FRAME_PROC)GetProcAddress( module, "__wine_W32DispatchFrame" );
+    }
 
-    if (module && (dispatch = (WOW32_DISPATCH_FRAME_PROC)GetProcAddress( module, "__wine_W32DispatchFrame" )))
+    if (dispatch)
     {
         ReleaseThunkLock( &mutex_count );
         ret = dispatch( frame );
         RestoreThunkLock( mutex_count );
     }
     else
-        WARN( "WOW32 VDM dispatcher is unavailable\n" );
+        WARN( "WOW32 VDM dispatcher was not initialized by NTVDM\n" );
 
     HeapFree( GetProcessHeap(), 0, frame );
     return ret;
