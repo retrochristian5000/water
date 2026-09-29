@@ -1979,6 +1979,23 @@ WORD WINAPI GetExpWinVer16( HMODULE16 hModule )
 }
 
 
+static const char *krnl386_winoldap_module_name(void)
+{
+    switch (get_krnl386_personality())
+    {
+    case KRNL386_PERSONALITY_WIN386:
+    case KRNL386_PERSONALITY_WFW31:
+    case KRNL386_PERSONALITY_WFW311:
+    case KRNL386_PERSONALITY_GENERIC:
+    case KRNL386_PERSONALITY_WIN95_OSR2:
+        return "winoa386.mod";
+
+    default:
+        return "winoldap.mod";
+    }
+}
+
+
 /***********************************************************************
  *           WinExec     (KERNEL.166)
  */
@@ -2084,7 +2101,7 @@ HINSTANCE16 WINAPI WinExec16( LPCSTR lpCmdLine, UINT16 nCmdShow )
         params.showCmd = MapLS( showCmd );
         params.reserved = 0;
 
-        ret = LoadModule16( "winoldap.mod", &params );
+        ret = LoadModule16( krnl386_winoldap_module_name(), &params );
         UnMapLS( params.cmdLine );
         UnMapLS( params.showCmd );
     }

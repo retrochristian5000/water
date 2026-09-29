@@ -289,6 +289,8 @@ static TDB *TASK_Create( NE_MODULE *pModule, UINT16 cmdShow, LPCSTR cmdline, BYT
         len = strlen(name) + 1;
         memcpy(pTask->module_name, name, min(len,sizeof(pTask->module_name)));
         pTask->compat_flags = GetProfileIntA( "Compatibility", name, 0 );
+
+        if (!stricmp( name, "WINOLDAP" )) pTask->flags |= TDBF_WINOLDAP;
     }
 
       /* Allocate a selector for the PDB */
@@ -311,6 +313,9 @@ static TDB *TASK_Create( NE_MODULE *pModule, UINT16 cmdShow, LPCSTR cmdline, BYT
     /* FIXME: should we make a copy of the environment? */
     pTask->pdb.environment    = SELECTOROF(GetDOSEnvironment16());
     pTask->pdb.nbFiles        = 20;
+
+    /* Windows 3.x uses bit 0 at PSP:48h to identify WinOldAp tasks. */
+    if (pTask->flags & TDBF_WINOLDAP) ((BYTE *)&pTask->pdb)[0x48] |= 0x01;
 
     /* Fill the command line */
 
@@ -1340,8 +1345,12 @@ BOOL16 WINAPI IsTask16( HTASK16 hTask )
  */
 BOOL16 WINAPI IsWinOldApTask16( HTASK16 hTask )
 {
-    /* should return bit 0 of byte 0x48 in PSP */
-    return FALSE;
+    TDB *pTask;
+
+    if (!hTask) hTask = GetCurrentTask();
+    if (!(pTask = TASK_GetPtr( hTask ))) return FALSE;
+
+    return !!(((BYTE *)&pTask->pdb)[0x48] & 0x01);
 }
 
 /***********************************************************************

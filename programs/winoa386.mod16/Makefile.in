@@ -1,0 +1,6 @@
+MODULE    = winoa386.mod16
+
+EXTRADLLFLAGS = -mconsole -m16 -Wb,--dll-name,winoldap
+
+SOURCES = \
+	winoa386.c
