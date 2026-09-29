@@ -49,6 +49,9 @@ struct wine_dos_psp
 };
 #pragma pack(pop)
 
+#define WINE_DOS_CPU_CONTEXT_SIZE 28
+
+#pragma pack(push,2)
 struct wine_dos_cpu_context
 {
     WORD ax, bx, cx, dx;
@@ -56,5 +59,6 @@ struct wine_dos_cpu_context
     WORD ip, flags;
     WORD cs, ds, es, ss;
 };
+#pragma pack(pop)
 
 #endif /* __WINE_DOSVM_H */

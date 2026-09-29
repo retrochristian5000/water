@@ -17,6 +17,7 @@
 WINE_DEFAULT_DEBUG_CHANNEL(ntvdm);
 
 C_ASSERT(sizeof(struct wine_dos_psp) == WINE_DOS_PSP_SIZE);
+C_ASSERT(sizeof(struct wine_dos_cpu_context) == WINE_DOS_CPU_CONTEXT_SIZE);
 C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, memory_end) == 0x02);
 C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, environment_segment) == 0x2c);
 C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, max_handles) == 0x32);

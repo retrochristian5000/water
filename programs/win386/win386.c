@@ -17,6 +17,11 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(win386);
 
+C_ASSERT(sizeof(struct water_win386_session) == WATER_WIN386_SESSION_SIZE);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, windows_mux_version) == 16);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, dos_version) == 20);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, next_vm) == 24);
+
 static char *append_quoted_arg(char *dst, const char *src)
 {
     unsigned int backslashes = 0;
@@ -126,7 +131,7 @@ static struct water_win386_session *open_session_rw(HANDLE *mapping)
     *mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, name);
     if (!*mapping) return NULL;
 
-    state = MapViewOfFile(*mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(*state));
+    state = MapViewOfFile(*mapping, FILE_MAP_ALL_ACCESS, 0, 0, WATER_WIN386_SESSION_SIZE);
     if (!state)
     {
         CloseHandle(*mapping);
@@ -161,7 +166,7 @@ static BOOL query_session(struct water_win386_session *copy)
     mapping = OpenFileMappingA(FILE_MAP_READ, FALSE, name);
     if (!mapping) return FALSE;
 
-    state = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(*state));
+    state = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, WATER_WIN386_SESSION_SIZE);
     if (!state)
     {
         CloseHandle(mapping);
@@ -292,14 +297,14 @@ static int run_system_vm(WORD version, WORD dos_version, char **argv)
     sprintf(mapping_name, "Water.Win386.%08lx", GetCurrentProcessId());
 
     mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
-                                 sizeof(*state), mapping_name);
+                                 WATER_WIN386_SESSION_SIZE, mapping_name);
     if (!mapping)
     {
         HeapFree(GetProcessHeap(), 0, command);
         return 1;
     }
 
-    state = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(*state));
+    state = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, WATER_WIN386_SESSION_SIZE);
     if (!state)
     {
         CloseHandle(mapping);
@@ -307,7 +312,7 @@ static int run_system_vm(WORD version, WORD dos_version, char **argv)
         return 1;
     }
 
-    memset(state, 0, sizeof(*state));
+    memset(state, 0, WATER_WIN386_SESSION_SIZE);
     state->magic = WATER_WIN386_MAGIC;
     state->abi_version = WATER_WIN386_ABI_VERSION;
     state->flags = WATER_WIN386_FLAG_ACTIVE | WATER_WIN386_FLAG_VMM;
