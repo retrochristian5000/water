@@ -4,6 +4,9 @@
 
 #define COBJMACROS
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "windef.h"
 #include "winbase.h"
 #include "winreg.h"
@@ -36,20 +39,20 @@ static void test_exports(HMODULE module)
     ok(pDllRegisterServer != NULL, "DllRegisterServer is missing\n");
     ok(pDllUnregisterServer != NULL, "DllUnregisterServer is missing\n");
 
-    ok(GetProcAddress(module, (const char *)1) == (FARPROC)pDllCanUnloadNow,
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(1)) == (FARPROC)pDllCanUnloadNow,
        "ordinal 1 does not match DllCanUnloadNow\n");
-    ok(GetProcAddress(module, (const char *)2) == (FARPROC)pDllGetClassObject,
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(2)) == (FARPROC)pDllGetClassObject,
        "ordinal 2 does not match DllGetClassObject\n");
-    ok(GetProcAddress(module, (const char *)3) == (FARPROC)pDllRegisterServer,
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(3)) == (FARPROC)pDllRegisterServer,
        "ordinal 3 does not match DllRegisterServer\n");
-    ok(GetProcAddress(module, (const char *)4) == (FARPROC)pDllUnregisterServer,
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(4)) == (FARPROC)pDllUnregisterServer,
        "ordinal 4 does not match DllUnregisterServer\n");
 }
 
-static void restore_show_ie4(HKEY key, BOOL existed, DWORD type, DWORD value)
+static void restore_show_ie4(HKEY key, BOOL existed, DWORD type, const BYTE *data, DWORD size)
 {
     if (existed)
-        RegSetValueExA(key, SHOW_IE4_VALUE, 0, type, (const BYTE *)&value, sizeof(value));
+        RegSetValueExA(key, SHOW_IE4_VALUE, 0, type, data, size);
     else
         RegDeleteValueA(key, SHOW_IE4_VALUE);
 }
@@ -64,8 +67,9 @@ static void test_runonce_object(void)
     OLECHAR *name = L"ShowIE4State";
     DWORD supported, enabled;
     HKEY key;
-    DWORD old_value = 0, old_type = REG_DWORD, old_size = sizeof(old_value), zero = 0;
-    BOOL old_exists = FALSE;
+    BYTE *old_data = NULL;
+    DWORD old_type = 0, old_size = 0, zero = 0;
+    BOOL old_exists = FALSE, key_created = FALSE;
     HRESULT hr;
     UINT count;
     VARIANT result, arg;
@@ -109,13 +113,37 @@ static void test_runonce_object(void)
         IObjectSafety_Release(safety);
     }
 
-    status = RegCreateKeyExA(HKEY_CURRENT_USER, EXPLORER_TIPS_KEY, 0, NULL, 0,
-                             KEY_QUERY_VALUE | KEY_SET_VALUE, NULL, &key, NULL);
-    ok(status == ERROR_SUCCESS, "RegCreateKeyExA returned %ld\n", status);
+    status = RegOpenKeyExA(HKEY_CURRENT_USER, EXPLORER_TIPS_KEY, 0,
+                           KEY_QUERY_VALUE | KEY_SET_VALUE, &key);
+    if (status == ERROR_FILE_NOT_FOUND)
+    {
+        status = RegCreateKeyExA(HKEY_CURRENT_USER, EXPLORER_TIPS_KEY, 0, NULL, 0,
+                                 KEY_QUERY_VALUE | KEY_SET_VALUE, NULL, &key, NULL);
+        key_created = status == ERROR_SUCCESS;
+    }
+    ok(status == ERROR_SUCCESS, "opening Explorer\\Tips returned %ld\n", status);
     if (status == ERROR_SUCCESS)
     {
-        old_exists = RegQueryValueExA(key, SHOW_IE4_VALUE, NULL, &old_type,
-                                      (BYTE *)&old_value, &old_size) == ERROR_SUCCESS;
+        if (RegQueryValueExA(key, SHOW_IE4_VALUE, NULL, &old_type, NULL, &old_size) == ERROR_SUCCESS)
+        {
+            old_exists = TRUE;
+            if (old_size)
+            {
+                old_data = malloc(old_size);
+                ok(old_data != NULL, "failed to save existing ShowIE4 value\n");
+                if (old_data)
+                {
+                    DWORD size = old_size;
+                    if (RegQueryValueExA(key, SHOW_IE4_VALUE, NULL, &old_type,
+                                         old_data, &size) != ERROR_SUCCESS)
+                    {
+                        free(old_data);
+                        old_data = NULL;
+                        old_exists = FALSE;
+                    }
+                }
+            }
+        }
         RegSetValueExA(key, SHOW_IE4_VALUE, 0, REG_DWORD, (const BYTE *)&zero, sizeof(zero));
 
         VariantInit(&result);
@@ -154,8 +182,10 @@ static void test_runonce_object(void)
                value, type);
         }
 
-        restore_show_ie4(key, old_exists, old_type, old_value);
+        restore_show_ie4(key, old_exists, old_type, old_data, old_size);
+        free(old_data);
         RegCloseKey(key);
+        if (key_created) RegDeleteKeyA(HKEY_CURRENT_USER, EXPLORER_TIPS_KEY);
     }
 
     IDispatch_Release(dispatch);
