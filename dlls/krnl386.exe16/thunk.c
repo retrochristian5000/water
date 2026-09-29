@@ -2808,12 +2808,19 @@ static DWORD WOW_CallProc32W16( FARPROC proc32, DWORD nrofargs, DWORD *args )
 DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, VA_LIST16 valist )
 {
     DWORD args[32];
-    unsigned int i;
+    unsigned int i, count = nrofargs & ~CPEX_DEST_CDECL;
     BOOL valid = TRUE;
 
-    TRACE("(%ld,%ld,%p args[",nrofargs,argconvmask,proc32);
+    if (count > ARRAY_SIZE(args))
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
 
-    for (i=0;i<nrofargs;i++)
+    TRACE("(%s,%u,%ld,%p args[", nrofargs & CPEX_DEST_CDECL ? "cdecl" : "stdcall",
+          count, argconvmask, proc32);
+
+    for (i = 0; i < count; i++)
     {
         if (argconvmask & (1<<i))
         {
@@ -2822,21 +2829,21 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
 
             /* pascal convention, have to reverse the arguments order */
             if (!generic_thunk_linear32( ptr, &linear )) valid = FALSE;
-            args[nrofargs - i - 1] = linear;
+            args[count - i - 1] = linear;
             TRACE("%08lx(%p),",ptr,MapSL(ptr));
         }
         else
         {
             DWORD arg = VA_ARG16( valist, DWORD );
             /* pascal convention, have to reverse the arguments order */
-            args[nrofargs - i - 1] = arg;
+            args[count - i - 1] = arg;
             TRACE("%ld,", arg);
         }
     }
     TRACE("])\n");
 
-    /* POP nrofargs DWORD arguments and 3 DWORD parameters */
-    stack16_pop( (3 + nrofargs) * sizeof(DWORD) );
+    /* POP count DWORD arguments and 3 DWORD parameters. */
+    stack16_pop( (3 + count) * sizeof(DWORD) );
 
     if (!valid) return 0;
     return WOW_CallProc32W16( proc32, nrofargs, args );
@@ -2848,10 +2855,16 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
 DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, VA_LIST16 valist )
 {
     DWORD args[32];
-    unsigned int i, count = min( 32, nrofargs & ~CPEX_DEST_CDECL );
+    unsigned int i, count = nrofargs & ~CPEX_DEST_CDECL;
 
-    TRACE("(%s,%ld,%ld,%p args[", nrofargs & CPEX_DEST_CDECL ? "cdecl": "stdcall",
-          nrofargs & ~CPEX_DEST_CDECL, argconvmask, proc32);
+    if (count > ARRAY_SIZE(args))
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    TRACE("(%s,%u,%ld,%p args[", nrofargs & CPEX_DEST_CDECL ? "cdecl": "stdcall",
+          count, argconvmask, proc32);
 
     for (i = 0; i < count; i++)
     {
