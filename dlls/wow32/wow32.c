@@ -45,6 +45,9 @@ typedef DWORD (FASTCALL *wow32_thunk_proc)(WINEVDMFRAME *);
 
 static LONG wow32_initialized;
 
+typedef BOOL (WINAPI *wow32_dos_int21_proc)(I386_CONTEXT *);
+static void *wow32_dos_int21_handler;
+
 static BOOL wow32_query_region( const void *ptr, SIZE_T size, MEMORY_BASIC_INFORMATION *mbi )
 {
     SIZE_T offset;
@@ -95,6 +98,31 @@ BOOL WINAPI W32Init( BOOL fMEoW )
     TRACE( "(%u)\n", fMEoW );
     InterlockedExchange( &wow32_initialized, TRUE );
     return TRUE;
+}
+
+/***********************************************************************
+ *           __wine_W32RegisterDosInt21Handler
+ *
+ * NTVDM owns the NT-side DOS emulation state.  Register the process-local
+ * INT 21h service hook before KRNL386 starts running Win16 tasks.
+ */
+void __cdecl __wine_W32RegisterDosInt21Handler( void *handler )
+{
+    InterlockedExchangePointer( &wow32_dos_int21_handler, handler );
+}
+
+/***********************************************************************
+ *           __wine_W32DosInt21
+ *
+ * Return TRUE only when NTVDM handled the DOS request.  KRNL386 retains its
+ * existing handler for Win16 task/PSP/vector services and as a fallback.
+ */
+BOOL __cdecl __wine_W32DosInt21( I386_CONTEXT *context )
+{
+    wow32_dos_int21_proc proc =
+        (wow32_dos_int21_proc)InterlockedCompareExchangePointer( &wow32_dos_int21_handler, NULL, NULL );
+
+    return proc ? proc( context ) : FALSE;
 }
 
 static DWORD wow32_dispatch_frame( WINEVDMFRAME *frame )
