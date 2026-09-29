@@ -2109,6 +2109,15 @@ int main(int argc, char **argv)
         error( "Invalid target specification '%s'\n", target_alias );
     if (force_pointer_size) set_target_ptr_size( &target, force_pointer_size );
 
+    /*
+     * -m16 selects Wine's segmented Win16 thunk/spec ABI.  Its generated
+     * relay code and register frames are i386-specific; letting another CPU
+     * reach the compiler can create wrong-architecture objects before
+     * winebuild finally rejects the module.
+     */
+    if (is_win16_app && target.cpu != CPU_i386)
+        error( "Win16 modules require an i386 target\n" );
+
     if (processor == proc_cpp) skip_link = true;
 
     is_pe = is_pe_target( target );
