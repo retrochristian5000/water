@@ -2642,7 +2642,7 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
  * The first argument is the byte count of the 16-bit API arguments.  The
  * thunk procedure address follows those bytes on the 16-bit stack.
  */
-DWORD WINAPIV WOW16Call( WORD cb_args, WORD reserved1, WORD reserved2, VA_LIST16 args )
+DWORD WINAPIV WOW16Call( WORD call_id_low, WORD call_id_high, WORD cb_args, VA_LIST16 args )
 {
     WOW32_DISPATCH_FRAME_PROC dispatch;
     WINEVDMFRAME *frame;
@@ -2652,26 +2652,32 @@ DWORD WINAPIV WOW16Call( WORD cb_args, WORD reserved1, WORD reserved2, VA_LIST16
     SIZE_T frame_size;
     unsigned int i;
 
-    TRACE( "(%04x,%04x,%04x)\n", cb_args, reserved1, reserved2 );
+    TRACE( "(call_id=%08lx, args=%u)\n", MAKELONG(call_id_low, call_id_high), cb_args );
 
     if (cb_args & 1)
     {
         WARN( "odd WOW16 argument byte count %u\n", cb_args );
-        stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
+        stack16_pop( 3 * sizeof(WORD) + cb_args );
         return 0;
     }
 
     frame_size = FIELD_OFFSET(WINEVDMFRAME, bArgs) + max( (SIZE_T)cb_args, sizeof(frame->bArgs) );
     if (!(frame = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, frame_size )))
     {
-        stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
+        stack16_pop( 3 * sizeof(WORD) + cb_args );
         return 0;
     }
 
     for (i = 0; i < cb_args / sizeof(WORD); i++)
         ((WORD *)frame->bArgs)[i] = VA_ARG16( args, WORD );
 
-    calladdr = VA_ARG16( args, DWORD );
+    /*
+     * Native NT thunks push the argument byte count first, followed by the
+     * high and low words of wCallID.  Wine's 16-bit varargs relay presents
+     * those fixed words here as low, high, byte-count and leaves the original
+     * application arguments in the VA_LIST16.
+     */
+    calladdr = MAKELONG( call_id_low, call_id_high );
 
     frame->wTDB = GetCurrentTask();
     frame->wLocalBP = stack->bp;
@@ -2691,7 +2697,7 @@ DWORD WINAPIV WOW16Call( WORD cb_args, WORD reserved1, WORD reserved2, VA_LIST16
      * dispatcher may yield or switch tasks, so mutating CURRENT_STACK16 after
      * the 32-bit call returns could otherwise pop a different task's stack.
      */
-    stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
+    stack16_pop( 3 * sizeof(WORD) + cb_args );
 
     module = GetModuleHandleA( "wow32.dll" );
     if (!module) module = LoadLibraryA( "wow32.dll" );
