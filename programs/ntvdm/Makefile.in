@@ -1,8 +1,9 @@
 MODULE    = ntvdm.exe
-IMPORTS   = kernel advapi32
+IMPORTS   = advapi32
 
 EXTRADLLFLAGS = -mconsole
 
 SOURCES = \
 	dosvm.c \
-	ntvdm.c
+	ntvdm.c \
+	wow.c
