@@ -109,7 +109,7 @@ static BOOL kernel16_is_krnl286(void)
     return !strcmp( kernel16_image_name(), "krnl286.exe" );
 }
 
-static BOOL kernel_is_standard_mode_session(void)
+BOOL kernel_is_standard_mode_session(void)
 {
     /*
      * NT 3.1 WOW used enhanced mode on x86 but standard mode on RISC.

@@ -127,6 +127,42 @@ static WORD get_windows_mux_version(void)
     return LOWORD( GetVersion16() );
 }
 
+static WORD get_windows_mux_api_version(void)
+{
+    WORD version = get_windows_mux_version();
+
+    /* INT 2Fh/1605h and 160Ah encode major in the high byte. */
+    return MAKEWORD( HIBYTE(version), LOBYTE(version) );
+}
+
+static WORD get_windows_mux_mode(void)
+{
+    return kernel_is_standard_mode_session() ? 2 : 3;
+}
+
+static WORD get_windows_1600_status(void)
+{
+    WORD version = get_windows_mux_version();
+
+    /*
+     * AX=1600h is the enhanced-mode/VMM installation check, not the general
+     * Windows version query. KRNL386 3.1 itself treats AL==03h as proof that
+     * it is under WIN386/VMM, so returning 3.10 from DOSX standard mode would
+     * make the kernel select the wrong execution path.
+     *
+     * NT WOW also does not advertise itself through this probe; callers use
+     * GetWinFlags() for the WOW execution mode.
+     */
+    if (kernel_is_nt_wow_session()) return 0;
+    if (kernel_is_standard_mode_session())
+    {
+        if (LOBYTE(version) == 3 && HIBYTE(version) >= 10) return 2;
+        return 0;
+    }
+
+    return version;
+}
+
 /**********************************************************************
  *          DOSVM_Int2fHandler
  *
@@ -399,19 +435,24 @@ static void do_int2f_16( I386_CONTEXT *context )
     switch(LOBYTE(context->Eax))
     {
     case 0x00:  /* Windows enhanced mode installation check */
-        SET_AX( context, get_windows_mux_version() );
+        SET_AX( context, get_windows_1600_status() );
         break;
 
     case 0x05:  /* Windows enhanced mode / 286 DOSX init broadcast */
         /*
-         * Water has no resident real-mode TSR chain to contribute startup
-         * information.  Preserve the caller-supplied pointers and leave CX
-         * at zero to accept enhanced-mode startup.
+         * WIN.COM's /S and /2 choices reach KRNL386 through DOSX; /3 reaches
+         * it through WIN386/VMM.  The broadcast exposes that mode choice
+         * independently of whether Standard mode selected KRNL286 or KRNL386.
          */
         SET_CX( context, 0 );
+        SET_DX( context, get_windows_mux_mode() == 2 ? 1 : 0 );
+        SET_DI( context, get_windows_mux_api_version() );
         break;
 
     case 0x06:  /* Windows enhanced mode / 286 DOSX exit broadcast */
+        SET_DX( context, get_windows_mux_mode() == 2 ? 1 : 0 );
+        break;
+
     case 0x08:  /* Windows enhanced mode initialization complete broadcast */
     case 0x09:  /* Windows enhanced mode begin-exit broadcast */
         /* Nothing resident needs notification in Water yet. */
@@ -419,11 +460,9 @@ static void do_int2f_16( I386_CONTEXT *context )
 
     case 0x0a:  /* Get Windows version and type */
         {
-            WORD version = get_windows_mux_version();
-
             SET_AX( context, 0 );
-            SET_BX( context, MAKEWORD( HIBYTE(version), LOBYTE(version) ) );
-            SET_CX( context, 3 );  /* enhanced mode */
+            SET_BX( context, get_windows_mux_api_version() );
+            SET_CX( context, get_windows_mux_mode() );
         }
         break;
 

@@ -36,9 +36,11 @@ int WINAPI WinMain( HINSTANCE instance, HINSTANCE prev_instance, char *cmdline, 
     p = skip_blanks( cmdline );
 
     /*
-     * Preserve the historical WIN command shape.  Mode-selection switches
-     * such as /R, /2, /3, /S and /N are accepted for compatibility but have
-     * no meaning to the NT-style launcher.
+     * This binary is the NT-style WIN.COM compatibility launcher. DOS-based
+     * Windows uses /R, /S (/2), and /3 to select the startup path before
+     * KRNL286/KRNL386 runs; WfW 3.11 also defines /N for network suppression.
+     * NT keeps accepting those spellings, but this compatibility owner must
+     * not reinterpret them as DOS-Windows mode selection.
      */
     while (*p == '/' || *p == '-')
     {
