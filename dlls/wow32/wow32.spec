@@ -10,6 +10,8 @@
 
 # Water-private bridge used by KERNEL.500 WOW16Call.
 @ cdecl -private __wine_W32DispatchFrame(ptr)
+@ cdecl -private __wine_W32RegisterDosInt21Handler(ptr)
+@ cdecl -private __wine_W32DosInt21(ptr)
 
 1 stdcall -import WOWGetDescriptor(long ptr) K32WOWGetDescriptor
 
