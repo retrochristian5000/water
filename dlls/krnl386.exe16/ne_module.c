@@ -531,6 +531,17 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
                (ordinal >= 700 && ordinal <= 704);
     }
 
+    if (personality == KRNL386_PERSONALITY_GENERIC)
+    {
+        /*
+         * The default built-in KERNEL reports the Windows 95-compatible 3.95
+         * version through GetVersion16().  Keep its visible export surface
+         * aligned with that compatibility personality: 262-274 are NT-only,
+         * while 495 is a Windows 98 extension.
+         */
+        return ordinal == 495 || (ordinal >= 262 && ordinal <= 274);
+    }
+
     if (personality == KRNL386_PERSONALITY_NT_WOW)
     {
         /*
