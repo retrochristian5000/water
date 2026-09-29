@@ -4284,6 +4284,26 @@ static BOOL     INT21_Dup2(HFILE16 hFile1, HFILE16 hFile2)
 }
 
 
+typedef BOOL (__cdecl *wow32_dos_int21_proc)(I386_CONTEXT *);
+
+static BOOL INT21_TryNtvdm( I386_CONTEXT *context )
+{
+    static wow32_dos_int21_proc proc;
+    HMODULE module;
+
+    if (!kernel_is_nt_wow_session()) return FALSE;
+
+    if (!proc)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            proc = (wow32_dos_int21_proc)GetProcAddress( module, "__wine_W32DosInt21" );
+    }
+
+    return proc ? proc( context ) : FALSE;
+}
+
+
 /***********************************************************************
  *           DOSVM_Int21Handler
  *
@@ -4303,6 +4323,19 @@ void WINAPI DOSVM_Int21Handler( I386_CONTEXT *context )
            SI_reg(context), DI_reg(context),
            (WORD)context->SegDs, (WORD)context->SegEs,
            context->EFlags );
+
+    /*
+     * NT5 KRNL386 mediates INT 21h but hands a fast subset to NTVDM's DOS
+     * emulation layer.  Give the owning NTVDM first refusal, then keep the
+     * existing KRNL386 implementation for task/PSP/vector and unsupported
+     * services.
+     */
+    if (INT21_TryNtvdm( context ))
+    {
+        TRACE( "NTVDM handled INT 21h/AH=%02x\n", AH_reg(context) );
+        if (heap->misc_indos) heap->misc_indos--;
+        return;
+    }
 
    /*
     * Extended error is used by (at least) functions 0x2f to 0x62.
