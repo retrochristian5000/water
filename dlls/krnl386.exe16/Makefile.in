@@ -23,7 +23,7 @@ SOURCES = \
 	instr.c \
 	int13.c \
 	int15.c \
-	int21.c \
+	ntdos_int21_compat.c \
 	int25.c \
 	int26.c \
 	int2f.c \
