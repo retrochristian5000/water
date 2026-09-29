@@ -32,6 +32,7 @@
 #include "ntddcdrm.h"
 #include "dosexe.h"
 #include "win386.h"
+#include "kernel16_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);
 
@@ -524,18 +525,19 @@ static void do_int2f_16( I386_CONTEXT *context )
 
     case 0x8a:  /* DPMI vendor-specific API entry point */
         {
-            const char *vendor = MapSL( MAKESEGPTR( context->SegDs, SI_reg(context) ) );
+            FARPROC16 entry;
+            const char *vendor;
 
-            if (vendor && !strcmp( vendor, "MS-DOS" ))
+            if (!ldt_is_valid( context->SegDs )) break;
+            vendor = ldt_get_ptr( context->SegDs, SI_reg(context) );
+            if (strncmp( vendor, "MS-DOS", sizeof("MS-DOS") )) break;
+
+            entry = get_dosx_entry( "__wine_dosx_msdos_api" );
+            if (entry)
             {
-                FARPROC16 entry = get_dosx_entry( "__wine_dosx_msdos_api" );
-
-                if (entry)
-                {
-                    SET_AX( context, 0 );
-                    context->SegEs = SELECTOROF(entry);
-                    SET_DI( context, OFFSETOF(entry) );
-                }
+                SET_AX( context, 0 );
+                context->SegEs = SELECTOROF(entry);
+                SET_DI( context, OFFSETOF(entry) );
             }
             break;
         }
