@@ -8,7 +8,7 @@
 @ stdcall W32Dispatch()
 @ stdcall W32Init(long)
 
-# Water-private bridge used by KERNEL.500 WOW16Call.
+# Water-private bridge used by NT5 KERNEL.506 WOW16Call.
 @ cdecl -private __wine_W32DispatchFrame(ptr)
 @ cdecl -private __wine_W32RegisterDosInt21Handler(ptr)
 @ cdecl -private __wine_W32DosInt21(ptr)
