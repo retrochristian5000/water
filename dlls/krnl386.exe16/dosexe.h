@@ -173,9 +173,6 @@ typedef struct
 
 #pragma pack(pop)
 
-/* dosvm.c */
-extern void DOSVM_Exit( WORD retval );
-
 /* dosmem.c */
 extern BIOSDATA *DOSVM_BiosData( void );
 extern void DOSVM_start_bios_timer(void);
@@ -198,6 +195,9 @@ extern void WINAPI DOSVM_Int13Handler(I386_CONTEXT *);
 
 /* int15.c */
 extern void WINAPI DOSVM_Int15Handler(I386_CONTEXT *);
+
+/* programs/ntdos.sys/process.c (temporary KRNL386 bridge) */
+extern void WINAPI DOSVM_Int20Handler(I386_CONTEXT *);
 
 /* programs/ntdos.sys/int21.c (temporary KRNL386 bridge) */
 extern void WINAPI DOSVM_Int21Handler(I386_CONTEXT *);
