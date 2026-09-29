@@ -56,6 +56,55 @@ typedef struct
 static void do_int2f_16( I386_CONTEXT *context );
 static void MSCDEX_Handler( I386_CONTEXT *context );
 
+static FARPROC16 get_dosx_entry( const char *name )
+{
+    return GetProcAddress16( GetModuleHandle16( "KERNEL" ), name );
+}
+
+/*
+ * Water enters the Win16 guest in protected mode already, so this is a
+ * compatibility entry for DOSX's DPMI 0.9 mode-switch contract rather than a
+ * physical CPU mode transition.  It is only advertised to the KRNL386-side
+ * INT 2Fh path; real-mode DOS execution has its own NTVDM interrupt layer.
+ */
+void WINAPI __wine_dosx_pmode_entry( I386_CONTEXT *context )
+{
+    if (AX_reg(context) & 1)  /* 32-bit DPMI client requested */
+    {
+        WARN( "32-bit DOSX mode switch is not implemented\n" );
+        SET_CFLAG( context );
+        return;
+    }
+
+    RESET_CFLAG( context );
+}
+
+/*
+ * Microsoft DOSX vendor extension used by NT/Win16 KRNL386 after the DPMI
+ * mode switch.  Function 0000h reports the extension version.  Function
+ * 0100h asks for direct access to DOSX's shared LDT descriptor table; Water
+ * does not expose its host-private LDT copy as guest memory, so fail that
+ * optional optimization and let KRNL386 use ordinary INT 31h services.
+ */
+void WINAPI __wine_dosx_msdos_api( I386_CONTEXT *context )
+{
+    switch (AX_reg(context))
+    {
+    case 0x0000:
+        SET_AX( context, 0x0100 );
+        RESET_CFLAG( context );
+        break;
+
+    case 0x0100:
+        SET_CFLAG( context );
+        break;
+
+    default:
+        SET_CFLAG( context );
+        break;
+    }
+}
+
 /*
  * INT 2Fh/16xx reports the loader/multiplex Windows version, which is not
  * always the same value returned by the Win16 GetVersion API.  In particular,
@@ -440,20 +489,56 @@ static void do_int2f_16( I386_CONTEXT *context )
         SET_AX( context, 0 );  /* Running under DPMI */
         break;
 
-    case 0x87: /* DPMI installation check */
+    case 0x87: /* DPMI installation check / DOSX mode-switch entry */
         {
-            SET_AX( context, 0x0000 ); /* DPMI Installed */
-            SET_BX( context, 0x0000 ); /* 16-bit host */
+            FARPROC16 entry = get_dosx_entry( "__wine_dosx_pmode_entry" );
+
+            if (!entry)
+            {
+                WARN( "DOSX DPMI mode-switch entry is unavailable\n" );
+                SET_AX( context, 1 );  /* DPMI host unavailable */
+                break;
+            }
+
+            SET_AX( context, 0x0000 ); /* DPMI installed */
+            SET_BX( context, 0x0000 ); /* Water advertises a 16-bit client host */
             SET_CL( context, DOSVM_GetX86ProcessorLevel() );
-            SET_DX( context, 0x005a ); /* DPMI major/minor 0.90 */
-            SET_SI( context, 0 );      /* # of para. of DOS extended private data */
-            context->SegEs = 0;        /* no DPMI switch */
-            SET_DI( context, 0 );      /* ES:DI is DPMI switch entry point */
+            SET_DX( context, 0x005a ); /* DPMI 0.90 */
+            SET_SI( context, 0 );      /* no caller-allocated host-data paragraphs */
+            context->SegEs = SELECTOROF(entry);
+            SET_DI( context, OFFSETOF(entry) );
             break;
         }
-    case 0x8a:  /* DPMI get vendor-specific API entry point. */
-       /* The 1.0 specs say this should work with all 0.9 hosts.  */
-       break;
+
+    case 0x88:  /* NT DOSX/WOW shared-LDT query */
+        /*
+         * NT5 returns a DOSX-owned LDT alias for BX=0x0bad.  Water's LDT
+         * metadata contains host pointers and is not a guest ABI, so do not
+         * manufacture a selector here.  KRNL386 can use standard INT 31h
+         * descriptor services instead.
+         */
+        break;
+
+    case 0x89:  /* NT WOW foreground/kernel idle notification */
+        break;
+
+    case 0x8a:  /* DPMI vendor-specific API entry point */
+        {
+            const char *vendor = MapSL( MAKESEGPTR( context->SegDs, SI_reg(context) ) );
+
+            if (vendor && !strcmp( vendor, "MS-DOS" ))
+            {
+                FARPROC16 entry = get_dosx_entry( "__wine_dosx_msdos_api" );
+
+                if (entry)
+                {
+                    SET_AX( context, 0 );
+                    context->SegEs = SELECTOROF(entry);
+                    SET_DI( context, OFFSETOF(entry) );
+                }
+            }
+            break;
+        }
 
     default:
         INT_BARF( context, 0x2f );
