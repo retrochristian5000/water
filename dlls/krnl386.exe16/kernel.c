@@ -242,7 +242,7 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     HeapCreate( HEAP_SHARED, 0, 0 );
 
     /* Parse the Win9x boot configuration outside the PE loader lock. */
-    MSDOS_InitConfig();
+    IOSYS_InitConfig();
 
     /*
      * The kernel image and execution mode are separate axes.  KRNL286 may

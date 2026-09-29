@@ -35,6 +35,7 @@
 #include "winternl.h"
 #include "wine/winbase16.h"
 #include "kernel16_private.h"
+#include "../../programs/io.sys/io_sys.h"
 #include "dosexe.h"
 #include "winerror.h"
 #include "winuser.h"
@@ -303,29 +304,27 @@ typedef struct
 #define KEY_NPAGE       0x49
 #define KEY_PPAGE       0x51
 
-typedef struct
-{
-    BOOL initialized;
-    WORD buffers_count;
-    WORD buffers_lookahead;
-    BYTE last_drive;
-    INT umb_linked;
-} INT21_BOOT_CONFIG;
-
 static int brk_flag;
 static BYTE mem_alloc_strategy;
 static BOOL umb_linked;
 static BOOL memory_config_initialized;
-static INT21_BOOT_CONFIG boot_config;
+static BOOL boot_config_initialized;
+static struct iosys_config_sys boot_config;
+
+static void INT21_LoadBootConfig(void)
+{
+    if (boot_config_initialized) return;
+
+    IOSYS_ReadConfigSys( &boot_config );
+    brk_flag = boot_config.break_on;
+    boot_config_initialized = TRUE;
+}
 
 /***********************************************************************
  *           INT21_InitMemoryConfig
  *
- * Windows 9x IO.SYS incorporates DOS=HIGH,UMB defaults.  Water does not
- * execute IO.SYS, but it does provide a native UMB allocator, so initialize
- * the DOS-visible UMB link state for the Win9x personality.  DOS=HIGH is not
- * claimed here: that requires the XMS/A20 service and a real HMA-resident DOS
- * path, which Water does not yet provide.
+ * IO.SYS owns CONFIG.SYS parsing; the DOS INT 21h layer owns the live UMB
+ * link state exposed through functions 48h/58h.
  */
 static void INT21_InitMemoryConfig(void)
 {
@@ -416,214 +415,10 @@ static BYTE INT21_GetCurrentDrive(void)
 
 /***********************************************************************
  *           INT21_GetBootDrive
- *
- * Return the DOS boot drive using the 1=A:, 2=B:, 3=C: convention used
- * by the DOS 4+ List of Lists.  In a Water prefix the Windows directory
- * is the closest equivalent to the drive from which IO.SYS handed control
- * to Windows.
  */
 static BYTE INT21_GetBootDrive(void)
 {
-    WCHAR windows_directory[MAX_PATH];
-    BYTE drive;
-    UINT len;
-
-    len = GetWindowsDirectoryW( windows_directory, MAX_PATH );
-    if (len >= 2 && len < MAX_PATH && windows_directory[1] == ':' &&
-        (drive = drive_number( windows_directory[0] )) != MAX_DOS_DRIVES)
-        return drive + 1;
-
-    if ((drive = INT21_GetCurrentDrive()) != MAX_DOS_DRIVES) return drive + 1;
-    return 3;
-}
-
-
-/***********************************************************************
- *           INT21_LoadBootConfig
- *
- * Read the CONFIG.SYS directives for which Water already has real backing
- * state.  Do not pretend to install DEVICE drivers or implement FILES,
- * FCBS, STACKS, COUNTRY, or SHELL here.  DOS 6+ publishes the selected
- * multi-config block through the CONFIG environment variable, so apply that
- * block in addition to global lines and every [common] block.
- */
-static void INT21_LoadBootConfig(void)
-{
-    static const DWORD max_config_size = 64 * 1024;
-    char path[] = "C:\\CONFIG.SYS";
-    char selected[72];
-    HANDLE file;
-    DWORD size, read, selected_len;
-    char *buffer, *line;
-    BYTE boot_drive;
-    BOOL active = TRUE;
-
-    if (boot_config.initialized) return;
-    boot_config.initialized = TRUE;
-    boot_config.buffers_count = 15;
-    boot_config.buffers_lookahead = 1;
-    boot_config.last_drive = 0;
-    boot_config.umb_linked = -1;
-
-    selected_len = GetEnvironmentVariableA( "CONFIG", selected, sizeof(selected) );
-    if (!selected_len || selected_len >= sizeof(selected)) selected[0] = 0;
-    TRACE( "CONFIG.SYS selected block: %s\n",
-           selected[0] ? debugstr_a(selected) : "(none)" );
-
-    boot_drive = INT21_GetBootDrive();
-    if (!boot_drive || boot_drive > MAX_DOS_DRIVES) return;
-    path[0] = 'A' + boot_drive - 1;
-
-    file = CreateFileA( path, GENERIC_READ,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
-    if (file == INVALID_HANDLE_VALUE)
-    {
-        TRACE( "No %s; using DOS configuration defaults\n", path );
-        return;
-    }
-
-    size = GetFileSize( file, NULL );
-    if (size == INVALID_FILE_SIZE || size > max_config_size)
-    {
-        WARN( "Ignoring invalid or oversized %s\n", path );
-        CloseHandle( file );
-        return;
-    }
-
-    buffer = HeapAlloc( GetProcessHeap(), 0, size + 1 );
-    if (!buffer)
-    {
-        CloseHandle( file );
-        return;
-    }
-
-    if (!ReadFile( file, buffer, size, &read, NULL ))
-    {
-        HeapFree( GetProcessHeap(), 0, buffer );
-        CloseHandle( file );
-        return;
-    }
-    CloseHandle( file );
-    buffer[read] = 0;
-
-    line = buffer;
-    while (*line)
-    {
-        char *next = strpbrk( line, "\r\n" );
-        char *p = line, *name, *value, *end;
-        long first, second;
-
-        if (next)
-        {
-            *next++ = 0;
-            while (*next == '\r' || *next == '\n') next++;
-        }
-        else next = line + strlen(line);
-
-        while (*p == ' ' || *p == '\t') p++;
-        end = p + strlen(p);
-        while (end > p && (end[-1] == ' ' || end[-1] == '\t')) *--end = 0;
-
-        if (!*p || *p == ';')
-        {
-            line = next;
-            continue;
-        }
-
-        if (*p == '[')
-        {
-            end = strchr( p + 1, ']' );
-            if (end)
-            {
-                char *section_end = end;
-
-                while (section_end > p + 1 &&
-                       (section_end[-1] == ' ' || section_end[-1] == '\t'))
-                    section_end--;
-                *section_end = 0;
-                active = !_stricmp( p + 1, "common" ) ||
-                         (selected[0] && !_stricmp( p + 1, selected ));
-            }
-            else active = FALSE;
-            line = next;
-            continue;
-        }
-
-        if (!active)
-        {
-            line = next;
-            continue;
-        }
-
-        name = p;
-        while (*p && *p != '=' && *p != ';' && *p != ' ' && *p != '\t') p++;
-        if (*p) *p++ = 0;
-        while (*p == '=' || *p == ';' || *p == ' ' || *p == '\t') p++;
-        value = p;
-
-        if (!_stricmp( name, "REM" ))
-        {
-            line = next;
-            continue;
-        }
-
-        if (!_stricmp( name, "BREAK" ))
-        {
-            if (!_stricmp( value, "ON" )) brk_flag = 1;
-            else if (!_stricmp( value, "OFF" )) brk_flag = 0;
-        }
-        else if (!_stricmp( name, "BUFFERS" ) || !_stricmp( name, "BUFFERSHIGH" ))
-        {
-            first = strtol( value, &end, 10 );
-            if (first >= 1 && first <= 99)
-            {
-                boot_config.buffers_count = first;
-                while (*end == ' ' || *end == '\t') end++;
-                if (*end == ',')
-                {
-                    second = strtol( end + 1, &end, 10 );
-                    if (second >= 0 && second <= 8)
-                        boot_config.buffers_lookahead = second;
-                }
-            }
-        }
-        else if (!_stricmp( name, "LASTDRIVE" ) || !_stricmp( name, "LASTDRIVEHIGH" ))
-        {
-            while (*value == ' ' || *value == '\t') value++;
-            if ((value[0] >= 'A' && value[0] <= 'Z') ||
-                (value[0] >= 'a' && value[0] <= 'z'))
-                boot_config.last_drive = (value[0] & ~0x20) - 'A' + 1;
-        }
-        else if (!_stricmp( name, "DOS" ))
-        {
-            char *token = value;
-
-            while (*token)
-            {
-                char *token_end;
-
-                while (*token == ' ' || *token == '\t' || *token == ',') token++;
-                token_end = token;
-                while (*token_end && *token_end != ',' &&
-                       *token_end != ' ' && *token_end != '\t') token_end++;
-
-                if ((token_end - token) == 3 && !_strnicmp( token, "UMB", 3 ))
-                    boot_config.umb_linked = TRUE;
-                else if ((token_end - token) == 5 && !_strnicmp( token, "NOUMB", 5 ))
-                    boot_config.umb_linked = FALSE;
-
-                token = token_end;
-            }
-        }
-
-        line = next;
-    }
-
-    TRACE( "CONFIG.SYS: BUFFERS=%u,%u LASTDRIVE=%u UMB=%d BREAK=%d\n",
-           boot_config.buffers_count, boot_config.buffers_lookahead,
-           boot_config.last_drive, boot_config.umb_linked, brk_flag );
-    HeapFree( GetProcessHeap(), 0, buffer );
+    return IOSYS_GetBootDrive();
 }
 
 

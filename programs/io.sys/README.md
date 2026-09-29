@@ -3,8 +3,8 @@
 This directory owns Windows 9x real-mode boot responsibilities that historically
 run before WIN.COM and KRNL386.
 
-The first recovered responsibility is MSDOS.SYS startup configuration parsing
-(`msdos_config.c`). Microsoft documented Windows 95 IO.SYS as reading MSDOS.SYS,
+The first recovered responsibility is MSDOS.SYS and CONFIG.SYS startup configuration parsing
+(`config.c`). Microsoft documented Windows 95 IO.SYS as reading MSDOS.SYS,
 processing CONFIG.SYS, selecting WinBootDir-dependent real-mode drivers, and
 eventually invoking WIN.COM.
 
@@ -14,3 +14,8 @@ artifact needs the proper real-mode boot-image ABI.
 
 KRNL386 currently reaches this implementation through a temporary source bridge
 only to preserve compatibility while the Win9x boot chain is being reconstructed.
+
+
+The CONFIG.SYS parser was recovered from KRNL386's INT 21h implementation.
+IO.SYS owns that parse; INT 21h now consumes the resulting BUFFERS, LASTDRIVE,
+BREAK and UMB policy instead of opening CONFIG.SYS itself.
