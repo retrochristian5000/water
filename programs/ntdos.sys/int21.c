@@ -38,6 +38,7 @@
 #include "../io.sys/io_sys.h"
 #include "../../dlls/krnl386.exe16/dosexe.h"
 #include "../ntvdm/dem_disk.h"
+#include "process.h"
 #include "winerror.h"
 #include "winuser.h"
 #include "wine/debug.h"
@@ -4144,10 +4145,9 @@ void WINAPI DOSVM_Int21Handler( I386_CONTEXT *context )
            context->EFlags );
 
     /*
-     * NT5 KRNL386 mediates INT 21h but hands a fast subset to NTVDM's DOS
-     * emulation layer.  Give the owning NTVDM first refusal, then keep the
-     * existing KRNL386 implementation for task/PSP/vector and unsupported
-     * services.
+     * The compatibility implementation still lets WOW32 service a subset of
+     * calls first. The long-term owner remains guest NTDOS.SYS; direct host
+     * dispatch here is transitional until the DEM/BOP boundary is complete.
      */
     if (INT21_TryNtvdm( context ))
     {
@@ -4170,7 +4170,7 @@ void WINAPI DOSVM_Int21Handler( I386_CONTEXT *context )
     {
     case 0x00: /* TERMINATE PROGRAM */
         TRACE("TERMINATE PROGRAM\n");
-        DOSVM_Exit( 0 );
+        NTDOS_Exit( 0 );
         break;
 
     case 0x01: /* READ CHARACTER FROM STANDARD INPUT, WITH ECHO */
@@ -4922,7 +4922,7 @@ void WINAPI DOSVM_Int21Handler( I386_CONTEXT *context )
 
     case 0x4c: /* "EXIT" - TERMINATE WITH RETURN CODE */
         TRACE( "EXIT with return code %d\n", AL_reg(context) );
-        DOSVM_Exit( AL_reg(context) );
+        NTDOS_Exit( AL_reg(context) );
         break;
 
     case 0x4d: /* GET RETURN CODE */
