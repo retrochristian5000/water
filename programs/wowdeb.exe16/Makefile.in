@@ -1,0 +1,6 @@
+MODULE    = wowdeb.exe16
+
+EXTRADLLFLAGS = -mconsole -m16
+
+SOURCES = \
+	wowdeb.c

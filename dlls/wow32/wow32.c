@@ -195,3 +195,42 @@ DWORD __cdecl __wine_W32DispatchFrame( WINEVDMFRAME *frame )
 
     return context.result;
 }
+
+
+/*
+ * WOWDEB remote-helper state.
+ *
+ * The segmented block address is process-local.  VDMDBG's cross-process
+ * transport will eventually consume this state through the target process,
+ * matching NT's W32RemoteThread/DBGNotifyRemoteThreadAddress design.
+ */
+static LONG wowdeb_remote_block;
+
+/***********************************************************************
+ *           __wine_WOWDebugPoll16
+ *
+ * Private bridge used by KERNEL.511.  At present it registers the live
+ * WOWDEB communication block and reports that no remote request is pending.
+ */
+BOOL __cdecl __wine_WOWDebugPoll16( DWORD block )
+{
+    DWORD previous;
+
+    if (!block) return FALSE;
+
+    previous = InterlockedExchange( &wowdeb_remote_block, block );
+    if (previous != block)
+        TRACE( "WOWDEB remote block registered at %08lx\n", block );
+
+    return FALSE;
+}
+
+/***********************************************************************
+ *           __wine_WOWDebugGetRemoteBlock
+ *
+ * Private inspection hook for the VDMDBG transport and tests.
+ */
+DWORD __cdecl __wine_WOWDebugGetRemoteBlock( void )
+{
+    return InterlockedCompareExchange( &wowdeb_remote_block, 0, 0 );
+}

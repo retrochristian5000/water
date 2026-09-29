@@ -416,8 +416,8 @@
 508 stub WOWCLOSECOMPORT
 #509 stub WOWCLOSECOMPORT # conflict with 508 !
 #509 stub WOWKILLREMOTETASK
-511 stub WOWKILLREMOTETASK
-512 stub WOWQUERYDEBUG
+511 pascal -ret16 WOWKILLREMOTETASK(segptr) WOWKillRemoteTask16
+512 pascal -ret16 WOWQUERYDEBUG() WOWQueryDebug16
 513 pascal LoadLibraryEx32W(ptr long long) LoadLibraryEx32W16   # Both NT/95
 514 pascal FreeLibrary32W(long) FreeLibrary32W16                # Both NT/95
 515 pascal GetProcAddress32W(long str) GetProcAddress32W16      # Both NT/95

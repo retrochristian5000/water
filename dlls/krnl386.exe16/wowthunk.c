@@ -564,3 +564,50 @@ DWORD WINAPI K32WOWCallback16( DWORD vpfn16, DWORD dwParam )
 
     return ret;
 }
+
+
+/**********************************************************************
+ *           WOWKillRemoteTask16       (KERNEL.511)
+ *
+ * Register/poll the WOWDEB communication block with WOW32.  Native NT
+ * never returns from the initial call; Water keeps WOWDEB as a cooperative
+ * Win16 task until the cross-process VDMDBG remote-thread path is complete.
+ */
+BOOL16 WINAPI WOWKillRemoteTask16( SEGPTR block )
+{
+    typedef BOOL (__cdecl *wowdebug_poll_proc)(DWORD);
+    static wowdebug_poll_proc poll;
+    HMODULE module;
+
+    if (!block || !ldt_is_valid( SELECTOROF(block) ))
+    {
+        WARN( "invalid WOWDEB communication block %08lx\n", block );
+        return FALSE;
+    }
+
+    if (!poll)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (!module) module = LoadLibraryA( "wow32.dll" );
+        if (module) poll = (wowdebug_poll_proc)GetProcAddress( module, "__wine_WOWDebugPoll16" );
+    }
+
+    if (!poll)
+    {
+        WARN( "WOW32 debugging bridge is unavailable\n" );
+        return FALSE;
+    }
+
+    return poll( block );
+}
+
+
+/**********************************************************************
+ *           WOWQueryDebug16           (KERNEL.512)
+ *
+ * Bit 0 is the NT WOW DebugWOW flag: a 32-bit debugger is attached.
+ */
+WORD WINAPI WOWQueryDebug16( void )
+{
+    return IsDebuggerPresent() ? 1 : 0;
+}
