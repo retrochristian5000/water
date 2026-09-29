@@ -745,6 +745,8 @@
 
 # DOS support
 2000 pascal -register __wine_call_int_handler(word) __wine_call_int_handler16
+2003 pascal -register __wine_dosx_pmode_entry()
+2004 pascal -register __wine_dosx_msdos_api()
 @ stdcall -arch=win32 __wine_call_int_handler16(long ptr)
 
 # VxDs
