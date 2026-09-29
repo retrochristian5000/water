@@ -32,6 +32,7 @@
 #include "wownt16.h"
 #include "wownt32.h"
 #include "wine/winbase16.h"
+#include "wine/wow32.h"
 
 #include "wine/debug.h"
 #include "kernel16_private.h"
@@ -2637,21 +2638,67 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
 /**********************************************************************
  *           WOW16Call               (KERNEL.500)
  *
- * FIXME!!!
- *
+ * Bridge the NT WOW16CALL stack format to wow32.dll's W32Dispatch path.
+ * The first argument is the byte count of the 16-bit API arguments.  The
+ * thunk procedure address follows those bytes on the 16-bit stack.
  */
-DWORD WINAPIV WOW16Call(WORD x, WORD y, WORD z, VA_LIST16 args)
+DWORD WINAPIV WOW16Call( WORD cb_args, WORD reserved1, WORD reserved2, VA_LIST16 args )
 {
-        int     i;
-        DWORD   calladdr;
-        FIXME("(0x%04x,0x%04x,%d),calling (",x,y,z);
+    WOW32_DISPATCH_FRAME_PROC dispatch;
+    WINEVDMFRAME *frame;
+    STACK16FRAME *stack = CURRENT_STACK16;
+    HMODULE module;
+    DWORD calladdr, ret = 0, mutex_count;
+    SIZE_T frame_size;
+    unsigned int i;
 
-        for (i=0;i<x/2;i++) {
-                WORD    a = VA_ARG16(args,WORD);
-                FIXME("%04x ",a);
-        }
-        calladdr = VA_ARG16(args,DWORD);
-        stack16_pop( 3*sizeof(WORD) + x + sizeof(DWORD) );
-        FIXME(") calling address was 0x%08lx\n",calladdr);
+    TRACE( "(%04x,%04x,%04x)\n", cb_args, reserved1, reserved2 );
+
+    if (cb_args & 1)
+    {
+        WARN( "odd WOW16 argument byte count %u\n", cb_args );
+        stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
         return 0;
+    }
+
+    frame_size = FIELD_OFFSET(WINEVDMFRAME, bArgs) + cb_args;
+    if (!(frame = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, frame_size )))
+    {
+        stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
+        return 0;
+    }
+
+    for (i = 0; i < cb_args / sizeof(WORD); i++)
+        ((WORD *)frame->bArgs)[i] = VA_ARG16( args, WORD );
+
+    calladdr = VA_ARG16( args, DWORD );
+
+    frame->wTDB = GetCurrentTask();
+    frame->wLocalBP = stack->bp;
+    frame->wDX = LOWORD( stack->edx );
+    frame->wAppDS = stack->ds;
+    frame->wGS = stack->gs;
+    frame->wFS = stack->fs;
+    frame->wCX = LOWORD( stack->ecx );
+    frame->wES = stack->es;
+    frame->wBP = LOWORD( stack->ebp );
+    frame->wCallID = calladdr;
+    frame->cbArgs = cb_args;
+    frame->vpCSIP = MAKESEGPTR( stack->cs, stack->ip );
+
+    module = GetModuleHandleA( "wow32.dll" );
+    if (!module) module = LoadLibraryA( "wow32.dll" );
+
+    if (module && (dispatch = (WOW32_DISPATCH_FRAME_PROC)GetProcAddress( module, "__wine_W32DispatchFrame" )))
+    {
+        ReleaseThunkLock( &mutex_count );
+        ret = dispatch( frame );
+        RestoreThunkLock( mutex_count );
+    }
+    else
+        WARN( "WOW32 VDM dispatcher is unavailable\n" );
+
+    stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
+    HeapFree( GetProcessHeap(), 0, frame );
+    return ret;
 }

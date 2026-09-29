@@ -1,0 +1,188 @@
+/*
+ * NT-style WOW32 VDM dispatcher bridge
+ *
+ * Water normally reaches Win16 code through the Wine relay layer rather than
+ * NTVDM.  Native NT WOW, however, routes a packed VDMFRAME through W32Dispatch.
+ * This file provides the dispatcher spine while preserving Water's existing
+ * generic WOW32 exports.
+ */
+
+#include <stddef.h>
+
+#include "windef.h"
+#include "winbase.h"
+#include "winternl.h"
+#include "wine/wow32.h"
+#include "wine/debug.h"
+
+WINE_DEFAULT_DEBUG_CHANNEL(wow);
+
+C_ASSERT( offsetof(WINEVDMFRAME, wThunkCSIP) == 28 );
+C_ASSERT( offsetof(WINEVDMFRAME, wCallID) == 32 );
+C_ASSERT( offsetof(WINEVDMFRAME, cbArgs) == 36 );
+C_ASSERT( offsetof(WINEVDMFRAME, vpCSIP) == 38 );
+C_ASSERT( offsetof(WINEVDMFRAME, bArgs) == 42 );
+
+#define WOW32_DISPATCH_MAGIC 0x44323357  /* "W32D" */
+
+struct wow32_dispatch_context
+{
+    DWORD magic;
+    WINEVDMFRAME *frame;
+    DWORD result;
+};
+
+typedef DWORD (FASTCALL *wow32_thunk_proc)(WINEVDMFRAME *);
+
+static LONG wow32_initialized;
+
+static BOOL wow32_query_region( const void *ptr, SIZE_T size, MEMORY_BASIC_INFORMATION *mbi )
+{
+    SIZE_T offset;
+
+    if (!ptr || !size) return FALSE;
+    if (!VirtualQuery( ptr, mbi, sizeof(*mbi) ) || mbi->State != MEM_COMMIT) return FALSE;
+    if (mbi->Protect & (PAGE_GUARD | PAGE_NOACCESS)) return FALSE;
+    if ((const BYTE *)ptr < (const BYTE *)mbi->BaseAddress) return FALSE;
+
+    offset = (const BYTE *)ptr - (const BYTE *)mbi->BaseAddress;
+    return offset <= mbi->RegionSize && size <= mbi->RegionSize - offset;
+}
+
+static BOOL wow32_is_writable( const void *ptr, SIZE_T size )
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    DWORD protect;
+
+    if (!wow32_query_region( ptr, size, &mbi )) return FALSE;
+    protect = mbi.Protect & 0xff;
+
+    return protect == PAGE_READWRITE || protect == PAGE_WRITECOPY ||
+           protect == PAGE_EXECUTE_READWRITE || protect == PAGE_EXECUTE_WRITECOPY;
+}
+
+static BOOL wow32_is_executable( const void *ptr )
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    DWORD protect;
+
+    if (!wow32_query_region( ptr, 1, &mbi )) return FALSE;
+    protect = mbi.Protect & 0xff;
+
+    return protect == PAGE_EXECUTE || protect == PAGE_EXECUTE_READ ||
+           protect == PAGE_EXECUTE_READWRITE || protect == PAGE_EXECUTE_WRITECOPY;
+}
+
+/***********************************************************************
+ *           W32Init
+ *
+ * NT5 exports this with one argument (fMEoW).  Water does not need NTVDM's
+ * duplicated USER/GDI registration because its Win16 modules already share
+ * the Wine process, but the dispatcher still needs an explicit initialized
+ * state for callers that follow the NT startup contract.
+ */
+BOOL WINAPI W32Init( BOOL fMEoW )
+{
+    TRACE( "(%u)\n", fMEoW );
+    InterlockedExchange( &wow32_initialized, TRUE );
+    return TRUE;
+}
+
+static DWORD wow32_dispatch_frame( WINEVDMFRAME *frame )
+{
+    wow32_thunk_proc proc;
+    DWORD call_id, ret;
+    SIZE_T frame_size;
+
+    if (!frame) return 0;
+
+    frame_size = offsetof(WINEVDMFRAME, bArgs) + frame->cbArgs;
+    if (!wow32_is_writable( frame, frame_size ))
+    {
+        WARN( "invalid VDM frame %p size %Iu\n", frame, frame_size );
+        return 0;
+    }
+
+    if (!wow32_initialized) W32Init( FALSE );
+
+    call_id = frame->wCallID;
+
+    /*
+     * Native W32Dispatch accepts both a numeric thunk-table id and, after
+     * patching, the thunk procedure address itself.  Water does not yet have
+     * the NT wktbl/wutbl/wgtbl tables, so only the patched-address path is
+     * dispatchable here.  Reject unresolved ids instead of treating them as
+     * pointers and jumping into low memory.
+     */
+    if (!HIWORD( call_id ))
+    {
+        FIXME( "unresolved NT WOW thunk id %#lx\n", call_id );
+        return 0;
+    }
+
+    /*
+     * VDMFRAME stores a 32-bit thunk address.  A native WOW32 dispatcher is
+     * therefore meaningful only in a 32-bit WOW module.
+     */
+    if (sizeof(void *) > sizeof(call_id))
+    {
+        WARN( "cannot dispatch 32-bit WOW thunk address %#lx from a %u-bit module\n",
+              call_id, (unsigned int)(8 * sizeof(void *)) );
+        return 0;
+    }
+
+    proc = (wow32_thunk_proc)(ULONG_PTR)call_id;
+    if (!wow32_is_executable( (const void *)proc ))
+    {
+        WARN( "invalid WOW thunk address %p\n", proc );
+        return 0;
+    }
+
+    ret = proc( frame );
+    frame->wAX = LOWORD( ret );
+    frame->wDX = HIWORD( ret );
+    return ret;
+}
+
+/***********************************************************************
+ *           W32Dispatch
+ *
+ * The public NT entry point has no parameters.  Water's KERNEL.500 bridge
+ * installs a per-call context in the TEB WOW32Reserved slot, invokes this
+ * function, and restores the previous value afterwards.
+ */
+void WINAPI W32Dispatch( void )
+{
+    struct wow32_dispatch_context *context = NtCurrentTeb()->WOW32Reserved;
+    MEMORY_BASIC_INFORMATION mbi;
+
+    if (!wow32_query_region( context, sizeof(*context), &mbi ) ||
+        context->magic != WOW32_DISPATCH_MAGIC || !context->frame)
+    {
+        WARN( "called without a Water WOW VDM dispatch context\n" );
+        return;
+    }
+
+    context->result = wow32_dispatch_frame( context->frame );
+}
+
+/***********************************************************************
+ *           __wine_W32DispatchFrame
+ *
+ * Private bridge used by krnl386.exe16's WOW16Call implementation.
+ */
+DWORD __cdecl __wine_W32DispatchFrame( WINEVDMFRAME *frame )
+{
+    struct wow32_dispatch_context context;
+    void *previous = NtCurrentTeb()->WOW32Reserved;
+
+    context.magic = WOW32_DISPATCH_MAGIC;
+    context.frame = frame;
+    context.result = 0;
+
+    NtCurrentTeb()->WOW32Reserved = &context;
+    W32Dispatch();
+    NtCurrentTeb()->WOW32Reserved = previous;
+
+    return context.result;
+}

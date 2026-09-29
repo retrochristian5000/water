@@ -1,4 +1,12 @@
 # ordinal exports
+# NT VDM dispatcher entry points.  Keep them name-only so the legacy
+# WOWGetDescriptor ordinal remains compatible with the existing Wine ABI.
+@ stdcall W32Dispatch()
+@ stdcall W32Init(long)
+
+# Water-private bridge used by KERNEL.500 WOW16Call.
+@ cdecl -private __wine_W32DispatchFrame(ptr)
+
 1 stdcall -import WOWGetDescriptor(long ptr) K32WOWGetDescriptor
 
 @ stdcall -import WOWCallback16(long long) K32WOWCallback16
