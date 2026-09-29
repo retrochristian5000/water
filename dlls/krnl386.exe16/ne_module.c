@@ -440,6 +440,38 @@ static enum krnl386_personality get_krnl386_personality(void)
     return cached = KRNL386_PERSONALITY_GENERIC;
 }
 
+static WORD builtin_expected_windows_version(void)
+{
+    struct win386_session_info session;
+
+    switch (get_krnl386_personality())
+    {
+    case KRNL386_PERSONALITY_WIN386:
+        if (WIN386_QuerySession( &session ))
+            return ((WORD)LOBYTE(session.windows_version) << 8) |
+                   HIBYTE(session.windows_version);
+        break;
+
+    case KRNL386_PERSONALITY_GENERIC:
+    case KRNL386_PERSONALITY_WIN95_OSR2:
+        return 0x0400;  /* Windows 95 and OSR2 are Windows 4.00. */
+
+    case KRNL386_PERSONALITY_NT351_WOW:
+        return 0x0333;  /* Windows NT 3.51; minor byte is decimal 51. */
+
+    case KRNL386_PERSONALITY_NT5_WOW:
+        break;
+    }
+
+    /*
+     * NT5 currently spans multiple later NT personalities in Water. Until
+     * that family is split further, retain the configured PEB version there.
+     */
+    return ((NtCurrentTeb()->Peb->OSMajorVersion & 0xff) << 8) |
+           (NtCurrentTeb()->Peb->OSMinorVersion & 0xff);
+}
+
+
 static BOOL is_kernel_module( const NE_MODULE *module )
 {
     const BYTE *name;
@@ -1124,9 +1156,12 @@ static HMODULE16 NE_DoLoadBuiltinModule( const IMAGE_DOS_HEADER *mz_header, cons
     pModule->ne_flags |= NE_FFLAGS_BUILTIN;
     pModule->owner32 = owner32;
 
-    /* fake the expected version the module should have according to the current Windows version */
-    pModule->ne_expver = MAKEWORD( NtCurrentTeb()->Peb->OSMajorVersion,
-                                   NtCurrentTeb()->Peb->OSMinorVersion );
+    /*
+     * winebuild's synthetic Win16 NE header carries no historical expected
+     * Windows version. Fill it from the selected guest personality, not from
+     * the Water host PEB.
+     */
+    pModule->ne_expver = builtin_expected_windows_version();
 
     hInstance = NE_DoLoadModule( pModule );
     if (hInstance < 32) NE_FreeModule( hModule, 0 );
