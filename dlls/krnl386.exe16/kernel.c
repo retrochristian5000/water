@@ -45,8 +45,14 @@ static BOOL kernel_personality_is( const char *personality )
 
 BOOL kernel_is_nt_wow_session(void)
 {
-    return kernel_personality_is( WATER_VDM_PERSONALITY_NT351_WOW ) ||
+    return kernel_personality_is( WATER_VDM_PERSONALITY_NT31_WOW ) ||
+           kernel_personality_is( WATER_VDM_PERSONALITY_NT351_WOW ) ||
            kernel_personality_is( WATER_VDM_PERSONALITY_NT5_WOW );
+}
+
+static BOOL kernel_is_nt31_wow_session(void)
+{
+    return kernel_personality_is( WATER_VDM_PERSONALITY_NT31_WOW );
 }
 
 static BOOL kernel_is_nt351_wow_session(void)
@@ -100,6 +106,17 @@ static const char *kernel16_image_name(void)
 static BOOL kernel16_is_krnl286(void)
 {
     return !strcmp( kernel16_image_name(), "krnl286.exe" );
+}
+
+static BOOL kernel_is_standard_mode_session(void)
+{
+    /*
+     * NT 3.1 WOW used enhanced mode on x86 but standard mode on RISC.
+     * Represent that architecture distinction explicitly through the selected
+     * Win16 kernel image instead of leaking the Water host CPU into the guest.
+     */
+    return kernel_is_win3_standard_session() ||
+           (kernel_is_nt31_wow_session() && kernel16_is_krnl286());
 }
 
 static BYTE kernel_configured_x86_cpu_level(void)
@@ -212,9 +229,10 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
      * service Windows 3.x standard mode even on a 386, while KRNL386 may
      * service either standard mode (through DOSX) or enhanced mode (WIN386).
      */
-    if (kernel16_is_krnl286() && !kernel_is_win3_standard_session())
+    if (kernel16_is_krnl286() &&
+        !kernel_is_win3_standard_session() && !kernel_is_nt31_wow_session())
     {
-        ERR( "KRNL286 selected outside a Windows 3.x standard-mode session\n" );
+        ERR( "KRNL286 selected outside Windows 3.x standard mode or NT 3.1 WOW\n" );
         done = FALSE;
         return FALSE;
     }
@@ -336,6 +354,9 @@ DWORD WINAPI GetVersion16(void)
                kernel16_image_name() );
         return MAKELONG( winver, dosver );
     }
+
+    if (kernel_is_nt31_wow_session())
+        return MAKELONG( MAKEWORD( 3, 10 ), 0x0500 );
 
     if (kernel_is_nt351_wow_session())
         return MAKELONG( MAKEWORD( 3, 51 ), 0x0500 );
@@ -531,7 +552,7 @@ DWORD WINAPI GetWinFlags16(void)
 
     /* There doesn't seem to be any Pentium flag.  */
     result = cpuflags[processor_level] | WF_PMODE | WF_80x87;
-    if (kernel_is_win3_standard_session())
+    if (kernel_is_standard_mode_session())
         result |= WF_STANDARD;
     else
         result |= WF_ENHANCED | WF_PAGING;
@@ -582,6 +603,16 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
         v->dwMinorVersion = HIBYTE(version);
         v->dwBuildNumber  = 0;
         v->dwPlatformId   = VER_PLATFORM_WIN32s;
+        v->szCSDVersion[0] = 0;
+        return TRUE;
+    }
+
+    if (kernel_is_nt31_wow_session())
+    {
+        v->dwMajorVersion = 3;
+        v->dwMinorVersion = 10;
+        v->dwBuildNumber  = 511;
+        v->dwPlatformId   = VER_PLATFORM_WIN32_NT;
         v->szCSDVersion[0] = 0;
         return TRUE;
     }

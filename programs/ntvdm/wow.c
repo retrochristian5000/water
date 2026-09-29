@@ -462,6 +462,20 @@ static char *build_win16_command_line( char **argv )
     return cmdline;
 }
 
+static const char *get_wow_personality(void)
+{
+    static char value[24];
+    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+
+    if (len && len < ARRAY_SIZE(value) &&
+        (!strcmp( value, WATER_VDM_PERSONALITY_NT31_WOW ) ||
+         !strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ) ||
+         !strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW )))
+        return value;
+
+    return WATER_VDM_PERSONALITY_NT5_WOW;
+}
+
 static BOOL load_wow_kernel( HMODULE kernel, struct wow_kernel_exports *exports )
 {
     exports->load_library16 = (load_library16_proc)GetProcAddress( kernel, "LoadLibrary16" );
@@ -488,13 +502,18 @@ int wow_run_app( const char *appname, char **argv )
     HMODULE wow32, kernel;
     DWORD lock_count;
     WORD show_cmd[2];
+    const char *personality;
     char *cmdline;
 
-    if (!SetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, WATER_VDM_PERSONALITY_NT_WOW ))
+    personality = get_wow_personality();
+    if (!SetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, personality ))
     {
-        ERR( "unable to mark NT WOW personality, error %lu\n", GetLastError() );
+        ERR( "unable to mark NT WOW personality %s, error %lu\n",
+             debugstr_a(personality), GetLastError() );
         return 1;
     }
+    TRACE( "starting %s with Win16 kernel image selected by %s\n",
+           debugstr_a(personality), WATER_VDM_KERNEL16_ENV );
 
     if (!(wow32 = LoadLibraryA( "wow32.dll" )) ||
         !(w32_init = (w32_init_proc)GetProcAddress( wow32, "W32Init" )) ||

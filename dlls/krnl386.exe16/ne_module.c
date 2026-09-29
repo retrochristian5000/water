@@ -358,6 +358,26 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
     for (p = buffer; *p; p++) *p = RtlUpperChar(*p);
     len = p - buffer;
 
+    /*
+     * NT 3.1 exports ExitWindowsExecContinue by name at ordinal 540, while
+     * the merged backing table keeps a generic KERNEL_540 name for later
+     * personalities that reuse the ordinal.
+     */
+    if (!strcmp( buffer, "EXITWINDOWSEXECCONTINUE" ))
+    {
+        const BYTE *module_name = (const BYTE *)pModule + pModule->ne_restab;
+        char personality[16];
+        DWORD personality_len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV,
+                                                          personality,
+                                                          ARRAY_SIZE(personality) );
+
+        if (*module_name == 6 &&
+            !_strnicmp( (const char *)module_name + 1, "KERNEL", 6 ) &&
+            personality_len && personality_len < ARRAY_SIZE(personality) &&
+            !strcmp( personality, WATER_VDM_PERSONALITY_NT31_WOW ))
+            return 540;
+    }
+
       /* First search the resident names */
 
     cpnt = (BYTE *)pModule + pModule->ne_restab;
@@ -407,6 +427,7 @@ enum krnl386_personality
     KRNL386_PERSONALITY_WIN31_STANDARD,
     KRNL386_PERSONALITY_WIN386,
     KRNL386_PERSONALITY_WIN95_OSR2,
+    KRNL386_PERSONALITY_NT31_WOW,
     KRNL386_PERSONALITY_NT351_WOW,
     KRNL386_PERSONALITY_NT5_WOW
 };
@@ -437,6 +458,8 @@ static enum krnl386_personality get_krnl386_personality(void)
             return cached = KRNL386_PERSONALITY_WIN31_STANDARD;
         if (!strcmp( value, WATER_VDM_PERSONALITY_WIN95_OSR2 ))
             return cached = KRNL386_PERSONALITY_WIN95_OSR2;
+        if (!strcmp( value, WATER_VDM_PERSONALITY_NT31_WOW ))
+            return cached = KRNL386_PERSONALITY_NT31_WOW;
         if (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ))
             return cached = KRNL386_PERSONALITY_NT351_WOW;
         if (!strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW ))
@@ -468,6 +491,9 @@ static WORD builtin_expected_windows_version(void)
     case KRNL386_PERSONALITY_WIN95_OSR2:
         return 0x0400;  /* Windows 95 and OSR2 are Windows 4.00. */
 
+    case KRNL386_PERSONALITY_NT31_WOW:
+        return 0x030a;  /* NT 3.1 WOW presents Windows 3.10 to Win16. */
+
     case KRNL386_PERSONALITY_NT351_WOW:
         return 0x0333;  /* Windows NT 3.51; minor byte is decimal 51. */
 
@@ -495,9 +521,28 @@ static BOOL is_kernel_module( const NE_MODULE *module )
 
 static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
-    if (!is_kernel_module( module ) ||
-        get_krnl386_personality() != KRNL386_PERSONALITY_NT5_WOW)
-        return ordinal;
+    enum krnl386_personality personality;
+
+    if (!is_kernel_module( module )) return ordinal;
+    personality = get_krnl386_personality();
+
+    /*
+     * NT 3.1 builds 511/528 publish WOWCursorIconOp, WOWFailedExec and
+     * WOWCloseComPort at 507/508/509.  The merged backing spec keeps the
+     * older Wine slots one ordinal lower, so present the native NT 3.1 ABI.
+     */
+    if (personality == KRNL386_PERSONALITY_NT31_WOW)
+    {
+        switch (ordinal)
+        {
+        case 506: return 507;
+        case 507: return 508;
+        case 508: return 509;
+        default:  return ordinal;
+        }
+    }
+
+    if (personality != KRNL386_PERSONALITY_NT5_WOW) return ordinal;
 
     /*
      * Water's static spec retains older NT/Win9x numbering.  NT5 moved several
@@ -521,11 +566,25 @@ static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordi
     }
 }
 
-static WORD krnl386_nt5_backing_ordinal( const NE_MODULE *module, WORD ordinal )
+static WORD krnl386_backing_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
-    if (!is_kernel_module( module ) ||
-        get_krnl386_personality() != KRNL386_PERSONALITY_NT5_WOW)
-        return ordinal;
+    enum krnl386_personality personality;
+
+    if (!is_kernel_module( module )) return ordinal;
+    personality = get_krnl386_personality();
+
+    if (personality == KRNL386_PERSONALITY_NT31_WOW)
+    {
+        switch (ordinal)
+        {
+        case 507: return 506;
+        case 508: return 507;
+        case 509: return 508;
+        default:  return ordinal;
+        }
+    }
+
+    if (personality != KRNL386_PERSONALITY_NT5_WOW) return ordinal;
 
     switch (ordinal)
     {
@@ -606,6 +665,63 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
         return ordinal == 495 || (ordinal >= 262 && ordinal <= 274);
     }
 
+    if (personality == KRNL386_PERSONALITY_NT31_WOW)
+    {
+        /*
+         * The same NT 3.1 WOW survey records these Windows 3.1 KERNEL entry
+         * points as unimplemented. Preserve the absence instead of silently
+         * falling through to Water's shared backing implementations.
+         */
+        switch (ordinal)
+        {
+        case 35:  /* GetTaskQueue */
+        case 41:  /* EnableDos */
+        case 42:  /* DisableDos */
+        case 77:  /* Reserved1 */
+        case 78:  /* Reserved2 */
+        case 80:  /* Reserved4 */
+        case 100: /* ValidateCodeSegments */
+        case 122: /* IsTaskLocked */
+        case 123: /* KbdRst */
+        case 124: /* EnableKernel */
+        case 156: /* LimitEMSPages */
+        case 158: /* IsWinOldApTask */
+        case 200: /* ValidateFreeSpaces */
+        case 201: /* ReplaceInst */
+        case 207: /* IsDBCSLeadByte */
+        case 323: /* IsROMModule */
+        case 326: /* IsROMFile */
+        case 328: /* _DebugOutput */
+            return TRUE;
+        }
+
+        /*
+         * Microsoft Systems Journal's NT 3.1 build 511/528 table documents
+         * 500-505, 507-509, 511-517, 520-532 and 540 in the NT KRNL386
+         * extension block.  Keep later thunk and Win9x additions out.
+         */
+        if (ordinal >= 500 && ordinal <= 532)
+        {
+            if (ordinal <= 505) return FALSE;
+            if (ordinal >= 507 && ordinal <= 509) return FALSE;
+            if (ordinal >= 511 && ordinal <= 517) return FALSE;
+            if (ordinal >= 520) return FALSE;
+            return TRUE;  /* 506, 510, 518-519 */
+        }
+
+        if (ordinal >= 208 && ordinal <= 237)
+            return ordinal != 216 && ordinal != 217 &&
+                   ordinal != 220 && ordinal != 223;
+
+        return (ordinal >= 357 && ordinal <= 365) ||
+               (ordinal >= 406 && ordinal <= 495) ||
+               (ordinal >= 533 && ordinal <= 539) ||
+               (ordinal >= 541 && ordinal <= 568) ||
+               (ordinal >= 600 && ordinal <= 653) ||
+               (ordinal >= 700 && ordinal <= 704) ||
+               is_vxd_entry_ordinal( ordinal );
+    }
+
     if (personality == KRNL386_PERSONALITY_NT351_WOW)
     {
         /*
@@ -676,7 +792,7 @@ FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
         return 0;
     }
 
-    ordinal = krnl386_nt5_backing_ordinal( pModule, ordinal );
+    ordinal = krnl386_backing_kernel_ordinal( pModule, ordinal );
 
     bundle = (ET_BUNDLE *)((BYTE *)pModule + pModule->ne_enttab);
     while ((ordinal < bundle->first + 1) || (ordinal > bundle->last))
