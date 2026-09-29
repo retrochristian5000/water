@@ -3028,6 +3028,21 @@ static void INT21_Ioctl( I386_CONTEXT *context )
  */
 static BOOL INT21_Fat32( I386_CONTEXT *context )
 {
+    WORD dosver = HIWORD( GetVersion16() );
+
+    /*
+     * FAT32 entered the Microsoft DOS/Win9x line with Windows 95 OSR2
+     * (MS-DOS 7.10). Retail Windows 95 reports DOS 7.00 and does not
+     * implement the 73xx FAT32 family. Older DOS returns the traditional
+     * unimplemented-function result: carry clear with AL=00h.
+     */
+    if (HIBYTE(dosver) < 7 || (HIBYTE(dosver) == 7 && LOBYTE(dosver) < 10))
+    {
+        SET_AL( context, 0 );
+        RESET_CFLAG( context );
+        return TRUE;
+    }
+
     switch (AL_reg(context))
     {
     case 0x02: /* FAT32 - GET EXTENDED DPB */
@@ -3108,10 +3123,8 @@ static BOOL INT21_Fat32( I386_CONTEXT *context )
             *(DWORD*)(data + 28) = free_clusters;
             *(DWORD*)(data + 32) = total_clusters;
             
-            /*
-             * Between (data + 36) and (data + 43) there
-             * are eight reserved bytes.
-             */
+            /* The final eight bytes are reserved and returned as zero. */
+            memset( data + 36, 0, 8 );
         }
         break;
 

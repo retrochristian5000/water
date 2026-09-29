@@ -404,6 +404,7 @@ enum krnl386_personality
 {
     KRNL386_PERSONALITY_GENERIC,
     KRNL386_PERSONALITY_WIN386,
+    KRNL386_PERSONALITY_WIN95_OSR2,
     KRNL386_PERSONALITY_NT351_WOW,
     KRNL386_PERSONALITY_NT5_WOW
 };
@@ -428,6 +429,8 @@ static enum krnl386_personality get_krnl386_personality(void)
     len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
     if (len && len < ARRAY_SIZE(value))
     {
+        if (!strcmp( value, WATER_VDM_PERSONALITY_WIN95_OSR2 ))
+            return cached = KRNL386_PERSONALITY_WIN95_OSR2;
         if (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ))
             return cached = KRNL386_PERSONALITY_NT351_WOW;
         if (!strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW ))
@@ -537,13 +540,13 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
                (ordinal >= 700 && ordinal <= 704);
     }
 
-    if (personality == KRNL386_PERSONALITY_GENERIC)
+    if (personality == KRNL386_PERSONALITY_GENERIC ||
+        personality == KRNL386_PERSONALITY_WIN95_OSR2)
     {
         /*
-         * The default built-in KERNEL reports the Windows 95-compatible 3.95
-         * version through GetVersion16().  Keep its visible export surface
-         * aligned with that compatibility personality: 262-274 are NT-only,
-         * while 495 is a Windows 98 extension.
+         * Retail Win95 and OSR2 share the Win95 KERNEL export surface here.
+         * OSR2 differs at the DOS/filesystem layer (DOS 7.10/FAT32), not by
+         * inheriting NT-only 262-274 or the Win98-only ordinal 495.
          */
         return ordinal == 495 || (ordinal >= 262 && ordinal <= 274);
     }

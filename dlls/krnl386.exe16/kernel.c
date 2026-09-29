@@ -54,6 +54,15 @@ static BOOL kernel_is_nt351_wow_session(void)
            !strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW );
 }
 
+static BOOL kernel_is_win95_osr2_session(void)
+{
+    char value[16];
+    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+
+    return len && len < ARRAY_SIZE(value) &&
+           !strcmp( value, WATER_VDM_PERSONALITY_WIN95_OSR2 );
+}
+
 extern DWORD WINAPI GetProcessFlags( DWORD processid );
 
 void *dummy = RaiseException;  /* force importing it from kernel32 */
@@ -245,7 +254,17 @@ DWORD WINAPI GetVersion16(void)
     if (kernel_is_nt351_wow_session())
         return MAKELONG( MAKEWORD( 3, 51 ), 0x0500 );
 
-    if (!dosver)  /* not determined yet */
+    /*
+     * The built-in non-NT personality is retail Windows 95.  OSR2 keeps
+     * Win16's 3.95 compatibility version but advances the underlying DOS
+     * API from 7.00 to 7.10, which is the FAT32 capability boundary.
+     */
+    if (kernel_is_win95_osr2_session())
+        return MAKELONG( MAKEWORD( 3, 95 ), 0x070a );
+    if (!kernel_is_nt_wow_session())
+        return MAKELONG( MAKEWORD( 3, 95 ), 0x0700 );
+
+    if (!dosver)  /* NT5 fallback follows the owning host personality. */
     {
         RTL_OSVERSIONINFOEXW info;
 
@@ -464,6 +483,16 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
         v->dwMinorVersion = 51;
         v->dwBuildNumber  = 1057;
         v->dwPlatformId   = VER_PLATFORM_WIN32_NT;
+        v->szCSDVersion[0] = 0;
+        return TRUE;
+    }
+
+    if (!kernel_is_nt_wow_session())
+    {
+        v->dwMajorVersion = 4;
+        v->dwMinorVersion = 0;
+        v->dwBuildNumber  = kernel_is_win95_osr2_session() ? 1111 : 950;
+        v->dwPlatformId   = VER_PLATFORM_WIN32_WINDOWS;
         v->szCSDVersion[0] = 0;
         return TRUE;
     }
