@@ -15,6 +15,7 @@
 #include "winbase.h"
 #include "winreg.h"
 #include "wine/doskeyb.h"
+#include "dosvm.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntvdm);
@@ -221,30 +222,79 @@ static int run_dosbox( const char *appname, const char *args )
 
 static void usage(void)
 {
-    WINE_MESSAGE( "Usage: ntvdm.exe --app-name app.com [arguments]\n" );
+    WINE_MESSAGE( "Usage: ntvdm.exe --app-name app.com [arguments]\n"
+                  "       ntvdm.exe --prepare-only app.com [arguments]\n" );
 }
 
 int main( int argc, char **argv )
 {
+    struct dos_process process;
+    enum dos_image_kind kind;
+    const char *appname;
+    char **app_args;
     char *args;
+    BOOL prepare_only = FALSE;
     int ret;
 
-    if (argc < 3 || strcmp( argv[1], "--app-name" ))
+    if (argc >= 3 && !strcmp( argv[1], "--app-name" ))
+    {
+        appname = argv[2];
+        app_args = argv + 3;
+    }
+    else if (argc >= 3 && !strcmp( argv[1], "--prepare-only" ))
+    {
+        prepare_only = TRUE;
+        appname = argv[2];
+        app_args = argv + 3;
+    }
+    else
     {
         usage();
         return 1;
     }
 
-    WINE_TRACE( "DOS application = %s\n", argv[2] );
+    WINE_TRACE( "DOS application = %s\n", appname );
 
-    if (!(args = build_dos_args( argv + 3 ))) return 1;
+    if (!(args = build_dos_args( app_args ))) return 1;
+
+    kind = dos_prepare_process( appname, args, &process );
+    if (kind == DOS_IMAGE_COM)
+    {
+        if (prepare_only)
+        {
+            dos_release_process( &process );
+            HeapFree( GetProcessHeap(), 0, args );
+            return 0;
+        }
+        dos_release_process( &process );
+    }
+    else if (kind == DOS_IMAGE_MZ)
+    {
+        WINE_TRACE( "MZ image recognized; internal EXE relocation loader is not installed yet\n" );
+        if (prepare_only)
+        {
+            HeapFree( GetProcessHeap(), 0, args );
+            return 2;
+        }
+    }
+    else
+    {
+        WINE_WARN( "unable to prepare internal DOS process image for %s (error %lu)\n",
+                   appname, GetLastError() );
+        if (prepare_only)
+        {
+            HeapFree( GetProcessHeap(), 0, args );
+            return 1;
+        }
+    }
 
     /*
-     * This is the intentional replacement seam.  As Water gains an internal
-     * CPU/BIOS/DOS runtime, select it here and shrink the DOSBox fallback
-     * rather than teaching winevdm more DOS-specific behavior.
+     * This is the intentional replacement seam.  COM files now have a real
+     * Water PSP/memory/register image before execution falls back.  As CPU,
+     * BIOS and INT 21h support arrives, execute that prepared process here
+     * and shrink this fallback rather than moving DOS logic back to winevdm.
      */
-    ret = run_dosbox( argv[2], args );
+    ret = run_dosbox( appname, args );
 
     HeapFree( GetProcessHeap(), 0, args );
     return ret;
