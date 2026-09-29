@@ -216,9 +216,9 @@ static void _write_ftprolog(LPBYTE relayCode ,DWORD *targetTable) {
 	x	= relayCode;
 	*x++	= 0x0f;*x++=0xb6;*x++=0xd1; /* movzbl edx,cl */
 	*x++	= 0x8B;*x++=0x14;*x++=0x95;put_x86_dword( x, (UINT_PTR)targetTable );
-	x += sizeof(DWORD);\t/* mov edx, [4*edx + targetTable] */
+	x += sizeof(DWORD); /* mov edx, [4*edx + targetTable] */
 	*x++	= 0x68; put_x86_dword( x, (UINT_PTR)FT_Prolog );
-	x += sizeof(DWORD); \t/* push FT_Prolog */
+	x += sizeof(DWORD);  /* push FT_Prolog */
 	*x++	= 0xC3;		/* lret */
 	/* fill rest with 0xCC / int 3 */
 }
@@ -243,9 +243,9 @@ static void _write_qtthunk(
 	*x++	= 0x33;*x++=0xC9; /* xor ecx,ecx */
 	*x++	= 0x8A;*x++=0x4D;*x++=0xFC; /* movb cl,[ebp-04] */
 	*x++	= 0x8B;*x++=0x14;*x++=0x8D;put_x86_dword( x, (UINT_PTR)targetTable );
-	x += sizeof(DWORD);\t/* mov edx, [4*ecx + targetTable */
+	x += sizeof(DWORD); /* mov edx, [4*ecx + targetTable */
 	*x++	= 0xB8; put_x86_dword( x, (UINT_PTR)QT_Thunk );
-	x += sizeof(DWORD); \t/* mov eax , QT_Thunk */
+	x += sizeof(DWORD);  /* mov eax , QT_Thunk */
 	*x++	= 0xFF; *x++ = 0xE0;	/* jmp eax */
 	/* should fill the rest of the 32 bytes with 0xCC */
 }
