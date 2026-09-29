@@ -265,6 +265,37 @@ static BOOL wow_dos_file_attributes( I386_CONTEXT *context )
     return TRUE;
 }
 
+static BOOL wow_dos_ioctl( I386_CONTEXT *context )
+{
+    BYTE subfunction = LOWORD(context->Eax) & 0xff;
+    BYTE drive = LOWORD(context->Ebx) & 0xff;
+    char root[] = "A:\\";
+    UINT type;
+
+    /* NT5's WOW quick path only handles DOS IOCTL subfunction 08h. */
+    if (subfunction != 0x08) return FALSE;
+
+    if (!drive) drive = wow_dos.current_drive + 1;
+    if (!drive || drive > ARRAY_SIZE(wow_dos.directory))
+    {
+        wow_dos_error( context, ERROR_INVALID_DRIVE );
+        return TRUE;
+    }
+
+    root[0] += drive - 1;
+    type = GetDriveTypeA( root );
+    if (type == DRIVE_UNKNOWN || type == DRIVE_NO_ROOT_DIR)
+    {
+        wow_dos_error( context, ERROR_INVALID_DRIVE );
+        return TRUE;
+    }
+
+    /* DOS returns AX=0 for removable media and AX=1 for non-removable. */
+    set_reg_word( &context->Eax, type == DRIVE_REMOVABLE ? 0 : 1 );
+    wow_dos_success( context );
+    return TRUE;
+}
+
 static BOOL WINAPI wow_ntvdm_int21( I386_CONTEXT *context )
 {
     SYSTEMTIME time;
@@ -300,6 +331,9 @@ static BOOL WINAPI wow_ntvdm_int21( I386_CONTEXT *context )
 
     case 0x43:  /* get/set file attributes */
         return wow_dos_file_attributes( context );
+
+    case 0x44:  /* IOCTL: NT5 WOW quick path only handles AL=08h */
+        return wow_dos_ioctl( context );
 
     case 0x47:  /* get current directory */
         return wow_dos_get_current_directory( context );
