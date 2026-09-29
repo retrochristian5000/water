@@ -16,12 +16,12 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntvdm);
 
-C_ASSERT(sizeof(struct dos_psp) == DOS_PSP_SIZE);
-C_ASSERT(FIELD_OFFSET(struct dos_psp, memory_end) == 0x02);
-C_ASSERT(FIELD_OFFSET(struct dos_psp, environment_segment) == 0x2c);
-C_ASSERT(FIELD_OFFSET(struct dos_psp, max_handles) == 0x32);
-C_ASSERT(FIELD_OFFSET(struct dos_psp, int21_retf) == 0x50);
-C_ASSERT(FIELD_OFFSET(struct dos_psp, data) == DOS_PSP_FCB1_OFFSET);
+C_ASSERT(sizeof(struct wine_dos_psp) == WINE_DOS_PSP_SIZE);
+C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, memory_end) == 0x02);
+C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, environment_segment) == 0x2c);
+C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, max_handles) == 0x32);
+C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, int21_retf) == 0x50);
+C_ASSERT(FIELD_OFFSET(struct wine_dos_psp, data) == WINE_DOS_PSP_FCB1_OFFSET);
 
 static BYTE *dos_linear(struct dos_process *process, WORD segment, WORD offset, SIZE_T size)
 {
@@ -46,7 +46,7 @@ static BOOL build_environment(struct dos_process *process, const char *path)
     DWORD short_len;
     WORD strings = 1;
 
-    env = dos_linear(process, DOS_ENV_SEGMENT, 0, 0x1000);
+    env = dos_linear(process, WINE_DOS_ENV_SEGMENT, 0, 0x1000);
     if (!env) return FALSE;
 
     short_len = GetShortPathNameA(path, short_path, ARRAY_SIZE(short_path));
@@ -67,32 +67,32 @@ static BOOL build_environment(struct dos_process *process, const char *path)
     memcpy(env + 2, &strings, sizeof(strings));
     memcpy(env + 2 + sizeof(strings), short_path, path_len);
 
-    process->environment_segment = DOS_ENV_SEGMENT;
+    process->environment_segment = WINE_DOS_ENV_SEGMENT;
     return TRUE;
 }
 
 static BOOL build_psp(struct dos_process *process, const char *args)
 {
-    struct dos_psp *psp;
+    struct wine_dos_psp *psp;
     BYTE *fcb1, *fcb2, *tail;
     SIZE_T arg_len = strlen(args);
     SIZE_T tail_len = arg_len ? arg_len + 1 : 0;
     unsigned int i;
 
-    if (tail_len > DOS_COMMAND_TAIL_MAX)
+    if (tail_len > WINE_DOS_COMMAND_TAIL_MAX)
     {
         SetLastError(ERROR_BAD_LENGTH);
         return FALSE;
     }
 
-    psp = (struct dos_psp *)dos_linear(process, DOS_PSP_SEGMENT, 0, DOS_PSP_SIZE);
+    psp = (struct wine_dos_psp *)dos_linear(process, WINE_DOS_PSP_SEGMENT, 0, WINE_DOS_PSP_SIZE);
     if (!psp) return FALSE;
 
     memset(psp, 0, sizeof(*psp));
 
     psp->int20[0] = 0xcd;
     psp->int20[1] = 0x20;
-    psp->memory_end = DOS_CONVENTIONAL_MEMORY_SIZE >> 4;
+    psp->memory_end = WINE_DOS_CONVENTIONAL_MEMORY_SIZE >> 4;
     psp->cpm_call = 0x9a;
     psp->cpm_entry = MAKELONG(0x00c0, 0x0000);
 
@@ -100,26 +100,26 @@ static BOOL build_psp(struct dos_process *process, const char *args)
      * Water currently creates a top-level DOS process directly rather than
      * through COMMAND.COM, so use the PSP itself as the root parent.
      */
-    psp->parent_psp = DOS_PSP_SEGMENT;
+    psp->parent_psp = WINE_DOS_PSP_SEGMENT;
 
     memset(psp->handles, 0xff, sizeof(psp->handles));
     for (i = 0; i < 5; i++) psp->handles[i] = i;
 
     psp->environment_segment = process->environment_segment;
     psp->max_handles = ARRAY_SIZE(psp->handles);
-    psp->handle_table = MAKELONG(FIELD_OFFSET(struct dos_psp, handles), DOS_PSP_SEGMENT);
+    psp->handle_table = MAKELONG(FIELD_OFFSET(struct wine_dos_psp, handles), WINE_DOS_PSP_SEGMENT);
     psp->previous_psp = 0xffffffff;
 
     psp->int21_retf[0] = 0xcd;
     psp->int21_retf[1] = 0x21;
     psp->int21_retf[2] = 0xcb;
 
-    fcb1 = (BYTE *)psp + DOS_PSP_FCB1_OFFSET;
-    fcb2 = (BYTE *)psp + DOS_PSP_FCB2_OFFSET;
+    fcb1 = (BYTE *)psp + WINE_DOS_PSP_FCB1_OFFSET;
+    fcb2 = (BYTE *)psp + WINE_DOS_PSP_FCB2_OFFSET;
     init_default_fcb(fcb1);
     init_default_fcb(fcb2);
 
-    tail = (BYTE *)psp + DOS_PSP_COMMAND_TAIL_OFFSET;
+    tail = (BYTE *)psp + WINE_DOS_PSP_COMMAND_TAIL_OFFSET;
     tail[0] = tail_len;
     if (arg_len)
     {
@@ -128,8 +128,8 @@ static BOOL build_psp(struct dos_process *process, const char *args)
     }
     tail[1 + tail_len] = 0x0d;
 
-    process->psp_segment = DOS_PSP_SEGMENT;
-    process->dta = MAKELONG(DOS_PSP_COMMAND_TAIL_OFFSET, DOS_PSP_SEGMENT);
+    process->psp_segment = WINE_DOS_PSP_SEGMENT;
+    process->dta = MAKELONG(WINE_DOS_PSP_COMMAND_TAIL_OFFSET, WINE_DOS_PSP_SEGMENT);
     return TRUE;
 }
 
@@ -157,14 +157,14 @@ static BOOL load_com(HANDLE file, struct dos_process *process)
     DWORD image_size, read;
 
     if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 ||
-        size.QuadPart > DOS_COM_MAX_IMAGE_SIZE)
+        size.QuadPart > WINE_DOS_COM_MAX_IMAGE_SIZE)
     {
         SetLastError(ERROR_BAD_FORMAT);
         return FALSE;
     }
 
     image_size = size.QuadPart;
-    image = dos_linear(process, DOS_PSP_SEGMENT, DOS_COM_ENTRY_OFFSET, image_size);
+    image = dos_linear(process, WINE_DOS_PSP_SEGMENT, WINE_DOS_COM_ENTRY_OFFSET, image_size);
     if (!image) return FALSE;
 
     if (image_size &&
@@ -175,17 +175,17 @@ static BOOL load_com(HANDLE file, struct dos_process *process)
      * DOS starts .COM files at PSP:0100 with all data segments at the PSP.
      * The zero word at FFFEh lets a plain RET reach PSP:0000 / INT 20h.
      */
-    stack = dos_linear(process, DOS_PSP_SEGMENT, 0xfffe, sizeof(WORD));
+    stack = dos_linear(process, WINE_DOS_PSP_SEGMENT, 0xfffe, sizeof(WORD));
     if (!stack) return FALSE;
     stack[0] = 0;
     stack[1] = 0;
 
     process->image_size = image_size;
-    process->cpu.cs = DOS_PSP_SEGMENT;
-    process->cpu.ds = DOS_PSP_SEGMENT;
-    process->cpu.es = DOS_PSP_SEGMENT;
-    process->cpu.ss = DOS_PSP_SEGMENT;
-    process->cpu.ip = DOS_COM_ENTRY_OFFSET;
+    process->cpu.cs = WINE_DOS_PSP_SEGMENT;
+    process->cpu.ds = WINE_DOS_PSP_SEGMENT;
+    process->cpu.es = WINE_DOS_PSP_SEGMENT;
+    process->cpu.ss = WINE_DOS_PSP_SEGMENT;
+    process->cpu.ip = WINE_DOS_COM_ENTRY_OFFSET;
     process->cpu.sp = 0xfffe;
     process->cpu.flags = 0x0200;
     return TRUE;
@@ -222,12 +222,12 @@ enum dos_image_kind dos_prepare_process(const char *path, const char *args,
     }
 
     if (!(process->memory = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-                                      DOS_CONVENTIONAL_MEMORY_SIZE)))
+                                      WINE_DOS_CONVENTIONAL_MEMORY_SIZE)))
     {
         CloseHandle(file);
         return DOS_IMAGE_INVALID;
     }
-    process->memory_size = DOS_CONVENTIONAL_MEMORY_SIZE;
+    process->memory_size = WINE_DOS_CONVENTIONAL_MEMORY_SIZE;
     process->image_kind = kind;
 
     if (!build_environment(process, path) ||
@@ -250,24 +250,24 @@ enum dos_image_kind dos_prepare_process(const char *path, const char *args,
     return kind;
 }
 
-static void clear_carry(struct dos_cpu_context *cpu)
+static void clear_carry(struct wine_dos_cpu_context *cpu)
 {
     cpu->flags &= ~1;
 }
 
-static BYTE get_ah(const struct dos_cpu_context *cpu)
+static BYTE get_ah(const struct wine_dos_cpu_context *cpu)
 {
     return cpu->ax >> 8;
 }
 
-static BYTE get_al(const struct dos_cpu_context *cpu)
+static BYTE get_al(const struct wine_dos_cpu_context *cpu)
 {
     return cpu->ax & 0xff;
 }
 
 static enum dos_interrupt_result handle_int21(struct dos_process *process)
 {
-    struct dos_cpu_context *cpu = &process->cpu;
+    struct wine_dos_cpu_context *cpu = &process->cpu;
 
     switch (get_ah(cpu))
     {
