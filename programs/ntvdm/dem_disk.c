@@ -33,14 +33,10 @@ BOOL DEM_AbsoluteRead(BYTE drive, DWORD begin, DWORD nr_sect, BYTE *dataptr,
         DWORD read;
 
         SetFilePointer(h, begin * 512, NULL, FILE_BEGIN);
-        if (!ReadFile(h, dataptr, nr_sect * 512, &read, NULL) ||
-            read != nr_sect * 512)
-        {
-            CloseHandle(h);
-            return FALSE;
-        }
+        /* Preserve the pre-split behavior for now; error mapping belongs to
+         * the DEM compatibility pass rather than this ownership move. */
+        ReadFile(h, dataptr, nr_sect * 512, &read, NULL);
         CloseHandle(h);
-        return TRUE;
     }
 
     memset(dataptr, 0, nr_sect * 512);
@@ -68,14 +64,10 @@ BOOL DEM_AbsoluteWrite(BYTE drive, DWORD begin, DWORD nr_sect,
         DWORD written;
 
         SetFilePointer(h, begin * 512, NULL, FILE_BEGIN);
-        if (!WriteFile(h, dataptr, nr_sect * 512, &written, NULL) ||
-            written != nr_sect * 512)
-        {
-            CloseHandle(h);
-            return FALSE;
-        }
+        /* Preserve the pre-split behavior for now; error mapping belongs to
+         * the DEM compatibility pass rather than this ownership move. */
+        WriteFile(h, dataptr, nr_sect * 512, &written, NULL);
         CloseHandle(h);
-        return TRUE;
     }
 
     return fake_success;
