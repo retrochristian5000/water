@@ -17,7 +17,7 @@
 #include "winternl.h"
 #include "kernel16_private.h"
 #include "win386.h"
-#include "wine/vdm.h"
+#include "wine/win16_profile.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dos);
@@ -91,11 +91,11 @@ static void get_msdos_path_value( const char *filename, const char *name,
 static BOOL is_win3_standard_personality(void)
 {
     char value[24];
-    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+    DWORD len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
 
     return len && len < ARRAY_SIZE(value) &&
-           (!strcmp( value, WATER_VDM_PERSONALITY_WIN30_STANDARD ) ||
-            !strcmp( value, WATER_VDM_PERSONALITY_WIN31_STANDARD ));
+           (!strcmp( value, WATER_WIN16_PERSONALITY_WIN30_STANDARD ) ||
+            !strcmp( value, WATER_WIN16_PERSONALITY_WIN31_STANDARD ));
 }
 
 void MSDOS_InitConfig(void)

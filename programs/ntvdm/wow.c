@@ -13,6 +13,7 @@
 #include "winbase.h"
 #include "wine/winbase16.h"
 #include "wine/vdm.h"
+#include "wine/win16_profile.h"
 #include "wine/debug.h"
 
 #include "wow.h"
@@ -465,7 +466,7 @@ static char *build_win16_command_line( char **argv )
 static const char *get_wow_personality(void)
 {
     static char value[24];
-    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+    DWORD len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
 
     if (len && len < ARRAY_SIZE(value) &&
         (!strcmp( value, WATER_VDM_PERSONALITY_NT31_WOW ) ||
@@ -506,14 +507,14 @@ int wow_run_app( const char *appname, char **argv )
     char *cmdline;
 
     personality = get_wow_personality();
-    if (!SetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, personality ))
+    if (!SetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, personality ))
     {
         ERR( "unable to mark NT WOW personality %s, error %lu\n",
              debugstr_a(personality), GetLastError() );
         return 1;
     }
     TRACE( "starting %s with Win16 kernel image selected by %s\n",
-           debugstr_a(personality), WATER_VDM_KERNEL16_ENV );
+           debugstr_a(personality), WATER_WIN16_KERNEL_ENV );
 
     if (!(wow32 = LoadLibraryA( "wow32.dll" )) ||
         !(w32_init = (w32_init_proc)GetProcAddress( wow32, "W32Init" )) ||

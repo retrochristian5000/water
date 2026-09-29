@@ -35,6 +35,7 @@
 #include "kernel16_private.h"
 #include "win386.h"
 #include "wine/vdm.h"
+#include "wine/win16_profile.h"
 #include "wine/exception.h"
 #include "wine/debug.h"
 
@@ -367,7 +368,7 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
     {
         const BYTE *module_name = (const BYTE *)pModule + pModule->ne_restab;
         char personality[16];
-        DWORD personality_len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV,
+        DWORD personality_len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV,
                                                           personality,
                                                           ARRAY_SIZE(personality) );
 
@@ -449,14 +450,14 @@ static enum krnl386_personality get_krnl386_personality(void)
     if (WIN386_QuerySession( NULL ))
         return cached = KRNL386_PERSONALITY_WIN386;
 
-    len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+    len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
     if (len && len < ARRAY_SIZE(value))
     {
-        if (!strcmp( value, WATER_VDM_PERSONALITY_WIN30_STANDARD ))
+        if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN30_STANDARD ))
             return cached = KRNL386_PERSONALITY_WIN30_STANDARD;
-        if (!strcmp( value, WATER_VDM_PERSONALITY_WIN31_STANDARD ))
+        if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN31_STANDARD ))
             return cached = KRNL386_PERSONALITY_WIN31_STANDARD;
-        if (!strcmp( value, WATER_VDM_PERSONALITY_WIN95_OSR2 ))
+        if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN95_OSR2 ))
             return cached = KRNL386_PERSONALITY_WIN95_OSR2;
         if (!strcmp( value, WATER_VDM_PERSONALITY_NT31_WOW ))
             return cached = KRNL386_PERSONALITY_NT31_WOW;

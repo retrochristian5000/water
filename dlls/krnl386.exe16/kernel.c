@@ -31,6 +31,7 @@
 #include "kernel16_private.h"
 #include "win386.h"
 #include "wine/vdm.h"
+#include "wine/win16_profile.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
@@ -38,7 +39,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(module);
 static BOOL kernel_personality_is( const char *personality )
 {
     char value[24];
-    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+    DWORD len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
 
     return len && len < ARRAY_SIZE(value) && !strcmp( value, personality );
 }
@@ -62,7 +63,7 @@ static BOOL kernel_is_nt351_wow_session(void)
 
 static BOOL kernel_is_win95_osr2_session(void)
 {
-    return kernel_personality_is( WATER_VDM_PERSONALITY_WIN95_OSR2 );
+    return kernel_personality_is( WATER_WIN16_PERSONALITY_WIN95_OSR2 );
 }
 
 static WORD kernel_win3_standard_version(void)
@@ -70,9 +71,9 @@ static WORD kernel_win3_standard_version(void)
     /* A live WIN386 session is authoritative enhanced mode. */
     if (WIN386_QuerySession( NULL )) return 0;
 
-    if (kernel_personality_is( WATER_VDM_PERSONALITY_WIN30_STANDARD ))
+    if (kernel_personality_is( WATER_WIN16_PERSONALITY_WIN30_STANDARD ))
         return MAKEWORD( 3, 0 );
-    if (kernel_personality_is( WATER_VDM_PERSONALITY_WIN31_STANDARD ))
+    if (kernel_personality_is( WATER_WIN16_PERSONALITY_WIN31_STANDARD ))
         return MAKEWORD( 3, 10 );
     return 0;
 }
@@ -90,15 +91,15 @@ static const char *kernel16_image_name(void)
 
     if (image) return image;
 
-    len = GetEnvironmentVariableA( WATER_VDM_KERNEL16_ENV, value, ARRAY_SIZE(value) );
+    len = GetEnvironmentVariableA( WATER_WIN16_KERNEL_ENV, value, ARRAY_SIZE(value) );
     if (len && len < ARRAY_SIZE(value))
     {
-        if (!strcmp( value, WATER_VDM_KERNEL16_KRNL286 ))
+        if (!strcmp( value, WATER_WIN16_KERNEL_KRNL286 ))
             return image = "krnl286.exe";
-        if (!strcmp( value, WATER_VDM_KERNEL16_KRNL386 ))
+        if (!strcmp( value, WATER_WIN16_KERNEL_KRNL386 ))
             return image = "krnl386.exe";
         WARN( "unknown %s value %s; using KRNL386\n",
-              WATER_VDM_KERNEL16_ENV, debugstr_a(value) );
+              WATER_WIN16_KERNEL_ENV, debugstr_a(value) );
     }
     return image = "krnl386.exe";
 }
@@ -127,14 +128,14 @@ static BYTE kernel_configured_x86_cpu_level(void)
 
     if (level != 0xff) return level;
 
-    len = GetEnvironmentVariableA( WATER_VDM_X86_CPU_LEVEL_ENV, value, ARRAY_SIZE(value) );
+    len = GetEnvironmentVariableA( WATER_WIN16_CPU_LEVEL_ENV, value, ARRAY_SIZE(value) );
     if (!len) return level = 0;
 
     if (len == 1 && value[0] >= '2' && value[0] <= '4')
         return level = value[0] - '0';
 
     WARN( "invalid %s value %s; expected 2, 3, or 4\n",
-          WATER_VDM_X86_CPU_LEVEL_ENV, debugstr_a(value) );
+          WATER_WIN16_CPU_LEVEL_ENV, debugstr_a(value) );
     return level = 0;
 }
 
@@ -239,7 +240,7 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     if (!kernel16_is_krnl286() && kernel_configured_x86_cpu_level() == 2)
     {
         ERR( "KRNL386 requires a 386+ guest CPU, but %s requests a 286\n",
-             WATER_VDM_X86_CPU_LEVEL_ENV );
+             WATER_WIN16_CPU_LEVEL_ENV );
         done = FALSE;
         return FALSE;
     }
