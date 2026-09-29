@@ -191,6 +191,80 @@ static BOOL wow_dos_get_current_directory( I386_CONTEXT *context )
     return TRUE;
 }
 
+static BOOL wow_dos_delete_file( I386_CONTEXT *context )
+{
+    const char *path;
+    WCHAR pathW[MAX_PATH];
+
+    if (!wow_map_sl ||
+        !(path = wow_map_sl( MAKESEGPTR( (WORD)context->SegDs, LOWORD(context->Edx) ) )))
+    {
+        wow_dos_error( context, ERROR_INVALID_ADDRESS );
+        return TRUE;
+    }
+
+    if (!MultiByteToWideChar( CP_OEMCP, 0, path, -1, pathW, ARRAY_SIZE(pathW) ) ||
+        !DeleteFileW( pathW ))
+    {
+        wow_dos_error( context, GetLastError() );
+        return TRUE;
+    }
+
+    wow_dos_success( context );
+    return TRUE;
+}
+
+static BOOL wow_dos_file_attributes( I386_CONTEXT *context )
+{
+    const char *path;
+    WCHAR pathW[MAX_PATH];
+    DWORD attr;
+    BYTE subfunction = LOWORD(context->Eax) & 0xff;
+
+    if (subfunction > 1) return FALSE;
+
+    if (!wow_map_sl ||
+        !(path = wow_map_sl( MAKESEGPTR( (WORD)context->SegDs, LOWORD(context->Edx) ) )))
+    {
+        wow_dos_error( context, ERROR_INVALID_ADDRESS );
+        return TRUE;
+    }
+
+    if (!MultiByteToWideChar( CP_OEMCP, 0, path, -1, pathW, ARRAY_SIZE(pathW) ))
+    {
+        wow_dos_error( context, GetLastError() );
+        return TRUE;
+    }
+
+    if (!subfunction)
+    {
+        size_t len = lstrlenW( pathW );
+
+        if (!len || pathW[len - 1] == '\\' || pathW[len - 1] == '/')
+        {
+            wow_dos_error( context, ERROR_FILE_NOT_FOUND );
+            return TRUE;
+        }
+
+        attr = GetFileAttributesW( pathW );
+        if (attr == INVALID_FILE_ATTRIBUTES)
+        {
+            wow_dos_error( context, GetLastError() );
+            return TRUE;
+        }
+
+        set_reg_word( &context->Ecx, (WORD)attr );
+    }
+    else if (!SetFileAttributesW( pathW, LOWORD(context->Ecx) ))
+    {
+        wow_dos_error( context, GetLastError() );
+        return TRUE;
+    }
+
+    wow_dos_success( context );
+    return TRUE;
+}
+
 static BOOL WINAPI wow_ntvdm_int21( I386_CONTEXT *context )
 {
     SYSTEMTIME time;
@@ -218,17 +292,14 @@ static BOOL WINAPI wow_ntvdm_int21( I386_CONTEXT *context )
         wow_dos_success( context );
         return TRUE;
 
-    case 0x2c:  /* get time */
-        GetLocalTime( &time );
-        set_reg_high_byte( &context->Ecx, time.wHour );
-        set_reg_low_byte( &context->Ecx, time.wMinute );
-        set_reg_high_byte( &context->Edx, time.wSecond );
-        set_reg_low_byte( &context->Edx, time.wMilliseconds / 10 );
-        wow_dos_success( context );
-        return TRUE;
-
     case 0x3b:  /* set current directory */
         return wow_dos_set_current_directory( context );
+
+    case 0x41:  /* delete file */
+        return wow_dos_delete_file( context );
+
+    case 0x43:  /* get/set file attributes */
+        return wow_dos_file_attributes( context );
 
     case 0x47:  /* get current directory */
         return wow_dos_get_current_directory( context );
