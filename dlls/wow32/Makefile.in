@@ -1,6 +1,7 @@
 MODULE    = wow32.dll
 IMPORTLIB = wow32
-IMPORTS   = kernel kernel32
+IMPORTS   = kernel32
+DELAYIMPORTS = kernel
 
 SOURCES = \
 	wow32.c
