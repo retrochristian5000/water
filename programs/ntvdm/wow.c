@@ -187,7 +187,6 @@ static BOOL wow_dos_get_current_directory( I386_CONTEXT *context )
 
     /* DOS AH=47h specifies a 64-byte caller buffer. */
     lstrcpynA( buffer, relative, 64 );
-    set_reg_word( &context->Eax, 0x0100 );
     wow_dos_success( context );
     return TRUE;
 }
