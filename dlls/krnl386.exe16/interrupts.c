@@ -40,7 +40,6 @@ static void WINAPI DOSVM_Int16Handler(I386_CONTEXT *);
 static void WINAPI DOSVM_Int17Handler(I386_CONTEXT *);
 static void WINAPI DOSVM_Int19Handler(I386_CONTEXT *);
 static void WINAPI DOSVM_Int1aHandler(I386_CONTEXT *);
-static void WINAPI DOSVM_Int20Handler(I386_CONTEXT *);
 static void WINAPI DOSVM_Int2aHandler(I386_CONTEXT *);
 static void WINAPI DOSVM_Int41Handler(I386_CONTEXT *);
 static void WINAPI DOSVM_Int4bHandler(I386_CONTEXT *);
@@ -188,15 +187,6 @@ static void WINAPI DOSVM_Int16Handler( I386_CONTEXT *context )
         FIXME( "INT 16h function %02x not implemented\n", AH_reg(context) );
         break;
     }
-}
-
-
-/**********************************************************************
- *          DOSVM_Exit
- */
-void DOSVM_Exit( WORD retval )
-{
-    ExitThread( retval );
 }
 
 
@@ -779,17 +769,6 @@ static void WINAPI DOSVM_Int1aHandler( I386_CONTEXT *context )
     default:
         INT_BARF( context, 0x1a );
     }
-}
-
-
-/**********************************************************************
- *	    DOSVM_Int20Handler
- *
- * Handler for int 20h.
- */
-static void WINAPI DOSVM_Int20Handler( I386_CONTEXT *context )
-{
-    DOSVM_Exit( 0 );
 }
 
 
