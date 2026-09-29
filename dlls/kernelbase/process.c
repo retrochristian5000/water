@@ -359,26 +359,39 @@ static NTSTATUS create_nt_process( HANDLE token, HANDLE debug, SECURITY_ATTRIBUT
  *           create_vdm_process
  */
 static NTSTATUS create_vdm_process( HANDLE token, HANDLE debug, SECURITY_ATTRIBUTES *psa,
-                                    SECURITY_ATTRIBUTES *tsa, DWORD flags,
+                                    SECURITY_ATTRIBUTES *tsa, DWORD flags, BOOL wow,
                                     RTL_USER_PROCESS_PARAMETERS *params,
                                     RTL_USER_PROCESS_INFORMATION *info )
 {
-    const WCHAR *winevdm = (is_win64 || is_wow64 ?
-                            L"C:\\windows\\syswow64\\winevdm.exe" :
-                            L"C:\\windows\\system32\\winevdm.exe");
+    const WCHAR *host, *mode;
     WCHAR *newcmdline;
     NTSTATUS status;
     UINT len;
 
-    len = (lstrlenW(params->ImagePathName.Buffer) + lstrlenW(params->CommandLine.Buffer) +
-           lstrlenW(winevdm) + 16);
+    if (wow)
+    {
+        host = (is_win64 || is_wow64 ?
+                L"C:\\windows\\syswow64\\ntvdm.exe" :
+                L"C:\\windows\\system32\\ntvdm.exe");
+        mode = L"--wow-app-name";
+    }
+    else
+    {
+        host = (is_win64 || is_wow64 ?
+                L"C:\\windows\\syswow64\\winevdm.exe" :
+                L"C:\\windows\\system32\\winevdm.exe");
+        mode = L"--app-name";
+    }
+
+    len = lstrlenW(params->ImagePathName.Buffer) + lstrlenW(params->CommandLine.Buffer) +
+          lstrlenW(host) + lstrlenW(mode) + 8;
 
     if (!(newcmdline = RtlAllocateHeap( GetProcessHeap(), 0, len * sizeof(WCHAR) )))
         return STATUS_NO_MEMORY;
 
-    swprintf( newcmdline, len, L"%s --app-name \"%s\" %s",
-              winevdm, params->ImagePathName.Buffer, params->CommandLine.Buffer );
-    RtlInitUnicodeString( &params->ImagePathName, winevdm );
+    swprintf( newcmdline, len, L"%s %s \"%s\" %s",
+              host, mode, params->ImagePathName.Buffer, params->CommandLine.Buffer );
+    RtlInitUnicodeString( &params->ImagePathName, host );
     RtlInitUnicodeString( &params->CommandLine, newcmdline );
     status = create_nt_process( token, debug, psa, tsa, flags, params, info, 0, 0, NULL, NULL );
     HeapFree( GetProcessHeap(), 0, newcmdline );
@@ -650,11 +663,15 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateProcessInternalW( HANDLE token, const WCHAR 
     case STATUS_SUCCESS:
         break;
     case STATUS_INVALID_IMAGE_WIN_16:
+        TRACE( "starting %s in NTVDM/WOW\n", debugstr_w(app_name) );
+        status = create_vdm_process( token, debug, process_attr, thread_attr,
+                                     nt_flags, TRUE, params, &rtl_info );
+        break;
     case STATUS_INVALID_IMAGE_NE_FORMAT:
     case STATUS_INVALID_IMAGE_PROTECT:
-        TRACE( "starting %s as Win16/DOS binary\n", debugstr_w(app_name) );
+        TRACE( "starting %s through legacy VDM compatibility path\n", debugstr_w(app_name) );
         status = create_vdm_process( token, debug, process_attr, thread_attr,
-                                     nt_flags, params, &rtl_info );
+                                     nt_flags, FALSE, params, &rtl_info );
         break;
     case STATUS_INVALID_IMAGE_NOT_MZ:
         /* check for .com or .bat extension */
@@ -663,7 +680,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateProcessInternalW( HANDLE token, const WCHAR 
         {
             TRACE( "starting %s as DOS binary\n", debugstr_w(app_name) );
             status = create_vdm_process( token, debug, process_attr, thread_attr,
-                                         nt_flags, params, &rtl_info );
+                                         nt_flags, FALSE, params, &rtl_info );
         }
         else if (!wcsicmp( p, L".bat" ) || !wcsicmp( p, L".cmd" ))
         {
