@@ -28,6 +28,8 @@
 #include "wine/winbase16.h"
 #include "winuser.h"
 #include "wincon.h"
+#include "winreg.h"
+#include "wine/doskeyb.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(winevdm);
@@ -105,15 +107,67 @@ typedef struct {
 /***********************************************************************
  *           start_dosbox
  */
+static BOOL get_dos_keyboard( char layout[WINE_DOS_KEYB_MAX_LAYOUT + 1], DWORD *codepage )
+{
+    WCHAR layoutW[WINE_DOS_KEYB_MAX_LAYOUT + 1];
+    DWORD type, size;
+    HKEY key;
+    unsigned int i;
+
+    *codepage = 0;
+    if (RegOpenKeyExW( HKEY_CURRENT_USER, WINE_DOS_KEYB_REGKEY, 0, KEY_QUERY_VALUE, &key ))
+        return FALSE;
+
+    size = sizeof(layoutW);
+    if (RegQueryValueExW( key, WINE_DOS_KEYB_LAYOUT_VALUE, NULL, &type,
+                          (BYTE *)layoutW, &size ) != ERROR_SUCCESS ||
+        type != REG_SZ || !layoutW[0])
+    {
+        RegCloseKey( key );
+        return FALSE;
+    }
+    layoutW[ARRAY_SIZE(layoutW) - 1] = 0;
+
+    for (i = 0; layoutW[i]; i++)
+    {
+        if (i >= WINE_DOS_KEYB_MAX_LAYOUT ||
+            !((layoutW[i] >= L'A' && layoutW[i] <= L'Z') ||
+              (layoutW[i] >= L'a' && layoutW[i] <= L'z')))
+        {
+            RegCloseKey( key );
+            return FALSE;
+        }
+        layout[i] = (char)layoutW[i];
+    }
+    if (i != 2)
+    {
+        RegCloseKey( key );
+        return FALSE;
+    }
+    layout[i] = 0;
+
+    size = sizeof(*codepage);
+    if (RegQueryValueExW( key, WINE_DOS_KEYB_CODEPAGE_VALUE, NULL, &type,
+                          (BYTE *)codepage, &size ) != ERROR_SUCCESS ||
+        type != REG_DWORD || size != sizeof(*codepage) || !*codepage || *codepage > 65535)
+        *codepage = 0;
+
+    RegCloseKey( key );
+    return TRUE;
+}
+
+
 static void start_dosbox( const char *appname, const char *args )
 {
     const WCHAR *config_dir = _wgetenv( L"WINECONFIGDIR" );
     WCHAR path[MAX_PATH], config[MAX_PATH];
     HANDLE file;
     char *p, *prefix, *buffer, app[MAX_PATH];
+    char keyb_layout[WINE_DOS_KEYB_MAX_LAYOUT + 1];
     int i;
     NTSTATUS ret = STATUS_OBJECT_NAME_NOT_FOUND;
-    DWORD written, drives = GetLogicalDrives();
+    DWORD written, drives = GetLogicalDrives(), keyb_codepage;
+    BOOL have_keyb = get_dos_keyboard( keyb_layout, &keyb_codepage );
 
     if (!config_dir || !(prefix = wine_get_unix_file_name( config_dir ))) return;
     if (!GetTempPathW( MAX_PATH, path )) return;
@@ -128,6 +182,7 @@ static void start_dosbox( const char *appname, const char *args )
                         sizeof("mount -z c") + sizeof("config -securemode") +
                         26 * (strlen(prefix) + sizeof("mount c /dosdevices/c:")) +
                         4 * lstrlenW( path ) +
+                        sizeof("keyb ABCDE 65535") +
                         6 + strlen( app ) + strlen( args ) + 20 );
     p = buffer;
     p += sprintf( p, "[autoexec]\n" );
@@ -144,6 +199,11 @@ static void start_dosbox( const char *appname, const char *args )
     }
     p += sprintf( p, "%c:\ncd ", path[0] );
     p += WideCharToMultiByte( CP_UNIXCP, 0, path + 2, -1, p, 4 * lstrlenW(path), NULL, NULL ) - 1;
+    if (have_keyb)
+    {
+        p += sprintf( p, "\nkeyb %s", keyb_layout );
+        if (keyb_codepage) p += sprintf( p, " %lu", keyb_codepage );
+    }
     p += sprintf( p, "\nconfig -securemode\n" );
     p += sprintf( p, "%s %s\n", app, args );
     p += sprintf( p, "exit\n" );

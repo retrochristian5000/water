@@ -1,0 +1,7 @@
+MODULE    = keyb.com
+IMPORTS   = advapi32 kernelbase
+
+EXTRADLLFLAGS = -mconsole -municode
+
+SOURCES = \
+	main.c
