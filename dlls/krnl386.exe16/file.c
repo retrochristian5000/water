@@ -640,7 +640,29 @@ BOOL16 WINAPI WritePrivateProfileString16( LPCSTR section, LPCSTR entry,
  */
 UINT16 WINAPI GetWindowsDirectory16( LPSTR path, UINT16 count )
 {
-    return GetWindowsDirectoryA( path, count );
+    char win16dir[MAX_PATH], shortdir[MAX_PATH];
+    const char *dir;
+    DWORD len;
+
+    /*
+     * NT WOW can keep its Win16 Windows tree separate from SystemRoot.
+     * Windows NT KRNL386 honors Win16Dir for this compatibility case instead
+     * of deriving the directory from WIN.COM's location.
+     */
+    if (!kernel_is_nt_wow_session() ||
+        !(len = GetEnvironmentVariableA( "Win16Dir", win16dir, ARRAY_SIZE(win16dir) )) ||
+        len >= ARRAY_SIZE(win16dir))
+        return GetWindowsDirectoryA( path, count );
+
+    dir = win16dir;
+    len = GetShortPathNameA( win16dir, shortdir, ARRAY_SIZE(shortdir) );
+    if (len && len < ARRAY_SIZE(shortdir)) dir = shortdir;
+
+    len = strlen( dir );
+    if (!path || count <= len) return len + 1;
+
+    memcpy( path, dir, len + 1 );
+    return len;
 }
 
 
