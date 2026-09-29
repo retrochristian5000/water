@@ -89,6 +89,42 @@ static BOOL parse_version(const char *str, WORD *version)
     return FALSE;
 }
 
+static struct water_win386_session *open_session_rw(HANDLE *mapping)
+{
+    struct water_win386_session *state;
+    char name[64];
+    DWORD len;
+
+    *mapping = NULL;
+
+    len = GetEnvironmentVariableA(WATER_WIN386_SESSION_ENV, name, ARRAY_SIZE(name));
+    if (!len || len >= ARRAY_SIZE(name)) return NULL;
+
+    *mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, name);
+    if (!*mapping) return NULL;
+
+    state = MapViewOfFile(*mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(*state));
+    if (!state)
+    {
+        CloseHandle(*mapping);
+        *mapping = NULL;
+        return NULL;
+    }
+
+    if (state->magic != WATER_WIN386_MAGIC ||
+        state->abi_version != WATER_WIN386_ABI_VERSION ||
+        !(state->flags & WATER_WIN386_FLAG_ACTIVE) ||
+        !(state->flags & WATER_WIN386_FLAG_VMM))
+    {
+        UnmapViewOfFile(state);
+        CloseHandle(*mapping);
+        *mapping = NULL;
+        return NULL;
+    }
+
+    return state;
+}
+
 static BOOL query_session(struct water_win386_session *copy)
 {
     struct water_win386_session *state;
@@ -122,6 +158,73 @@ static BOOL query_session(struct water_win386_session *copy)
     UnmapViewOfFile(state);
     CloseHandle(mapping);
     return FALSE;
+}
+
+static int run_dos_vm(char **argv)
+{
+    struct water_win386_session *state;
+    PROCESS_INFORMATION process;
+    STARTUPINFOA startup;
+    char old_vm[16], vm_text[16], *command;
+    HANDLE mapping;
+    DWORD old_vm_len, exit_code = 1;
+    LONG vm;
+
+    if (!argv[0]) return 1;
+    if (!(command = build_command_line(argv))) return 1;
+
+    state = open_session_rw(&mapping);
+    if (!state)
+    {
+        fprintf(stderr, "win386: no active enhanced-mode session\n");
+        HeapFree(GetProcessHeap(), 0, command);
+        return 1;
+    }
+
+    vm = InterlockedIncrement(&state->next_vm) - 1;
+    if (vm <= state->system_vm || vm > 0xffff)
+    {
+        fprintf(stderr, "win386: virtual-machine ID space exhausted\n");
+        UnmapViewOfFile(state);
+        CloseHandle(mapping);
+        HeapFree(GetProcessHeap(), 0, command);
+        return 1;
+    }
+
+    InterlockedIncrement(&state->active_vms);
+
+    old_vm_len = GetEnvironmentVariableA(WATER_WIN386_VM_ENV, old_vm, ARRAY_SIZE(old_vm));
+    sprintf(vm_text, "%ld", vm);
+    SetEnvironmentVariableA(WATER_WIN386_VM_ENV, vm_text);
+
+    memset(&startup, 0, sizeof(startup));
+    startup.cb = sizeof(startup);
+    memset(&process, 0, sizeof(process));
+
+    TRACE("starting DOS VM %ld: %s\n", vm, debugstr_a(command));
+
+    if (CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process))
+    {
+        WaitForSingleObject(process.hProcess, INFINITE);
+        GetExitCodeProcess(process.hProcess, &exit_code);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
+    else
+        ERR("unable to start DOS VM %ld command %s, error %lu\n",
+            vm, debugstr_a(command), GetLastError());
+
+    if (old_vm_len && old_vm_len < ARRAY_SIZE(old_vm))
+        SetEnvironmentVariableA(WATER_WIN386_VM_ENV, old_vm);
+    else
+        SetEnvironmentVariableA(WATER_WIN386_VM_ENV, NULL);
+
+    InterlockedDecrement(&state->active_vms);
+
+    UnmapViewOfFile(state);
+    CloseHandle(mapping);
+    HeapFree(GetProcessHeap(), 0, command);
+    return exit_code;
 }
 
 static int show_status(void)
@@ -227,6 +330,7 @@ static void usage(void)
 {
     printf("Water Windows/386 enhanced-mode host\n\n"
            "win386.exe --system-vm [--version 3.0|3.1] command [args...]\n"
+           "win386.exe --dos-vm command [args...]\n"
            "win386.exe --status\n");
 }
 
@@ -236,6 +340,9 @@ int main(int argc, char **argv)
     int arg = 1;
 
     if (argc == 2 && !strcmp(argv[1], "--status")) return show_status();
+
+    if (argc >= 3 && !strcmp(argv[1], "--dos-vm"))
+        return run_dos_vm(argv + 2);
 
     if (argc < 3 || strcmp(argv[arg++], "--system-vm"))
     {
