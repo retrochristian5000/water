@@ -159,6 +159,12 @@ enum generic_thunk_token_kind
     GENERIC_THUNK_TOKEN_PROC
 };
 
+/*
+ * The NT SDK treats LoadLibraryEx32W/GetProcAddress32W results as 32-bit
+ * generic-thunk values that are fed back into the thunk API.  They do not
+ * need to expose a host-native pointer on a wider host, so Water uses opaque
+ * round-trip tokens there rather than truncating HMODULE/FARPROC values.
+ */
 struct generic_thunk_token
 {
     struct generic_thunk_token *next;
@@ -2822,7 +2828,7 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
 
     for (i = 0; i < count; i++)
     {
-        if (argconvmask & (1<<i))
+        if (argconvmask & (1u << i))
         {
             SEGPTR ptr = VA_ARG16( valist, SEGPTR );
             DWORD linear;
@@ -2868,7 +2874,7 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
 
     for (i = 0; i < count; i++)
     {
-        if (argconvmask & (1<<i))
+        if (argconvmask & (1u << i))
         {
             SEGPTR ptr = VA_ARG16( valist, SEGPTR );
             DWORD linear;
