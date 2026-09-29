@@ -321,6 +321,7 @@ extern void output_res16_directory( DLLSPEC *spec );
 extern void output_bin_res16_directory( DLLSPEC *spec, unsigned int data_offset );
 extern void output_spec16_file( DLLSPEC *spec );
 extern void output_fake_module16( DLLSPEC *spec16 );
+extern void output_raw_module16( DLLSPEC *spec16 );
 extern void output_res_o_file( DLLSPEC *spec );
 extern void output_asm_relays16(void);
 extern void make_builtin_files( struct strarray files );

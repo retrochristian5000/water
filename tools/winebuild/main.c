@@ -58,6 +58,7 @@ FILE *output_file = NULL;
 const char *output_file_name = NULL;
 static int save_temps;
 static int fake_module;
+static int raw_win16_module;
 static DLLSPEC *main_spec;
 
 static const struct strarray empty_strarray;
@@ -192,6 +193,7 @@ static const char usage_str[] =
 "   -f FLAGS                  Compiler flags (-fPIC and -fasynchronous-unwind-tables are supported)\n"
 "   -F, --filename=DLLFILE    Set the DLL filename (default: from input file name)\n"
 "       --fake-module         Create a fake binary module\n"
+"       --raw-win16-module    Create a standalone Win16 MZ/NE module\n"
 "   -h, --help                Display this help message\n"
 "   -H, --heap=SIZE           Set the heap size for a Win16 dll\n"
 "   -I DIR                    Ignored for C flags compatibility\n"
@@ -240,6 +242,7 @@ enum long_options_values
     LONG_OPT_DISABLE_DYNAMICBASE,
     LONG_OPT_EXTERNAL_SYMS,
     LONG_OPT_FAKE_MODULE,
+    LONG_OPT_RAW_WIN16_MODULE,
     LONG_OPT_FIXUP_CTORS,
     LONG_OPT_LARGE_ADDRESS_AWARE,
     LONG_OPT_LDCMD,
@@ -276,6 +279,7 @@ static const struct long_option long_options[] =
     { "disable-dynamicbase", 0, LONG_OPT_DISABLE_DYNAMICBASE },
     { "external-symbols",    0, LONG_OPT_EXTERNAL_SYMS },
     { "fake-module",         0, LONG_OPT_FAKE_MODULE },
+    { "raw-win16-module",    0, LONG_OPT_RAW_WIN16_MODULE },
     { "large-address-aware", 0, LONG_OPT_LARGE_ADDRESS_AWARE },
     { "ld-cmd",              1, LONG_OPT_LDCMD },
     { "nm-cmd",              1, LONG_OPT_NMCMD },
@@ -476,6 +480,9 @@ static void option_callback( int optc, char *optarg )
     case LONG_OPT_FAKE_MODULE:
         fake_module = 1;
         break;
+    case LONG_OPT_RAW_WIN16_MODULE:
+        raw_win16_module = 1;
+        break;
     case LONG_OPT_EXTERNAL_SYMS:
         link_ext_symbols = 1;
         break;
@@ -630,6 +637,17 @@ int main(int argc, char **argv)
         if (spec_file_name && !parse_input_file( spec )) break;
         if (!spec->init_func) spec->init_func = xstrdup( get_default_entry_point( spec ));
 
+        if (fake_module && raw_win16_module)
+            fatal_error( "--fake-module and --raw-win16-module are mutually exclusive.\n" );
+        if (data_only && raw_win16_module)
+            fatal_error( "--data-only and --raw-win16-module are mutually exclusive.\n" );
+        if (raw_win16_module)
+        {
+            if (spec->type != SPEC_WIN16)
+                fatal_error( "--raw-win16-module requires -m16.\n" );
+            output_raw_module16( spec );
+            break;
+        }
         if (fake_module)
         {
             output_fake_module( spec );

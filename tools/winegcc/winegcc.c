@@ -184,6 +184,7 @@ static bool nodefaultlibs;
 static bool noshortwchar;
 static bool data_only;
 static bool fake_module;
+static bool raw_win16_module;
 static bool large_address_aware;
 static bool wine_builtin;
 static bool unwind_tables;
@@ -1175,7 +1176,13 @@ static void build_spec_obj( const char *spec_file, const char *output_file,
         if (unwind_tables) strarray_add( &spec_args, "-fasynchronous-unwind-tables" );
     }
     strarray_add(&spec_args, is_shared ? "--dll" : "--exe");
-    if (fake_module)
+    if (raw_win16_module)
+    {
+        strarray_add(&spec_args, "--raw-win16-module");
+        strarray_add(&spec_args, "-o");
+        strarray_add(&spec_args, output_file);
+    }
+    else if (fake_module)
     {
         strarray_add(&spec_args, "--fake-module");
         strarray_add(&spec_args, "-o");
@@ -1424,7 +1431,7 @@ static void build(struct strarray input_files, const char *output)
     }
     else build_spec_obj( spec_file, output_file, target.cpu, files, resources, &spec_objs );
 
-    if (fake_module) return;  /* nothing else to do */
+    if (fake_module || raw_win16_module) return;  /* binary was emitted by winebuild */
 
     if (is_pe && !entry_point && (is_shared || is_win16_app))
         entry_point = target.cpu == CPU_i386 ? "DllMainCRTStartup@12" : "DllMainCRTStartup";
@@ -2024,6 +2031,7 @@ int main(int argc, char **argv)
                         {
                             if (!strcmp(arg, "--data-only")) data_only = true;
                             if (!strcmp(arg, "--fake-module")) fake_module = true;
+                            else if (!strcmp(arg, "--raw-win16-module")) raw_win16_module = true;
                             else strarray_add( &winebuild_args, arg );
                             if (!strcmp(arg, "--safeseh")) safeseh = true;
                         }
@@ -2123,6 +2131,12 @@ int main(int argc, char **argv)
     is_pe = is_pe_target( target );
     if (is_pe) use_msvcrt = true;
     if (output && strendswith( output, ".fake" )) fake_module = true;
+    if (raw_win16_module && !is_win16_app)
+        error( "--raw-win16-module requires -m16\n" );
+    if (raw_win16_module && fake_module)
+        error( "--raw-win16-module cannot be combined with --fake-module\n" );
+    if (raw_win16_module && data_only)
+        error( "--raw-win16-module cannot be combined with --data-only\n" );
 
     if (!section_align)
         section_align = (target.cpu == CPU_ARM64 || target.cpu == CPU_ARM64EC) ? "0x10000" : "0x1000";

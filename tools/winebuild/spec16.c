@@ -810,10 +810,11 @@ void output_spec16_file( DLLSPEC *spec16 )
  */
 void output_fake_module16( DLLSPEC *spec )
 {
+    static const unsigned char dos_stub[] = { 0xb8, 0x01, 0x4c, 0xcd, 0x21 };
     static const unsigned char code_segment[] = { 0x90, 0xc3 };
     static const unsigned char data_segment[16] = { 0 };
     const unsigned int cseg = 2;
-    const unsigned int lfanew = (0x40 + sizeof(fakedll_signature) + 15) & ~15;
+    const unsigned int lfanew = (0x40 + sizeof(dos_stub) + sizeof(fakedll_signature) + 15) & ~15;
     const unsigned int segtab = lfanew + 0x40;
 
     unsigned int i, rsrctab, restab, namelen, modtab, imptab, enttab, cbenttab, codeseg, dataseg, rsrcdata, rsrc_size = 0;
@@ -848,19 +849,19 @@ void output_fake_module16( DLLSPEC *spec )
 
     init_output_buffer();
 
-    put_word( 0x5a4d );       /* e_magic */
-    put_word( 0x40 );         /* e_cblp */
-    put_word( 0x01 );         /* e_cp */
-    put_word( 0 );            /* e_crlc */
-    put_word( lfanew / 16 );  /* e_cparhdr */
+    put_word( 0x5a4d );                  /* e_magic */
+    put_word( lfanew & 0x1ff );           /* e_cblp */
+    put_word( (lfanew + 0x1ff) >> 9 );    /* e_cp */
+    put_word( 0 );                         /* e_crlc */
+    put_word( 0x40 / 16 );                 /* e_cparhdr */
     put_word( 0x0000 );       /* e_minalloc */
     put_word( 0xffff );       /* e_maxalloc */
     put_word( 0x0000 );       /* e_ss */
-    put_word( 0x00b8 );       /* e_sp */
+    put_word( 0x0100 );       /* e_sp */
     put_word( 0 );            /* e_csum */
     put_word( 0 );            /* e_ip */
     put_word( 0 );            /* e_cs */
-    put_word( lfanew );       /* e_lfarlc */
+    put_word( 0x0040 );       /* e_lfarlc */
     put_word( 0 );            /* e_ovno */
     put_dword( 0 );           /* e_res */
     put_dword( 0 );
@@ -873,6 +874,7 @@ void output_fake_module16( DLLSPEC *spec )
     put_dword( 0 );
     put_dword( lfanew );
 
+    put_data( dos_stub, sizeof(dos_stub) );
     put_data( fakedll_signature, sizeof(fakedll_signature) );
     align_output( 16 );
 
@@ -946,4 +948,16 @@ void output_fake_module16( DLLSPEC *spec )
 
     /* resource data */
     put_data( rsrc_ptr, rsrc_size );
+}
+
+
+/*******************************************************************
+ *         output_raw_module16
+ *
+ * Write the Win16 MZ/NE image itself instead of wrapping it in a PE owner.
+ */
+void output_raw_module16( DLLSPEC *spec )
+{
+    output_fake_module16( spec );
+    flush_output_buffer( output_file_name ? output_file_name : spec->file_name );
 }
