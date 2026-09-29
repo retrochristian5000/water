@@ -14,10 +14,12 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "windef.h"
 #include "winbase.h"
+#include "io_sys.h"
 #include "winternl.h"
 #include "kernel16_private.h"
 #include "win386.h"
@@ -78,7 +80,7 @@ static void get_msdos_path_value( const char *filename, const char *name,
 }
 
 /***********************************************************************
- *           MSDOS_InitConfig
+ *           IOSYS_InitConfig
  *
  * Initialize the Win9x boot-directory environment from MSDOS.SYS.
  *
