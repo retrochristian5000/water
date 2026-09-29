@@ -718,8 +718,35 @@ BOOL16 WINAPI GlobalUnWire16( HGLOBAL16 handle )
  */
 LONG WINAPI SetSwapAreaSize16( WORD size )
 {
-    FIXME("(%d) - stub!\n", size );
-    return MAKELONG( size, 0xffff );
+    const WORD max_swap_area = (128 * 1024) / 16;  /* 128K in paragraphs */
+    TDB *task = TASK_GetCurrent();
+    NE_MODULE *module;
+    WORD actual;
+
+    /*
+     * This is the Win16 discardable-code swap area, not the WIN386/VMM
+     * disk paging file.  Windows stores the per-application request in the
+     * NE module header's ne_swaparea field.  A zero request queries the
+     * current size without changing it.
+     *
+     * Native Windows can lower the maximum below 128K according to its
+     * global code-fence reservation. Water does not model that reservation
+     * yet, so advertise the documented architectural ceiling rather than the
+     * old synthetic 0xffff maximum.
+     */
+    if (!task || !(module = NE_GetPtr( task->hModule )))
+        return MAKELONG( 0, max_swap_area );
+
+    actual = min( module->ne_swaparea, max_swap_area );
+    if (size)
+    {
+        actual = min( size, max_swap_area );
+        module->ne_swaparea = actual;
+    }
+
+    TRACE( "requested %u paragraphs, actual %u, maximum %u\n",
+           size, actual, max_swap_area );
+    return MAKELONG( actual, max_swap_area );
 }
 
 
