@@ -35,7 +35,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
 
-static BOOL is_nt_wow_session(void)
+BOOL kernel_is_nt_wow_session(void)
 {
     char value[16];
     DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
@@ -411,7 +411,7 @@ DWORD WINAPI GetWinFlags16(void)
      * WF_WIN32WOW describes the guest's NT WOW environment, not the host OS.
      * The NTVDM owner marks that personality before KRNL386 is loaded.
      */
-    if (is_nt_wow_session())
+    if (kernel_is_nt_wow_session())
         result |= WF_WIN32WOW; /* undocumented WF_WINNT */
 
     return result;
