@@ -16,6 +16,7 @@
 #include "winbase.h"
 #include "winternl.h"
 #include "kernel16_private.h"
+#include "win386.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dos);
@@ -80,17 +81,25 @@ static void get_msdos_path_value( const char *filename, const char *name,
  * the resulting paths as the lowercase windir and winbootdir environment
  * variables. If MSDOS.SYS is absent, use the active Windows directory for
  * both values rather than inventing a separate boot path.
+ *
+ * IO.SYS interprets MSDOS.SYS before WIN.COM starts the protected-mode
+ * Windows environment. KRNL386 therefore consumes the resulting path state;
+ * boot policy such as BootGUI belongs to the Win9x boot owner and must not be
+ * inferred from the Water host operating system here.
  */
 void MSDOS_InitConfig(void)
 {
-    RTL_OSVERSIONINFOEXW info;
     char filename[MAX_PATH], windows[MAX_PATH];
     char windir[MAX_PATH], winbootdir[MAX_PATH], host_drive[16];
     DWORD len;
     BOOL have_file;
 
-    info.dwOSVersionInfoSize = sizeof(info);
-    if (RtlGetVersion( &info ) || info.dwPlatformId != VER_PLATFORM_WIN32_WINDOWS)
+    /*
+     * The guest personality owns this decision. WIN386 uses the pre-Win95
+     * binary MSDOS.SYS model, while NT WOW has no Win9x MSDOS.SYS boot policy.
+     * The default KRNL386 personality is currently the Win9x path.
+     */
+    if (WIN386_QuerySession( NULL ) || kernel_is_nt_wow_session())
         return;
 
     len = GetWindowsDirectoryA( windows, sizeof(windows) );
