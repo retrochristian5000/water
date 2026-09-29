@@ -15,6 +15,7 @@ VER_PRODUCTVERSION = 1,0,0,0
 SOURCES = \
 	atom.c \
 	dosmem.c \
+	dem_disk.c \
 	error.c \
 	emm386_compat.c \
 	file.c \
@@ -24,8 +25,7 @@ SOURCES = \
 	int13.c \
 	int15.c \
 	ntdos_int21_compat.c \
-	int25.c \
-	int26.c \
+	ntdos_absdisk_compat.c \
 	int2f.c \
 	int31.c \
 	interrupts.c \
