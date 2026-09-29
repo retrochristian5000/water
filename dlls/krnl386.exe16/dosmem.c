@@ -696,9 +696,12 @@ static void DOSMEM_UMBCollapse(unsigned int index)
 /***********************************************************************
  *           DOSMEM_AllocBlockHigh
  *
- * Allocate from the upper-memory address range.  UMB bookkeeping is kept
- * outside the emulated UMA so an EMS page frame can reserve and own every
- * byte of its physical window.
+ * Allocate from the DOS-visible upper-memory pool.  This is DOS allocation
+ * policy, not the EMM386 provider itself: EMM386 makes UMB ranges available
+ * through XMS, while DOS later allocates from the linked UMB pool.
+ *
+ * UMB bookkeeping is kept outside the emulated UMA so an EMM386 EMS page
+ * frame can reserve and own every byte of its physical window.
  */
 LPVOID DOSMEM_AllocBlockHigh(UINT size, UINT16 *pseg, BYTE strategy)
 {
@@ -769,6 +772,11 @@ LPVOID DOSMEM_AllocBlockHigh(UINT size, UINT16 *pseg, BYTE strategy)
     return DOSMEM_dosmem + ((UINT)DOSMEM_umb_blocks[chosen].segment << 4);
 }
 
+/*
+ * Reserve a physical UMA range from the DOS-visible UMB pool. This stays in
+ * the shared DOS-memory core: EMM386 can use it for an EMS page frame, while
+ * other virtual hardware may also need to exclude occupied UMA ranges.
+ */
 BOOL DOSMEM_ReserveUMB(WORD segment, UINT paragraphs)
 {
     unsigned int i;

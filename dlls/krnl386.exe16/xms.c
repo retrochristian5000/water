@@ -14,7 +14,7 @@
 #include "wine/winbase16.h"
 #include "wine/debug.h"
 #include "dosexe.h"
-#include "../../programs/emm386/emm386.h"
+#include "../../programs/emm386.exe/emm386.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(xms);
 
