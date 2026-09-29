@@ -328,6 +328,9 @@ static void NE_InitResourceHandler( HMODULE16 hModule )
 }
 
 
+static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordinal );
+
+
 /***********************************************************************
  *           NE_GetOrdinal
  *
@@ -367,6 +370,7 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
         {
             WORD ordinal;
             memcpy( &ordinal, cpnt + *cpnt + 1, sizeof(ordinal) );
+            ordinal = krnl386_canonical_kernel_ordinal( pModule, ordinal );
             TRACE("  Found: ordinal=%d\n", ordinal );
             return ordinal;
         }
@@ -386,6 +390,7 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
         {
             WORD ordinal;
             memcpy( &ordinal, cpnt + *cpnt + 1, sizeof(ordinal) );
+            ordinal = krnl386_canonical_kernel_ordinal( pModule, ordinal );
             TRACE("  Found: ordinal=%d\n", ordinal );
             return ordinal;
         }
@@ -435,6 +440,56 @@ static BOOL is_kernel_module( const NE_MODULE *module )
     return *name == 6 && !_strnicmp( (const char *)name + 1, "KERNEL", 6 );
 }
 
+static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
+{
+    if (!is_kernel_module( module ) ||
+        get_krnl386_personality() != KRNL386_PERSONALITY_NT_WOW)
+        return ordinal;
+
+    /*
+     * Water's static spec retains older NT/Win9x numbering.  NT5 moved several
+     * WOW exports while keeping their implementations.  Present the NT5 view
+     * to Win16 callers without changing the backing entry table used by other
+     * personalities.
+     */
+    switch (ordinal)
+    {
+    case 500: return 506;  /* WOW16Call */
+    case 501: return 510;  /* KDDBGOUT */
+    case 503: return 251;  /* WOWRegisterShellWindowHandle */
+    case 506: return 507;  /* WOWCursorIconOp */
+    case 507: return 508;  /* WOWFailedExec */
+    case 508: return 509;  /* WOWCloseComPort */
+    case 541: return 520;  /* WOWSetExitOnLastApp */
+    default:
+        if (ordinal >= 520 && ordinal <= 532)
+            return ordinal + 50;  /* __MOD_KERNEL ... __MOD_COMMDLG -> 570..582 */
+        return ordinal;
+    }
+}
+
+static WORD krnl386_nt5_backing_ordinal( const NE_MODULE *module, WORD ordinal )
+{
+    if (!is_kernel_module( module ) ||
+        get_krnl386_personality() != KRNL386_PERSONALITY_NT_WOW)
+        return ordinal;
+
+    switch (ordinal)
+    {
+    case 251: return 503;  /* WOWRegisterShellWindowHandle */
+    case 506: return 500;  /* WOW16Call */
+    case 507: return 506;  /* WOWCursorIconOp */
+    case 508: return 507;  /* WOWFailedExec */
+    case 509: return 508;  /* WOWCloseComPort */
+    case 510: return 501;  /* KDDBGOUT */
+    case 520: return 541;  /* WOWSetExitOnLastApp */
+    default:
+        if (ordinal >= 570 && ordinal <= 582)
+            return ordinal - 50;  /* NT5 module-fixup ordinals */
+        return ordinal;
+    }
+}
+
 static BOOL is_vxd_entry_ordinal( WORD ordinal )
 {
     switch (ordinal)
@@ -479,15 +534,15 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
     if (personality == KRNL386_PERSONALITY_NT_WOW)
     {
         /*
-         * NT WOW uses KRNL386 but does not expose the Windows 95 flat-thunk or
-         * VxD ABI. Keep the NT/generic thunk exports (notably 500 and 513-518)
-         * while rejecting Win95-only entry points such as 631 and 651.
+         * NT5 has its own KERNEL ordinal layout.  Do not expose older aliases
+         * or Win9x thunklet implementations at ordinals whose NT5 meanings
+         * differ.  Known compatible entries are translated separately.
          */
         return ordinal == 495 ||
-               (ordinal >= 533 && ordinal <= 540) ||
-               (ordinal >= 542 && ordinal <= 543) ||
-               (ordinal >= 560 && ordinal <= 568) ||
-               (ordinal >= 600 && ordinal <= 653) ||
+               ordinal == 500 || ordinal == 501 || ordinal == 503 ||
+               (ordinal >= 521 && ordinal <= 543) ||
+               (ordinal >= 545 && ordinal <= 569) ||
+               (ordinal >= 583 && ordinal <= 653) ||
                (ordinal >= 700 && ordinal <= 704) ||
                is_vxd_entry_ordinal( ordinal );
     }
@@ -523,6 +578,8 @@ FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
                ordinal, get_krnl386_personality() );
         return 0;
     }
+
+    ordinal = krnl386_nt5_backing_ordinal( pModule, ordinal );
 
     bundle = (ET_BUNDLE *)((BYTE *)pModule + pModule->ne_enttab);
     while ((ordinal < bundle->first + 1) || (ordinal > bundle->last))
