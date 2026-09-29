@@ -1,5 +1,9 @@
 /*
- * Windows 9x MSDOS.SYS configuration
+ * Windows 9x IO.SYS boot configuration support
+ *
+ * IO.SYS owns MSDOS.SYS parsing and the real-mode startup policy that runs
+ * before WIN.COM.  This source remains callable from KRNL386 only through a
+ * temporary compatibility bridge until Water boots its own IO.SYS image.
  *
  * Copyright 2026
  *

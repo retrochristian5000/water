@@ -235,7 +235,7 @@ extern void WINAPI __wine_dosx_msdos_api( I386_CONTEXT *context );
 extern BOOL kernel_is_nt_wow_session(void);
 extern BOOL kernel_is_standard_mode_session(void);
 
-/* msdos.c */
+/* programs/io.sys/msdos_config.c via the temporary KRNL386 bridge */
 extern void MSDOS_InitConfig(void);
 
 /* ne_module.c */
