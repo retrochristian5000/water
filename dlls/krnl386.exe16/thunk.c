@@ -2661,7 +2661,7 @@ DWORD WINAPIV WOW16Call( WORD cb_args, WORD reserved1, WORD reserved2, VA_LIST16
         return 0;
     }
 
-    frame_size = FIELD_OFFSET(WINEVDMFRAME, bArgs) + cb_args;
+    frame_size = FIELD_OFFSET(WINEVDMFRAME, bArgs) + max( (SIZE_T)cb_args, sizeof(frame->bArgs) );
     if (!(frame = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, frame_size )))
     {
         stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
@@ -2686,6 +2686,13 @@ DWORD WINAPIV WOW16Call( WORD cb_args, WORD reserved1, WORD reserved2, VA_LIST16
     frame->cbArgs = cb_args;
     frame->vpCSIP = MAKESEGPTR( stack->cs, stack->ip );
 
+    /*
+     * Consume the Win16 call frame before dropping the Win16 lock.  The
+     * dispatcher may yield or switch tasks, so mutating CURRENT_STACK16 after
+     * the 32-bit call returns could otherwise pop a different task's stack.
+     */
+    stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
+
     module = GetModuleHandleA( "wow32.dll" );
     if (!module) module = LoadLibraryA( "wow32.dll" );
 
@@ -2698,7 +2705,6 @@ DWORD WINAPIV WOW16Call( WORD cb_args, WORD reserved1, WORD reserved2, VA_LIST16
     else
         WARN( "WOW32 VDM dispatcher is unavailable\n" );
 
-    stack16_pop( 3 * sizeof(WORD) + cb_args + sizeof(DWORD) );
     HeapFree( GetProcessHeap(), 0, frame );
     return ret;
 }

@@ -32,7 +32,16 @@ struct wow32_dispatch_context
     DWORD result;
 };
 
+/*
+ * Microsoft's WOW thunk table uses __fastcall on x86 (PVDMFRAME in ECX).
+ * Water's portable FASTCALL macro intentionally collapses to __stdcall on
+ * some non-MinGW GCC/Clang builds, which is not ABI-compatible here.
+ */
+#if defined(__i386__) && (defined(__GNUC__) || defined(__clang__))
+typedef DWORD (__attribute__((fastcall)) *wow32_thunk_proc)(WINEVDMFRAME *);
+#else
 typedef DWORD (FASTCALL *wow32_thunk_proc)(WINEVDMFRAME *);
+#endif
 
 static LONG wow32_initialized;
 
