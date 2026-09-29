@@ -378,7 +378,11 @@ static char *append_ntvdm_arg( char *dst, const char *src )
 
         if (*src == '"')
         {
-            while (backslashes--) *dst++ = '\\';
+            while (backslashes)
+            {
+                *dst++ = '\\';
+                backslashes--;
+            }
             *dst++ = '\\';
             *dst++ = *src++;
             backslashes = 0;
@@ -389,7 +393,11 @@ static char *append_ntvdm_arg( char *dst, const char *src )
         *dst++ = *src++;
     }
 
-    while (backslashes--) *dst++ = '\\';
+    while (backslashes)
+    {
+        *dst++ = '\\';
+        backslashes--;
+    }
     *dst++ = '"';
     return dst;
 }
