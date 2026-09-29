@@ -2115,8 +2115,8 @@ int main(int argc, char **argv)
      * reach the compiler can create wrong-architecture objects before
      * winebuild finally rejects the module.
      */
-    if (is_win16_app && target.cpu != CPU_i386)
-        error( "Win16 modules require an i386 target\n" );
+    if (is_win16_app && (target.cpu != CPU_i386 || is_arm64x))
+        error( "Win16 modules require a plain i386 target\n" );
 
     if (processor == proc_cpp) skip_link = true;
 
