@@ -2809,6 +2809,7 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
 {
     DWORD args[32];
     unsigned int i;
+    BOOL valid = TRUE;
 
     TRACE("(%ld,%ld,%p args[",nrofargs,argconvmask,proc32);
 
@@ -2820,7 +2821,7 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
             DWORD linear;
 
             /* pascal convention, have to reverse the arguments order */
-            if (!generic_thunk_linear32( ptr, &linear )) return 0;
+            if (!generic_thunk_linear32( ptr, &linear )) valid = FALSE;
             args[nrofargs - i - 1] = linear;
             TRACE("%08lx(%p),",ptr,MapSL(ptr));
         }
@@ -2837,6 +2838,7 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
     /* POP nrofargs DWORD arguments and 3 DWORD parameters */
     stack16_pop( (3 + nrofargs) * sizeof(DWORD) );
 
+    if (!valid) return 0;
     return WOW_CallProc32W16( proc32, nrofargs, args );
 }
 
