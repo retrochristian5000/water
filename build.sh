@@ -2648,13 +2648,11 @@ configure_new()
 
 recheck_build()
 {
-    /*
-     * config.status --recheck faithfully replays the command that created it,
-     * but Water's configure policy is owned by this wrapper.  Reconstruct the
-     * current profile and toolchain arguments around the saved user arguments
-     * so Win16/i386 gating cannot be resurrected from stale config.status
-     * state after the wrapper policy changes.
-     */
+    # config.status --recheck faithfully replays the command that created it,
+    # but Water's configure policy is owned by this wrapper. Reconstruct the
+    # current profile and toolchain arguments around the saved user arguments
+    # so Win16/i386 gating cannot be resurrected from stale config.status
+    # state after the wrapper policy changes.
     printf 'WHP configure: rebuilding from saved Water profile\n' >&2
     configure_saved
 }
