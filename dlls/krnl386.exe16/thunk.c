@@ -55,7 +55,7 @@ struct ThunkDataLS16
 struct ThunkDataLS32
 {
     struct ThunkDataCommon common;           /* 00 */
-    DWORD *                targetTable;      /* 08 */
+    DWORD                  targetTable;      /* 08: 32-bit flat pointer */
     char                   lateBinding[4];   /* 0C */
     DWORD                  flags;            /* 10 */
     DWORD                  reserved1;        /* 14 */
@@ -69,12 +69,12 @@ struct ThunkDataSL16
     struct ThunkDataCommon common;            /* 00 */
     DWORD                  flags1;            /* 08 */
     DWORD                  reserved1;         /* 0C */
-    struct ThunkDataSL *   fpData;            /* 10 */
+    DWORD                  fpData;            /* 10: Water runtime cookie */
     SEGPTR                 spData;            /* 14 */
     DWORD                  reserved2;         /* 18 */
     char                   lateBinding[4];    /* 1C */
     DWORD                  flags2;            /* 20 */
-    DWORD                  reserved3;         /* 20 */
+    DWORD                  reserved3;         /* 24 */
     SEGPTR                 apiDatabase;       /* 28 */
 };
 
@@ -82,13 +82,20 @@ struct ThunkDataSL32
 {
     struct ThunkDataCommon common;            /* 00 */
     DWORD                  reserved1;         /* 08 */
-    struct ThunkDataSL *   data;              /* 0C */
+    DWORD                  data;              /* 0C: Water runtime cookie */
     char                   lateBinding[4];    /* 10 */
     DWORD                  flags;             /* 14 */
     DWORD                  reserved2;         /* 18 */
     DWORD                  reserved3;         /* 1C */
     DWORD                  offsetTargetTable; /* 20 */
 };
+
+C_ASSERT( sizeof(struct ThunkDataLS32) == 0x24 );
+C_ASSERT( FIELD_OFFSET(struct ThunkDataLS32, lateBinding) == 0x0c );
+C_ASSERT( sizeof(struct ThunkDataSL16) == 0x2c );
+C_ASSERT( FIELD_OFFSET(struct ThunkDataSL16, apiDatabase) == 0x28 );
+C_ASSERT( sizeof(struct ThunkDataSL32) == 0x24 );
+C_ASSERT( FIELD_OFFSET(struct ThunkDataSL32, offsetTargetTable) == 0x20 );
 
 struct ThunkDataSL
 {
@@ -121,6 +128,8 @@ struct ThunkDataSL
     struct SLApiDB *       apiDB;
     struct SLTargetDB *    targetDB;
     DWORD                  flags2;
+    DWORD                  cookie;
+    struct ThunkDataSL *   next;
     char                   pszDll16[256];
     char                   pszDll32[256];
 };
@@ -140,6 +149,9 @@ struct SLApiDB
 
 WORD cbclient_selector = 0;
 WORD cbclientex_selector = 0;
+
+static struct ThunkDataSL *sl_data_list;
+static DWORD next_sl_cookie = 1;
 
 extern int call_entry_point( void *func, int nb_args, const DWORD *args );
 extern void __wine_call_from_16_thunk(void);
@@ -165,6 +177,29 @@ static DWORD get_x86_dword( const BYTE *code )
     DWORD dword;
     memcpy( &dword, code, sizeof(dword) );
     return dword;
+}
+
+static struct ThunkDataSL *find_sl_data( DWORD cookie )
+{
+    struct ThunkDataSL *data;
+
+    if (!cookie) return NULL;
+    for (data = sl_data_list; data; data = data->next)
+        if (data->cookie == cookie) return data;
+    return NULL;
+}
+
+static DWORD alloc_sl_cookie(void)
+{
+    DWORD cookie;
+
+    do
+    {
+        cookie = next_sl_cookie++;
+        if (!next_sl_cookie) next_sl_cookie = 1;
+    } while (!cookie || find_sl_data( cookie ));
+
+    return cookie;
 }
 
 /***********************************************************************
@@ -373,9 +408,10 @@ UINT WINAPI ThunkConnect32(
             {
                 struct ThunkDataSL32 *SL32 = (struct ThunkDataSL32 *)TD;
                 struct ThunkDataSL16 *SL16 = (struct ThunkDataSL16 *)TD16;
+                struct ThunkDataSL *SL = find_sl_data( SL16->fpData );
                 struct SLTargetDB *tdb;
 
-                if (SL16->fpData == NULL)
+                if (!SL)
                 {
                     ERR("ThunkConnect16 was not called!\n");
                     return 0;
@@ -384,25 +420,27 @@ UINT WINAPI ThunkConnect32(
                 SL32->data = SL16->fpData;
 
                 tdb = HeapAlloc(GetProcessHeap(), 0, sizeof(*tdb));
+                if (!tdb) return 0;
                 tdb->process = GetCurrentProcessId();
                 tdb->targetTable = (DWORD *)(thunkfun16 + SL32->offsetTargetTable);
 
-                tdb->next = SL32->data->targetDB;   /* FIXME: not thread-safe! */
-                SL32->data->targetDB = tdb;
+                tdb->next = SL->targetDB;   /* FIXME: not thread-safe! */
+                SL->targetDB = tdb;
 
                 TRACE("Process %08lx allocated TargetDB entry for ThunkDataSL %p\n",
-                      GetCurrentProcessId(), SL32->data);
+                      GetCurrentProcessId(), SL);
             }
             else
             {
                 struct ThunkDataLS32 *LS32 = (struct ThunkDataLS32 *)TD;
                 struct ThunkDataLS16 *LS16 = (struct ThunkDataLS16 *)TD16;
+                DWORD *target_table = MapSL(LS16->targetTable);
 
-                LS32->targetTable = MapSL(LS16->targetTable);
+                LS32->targetTable = (DWORD)(UINT_PTR)target_table;
 
                 /* write QT_Thunk and FT_Prolog stubs */
-                _write_qtthunk ((LPBYTE)TD + LS32->offsetQTThunk,  LS32->targetTable);
-                _write_ftprolog((LPBYTE)TD + LS32->offsetFTProlog, LS32->targetTable);
+                _write_qtthunk ((LPBYTE)TD + LS32->offsetQTThunk,  target_table);
+                _write_ftprolog((LPBYTE)TD + LS32->offsetFTProlog, target_table);
             }
             break;
         }
@@ -1371,27 +1409,31 @@ UINT WINAPI ThunkConnect16(
             if (directionSL)
             {
                 struct ThunkDataSL16 *SL16 = (struct ThunkDataSL16 *)TD;
-                struct ThunkDataSL   *SL   = SL16->fpData;
+                struct ThunkDataSL *SL = find_sl_data( SL16->fpData );
 
-                if (SL == NULL)
+                if (!SL)
                 {
-                    SL = HeapAlloc(GetProcessHeap(), 0, sizeof(*SL));
+                    if (!(SL = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*SL))))
+                        return 0;
 
                     SL->common   = SL16->common;
                     SL->flags1   = SL16->flags1;
                     SL->flags2   = SL16->flags2;
 
                     SL->apiDB    = MapSL(SL16->apiDatabase);
-                    SL->targetDB = NULL;
+                    SL->cookie   = alloc_sl_cookie();
+                    SL->next     = sl_data_list;
+                    sl_data_list = SL;
 
                     lstrcpynA(SL->pszDll16, module16, 255);
                     lstrcpynA(SL->pszDll32, module32, 255);
 
-                    /* We should create a SEGPTR to the ThunkDataSL,
-                       but since the contents are not in the original format,
-                       any access to this by 16-bit code would crash anyway. */
+                    /*
+                     * These guest-visible slots are 32 bits wide. Keep native
+                     * state in sl_data_list and publish only an opaque cookie.
+                     */
                     SL16->spData = 0;
-                    SL16->fpData = SL;
+                    SL16->fpData = SL->cookie;
                 }
 
 
@@ -1471,7 +1513,7 @@ void WINAPI C16ThkSL01(I386_CONTEXT *context)
     if (stub)
     {
         struct ThunkDataSL16 *SL16 = MapSL(context->Edx);
-        struct ThunkDataSL *td = SL16->fpData;
+        struct ThunkDataSL *td = find_sl_data( SL16->fpData );
 
         DWORD procAddress = (DWORD)GetProcAddress16(GetModuleHandle16("KERNEL"), (LPCSTR)631);
 
@@ -1497,7 +1539,7 @@ void WINAPI C16ThkSL01(I386_CONTEXT *context)
          */
 
         *x++ = 0x66; *x++ = 0x33; *x++ = 0xC0;
-        *x++ = 0x66; *x++ = 0xBA; put_x86_dword( x, (UINT_PTR)td ); x += sizeof(DWORD);
+        *x++ = 0x66; *x++ = 0xBA; put_x86_dword( x, td->cookie ); x += sizeof(DWORD);
         *x++ = 0x9A; *(DWORD *)x = procAddress; x += sizeof(DWORD);
 
         *x++ = 0x55;
@@ -1518,8 +1560,14 @@ void WINAPI C16ThkSL01(I386_CONTEXT *context)
     }
     else
     {
-        struct ThunkDataSL *td = (struct ThunkDataSL *)(UINT_PTR)context->Edx;
+        struct ThunkDataSL *td = find_sl_data( context->Edx );
         DWORD targetNr = LOWORD(context->Ecx) / 4;
+
+        if (!td)
+        {
+            ERR("Invalid SL thunk cookie %08lx\n", context->Edx);
+            return;
+        }
         struct SLTargetDB *tdb;
 
         TRACE("Process %08lx calling target %ld of ThunkDataSL %p\n",
