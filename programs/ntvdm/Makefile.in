@@ -6,6 +6,7 @@ EXTRADLLFLAGS = -mconsole
 SOURCES = \
 	com.c \
 	dem_disk.c \
+	dem_process.c \
 	dosvm.c \
 	doskrnl.c \
 	sb20.c \
