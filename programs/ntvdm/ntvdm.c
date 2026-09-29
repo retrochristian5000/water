@@ -16,6 +16,7 @@
 #include "winreg.h"
 #include "wine/doskeyb.h"
 #include "dosvm.h"
+#include "wow.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntvdm);
@@ -223,6 +224,7 @@ static int run_dosbox( const char *appname, const char *args )
 static void usage(void)
 {
     WINE_MESSAGE( "Usage: ntvdm.exe --app-name app.com [arguments]\n"
+                  "       ntvdm.exe --wow-app-name app.exe command-line\n"
                   "       ntvdm.exe --prepare-only app.com [arguments]\n" );
 }
 
@@ -233,11 +235,17 @@ int main( int argc, char **argv )
     const char *appname;
     char **app_args;
     char *args;
-    BOOL prepare_only = FALSE;
+    BOOL prepare_only = FALSE, wow_app = FALSE;
     int ret;
 
     if (argc >= 3 && !strcmp( argv[1], "--app-name" ))
     {
+        appname = argv[2];
+        app_args = argv + 3;
+    }
+    else if (argc >= 3 && !strcmp( argv[1], "--wow-app-name" ))
+    {
+        wow_app = TRUE;
         appname = argv[2];
         app_args = argv + 3;
     }
@@ -251,6 +259,18 @@ int main( int argc, char **argv )
     {
         usage();
         return 1;
+    }
+
+    if (wow_app)
+    {
+        /*
+         * KernelBase passes the original Win16 command line after --wow-app-name;
+         * like winevdm, skip its leading application-name token before building
+         * the Pascal-style LoadModule16 command tail.
+         */
+        if (*app_args) app_args++;
+        WINE_TRACE( "Win16 application = %s\n", appname );
+        return wow_run_app( appname, app_args );
     }
 
     WINE_TRACE( "DOS application = %s\n", appname );
