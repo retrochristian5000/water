@@ -103,6 +103,21 @@ static BOOL parse_dos_version(const char *str, WORD *version)
     return TRUE;
 }
 
+static BOOL parse_workgroups(const char *str, DWORD *flags)
+{
+    if (!strcmp(str, "3.1") || !strcmp(str, "3.10"))
+    {
+        *flags = WATER_WIN386_FLAG_WORKGROUPS;
+        return TRUE;
+    }
+    if (!strcmp(str, "3.11"))
+    {
+        *flags = WATER_WIN386_FLAG_WORKGROUPS | WATER_WIN386_FLAG_WFW311;
+        return TRUE;
+    }
+    return FALSE;
+}
+
 static BOOL parse_version(const char *str, WORD *version)
 {
     if (!strcmp(str, "3.0") || !strcmp(str, "3.00"))
@@ -269,6 +284,12 @@ static int show_status(void)
     }
 
     printf("WIN386 enhanced-mode session: active\n");
+    if (state.flags & WATER_WIN386_FLAG_WORKGROUPS)
+        printf("Product: Windows for Workgroups %s\n",
+               (state.flags & WATER_WIN386_FLAG_WFW311) ? "3.11" : "3.1");
+    else
+        printf("Product: Windows %u.%02u\n",
+               LOBYTE(state.windows_mux_version), HIBYTE(state.windows_mux_version));
     printf("Owner PID: %lu\n", state.owner_pid);
     printf("Windows mux version: %u.%02u\n",
            LOBYTE(state.windows_mux_version), HIBYTE(state.windows_mux_version));
@@ -283,7 +304,7 @@ static int show_status(void)
     return 0;
 }
 
-static int run_system_vm(WORD version, WORD dos_version, char **argv)
+static int run_system_vm(WORD version, WORD dos_version, DWORD product_flags, char **argv)
 {
     struct water_win386_session *state;
     PROCESS_INFORMATION process;
@@ -316,7 +337,7 @@ static int run_system_vm(WORD version, WORD dos_version, char **argv)
     memset(state, 0, WATER_WIN386_SESSION_SIZE);
     state->magic = WATER_WIN386_MAGIC;
     state->abi_version = WATER_WIN386_ABI_VERSION;
-    state->flags = WATER_WIN386_FLAG_ACTIVE | WATER_WIN386_FLAG_VMM;
+    state->flags = WATER_WIN386_FLAG_ACTIVE | WATER_WIN386_FLAG_VMM | product_flags;
     state->owner_pid = GetCurrentProcessId();
     state->windows_mux_version = version;
     state->system_vm = WATER_WIN386_VM_SYSTEM;
@@ -369,7 +390,8 @@ static int run_system_vm(WORD version, WORD dos_version, char **argv)
 static void usage(void)
 {
     printf("Water Windows/386 enhanced-mode host\n\n"
-           "win386.exe --system-vm [--version 3.0|3.1] [--dos-version x.y] command [args...]\n"
+           "win386.exe --system-vm [--version 3.0|3.1] [--workgroups 3.1|3.11]\n"
+           "           [--dos-version x.y] command [args...]\n"
            "win386.exe --dos-vm command [args...]\n"
            "win386.exe --status\n");
 }
@@ -378,7 +400,8 @@ int main(int argc, char **argv)
 {
     WORD version = WATER_WIN386_VERSION_30;
     WORD dos_version = 0;
-    BOOL dos_version_explicit = FALSE;
+    DWORD product_flags = 0;
+    BOOL version_explicit = FALSE, dos_version_explicit = FALSE;
     int arg = 1;
 
     if (argc == 2 && !strcmp(argv[1], "--status")) return show_status();
@@ -401,6 +424,27 @@ int main(int argc, char **argv)
                 fprintf(stderr, "win386: unsupported enhanced-mode version\n");
                 return 1;
             }
+            version_explicit = TRUE;
+            arg += 2;
+            continue;
+        }
+
+        if (!strcmp(argv[arg], "--workgroups"))
+        {
+            DWORD flags;
+
+            if (arg + 1 >= argc || !parse_workgroups(argv[arg + 1], &flags))
+            {
+                fprintf(stderr, "win386: unsupported Windows for Workgroups version\n");
+                return 1;
+            }
+            if (version_explicit && version != WATER_WIN386_VERSION_31)
+            {
+                fprintf(stderr, "win386: Windows for Workgroups requires the Windows 3.1 kernel line\n");
+                return 1;
+            }
+            version = WATER_WIN386_VERSION_31;
+            product_flags = flags;
             arg += 2;
             continue;
         }
@@ -419,6 +463,13 @@ int main(int argc, char **argv)
         break;
     }
 
+    if ((product_flags & WATER_WIN386_FLAG_WORKGROUPS) &&
+        version != WATER_WIN386_VERSION_31)
+    {
+        fprintf(stderr, "win386: Windows for Workgroups requires the Windows 3.1 kernel line\n");
+        return 1;
+    }
+
     if (!dos_version_explicit)
         dos_version = (version == WATER_WIN386_VERSION_30) ?
                       WATER_WIN386_DOS_50 : WATER_WIN386_DOS_622;
@@ -429,5 +480,5 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    return run_system_vm(version, dos_version, argv + arg);
+    return run_system_vm(version, dos_version, product_flags, argv + arg);
 }

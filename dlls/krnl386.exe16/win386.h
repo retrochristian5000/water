@@ -13,6 +13,7 @@
 
 struct win386_session_info
 {
+    DWORD flags;
     WORD windows_version;
     WORD dos_version;
     WORD current_vm;

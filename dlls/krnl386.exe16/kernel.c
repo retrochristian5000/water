@@ -120,6 +120,14 @@ static BOOL kernel_is_standard_mode_session(void)
            (kernel_is_nt31_wow_session() && kernel16_is_krnl286());
 }
 
+static BOOL kernel_is_workgroups_session(void)
+{
+    struct win386_session_info session;
+
+    return WIN386_QuerySession( &session ) &&
+           (session.flags & WATER_WIN386_FLAG_WORKGROUPS);
+}
+
 static BYTE kernel_configured_x86_cpu_level(void)
 {
     static BYTE level = 0xff;
@@ -158,6 +166,17 @@ static void load_boot_driver( const char *key )
               key, debugstr_a(name), key );
         LoadLibrary16( key );
     }
+}
+
+static void load_optional_boot_driver( const char *key )
+{
+    char name[MAX_PATH];
+
+    if (!GetPrivateProfileStringA( "boot", key, "", name, sizeof(name), "SYSTEM.INI" ))
+        return;
+
+    if (LoadLibrary16( name ) < 32)
+        WARN( "failed to load configured %s driver %s\n", key, debugstr_a(name) );
 }
 
 /***********************************************************************
@@ -255,7 +274,9 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
 
         if (WIN386_QuerySession( &session ))
         {
-            TRACE( "WIN386 enhanced mode %u.%02u on DOS %u.%02u, current VM %u, system VM %u\n",
+            TRACE( "WIN386%s%s enhanced mode %u.%02u on DOS %u.%02u, current VM %u, system VM %u\n",
+                   (session.flags & WATER_WIN386_FLAG_WORKGROUPS) ? " Workgroups" : "",
+                   (session.flags & WATER_WIN386_FLAG_WFW311) ? " 3.11" : "",
                    LOBYTE(session.windows_version), HIBYTE(session.windows_version),
                    HIBYTE(session.dos_version), LOBYTE(session.dos_version),
                    session.current_vm, session.system_vm );
@@ -323,6 +344,15 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     /* Load the machine drivers selected by SYSTEM.INI. */
     load_boot_driver( "system.drv" );
     load_boot_driver( "comm.drv" );
+
+    /*
+     * Windows for Workgroups starts its protected-mode network stack under
+     * WIN386, then KRNL386 loads the [boot] network.drv (normally WFWNET.DRV).
+     * Treat it as optional so a deliberately network-disabled configuration
+     * is not "repaired" into loading a synthetic fallback driver.
+     */
+    if (kernel_is_workgroups_session())
+        load_optional_boot_driver( "network.drv" );
 
     return TRUE;
 }

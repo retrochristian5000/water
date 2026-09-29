@@ -427,6 +427,8 @@ enum krnl386_personality
     KRNL386_PERSONALITY_WIN30_STANDARD,
     KRNL386_PERSONALITY_WIN31_STANDARD,
     KRNL386_PERSONALITY_WIN386,
+    KRNL386_PERSONALITY_WFW31,
+    KRNL386_PERSONALITY_WFW311,
     KRNL386_PERSONALITY_WIN95_OSR2,
     KRNL386_PERSONALITY_NT31_WOW,
     KRNL386_PERSONALITY_NT351_WOW,
@@ -442,13 +444,20 @@ enum krnl386_personality
 static enum krnl386_personality get_krnl386_personality(void)
 {
     static int cached = -1;
+    struct win386_session_info session;
     char value[16];
     DWORD len;
 
     if (cached != -1) return cached;
 
-    if (WIN386_QuerySession( NULL ))
+    if (WIN386_QuerySession( &session ))
+    {
+        if (session.flags & WATER_WIN386_FLAG_WFW311)
+            return cached = KRNL386_PERSONALITY_WFW311;
+        if (session.flags & WATER_WIN386_FLAG_WORKGROUPS)
+            return cached = KRNL386_PERSONALITY_WFW31;
         return cached = KRNL386_PERSONALITY_WIN386;
+    }
 
     len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
     if (len && len < ARRAY_SIZE(value))
@@ -481,6 +490,10 @@ static WORD builtin_expected_windows_version(void)
             return ((WORD)LOBYTE(session.windows_version) << 8) |
                    HIBYTE(session.windows_version);
         break;
+
+    case KRNL386_PERSONALITY_WFW31:
+    case KRNL386_PERSONALITY_WFW311:
+        return 0x030a;  /* WfW 3.11 preserves Windows 3.10 compatibility APIs. */
 
     case KRNL386_PERSONALITY_WIN30_STANDARD:
         return 0x0300;
@@ -646,9 +659,15 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
                is_vxd_entry_ordinal( ordinal );
     }
 
-    if (personality == KRNL386_PERSONALITY_WIN386)
+    if (personality == KRNL386_PERSONALITY_WIN386 ||
+        personality == KRNL386_PERSONALITY_WFW31 ||
+        personality == KRNL386_PERSONALITY_WFW311)
     {
-        /* Windows 3.0/3.1 predates the NT/Win9x KERNEL extension blocks. */
+        /*
+         * DOS Windows 3.x predates the NT/Win9x extension blocks. Keep WfW
+         * separate in the personality ledger, but do not invent export deltas
+         * until a direct WfW KRNL386 export table is available.
+         */
         return ordinal == 495 ||
                (ordinal >= 500 && ordinal <= 568) ||
                (ordinal >= 600 && ordinal <= 653) ||

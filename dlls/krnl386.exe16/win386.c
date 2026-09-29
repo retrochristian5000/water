@@ -52,6 +52,7 @@ BOOL WIN386_QuerySession(struct win386_session_info *info)
 
     if (info)
     {
+        info->flags = state->flags;
         info->windows_version = state->windows_mux_version;
         info->dos_version = state->dos_version;
         info->system_vm = state->system_vm;
