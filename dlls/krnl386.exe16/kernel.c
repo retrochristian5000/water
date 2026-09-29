@@ -40,7 +40,18 @@ BOOL kernel_is_nt_wow_session(void)
     char value[16];
     DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
 
-    return len && len < ARRAY_SIZE(value) && !strcmp( value, WATER_VDM_PERSONALITY_NT_WOW );
+    return len && len < ARRAY_SIZE(value) &&
+           (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ) ||
+            !strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW ));
+}
+
+static BOOL kernel_is_nt351_wow_session(void)
+{
+    char value[16];
+    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+
+    return len && len < ARRAY_SIZE(value) &&
+           !strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW );
 }
 
 extern DWORD WINAPI GetProcessFlags( DWORD processid );
@@ -230,6 +241,9 @@ DWORD WINAPI GetVersion16(void)
                LOBYTE(session.windows_version), HIBYTE(session.windows_version) );
         return MAKELONG( session.windows_version, session.dos_version );
     }
+
+    if (kernel_is_nt351_wow_session())
+        return MAKELONG( MAKEWORD( 3, 51 ), 0x0500 );
 
     if (!dosver)  /* not determined yet */
     {
@@ -442,6 +456,16 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
             v->szCSDVersion[0] = 0;
             return TRUE;
         }
+    }
+
+    if (kernel_is_nt351_wow_session())
+    {
+        v->dwMajorVersion = 3;
+        v->dwMinorVersion = 51;
+        v->dwBuildNumber  = 1057;
+        v->dwPlatformId   = VER_PLATFORM_WIN32_NT;
+        v->szCSDVersion[0] = 0;
+        return TRUE;
     }
 
     info.dwOSVersionInfoSize = sizeof(info);

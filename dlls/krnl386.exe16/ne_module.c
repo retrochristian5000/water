@@ -404,7 +404,8 @@ enum krnl386_personality
 {
     KRNL386_PERSONALITY_GENERIC,
     KRNL386_PERSONALITY_WIN386,
-    KRNL386_PERSONALITY_NT_WOW
+    KRNL386_PERSONALITY_NT351_WOW,
+    KRNL386_PERSONALITY_NT5_WOW
 };
 
 /*
@@ -425,8 +426,13 @@ static enum krnl386_personality get_krnl386_personality(void)
         return cached = KRNL386_PERSONALITY_WIN386;
 
     len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
-    if (len && len < ARRAY_SIZE(value) && !strcmp( value, WATER_VDM_PERSONALITY_NT_WOW ))
-        return cached = KRNL386_PERSONALITY_NT_WOW;
+    if (len && len < ARRAY_SIZE(value))
+    {
+        if (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ))
+            return cached = KRNL386_PERSONALITY_NT351_WOW;
+        if (!strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW ))
+            return cached = KRNL386_PERSONALITY_NT5_WOW;
+    }
 
     return cached = KRNL386_PERSONALITY_GENERIC;
 }
@@ -443,7 +449,7 @@ static BOOL is_kernel_module( const NE_MODULE *module )
 static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
     if (!is_kernel_module( module ) ||
-        get_krnl386_personality() != KRNL386_PERSONALITY_NT_WOW)
+        get_krnl386_personality() != KRNL386_PERSONALITY_NT5_WOW)
         return ordinal;
 
     /*
@@ -471,7 +477,7 @@ static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordi
 static WORD krnl386_nt5_backing_ordinal( const NE_MODULE *module, WORD ordinal )
 {
     if (!is_kernel_module( module ) ||
-        get_krnl386_personality() != KRNL386_PERSONALITY_NT_WOW)
+        get_krnl386_personality() != KRNL386_PERSONALITY_NT5_WOW)
         return ordinal;
 
     switch (ordinal)
@@ -542,7 +548,29 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
         return ordinal == 495 || (ordinal >= 262 && ordinal <= 274);
     }
 
-    if (personality == KRNL386_PERSONALITY_NT_WOW)
+    if (personality == KRNL386_PERSONALITY_NT351_WOW)
+    {
+        /*
+         * NT 3.x WOW keeps the older KERNEL ordinal layout.  Do not feed this
+         * personality through the NT5 renumbering below.  The merged spec also
+         * contains Win95 meanings at several colliding ordinals, so hide those
+         * entries rather than exposing the wrong ABI.
+         */
+        if (ordinal >= 208 && ordinal <= 237)
+            return ordinal != 216 && ordinal != 217 &&
+                   ordinal != 220 && ordinal != 223;
+
+        return (ordinal >= 357 && ordinal <= 365) ||
+               (ordinal >= 406 && ordinal <= 495) ||
+               (ordinal >= 533 && ordinal <= 540) ||
+               (ordinal >= 542 && ordinal <= 543) ||
+               (ordinal >= 545 && ordinal <= 568) ||
+               (ordinal >= 600 && ordinal <= 653) ||
+               (ordinal >= 700 && ordinal <= 704) ||
+               is_vxd_entry_ordinal( ordinal );
+    }
+
+    if (personality == KRNL386_PERSONALITY_NT5_WOW)
     {
         /*
          * NT5 has its own KERNEL ordinal layout.  Do not expose older aliases
