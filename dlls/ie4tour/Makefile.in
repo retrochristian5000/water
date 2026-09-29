@@ -1,0 +1,9 @@
+MODULE    = ie4tour.dll
+IMPORTS   = uuid ole32 oleaut32 advapi32
+
+VER_PRODUCTVERSION  = 4,72,3110,0
+VER_OLESELFREGISTER = 1
+
+SOURCES = \
+	ie4tour.c \
+	ie4tour.idl

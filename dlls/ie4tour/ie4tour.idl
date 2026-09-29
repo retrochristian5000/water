@@ -1,0 +1,50 @@
+/*
+ * Internet Explorer 4 Welcome Tour automation interface
+ *
+ * Clean-room interface description derived from the public COM contract
+ * exposed by the historical IE4TOUR component.
+ */
+
+#pragma makedep regtypelib
+#pragma makedep header
+
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+    object,
+    uuid(7e67adf1-1334-11d1-9676-00a0c9054168),
+    dual,
+    oleautomation,
+    pointer_default(unique)
+]
+interface IRunOnceCheckBox : IDispatch
+{
+    [id(1), propget]
+    HRESULT ShowIE4State([out, retval] BOOL *value);
+
+    [id(1), propput]
+    HRESULT ShowIE4State([in] BOOL value);
+}
+
+[
+    uuid(7e67ade2-1334-11d1-9676-00a0c9054168),
+    version(1.0),
+    helpstring("RunOnce 1.0 Type Library")
+]
+library RUNONCELib
+{
+    importlib("stdole2.tlb");
+
+    [
+        uuid(d81a5542-0f4e-11d1-9671-00a0c9054168),
+        helpstring("RunOnceCheckBox Class"),
+        threading(apartment),
+        progid("RunOnceCheckBox.RunOnceCheckBox.1"),
+        vi_progid("RunOnceCheckBox.RunOnceCheckBox")
+    ]
+    coclass RunOnceCheckBox
+    {
+        [default] interface IRunOnceCheckBox;
+    }
+}
