@@ -129,8 +129,21 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
         WORD version, current_vm, system_vm;
 
         if (WIN386_QuerySession( &version, &current_vm, &system_vm ))
+        {
             TRACE( "WIN386 enhanced mode %u.%02u, current VM %u, system VM %u\n",
                    LOBYTE(version), HIBYTE(version), current_vm, system_vm );
+
+            /*
+             * WIN386 loads KRNL386 into the System VM.  Refuse to turn a
+             * secondary DOS VM into a Windows kernel VM accidentally.
+             */
+            if (current_vm != system_vm)
+            {
+                ERR( "KRNL386 cannot initialize in WIN386 DOS VM %u (system VM is %u)\n",
+                     current_vm, system_vm );
+                return FALSE;
+            }
+        }
     }
 
     /* setup emulation of protected instructions from 32-bit code */
