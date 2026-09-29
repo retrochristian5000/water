@@ -16,6 +16,7 @@
 #include "winreg.h"
 #include "wine/doskeyb.h"
 #include "dosvm.h"
+#include "sb20.h"
 #include "wow.h"
 #include "wine/debug.h"
 
@@ -138,10 +139,20 @@ static int run_dosbox( const char *appname, const char *args )
     HANDLE file;
     char *p, *prefix, *buffer, app[MAX_PATH];
     char keyb_layout[WINE_DOS_KEYB_MAX_LAYOUT + 1];
+    struct ntvdm_sb20_config sb20;
+    const char *blaster = getenv( "BLASTER" );
     int i;
     NTSTATUS ret = STATUS_OBJECT_NAME_NOT_FOUND;
     DWORD written, drives = GetLogicalDrives(), keyb_codepage;
     BOOL have_keyb = get_dos_keyboard( keyb_layout, &keyb_codepage );
+    BOOL valid_sb20 = ntvdm_sb20_configure( &sb20, blaster );
+
+    if (!valid_sb20)
+        WINE_WARN( "malformed BLASTER setting '%s'; disabling XP NTVDM SB2 compatibility\n",
+                   blaster ? blaster : "" );
+    else if (!sb20.enabled && sb20.base && sb20.card_type != NTVDM_SB20_CARD_TYPE)
+        WINE_WARN( "BLASTER T%u requests a card unsupported by XP NTVDM; disabling SB emulation\n",
+                   (unsigned int)sb20.card_type );
 
     if (!config_dir || !(prefix = wine_get_unix_file_name( config_dir ))) return 1;
     if (!GetTempPathW( MAX_PATH, path )) return 1;
@@ -158,6 +169,8 @@ static int run_dosbox( const char *appname, const char *args )
                         26 * (strlen(prefix) + sizeof("mount c /dosdevices/c:")) +
                         4 * lstrlenW( path ) +
                         sizeof("keyb ABCDE 65535") +
+                        sizeof("[sblaster]\nsbtype=sb2\nsbbase=ffff\nirq=15\ndma=7\noplmode=none\n\n") +
+                        sizeof("set BLASTER=AFFFF I15 D7 PFFFF T3\n") +
                         6 + strlen( app ) + strlen( args ) + 20 );
     if (!buffer)
     {
@@ -167,6 +180,23 @@ static int run_dosbox( const char *appname, const char *args )
     }
 
     p = buffer;
+    p += sprintf( p, "[sblaster]\n" );
+    if (sb20.enabled)
+    {
+        p += sprintf( p, "sbtype=sb2\nsbbase=%x\nirq=%u\ndma=%u\noplmode=none\n\n",
+                      (unsigned int)sb20.base, (unsigned int)sb20.irq,
+                      (unsigned int)sb20.dma );
+        WINE_TRACE( "XP NTVDM SB2 profile A%x I%u D%u P%x T%u\n",
+                    (unsigned int)sb20.base, (unsigned int)sb20.irq,
+                    (unsigned int)sb20.dma, (unsigned int)sb20.mpu_base,
+                    (unsigned int)sb20.card_type );
+    }
+    else
+    {
+        p += sprintf( p, "sbtype=none\noplmode=none\n\n" );
+        WINE_TRACE( "XP NTVDM SB2 profile disabled\n" );
+    }
+
     p += sprintf( p, "[autoexec]\n" );
     for (i = 25; i >= 0; i--)
         if (!(drives & (1 << i)))
@@ -192,7 +222,15 @@ static int run_dosbox( const char *appname, const char *args )
         if (keyb_codepage) p += sprintf( p, " %lu", keyb_codepage );
     }
 
-    p += sprintf( p, "\nconfig -securemode\n" );
+    if (sb20.enabled)
+        p += sprintf( p, "\nset BLASTER=A%X I%u D%u P%X T%u\n",
+                      (unsigned int)sb20.base, (unsigned int)sb20.irq,
+                      (unsigned int)sb20.dma, (unsigned int)sb20.mpu_base,
+                      (unsigned int)sb20.card_type );
+    else
+        p += sprintf( p, "\nset BLASTER=A0\n" );
+
+    p += sprintf( p, "config -securemode\n" );
     p += sprintf( p, "%s %s\n", app, args );
     p += sprintf( p, "exit\n" );
 
