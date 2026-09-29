@@ -156,7 +156,7 @@ static DWORD wow32_dispatch_frame( WINEVDMFRAME *frame )
 /***********************************************************************
  *           W32Dispatch
  *
- * The public NT entry point has no parameters.  Water's KERNEL.500 bridge
+ * The public NT entry point has no parameters.  Water's NT5 KERNEL.506 bridge
  * installs a per-call context in the TEB WOW32Reserved slot, invokes this
  * function, and restores the previous value afterwards.
  */
