@@ -153,6 +153,123 @@ WORD cbclientex_selector = 0;
 static struct ThunkDataSL *sl_data_list;
 static DWORD next_sl_cookie = 1;
 
+enum generic_thunk_token_kind
+{
+    GENERIC_THUNK_TOKEN_MODULE = 1,
+    GENERIC_THUNK_TOKEN_PROC
+};
+
+struct generic_thunk_token
+{
+    struct generic_thunk_token *next;
+    DWORD token;
+    DWORD owner;
+    UINT_PTR value;
+    enum generic_thunk_token_kind kind;
+};
+
+#define GENERIC_THUNK_MODULE_TOKEN 0xe1000000u
+#define GENERIC_THUNK_PROC_TOKEN   0xe2000000u
+#define GENERIC_THUNK_TOKEN_MASK   0x00ffffffu
+
+static SRWLOCK generic_thunk_token_lock = RTL_SRWLOCK_INIT;
+static struct generic_thunk_token *generic_thunk_tokens;
+static LONG generic_thunk_next_token;
+
+static DWORD generic_thunk_make_token( enum generic_thunk_token_kind kind,
+                                       UINT_PTR value, DWORD owner )
+{
+    struct generic_thunk_token *entry;
+    DWORD token, base;
+
+    if (sizeof(void *) <= sizeof(DWORD)) return (DWORD)value;
+    if (!(entry = HeapAlloc( GetProcessHeap(), 0, sizeof(*entry) )))
+    {
+        SetLastError( ERROR_NOT_ENOUGH_MEMORY );
+        return 0;
+    }
+
+    base = kind == GENERIC_THUNK_TOKEN_MODULE ? GENERIC_THUNK_MODULE_TOKEN : GENERIC_THUNK_PROC_TOKEN;
+    do
+    {
+        token = base | (InterlockedIncrement( &generic_thunk_next_token ) & GENERIC_THUNK_TOKEN_MASK);
+    } while ((token & GENERIC_THUNK_TOKEN_MASK) == 0);
+
+    entry->token = token;
+    entry->owner = owner;
+    entry->value = value;
+    entry->kind = kind;
+
+    AcquireSRWLockExclusive( &generic_thunk_token_lock );
+    entry->next = generic_thunk_tokens;
+    generic_thunk_tokens = entry;
+    ReleaseSRWLockExclusive( &generic_thunk_token_lock );
+
+    return token;
+}
+
+static UINT_PTR generic_thunk_resolve_token( DWORD token, enum generic_thunk_token_kind kind )
+{
+    struct generic_thunk_token *entry;
+    UINT_PTR value = 0;
+    DWORD base;
+
+    if (sizeof(void *) <= sizeof(DWORD)) return token;
+
+    base = kind == GENERIC_THUNK_TOKEN_MODULE ? GENERIC_THUNK_MODULE_TOKEN : GENERIC_THUNK_PROC_TOKEN;
+    if ((token & 0xff000000u) != base) return 0;
+
+    AcquireSRWLockShared( &generic_thunk_token_lock );
+    for (entry = generic_thunk_tokens; entry; entry = entry->next)
+    {
+        if (entry->token == token && entry->kind == kind)
+        {
+            value = entry->value;
+            break;
+        }
+    }
+    ReleaseSRWLockShared( &generic_thunk_token_lock );
+    return value;
+}
+
+static void generic_thunk_release_module_token( DWORD token )
+{
+    struct generic_thunk_token **cursor, *entry;
+
+    if (sizeof(void *) <= sizeof(DWORD)) return;
+
+    AcquireSRWLockExclusive( &generic_thunk_token_lock );
+    cursor = &generic_thunk_tokens;
+    while ((entry = *cursor))
+    {
+        if (entry->token == token || entry->owner == token)
+        {
+            *cursor = entry->next;
+            HeapFree( GetProcessHeap(), 0, entry );
+            continue;
+        }
+        cursor = &entry->next;
+    }
+    ReleaseSRWLockExclusive( &generic_thunk_token_lock );
+}
+
+static BOOL generic_thunk_linear32( SEGPTR ptr, DWORD *linear )
+{
+    UINT_PTR value = (UINT_PTR)MapSL( ptr );
+
+    if (value > 0xffffffffu)
+    {
+        WARN( "16:16 pointer %08lx maps above the 32-bit VDM address space: %p\n",
+              ptr, (void *)value );
+        SetLastError( ERROR_NOT_SUPPORTED );
+        *linear = 0;
+        return FALSE;
+    }
+
+    *linear = (DWORD)value;
+    return TRUE;
+}
+
 extern int call_entry_point( void *func, int nb_args, const DWORD *args );
 extern void __wine_call_from_16_thunk(void);
 extern void WINAPI FT_Prolog(void);
@@ -2553,8 +2670,23 @@ void WINAPI Throw16( LPCATCHBUF lpbuf, INT16 retval, I386_CONTEXT *context )
  */
 DWORD WINAPI GetVDMPointer32W16( SEGPTR vp, UINT16 fMode )
 {
-    GlobalPageLock16(GlobalHandle16(SELECTOROF(vp)));
-    return (DWORD)K32WOWGetVDMPointer( vp, 0, (DWORD)fMode );
+    UINT_PTR linear;
+
+    if (fMode > 1)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    linear = (UINT_PTR)K32WOWGetVDMPointer( vp, 0, fMode );
+    if (linear > 0xffffffffu)
+    {
+        WARN( "VDM pointer %08lx maps above the documented 32-bit linear address space: %p\n",
+              vp, (void *)linear );
+        SetLastError( ERROR_NOT_SUPPORTED );
+        return 0;
+    }
+    return (DWORD)linear;
 }
 
 /***********************************************************************
@@ -2563,11 +2695,11 @@ DWORD WINAPI GetVDMPointer32W16( SEGPTR vp, UINT16 fMode )
 DWORD WINAPI LoadLibraryEx32W16( LPCSTR lpszLibFile, DWORD hFile, DWORD dwFlags )
 {
     HMODULE hModule;
-    DWORD mutex_count;
+    DWORD token, mutex_count;
     OFSTRUCT ofs;
     const char *p;
 
-    if (!lpszLibFile)
+    if (!lpszLibFile || hFile)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -2594,7 +2726,15 @@ DWORD WINAPI LoadLibraryEx32W16( LPCSTR lpszLibFile, DWORD hFile, DWORD dwFlags 
     hModule = LoadLibraryExA( lpszLibFile, (HANDLE)hFile, dwFlags );
     RestoreThunkLock( mutex_count );
 
-    return (DWORD)hModule;
+    if (!hModule) return 0;
+    if ((token = generic_thunk_make_token( GENERIC_THUNK_TOKEN_MODULE,
+                                           (UINT_PTR)hModule, 0 )))
+        return token;
+
+    ReleaseThunkLock( &mutex_count );
+    FreeLibrary( hModule );
+    RestoreThunkLock( mutex_count );
+    return 0;
 }
 
 /***********************************************************************
@@ -2602,7 +2742,17 @@ DWORD WINAPI LoadLibraryEx32W16( LPCSTR lpszLibFile, DWORD hFile, DWORD dwFlags 
  */
 DWORD WINAPI GetProcAddress32W16( DWORD hModule, LPCSTR lpszProc )
 {
-    return (DWORD)GetProcAddress( (HMODULE)hModule, lpszProc );
+    HMODULE module = (HMODULE)generic_thunk_resolve_token( hModule, GENERIC_THUNK_TOKEN_MODULE );
+    FARPROC proc;
+
+    if (!module)
+    {
+        SetLastError( ERROR_INVALID_HANDLE );
+        return 0;
+    }
+
+    if (!(proc = GetProcAddress( module, lpszProc ))) return 0;
+    return generic_thunk_make_token( GENERIC_THUNK_TOKEN_PROC, (UINT_PTR)proc, hModule );
 }
 
 /***********************************************************************
@@ -2610,12 +2760,21 @@ DWORD WINAPI GetProcAddress32W16( DWORD hModule, LPCSTR lpszProc )
  */
 DWORD WINAPI FreeLibrary32W16( DWORD hLibModule )
 {
+    HMODULE module = (HMODULE)generic_thunk_resolve_token( hLibModule, GENERIC_THUNK_TOKEN_MODULE );
     BOOL retv;
     DWORD mutex_count;
 
+    if (!module)
+    {
+        SetLastError( ERROR_INVALID_HANDLE );
+        return FALSE;
+    }
+
     ReleaseThunkLock( &mutex_count );
-    retv = FreeLibrary( (HMODULE)hLibModule );
+    retv = FreeLibrary( module );
     RestoreThunkLock( mutex_count );
+
+    if (retv) generic_thunk_release_module_token( hLibModule );
     return (DWORD)retv;
 }
 
@@ -2624,12 +2783,19 @@ DWORD WINAPI FreeLibrary32W16( DWORD hLibModule )
  */
 static DWORD WOW_CallProc32W16( FARPROC proc32, DWORD nrofargs, DWORD *args )
 {
+    FARPROC proc = (FARPROC)generic_thunk_resolve_token( (DWORD)(ULONG_PTR)proc32,
+                                                         GENERIC_THUNK_TOKEN_PROC );
     DWORD ret;
     DWORD mutex_count;
 
+    if (!proc)
+    {
+        SetLastError( ERROR_PROC_NOT_FOUND );
+        return 0;
+    }
+
     ReleaseThunkLock( &mutex_count );
-    if (!proc32) ret = 0;
-    else ret = call_entry_point( proc32, nrofargs & ~CPEX_DEST_CDECL, args );
+    ret = call_entry_point( proc, nrofargs & ~CPEX_DEST_CDECL, args );
     RestoreThunkLock( mutex_count );
 
     TRACE("returns %08lx\n",ret);
@@ -2651,8 +2817,11 @@ DWORD WINAPIV CallProc32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32, 
         if (argconvmask & (1<<i))
         {
             SEGPTR ptr = VA_ARG16( valist, SEGPTR );
+            DWORD linear;
+
             /* pascal convention, have to reverse the arguments order */
-            args[nrofargs - i - 1] = (DWORD)MapSL(ptr);
+            if (!generic_thunk_linear32( ptr, &linear )) return 0;
+            args[nrofargs - i - 1] = linear;
             TRACE("%08lx(%p),",ptr,MapSL(ptr));
         }
         else
@@ -2687,7 +2856,10 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
         if (argconvmask & (1<<i))
         {
             SEGPTR ptr = VA_ARG16( valist, SEGPTR );
-            args[i] = (DWORD)MapSL(ptr);
+            DWORD linear;
+
+            if (!generic_thunk_linear32( ptr, &linear )) return 0;
+            args[i] = linear;
             TRACE("%08lx(%p),",ptr,MapSL(ptr));
         }
         else
