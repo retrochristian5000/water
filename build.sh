@@ -303,6 +303,9 @@ autoconf_state_signature()
     if [ -f "$SOURCE_DIR/aclocal.m4" ]; then
         cksum "$SOURCE_DIR/aclocal.m4"
     fi
+    if [ -f "$SOURCE_DIR/VERSION" ]; then
+        cksum "$SOURCE_DIR/VERSION"
+    fi
     if [ -f "$SOURCE_DIR/configure" ]; then
         cksum "$SOURCE_DIR/configure"
     fi
@@ -2645,16 +2648,15 @@ configure_new()
 
 recheck_build()
 {
-    if [ -x "$BUILD_DIR/config.status" ]; then
-        printf 'WHP configure: rechecking existing build options\n' >&2
-        (
-            cd "$BUILD_DIR"
-            ./config.status --recheck
-        )
-        record_profile_signature
-    else
-        configure_saved
-    fi
+    /*
+     * config.status --recheck faithfully replays the command that created it,
+     * but Water's configure policy is owned by this wrapper.  Reconstruct the
+     * current profile and toolchain arguments around the saved user arguments
+     * so Win16/i386 gating cannot be resurrected from stale config.status
+     * state after the wrapper policy changes.
+     */
+    printf 'WHP configure: rebuilding from saved Water profile\n' >&2
+    configure_saved
 }
 
 ensure_configured()
