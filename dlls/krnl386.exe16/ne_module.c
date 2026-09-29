@@ -34,6 +34,7 @@
 #include "ddk/ntddk.h"
 #include "kernel16_private.h"
 #include "win386.h"
+#include "wine/vdm.h"
 #include "wine/exception.h"
 #include "wine/debug.h"
 
@@ -402,23 +403,24 @@ enum krnl386_personality
 };
 
 /*
- * Water uses one KRNL386 binary for several historical personalities. Cache
- * the process personality: WIN386 state is inherited before the System VM is
- * created, and the Win32 OS personality is likewise process-stable.
+ * Water uses one KRNL386 binary for several historical personalities.  The
+ * VDM owner must select NT WOW explicitly; the host OS version is not a safe
+ * substitute because Wine/Water can emulate several guest personalities on
+ * the same host.
  */
 static enum krnl386_personality get_krnl386_personality(void)
 {
     static int cached = -1;
-    OSVERSIONINFOA version;
+    char value[16];
+    DWORD len;
 
     if (cached != -1) return cached;
 
     if (WIN386_QuerySession( NULL ))
         return cached = KRNL386_PERSONALITY_WIN386;
 
-    memset( &version, 0, sizeof(version) );
-    version.dwOSVersionInfoSize = sizeof(version);
-    if (GetVersionExA( &version ) && version.dwPlatformId == VER_PLATFORM_WIN32_NT)
+    len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+    if (len && len < ARRAY_SIZE(value) && !strcmp( value, WATER_VDM_PERSONALITY_NT_WOW ))
         return cached = KRNL386_PERSONALITY_NT_WOW;
 
     return cached = KRNL386_PERSONALITY_GENERIC;
