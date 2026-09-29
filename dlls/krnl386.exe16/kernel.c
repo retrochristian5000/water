@@ -30,9 +30,18 @@
 
 #include "kernel16_private.h"
 #include "win386.h"
+#include "wine/vdm.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
+
+static BOOL is_nt_wow_session(void)
+{
+    char value[16];
+    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+
+    return len && len < ARRAY_SIZE(value) && !strcmp( value, WATER_VDM_PERSONALITY_NT_WOW );
+}
 
 extern DWORD WINAPI GetProcessFlags( DWORD processid );
 
@@ -392,7 +401,6 @@ DWORD WINAPI GetWinFlags16(void)
 {
     static const long cpuflags[5] = { WF_CPU086, WF_CPU186, WF_CPU286, WF_CPU386, WF_CPU486 };
     BYTE processor_level = DOSVM_GetX86ProcessorLevel();
-    OSVERSIONINFOA ovi;
     DWORD result;
 
     /* There doesn't seem to be any Pentium flag.  */
@@ -400,16 +408,12 @@ DWORD WINAPI GetWinFlags16(void)
     if (processor_level >= 4) result |= WF_HASCPUID;
 
     /*
-     * An active WIN386 session is genuine DOS-based enhanced mode.  Do not
-     * leak the host's NT/WOW flag into that guest personality.
+     * WF_WIN32WOW describes the guest's NT WOW environment, not the host OS.
+     * The NTVDM owner marks that personality before KRNL386 is loaded.
      */
-    if (!WIN386_QuerySession( NULL ))
-    {
-        ovi.dwOSVersionInfoSize = sizeof(ovi);
-        GetVersionExA(&ovi);
-        if (ovi.dwPlatformId == VER_PLATFORM_WIN32_NT)
-            result |= WF_WIN32WOW; /* undocumented WF_WINNT */
-    }
+    if (is_nt_wow_session())
+        result |= WF_WIN32WOW; /* undocumented WF_WINNT */
+
     return result;
 }
 
