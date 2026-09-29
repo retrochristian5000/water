@@ -6,4 +6,5 @@
  * enhanced-mode filename selected by KRNL386.
  */
 
+#define WINE_WINOLDAP_GRABBER_KEY "386grabber"
 #include "../winoldap.mod16/winoldap.c"

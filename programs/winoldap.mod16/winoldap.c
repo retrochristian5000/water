@@ -28,6 +28,10 @@
 #include "wine/server.h"
 #include "wine/debug.h"
 
+#ifndef WINE_WINOLDAP_GRABBER_KEY
+#define WINE_WINOLDAP_GRABBER_KEY "286grabber"
+#endif
+
 WINE_DEFAULT_DEBUG_CHANNEL(module);
 
 
@@ -55,6 +59,36 @@ static DWORD wait_input_idle( HANDLE process, DWORD timeout )
 }
 
 
+static BOOL load_video_grabber( HINSTANCE16 *module )
+{
+    char name[MAX_PATH];
+    DWORD len;
+
+    *module = 0;
+    len = GetPrivateProfileStringA( "boot", WINE_WINOLDAP_GRABBER_KEY, "",
+                                    name, ARRAY_SIZE(name), "SYSTEM.INI" );
+    if (!len)
+    {
+        WINE_TRACE( "no [boot] %s configured; continuing without a video grabber\n",
+                    WINE_WINOLDAP_GRABBER_KEY );
+        return TRUE;
+    }
+
+    *module = LoadLibrary16( name );
+    if (*module < 32)
+    {
+        WINE_WARN( "unable to load [boot] %s=%s (error %u)\n",
+                   WINE_WINOLDAP_GRABBER_KEY, wine_dbgstr_a(name), *module );
+        *module = 0;
+        return FALSE;
+    }
+
+    WINE_TRACE( "loaded [boot] %s=%s as %04x\n",
+                WINE_WINOLDAP_GRABBER_KEY, wine_dbgstr_a(name), *module );
+    return TRUE;
+}
+
+
 /**************************************************************************
  *           WINOLDAP entry point
  */
@@ -62,9 +96,16 @@ WORD WINAPI WinMain16( HINSTANCE16 inst, HINSTANCE16 prev, LPSTR cmdline, WORD s
 {
     PROCESS_INFORMATION info;
     STARTUPINFOA startup;
+    HINSTANCE16 grabber;
     DWORD count, exit_code = 1;
 
     WINE_TRACE( "%x %x %s %u\n", inst, prev, wine_dbgstr_a(cmdline), show );
+
+    if (!load_video_grabber( &grabber ))
+    {
+        HeapFree( GetProcessHeap(), 0, cmdline );
+        ExitThread( ERROR_FILE_NOT_FOUND );
+    }
 
     memset( &startup, 0, sizeof(startup) );
     startup.cb = sizeof(startup);
@@ -84,6 +125,7 @@ WORD WINAPI WinMain16( HINSTANCE16 inst, HINSTANCE16 prev, LPSTR cmdline, WORD s
         CloseHandle( info.hProcess );
     }
 
+    if (grabber) FreeLibrary16( grabber );
     HeapFree( GetProcessHeap(), 0, cmdline );
     ExitThread( exit_code );
 }
