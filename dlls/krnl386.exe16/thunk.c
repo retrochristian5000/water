@@ -2703,7 +2703,7 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
 
 
 /**********************************************************************
- *           WOW16Call               (KERNEL.500)
+ *           WOW16Call               (NT5 KERNEL.506; legacy backing entry 500)
  *
  * Bridge the NT WOW16CALL stack format to wow32.dll's W32Dispatch path.
  * NT's thunk macro pushes the API argument-byte count, then the high and low
