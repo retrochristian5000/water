@@ -54,7 +54,8 @@ BOOL WIN386_QuerySession(WORD *version, WORD *current_vm, WORD *system_vm)
         char *end;
         unsigned long parsed = strtoul(vm_text, &end, 10);
 
-        if (!*end && parsed && parsed < 0x10000)
+        if (!*end && parsed >= state->system_vm &&
+            parsed < (unsigned long)state->next_vm && parsed < 0x10000)
             vm = parsed;
     }
 
