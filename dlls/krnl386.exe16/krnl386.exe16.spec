@@ -401,9 +401,9 @@
 # 495 is present only in Win98
 495 pascal WaitForMultipleObjectsEx(long ptr long long long) WaitForMultipleObjectsEx16
 
-# 500-544 are WinNT extensions; some are also available in Win95
-# The unified Water image also contains later Win9x exports; ne_module.c
-# filters these ordinal surfaces at runtime for WIN386 vs. NT WOW.
+# Legacy NT/Win9x backing entries.  NT5 moved several WOW exports
+# (including WOW16Call to 506 and __MOD_* to 570+).  ne_module.c presents
+# the NT5 ordinal view at runtime while preserving this merged backing table.
 
 500 varargs WOW16Call(word word word) WOW16Call
 501 stub KDDBGOUT                                               # Both NT/95 (?)
