@@ -1,6 +1,9 @@
 MODULE    = krnl386.exe16
 IMPORTLIB = kernel
 DELAYIMPORTS = user32
+
+# The internal name "kernel" is a build invariant, not cosmetic: winebuild
+# uses it to emit the core Win16 CallFrom16/CallTo16 relay machinery.
 EXTRADLLFLAGS = -m16 -Wb,--dll-name,kernel
 
 VER_PRODUCTVERSION = 1,0,0,0

@@ -2624,12 +2624,37 @@ dnl Disable Win16-related modules
 dnl Win16/KRNL386 is an i386 guest ABI.  A bare --enable-win16 used to turn
 dnl these modules on for every PE architecture, which makes 64-bit/ARM64
 dnl builds try to compile x86 register frames and assembly.
+if test ${enable_win16+y}
+then
+  win16_explicit=yes
+else
+  win16_explicit=no
+fi
 case "$enable_win16" in
   yes) enable_win16=i386 ;;
   no|i386|"") ;;
   *) AC_MSG_ERROR([Win16 support is i386-only; use --enable-win16=i386 or --disable-win16]) ;;
 esac
 enable_win16=${enable_win16:-i386}
+
+dnl An explicit Win16 request must have an actual i386 build lane.  Without
+dnl this check configure can accept --enable-win16=i386 on an ARM64/x86_64-only
+dnl PE build and silently disable KRNL386 through the per-arch subdir filters.
+if test "$win16_explicit" = yes -a "$enable_win16" = i386
+then
+  if test -n "$PE_ARCHS"
+  then
+    case " $PE_ARCHS " in
+      *" i386 "*) ;;
+      *) AC_MSG_ERROR([Win16/KRNL386 was explicitly enabled, but the configured PE architectures do not include i386.
+Add i386 to --enable-archs or disable Win16.]) ;;
+    esac
+  elif test "$HOST_ARCH" != i386
+  then
+    AC_MSG_ERROR([Win16/KRNL386 was explicitly enabled, but no i386 build lane is available.
+Enable an i386 PE architecture or disable Win16.])
+  fi
+fi
 enable_w32skrnl=${enable_w32skrnl:-$enable_win16}
 enable_wow32=${enable_wow32:-$enable_win16}
 enable_winevdm=${enable_winevdm:-$enable_win16}

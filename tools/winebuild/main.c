@@ -566,6 +566,15 @@ static int parse_input_file( DLLSPEC *spec )
 
 static void check_target(void)
 {
+    /*
+     * The Win16 generator emits i386 relay code directly (16-bit far calls,
+     * 32-bit x86 register frames and FS-based thunk state).  Do not rely on
+     * configure alone to keep -m16 away from other PE targets: winebuild is
+     * also invoked directly by developer and generated build rules.
+     */
+    if (main_spec->type == SPEC_WIN16 && target.cpu != CPU_i386)
+        fatal_error( "Win16 modules require an i386 target.\n" );
+
     if (is_pe())
     {
         if (target.cpu == CPU_POWERPC && force_pointer_size == 8)
