@@ -5,6 +5,7 @@ EXTRADLLFLAGS = -mconsole
 
 SOURCES = \
 	dosvm.c \
+	doskrnl.c \
 	sb20.c \
 	ntvdm.c \
 	wow.c
