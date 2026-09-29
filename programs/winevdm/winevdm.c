@@ -201,6 +201,8 @@ static void start_dosbox( const char *appname, const char *args )
     p += WideCharToMultiByte( CP_UNIXCP, 0, path + 2, -1, p, 4 * lstrlenW(path), NULL, NULL ) - 1;
     if (have_keyb)
     {
+        WINE_TRACE( "applying DOS keyboard layout %s, code page %lu\n",
+                    keyb_layout, keyb_codepage );
         p += sprintf( p, "\nkeyb %s", keyb_layout );
         if (keyb_codepage) p += sprintf( p, " %lu", keyb_codepage );
     }

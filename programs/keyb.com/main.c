@@ -7,6 +7,7 @@
  */
 
 #include <windows.h>
+#include <stdio.h>
 #include <wchar.h>
 #include <wctype.h>
 
@@ -33,13 +34,46 @@ static void usage(void)
             L"  /E        Request enhanced-keyboard handling.\n");
 }
 
-static BOOL decimal_string(const WCHAR *str)
+static BOOL parse_decimal(const WCHAR *str, DWORD limit, DWORD *value)
 {
+    DWORD result = 0;
+
     if (!str || !*str) return FALSE;
     while (*str)
     {
-        if (!iswdigit(*str)) return FALSE;
-        str++;
+        DWORD digit;
+
+        if (*str < L'0' || *str > L'9') return FALSE;
+        digit = *str++ - L'0';
+        if (result > (limit - digit) / 10) return FALSE;
+        result = result * 10 + digit;
+    }
+
+    if (!result) return FALSE;
+    *value = result;
+    return TRUE;
+}
+
+static WCHAR ascii_upper(WCHAR ch)
+{
+    if (ch >= L'a' && ch <= L'z') return ch - (L'a' - L'A');
+    return ch;
+}
+
+static BOOL ascii_equal_nocase(const WCHAR *left, const WCHAR *right)
+{
+    while (*left && *right)
+    {
+        if (ascii_upper(*left++) != ascii_upper(*right++)) return FALSE;
+    }
+    return !*left && !*right;
+}
+
+static BOOL ascii_prefix_nocase(const WCHAR *str, const WCHAR *prefix)
+{
+    while (*prefix)
+    {
+        if (!*str || ascii_upper(*str++) != ascii_upper(*prefix++)) return FALSE;
     }
     return TRUE;
 }
@@ -88,12 +122,9 @@ static BOOL parse_spec(const WCHAR *arg, struct keyb_state *state)
         case 1:
             if (*field)
             {
-                WCHAR *end;
-                unsigned long value;
+                DWORD value;
 
-                if (!decimal_string(field)) return FALSE;
-                value = wcstoul(field, &end, 10);
-                if (*end || !value || value > 65535) return FALSE;
+                if (!parse_decimal(field, 65535, &value)) return FALSE;
                 state->codepage = value;
                 state->have_codepage = TRUE;
             }
@@ -191,12 +222,12 @@ static BOOL set_or_delete_string(HKEY key, const WCHAR *name, const WCHAR *value
 static BOOL write_state(const struct keyb_state *state)
 {
     HKEY key;
-    DWORD disposition, enhanced = state->enhanced;
+    DWORD enhanced = state->enhanced;
     LSTATUS status;
     BOOL ok = TRUE;
 
     status = RegCreateKeyExW(HKEY_CURRENT_USER, WINE_DOS_KEYB_REGKEY, 0, NULL, 0,
-                             KEY_SET_VALUE, NULL, &key, &disposition);
+                             KEY_SET_VALUE, NULL, &key, NULL);
     if (status != ERROR_SUCCESS) return FALSE;
 
     ok &= set_or_delete_string(key, WINE_DOS_KEYB_LAYOUT_VALUE, state->layout);
@@ -266,16 +297,18 @@ int __cdecl wmain(int argc, WCHAR **argv)
             usage();
             return 0;
         }
-        if (!wcsicmp(arg, L"/E"))
+        if (ascii_equal_nocase(arg, L"/E"))
         {
             state.enhanced = TRUE;
             continue;
         }
-        if (!wcsnicmp(arg, L"/ID:", 4))
+        if (ascii_prefix_nocase(arg, L"/ID:"))
         {
             const WCHAR *id = arg + 4;
+            DWORD id_value;
 
-            if (!decimal_string(id) || wcslen(id) > WINE_DOS_KEYB_MAX_ID)
+            if (wcslen(id) > WINE_DOS_KEYB_MAX_ID ||
+                !parse_decimal(id, 999, &id_value))
             {
                 fwprintf(stderr, L"KEYB: invalid keyboard ID.\n");
                 return 1;
