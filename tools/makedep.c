@@ -4218,6 +4218,17 @@ static void output_import_lib( struct makefile *make, unsigned int arch )
     const char *name = strmake( "%slib%s.a", arch_dirs[arch], make->importlib );
     unsigned int hybrid_arch = hybrid_archs[arch];
 
+    /*
+     * Disabled modules normally still get import libraries so that other
+     * modules can link against their API surface.  Win16 is different: its
+     * import library is part of the i386 segmented ABI and winebuild -m16
+     * emits i386-specific names and thunk metadata.  config.status may mark
+     * krnl386.exe16 disabled for a non-i386 PE lane while makedep still asks
+     * for IMPORTLIB=kernel there, so reject that wrong-architecture rule
+     * before it reaches winebuild.
+     */
+    if (make->is_win16 && get_cpu_from_name( archs.str[arch] ) != CPU_i386) return;
+
     if (native_archs[arch]) return;
 
     strarray_add( &make->clean_files, name );
