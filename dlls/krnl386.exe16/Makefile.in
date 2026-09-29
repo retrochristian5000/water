@@ -16,6 +16,7 @@ SOURCES = \
 	atom.c \
 	dosmem.c \
 	dem_disk.c \
+	dem_process.c \
 	error.c \
 	emm386_compat.c \
 	file.c \
@@ -25,6 +26,7 @@ SOURCES = \
 	int13.c \
 	int15.c \
 	ntdos_int21_compat.c \
+	ntdos_process_compat.c \
 	ntdos_absdisk_compat.c \
 	int2f.c \
 	int31.c \
