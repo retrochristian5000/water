@@ -37,5 +37,6 @@ SOURCES = \
 	thunk.c \
 	utthunk.c \
 	vxd.c \
+	win386.c \
 	wowthunk.c \
 	xms.c

@@ -1,0 +1,6 @@
+MODULE    = win386.exe
+
+EXTRADLLFLAGS = -mconsole
+
+SOURCES = \
+	win386.c

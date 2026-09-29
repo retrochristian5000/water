@@ -92,7 +92,10 @@ static UINT W32S_offset;
 
 static WORD VXD_WinVersion(void)
 {
-    WORD version = LOWORD(GetVersion16());
+    WORD version;
+
+    if (!WIN386_QuerySession( &version, NULL, NULL ))
+        version = LOWORD(GetVersion16());
     return (version >> 8) | (version << 8);
 }
 

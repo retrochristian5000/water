@@ -424,4 +424,7 @@ C_ASSERT( sizeof(I386_CONTEXT) == 0x2cc );
     }
 #endif
 
+/* Windows 3.x enhanced-mode WIN386 session bridge. */
+extern BOOL WIN386_QuerySession( WORD *version, WORD *current_vm, WORD *system_vm );
+
 #endif  /* __WINE_KERNEL16_PRIVATE_H */

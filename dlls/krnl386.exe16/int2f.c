@@ -31,6 +31,7 @@
 #include "ntddstor.h"
 #include "ntddcdrm.h"
 #include "dosexe.h"
+#include "wine/win386.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);
 
@@ -65,6 +66,9 @@ static void MSCDEX_Handler( I386_CONTEXT *context );
 static WORD get_windows_mux_version(void)
 {
     RTL_OSVERSIONINFOEXW info;
+    WORD version;
+
+    if (WIN386_QuerySession( &version, NULL, NULL )) return version;
 
     info.dwOSVersionInfoSize = sizeof(info);
     if (!RtlGetVersion( &info ) && info.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
@@ -407,13 +411,18 @@ static void do_int2f_16( I386_CONTEXT *context )
         break;
 
     case 0x83:  /* Return Current Virtual Machine ID */
-        /* Virtual Machines are usually created/destroyed when Windows runs
-         * DOS programs. Since we never do, we are always in the System VM.
-         * According to Ralf Brown's Interrupt List, never return 0. But it
-         * seems to work okay (returning 0), just to be sure we return 1.
-         */
-       SET_BX( context, 1 ); /* VM 1 is probably the System VM */
-       break;
+        {
+            WORD vm = WATER_WIN386_VM_SYSTEM;
+
+            /*
+             * Under the explicit WIN386 personality, return the VMM-owned
+             * VM identity.  Outside that personality preserve the historical
+             * Wine fallback of System VM 1.
+             */
+            WIN386_QuerySession( NULL, &vm, NULL );
+            SET_BX( context, vm );
+        }
+        break;
 
     case 0x84:  /* Get device API entry point */
         {
