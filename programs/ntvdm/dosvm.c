@@ -250,6 +250,90 @@ enum dos_image_kind dos_prepare_process(const char *path, const char *args,
     return kind;
 }
 
+static void clear_carry(struct dos_cpu_context *cpu)
+{
+    cpu->flags &= ~1;
+}
+
+static BYTE get_ah(const struct dos_cpu_context *cpu)
+{
+    return cpu->ax >> 8;
+}
+
+static BYTE get_al(const struct dos_cpu_context *cpu)
+{
+    return cpu->ax & 0xff;
+}
+
+static enum dos_interrupt_result handle_int21(struct dos_process *process)
+{
+    struct dos_cpu_context *cpu = &process->cpu;
+
+    switch (get_ah(cpu))
+    {
+    case 0x00: /* terminate */
+        process->exit_code = 0;
+        process->terminated = TRUE;
+        return DOS_INTERRUPT_TERMINATE;
+
+    case 0x1a: /* set disk transfer area */
+        process->dta = MAKELONG(cpu->dx, cpu->ds);
+        clear_carry(cpu);
+        return DOS_INTERRUPT_CONTINUE;
+
+    case 0x2f: /* get disk transfer area */
+        cpu->bx = LOWORD(process->dta);
+        cpu->es = HIWORD(process->dta);
+        clear_carry(cpu);
+        return DOS_INTERRUPT_CONTINUE;
+
+    case 0x30: /* get DOS version */
+        /*
+         * NTVDM traditionally presents the DOS 5 generation interface.
+         * AL=major, AH=minor.  OEM/serial fields remain zero until DOS
+         * personality support is split out.
+         */
+        cpu->ax = 0x0005;
+        cpu->bx = 0;
+        cpu->cx = 0;
+        clear_carry(cpu);
+        return DOS_INTERRUPT_CONTINUE;
+
+    case 0x4c: /* terminate with return code */
+        process->exit_code = get_al(cpu);
+        process->terminated = TRUE;
+        return DOS_INTERRUPT_TERMINATE;
+
+    case 0x51: /* get current PSP */
+    case 0x62: /* get PSP address */
+        cpu->bx = process->psp_segment;
+        clear_carry(cpu);
+        return DOS_INTERRUPT_CONTINUE;
+
+    default:
+        return DOS_INTERRUPT_UNHANDLED;
+    }
+}
+
+enum dos_interrupt_result dos_handle_interrupt(struct dos_process *process, BYTE vector)
+{
+    if (!process || !process->memory) return DOS_INTERRUPT_UNHANDLED;
+
+    switch (vector)
+    {
+    case 0x20:
+        process->exit_code = 0;
+        process->terminated = TRUE;
+        return DOS_INTERRUPT_TERMINATE;
+
+    case 0x21:
+        return handle_int21(process);
+
+    default:
+        return DOS_INTERRUPT_UNHANDLED;
+    }
+}
+
 void dos_release_process(struct dos_process *process)
 {
     if (process->memory) HeapFree(GetProcessHeap(), 0, process->memory);
