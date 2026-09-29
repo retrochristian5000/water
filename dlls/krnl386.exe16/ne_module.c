@@ -394,25 +394,103 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
 }
 
 
+enum krnl386_personality
+{
+    KRNL386_PERSONALITY_GENERIC,
+    KRNL386_PERSONALITY_WIN386,
+    KRNL386_PERSONALITY_NT_WOW
+};
+
 /*
- * Water uses one KRNL386 binary for several historical personalities.
- * DOS-based Windows 3.0/3.1 enhanced mode must not see the later NT WOW,
- * Win95, or Win98 KERNEL extension ordinals that happen to exist in that
- * unified binary.
+ * Water uses one KRNL386 binary for several historical personalities. Cache
+ * the process personality: WIN386 state is inherited before the System VM is
+ * created, and the Win32 OS personality is likewise process-stable.
  */
-static BOOL win386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
+static enum krnl386_personality get_krnl386_personality(void)
+{
+    static int cached = -1;
+    OSVERSIONINFOA version;
+
+    if (cached != -1) return cached;
+
+    if (WIN386_QuerySession( NULL ))
+        return cached = KRNL386_PERSONALITY_WIN386;
+
+    memset( &version, 0, sizeof(version) );
+    version.dwOSVersionInfoSize = sizeof(version);
+    if (GetVersionExA( &version ) && version.dwPlatformId == VER_PLATFORM_WIN32_NT)
+        return cached = KRNL386_PERSONALITY_NT_WOW;
+
+    return cached = KRNL386_PERSONALITY_GENERIC;
+}
+
+static BOOL is_kernel_module( const NE_MODULE *module )
 {
     const BYTE *name;
 
-    if (!WIN386_QuerySession( NULL ) || !module->ne_restab) return FALSE;
-
+    if (!module->ne_restab) return FALSE;
     name = (const BYTE *)module + module->ne_restab;
-    if (*name != 6 || _strnicmp( (const char *)name + 1, "KERNEL", 6 )) return FALSE;
+    return *name == 6 && !_strnicmp( (const char *)name + 1, "KERNEL", 6 );
+}
 
-    return ordinal == 495 ||
-           (ordinal >= 500 && ordinal <= 568) ||
-           (ordinal >= 600 && ordinal <= 653) ||
-           (ordinal >= 700 && ordinal <= 704);
+static BOOL is_vxd_entry_ordinal( WORD ordinal )
+{
+    switch (ordinal)
+    {
+    case 901:
+    case 905:
+    case 909:
+    case 910:
+    case 912:
+    case 914:
+    case 923:
+    case 933:
+    case 938:
+    case 939:
+    case 945:
+    case 951:
+    case 955:
+    case 1990:
+    case 2077:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
+{
+    enum krnl386_personality personality;
+
+    if (!is_kernel_module( module )) return FALSE;
+    personality = get_krnl386_personality();
+
+    if (personality == KRNL386_PERSONALITY_WIN386)
+    {
+        /* Windows 3.0/3.1 predates the NT/Win9x KERNEL extension blocks. */
+        return ordinal == 495 ||
+               (ordinal >= 500 && ordinal <= 568) ||
+               (ordinal >= 600 && ordinal <= 653) ||
+               (ordinal >= 700 && ordinal <= 704);
+    }
+
+    if (personality == KRNL386_PERSONALITY_NT_WOW)
+    {
+        /*
+         * NT WOW uses KRNL386 but does not expose the Windows 95 flat-thunk or
+         * VxD ABI. Keep the NT/generic thunk exports (notably 500 and 513-518)
+         * while rejecting Win95-only entry points such as 631 and 651.
+         */
+        return ordinal == 495 ||
+               (ordinal >= 533 && ordinal <= 540) ||
+               (ordinal >= 542 && ordinal <= 543) ||
+               (ordinal >= 560 && ordinal <= 568) ||
+               (ordinal >= 600 && ordinal <= 653) ||
+               (ordinal >= 700 && ordinal <= 704) ||
+               is_vxd_entry_ordinal( ordinal );
+    }
+
+    return FALSE;
 }
 
 
@@ -437,9 +515,10 @@ FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
 
     if (!(pModule = NE_GetPtr( hModule ))) return 0;
 
-    if (win386_hides_kernel_ordinal( pModule, ordinal ))
+    if (krnl386_hides_kernel_ordinal( pModule, ordinal ))
     {
-        TRACE( "hiding post-Windows-3.1 KERNEL ordinal %u from WIN386 session\n", ordinal );
+        TRACE( "hiding KERNEL ordinal %u from personality %u\n",
+               ordinal, get_krnl386_personality() );
         return 0;
     }
 
