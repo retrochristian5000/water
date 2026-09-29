@@ -132,6 +132,9 @@ static BOOL wow_dos_select_drive( I386_CONTEXT *context )
 static BOOL wow_dos_set_current_directory( I386_CONTEXT *context )
 {
     const char *path;
+    WCHAR pathW[MAX_PATH], fullW[MAX_PATH], env_name[4];
+    DWORD attr;
+    BYTE drive;
 
     if (!wow_map_sl ||
         !(path = wow_map_sl( MAKESEGPTR( (WORD)context->SegDs, LOWORD(context->Edx) ) )))
@@ -140,13 +143,42 @@ static BOOL wow_dos_set_current_directory( I386_CONTEXT *context )
         return TRUE;
     }
 
-    if (!SetCurrentDirectoryA( path ))
+    if (!MultiByteToWideChar( CP_OEMCP, 0, path, -1, pathW, ARRAY_SIZE(pathW) ) ||
+        !GetFullPathNameW( pathW, ARRAY_SIZE(fullW), fullW, NULL ))
     {
         wow_dos_error( context, GetLastError() );
         return TRUE;
     }
 
-    wow_dos_refresh_directory();
+    attr = GetFileAttributesW( fullW );
+    if (attr == INVALID_FILE_ATTRIBUTES || !(attr & FILE_ATTRIBUTE_DIRECTORY) ||
+        fullW[1] != ':' || ((fullW[0] | 0x20) < 'a') || ((fullW[0] | 0x20) > 'z'))
+    {
+        wow_dos_error( context, ERROR_PATH_NOT_FOUND );
+        return TRUE;
+    }
+
+    drive = (fullW[0] | 0x20) - 'a';
+    WideCharToMultiByte( CP_OEMCP, 0, fullW, -1, wow_dos.directory[drive],
+                         ARRAY_SIZE(wow_dos.directory[drive]), NULL, NULL );
+
+    /*
+     * DOS keeps a current directory per drive.  "=X:" is the Win32
+     * representation of that state.  AH=3Bh must not select X: merely because
+     * the supplied pathname names that drive.
+     */
+    env_name[0] = '=';
+    env_name[1] = 'A' + drive;
+    env_name[2] = ':';
+    env_name[3] = 0;
+    SetEnvironmentVariableW( env_name, fullW );
+
+    if (drive == wow_dos.current_drive && !SetCurrentDirectoryW( fullW ))
+    {
+        wow_dos_error( context, GetLastError() );
+        return TRUE;
+    }
+
     wow_dos_success( context );
     return TRUE;
 }
