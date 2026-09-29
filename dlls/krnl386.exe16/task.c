@@ -288,7 +288,14 @@ static TDB *TASK_Create( NE_MODULE *pModule, UINT16 cmdShow, LPCSTR cmdline, BYT
         GetModuleName16( hModule, name, sizeof(name) );
         len = strlen(name) + 1;
         memcpy(pTask->module_name, name, min(len,sizeof(pTask->module_name)));
-        pTask->compat_flags = GetProfileIntA( "Compatibility", name, 0 );
+        /*
+         * Windows 3.1 KERNEL applies WIN.INI [Compatibility] shims to
+         * applications targeting an older Windows contract. A module that
+         * explicitly targets Windows 3.1 must not inherit a Windows 3.0
+         * workaround merely because its module name matches an old entry.
+         */
+        if (pTask->version < 0x030a)
+            pTask->compat_flags = GetProfileIntA( "Compatibility", name, 0 );
 
         if (!stricmp( name, "WINOLDAP" )) pTask->flags |= TDBF_WINOLDAP;
     }
