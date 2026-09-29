@@ -169,7 +169,7 @@ static int run_dosbox( const char *appname, const char *args )
                         26 * (strlen(prefix) + sizeof("mount c /dosdevices/c:")) +
                         4 * lstrlenW( path ) +
                         sizeof("keyb ABCDE 65535") +
-                        sizeof("[sblaster]\nsbtype=sb2\nsbbase=ffff\nirq=15\ndma=7\noplmode=none\n\n") +
+                        sizeof("[sblaster]\nsbtype=sb2\nsbbase=ffff\nirq=15\ndma=7\noplmode=opl2\n\n") +
                         sizeof("set BLASTER=AFFFF I15 D7 PFFFF T3\n") +
                         6 + strlen( app ) + strlen( args ) + 20 );
     if (!buffer)
@@ -183,7 +183,7 @@ static int run_dosbox( const char *appname, const char *args )
     p += sprintf( p, "[sblaster]\n" );
     if (sb20.enabled)
     {
-        p += sprintf( p, "sbtype=sb2\nsbbase=%x\nirq=%u\ndma=%u\noplmode=none\n\n",
+        p += sprintf( p, "sbtype=sb2\nsbbase=%x\nirq=%u\ndma=%u\noplmode=opl2\n\n",
                       (unsigned int)sb20.base, (unsigned int)sb20.irq,
                       (unsigned int)sb20.dma );
         WINE_TRACE( "XP NTVDM SB2 profile A%x I%u D%u P%x T%u\n",
