@@ -35,32 +35,90 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
 
-BOOL kernel_is_nt_wow_session(void)
+static BOOL kernel_personality_is( const char *personality )
 {
-    char value[16];
+    char value[24];
     DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
 
-    return len && len < ARRAY_SIZE(value) &&
-           (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ) ||
-            !strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW ));
+    return len && len < ARRAY_SIZE(value) && !strcmp( value, personality );
+}
+
+BOOL kernel_is_nt_wow_session(void)
+{
+    return kernel_personality_is( WATER_VDM_PERSONALITY_NT351_WOW ) ||
+           kernel_personality_is( WATER_VDM_PERSONALITY_NT5_WOW );
 }
 
 static BOOL kernel_is_nt351_wow_session(void)
 {
-    char value[16];
-    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
-
-    return len && len < ARRAY_SIZE(value) &&
-           !strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW );
+    return kernel_personality_is( WATER_VDM_PERSONALITY_NT351_WOW );
 }
 
 static BOOL kernel_is_win95_osr2_session(void)
 {
-    char value[16];
-    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+    return kernel_personality_is( WATER_VDM_PERSONALITY_WIN95_OSR2 );
+}
 
-    return len && len < ARRAY_SIZE(value) &&
-           !strcmp( value, WATER_VDM_PERSONALITY_WIN95_OSR2 );
+static WORD kernel_win3_standard_version(void)
+{
+    /* A live WIN386 session is authoritative enhanced mode. */
+    if (WIN386_QuerySession( NULL )) return 0;
+
+    if (kernel_personality_is( WATER_VDM_PERSONALITY_WIN30_STANDARD ))
+        return MAKEWORD( 3, 0 );
+    if (kernel_personality_is( WATER_VDM_PERSONALITY_WIN31_STANDARD ))
+        return MAKEWORD( 3, 10 );
+    return 0;
+}
+
+static BOOL kernel_is_win3_standard_session(void)
+{
+    return kernel_win3_standard_version() != 0;
+}
+
+static const char *kernel16_image_name(void)
+{
+    static const char *image;
+    char value[16];
+    DWORD len;
+
+    if (image) return image;
+
+    len = GetEnvironmentVariableA( WATER_VDM_KERNEL16_ENV, value, ARRAY_SIZE(value) );
+    if (len && len < ARRAY_SIZE(value))
+    {
+        if (!strcmp( value, WATER_VDM_KERNEL16_KRNL286 ))
+            return image = "krnl286.exe";
+        if (!strcmp( value, WATER_VDM_KERNEL16_KRNL386 ))
+            return image = "krnl386.exe";
+        WARN( "unknown %s value %s; using KRNL386\n",
+              WATER_VDM_KERNEL16_ENV, debugstr_a(value) );
+    }
+    return image = "krnl386.exe";
+}
+
+static BOOL kernel16_is_krnl286(void)
+{
+    return !strcmp( kernel16_image_name(), "krnl286.exe" );
+}
+
+static BYTE kernel_configured_x86_cpu_level(void)
+{
+    static BYTE level = 0xff;
+    char value[8];
+    DWORD len;
+
+    if (level != 0xff) return level;
+
+    len = GetEnvironmentVariableA( WATER_VDM_X86_CPU_LEVEL_ENV, value, ARRAY_SIZE(value) );
+    if (!len) return level = 0;
+
+    if (len == 1 && value[0] >= '2' && value[0] <= '4')
+        return level = value[0] - '0';
+
+    WARN( "invalid %s value %s; expected 2, 3, or 4\n",
+          WATER_VDM_X86_CPU_LEVEL_ENV, debugstr_a(value) );
+    return level = 0;
 }
 
 extern DWORD WINAPI GetProcessFlags( DWORD processid );
@@ -118,7 +176,7 @@ BOOL WINAPI DllMain( HINSTANCE hinst, DWORD reason, LPVOID reserved )
     {
     case DLL_PROCESS_ATTACH:
         init_selectors();
-        if (LoadLibrary16( "krnl386.exe" ) < 32) return FALSE;
+        if (LoadLibrary16( kernel16_image_name() ) < 32) return FALSE;
         /* fall through */
     case DLL_THREAD_ATTACH:
         thread_attach();
@@ -148,6 +206,25 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
 
     /* Parse the Win9x boot configuration outside the PE loader lock. */
     MSDOS_InitConfig();
+
+    /*
+     * The kernel image and execution mode are separate axes.  KRNL286 may
+     * service Windows 3.x standard mode even on a 386, while KRNL386 may
+     * service either standard mode (through DOSX) or enhanced mode (WIN386).
+     */
+    if (kernel16_is_krnl286() && !kernel_is_win3_standard_session())
+    {
+        ERR( "KRNL286 selected outside a Windows 3.x standard-mode session\n" );
+        done = FALSE;
+        return FALSE;
+    }
+    if (!kernel16_is_krnl286() && kernel_configured_x86_cpu_level() == 2)
+    {
+        ERR( "KRNL386 requires a 386+ guest CPU, but %s requests a 286\n",
+             WATER_VDM_X86_CPU_LEVEL_ENV );
+        done = FALSE;
+        return FALSE;
+    }
 
     /*
      * A DOS-based Windows 3.x enhanced-mode session is owned by WIN386.EXE.
@@ -249,6 +326,15 @@ DWORD WINAPI GetVersion16(void)
                HIBYTE(session.dos_version), LOBYTE(session.dos_version),
                LOBYTE(session.windows_version), HIBYTE(session.windows_version) );
         return MAKELONG( session.windows_version, session.dos_version );
+    }
+
+    if ((winver = kernel_win3_standard_version()))
+    {
+        dosver = (winver == MAKEWORD( 3, 0 )) ? 0x0500 : 0x0616;
+        TRACE( "DOSX standard personality: DOS %d.%02d Win %d.%02d using %s\n",
+               HIBYTE(dosver), LOBYTE(dosver), LOBYTE(winver), HIBYTE(winver),
+               kernel16_image_name() );
+        return MAKELONG( winver, dosver );
     }
 
     if (kernel_is_nt351_wow_session())
@@ -414,16 +500,23 @@ void WINAPI OutputDebugString16( LPCSTR str )
 BYTE DOSVM_GetX86ProcessorLevel(void)
 {
     SYSTEM_INFO si;
+    BYTE level = kernel_configured_x86_cpu_level();
+
+    if (level) return level;
 
     GetSystemInfo( &si );
 
-    /* KRNL386 is an enhanced-mode 386+ guest.  Do not leak a non-x86
-       host processor level into Win16 or DPMI compatibility APIs. */
+    /*
+     * The host CPU is only a fallback.  KRNL286/KRNL386 describe guest kernel
+     * images, not the native Water host; non-x86 hosts therefore get the
+     * minimum CPU appropriate to the selected image.
+     */
     if (si.wProcessorArchitecture != PROCESSOR_ARCHITECTURE_INTEL)
-        return 3;
-    if (si.wProcessorLevel < 3)
-        return 3;
-    return min( si.wProcessorLevel, 4 );
+        return kernel16_is_krnl286() ? 2 : 3;
+
+    level = min( max( si.wProcessorLevel, 2 ), 4 );
+    if (!kernel16_is_krnl286() && level < 3) level = 3;
+    return level;
 }
 
 
@@ -437,7 +530,11 @@ DWORD WINAPI GetWinFlags16(void)
     DWORD result;
 
     /* There doesn't seem to be any Pentium flag.  */
-    result = cpuflags[processor_level] | WF_ENHANCED | WF_PMODE | WF_80x87 | WF_PAGING;
+    result = cpuflags[processor_level] | WF_PMODE | WF_80x87;
+    if (kernel_is_win3_standard_session())
+        result |= WF_STANDARD;
+    else
+        result |= WF_ENHANCED | WF_PAGING;
     if (processor_level >= 4) result |= WF_HASCPUID;
 
     /*
@@ -475,6 +572,18 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
             v->szCSDVersion[0] = 0;
             return TRUE;
         }
+    }
+
+    if (kernel_is_win3_standard_session())
+    {
+        WORD version = kernel_win3_standard_version();
+
+        v->dwMajorVersion = LOBYTE(version);
+        v->dwMinorVersion = HIBYTE(version);
+        v->dwBuildNumber  = 0;
+        v->dwPlatformId   = VER_PLATFORM_WIN32s;
+        v->szCSDVersion[0] = 0;
+        return TRUE;
     }
 
     if (kernel_is_nt351_wow_session())

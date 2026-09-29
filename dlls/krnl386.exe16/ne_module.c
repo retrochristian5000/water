@@ -403,6 +403,8 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
 enum krnl386_personality
 {
     KRNL386_PERSONALITY_GENERIC,
+    KRNL386_PERSONALITY_WIN30_STANDARD,
+    KRNL386_PERSONALITY_WIN31_STANDARD,
     KRNL386_PERSONALITY_WIN386,
     KRNL386_PERSONALITY_WIN95_OSR2,
     KRNL386_PERSONALITY_NT351_WOW,
@@ -410,10 +412,10 @@ enum krnl386_personality
 };
 
 /*
- * Water uses one KRNL386 binary for several historical personalities.  The
- * VDM owner must select NT WOW explicitly; the host OS version is not a safe
- * substitute because Wine/Water can emulate several guest personalities on
- * the same host.
+ * Water uses one built-in KERNEL backend for several historical personalities
+ * and kernel filenames. The VDM owner must select NT WOW explicitly; the host
+ * OS version is not a safe substitute because Wine/Water can emulate several
+ * guest personalities on the same host.
  */
 static enum krnl386_personality get_krnl386_personality(void)
 {
@@ -429,6 +431,10 @@ static enum krnl386_personality get_krnl386_personality(void)
     len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
     if (len && len < ARRAY_SIZE(value))
     {
+        if (!strcmp( value, WATER_VDM_PERSONALITY_WIN30_STANDARD ))
+            return cached = KRNL386_PERSONALITY_WIN30_STANDARD;
+        if (!strcmp( value, WATER_VDM_PERSONALITY_WIN31_STANDARD ))
+            return cached = KRNL386_PERSONALITY_WIN31_STANDARD;
         if (!strcmp( value, WATER_VDM_PERSONALITY_WIN95_OSR2 ))
             return cached = KRNL386_PERSONALITY_WIN95_OSR2;
         if (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ))
@@ -451,6 +457,12 @@ static WORD builtin_expected_windows_version(void)
             return ((WORD)LOBYTE(session.windows_version) << 8) |
                    HIBYTE(session.windows_version);
         break;
+
+    case KRNL386_PERSONALITY_WIN30_STANDARD:
+        return 0x0300;
+
+    case KRNL386_PERSONALITY_WIN31_STANDARD:
+        return 0x030a;
 
     case KRNL386_PERSONALITY_GENERIC:
     case KRNL386_PERSONALITY_WIN95_OSR2:
@@ -562,6 +574,17 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
 
     if (!is_kernel_module( module )) return FALSE;
     personality = get_krnl386_personality();
+
+    if (personality == KRNL386_PERSONALITY_WIN30_STANDARD ||
+        personality == KRNL386_PERSONALITY_WIN31_STANDARD)
+    {
+        /* Standard mode has no WIN386/VMM VxD surface. */
+        return ordinal == 495 ||
+               (ordinal >= 500 && ordinal <= 568) ||
+               (ordinal >= 600 && ordinal <= 653) ||
+               (ordinal >= 700 && ordinal <= 704) ||
+               is_vxd_entry_ordinal( ordinal );
+    }
 
     if (personality == KRNL386_PERSONALITY_WIN386)
     {

@@ -17,6 +17,7 @@
 #include "winternl.h"
 #include "kernel16_private.h"
 #include "win386.h"
+#include "wine/vdm.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dos);
@@ -87,6 +88,16 @@ static void get_msdos_path_value( const char *filename, const char *name,
  * boot policy such as BootGUI belongs to the Win9x boot owner and must not be
  * inferred from the Water host operating system here.
  */
+static BOOL is_win3_standard_personality(void)
+{
+    char value[24];
+    DWORD len = GetEnvironmentVariableA( WATER_VDM_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
+
+    return len && len < ARRAY_SIZE(value) &&
+           (!strcmp( value, WATER_VDM_PERSONALITY_WIN30_STANDARD ) ||
+            !strcmp( value, WATER_VDM_PERSONALITY_WIN31_STANDARD ));
+}
+
 void MSDOS_InitConfig(void)
 {
     char filename[MAX_PATH], windows[MAX_PATH];
@@ -95,11 +106,13 @@ void MSDOS_InitConfig(void)
     BOOL have_file;
 
     /*
-     * The guest personality owns this decision. WIN386 uses the pre-Win95
-     * binary MSDOS.SYS model, while NT WOW has no Win9x MSDOS.SYS boot policy.
-     * The default KRNL386 personality is currently the Win9x path.
+     * The guest personality owns this decision. Windows 3.x standard mode
+     * and WIN386 use the pre-Win95 binary MSDOS.SYS model, while NT WOW has
+     * no Win9x MSDOS.SYS boot policy. The default KRNL386 personality remains
+     * the Win9x path.
      */
-    if (WIN386_QuerySession( NULL ) || kernel_is_nt_wow_session())
+    if (is_win3_standard_personality() ||
+        WIN386_QuerySession( NULL ) || kernel_is_nt_wow_session())
         return;
 
     len = GetWindowsDirectoryA( windows, sizeof(windows) );

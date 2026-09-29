@@ -12,6 +12,7 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "wine/vdm.h"
 #include "wine/win386.h"
 #include "wine/debug.h"
 
@@ -287,9 +288,9 @@ static int run_system_vm(WORD version, WORD dos_version, char **argv)
     struct water_win386_session *state;
     PROCESS_INFORMATION process;
     STARTUPINFOA startup;
-    char mapping_name[64], vm_text[16], *command;
+    char mapping_name[64], vm_text[16], old_kernel[16], *command;
     HANDLE mapping;
-    DWORD exit_code = 1;
+    DWORD old_kernel_len, exit_code = 1;
 
     if (!argv[0]) return 1;
     if (!(command = build_command_line(argv))) return 1;
@@ -324,6 +325,9 @@ static int run_system_vm(WORD version, WORD dos_version, char **argv)
     state->active_vms = 1;
 
     sprintf(vm_text, "%u", WATER_WIN386_VM_SYSTEM);
+    old_kernel_len = GetEnvironmentVariableA(WATER_VDM_KERNEL16_ENV, old_kernel,
+                                              ARRAY_SIZE(old_kernel));
+    SetEnvironmentVariableA(WATER_VDM_KERNEL16_ENV, WATER_VDM_KERNEL16_KRNL386);
     SetEnvironmentVariableA(WATER_WIN386_SESSION_ENV, mapping_name);
     SetEnvironmentVariableA(WATER_WIN386_VM_ENV, vm_text);
 
@@ -351,6 +355,10 @@ static int run_system_vm(WORD version, WORD dos_version, char **argv)
 
     SetEnvironmentVariableA(WATER_WIN386_VM_ENV, NULL);
     SetEnvironmentVariableA(WATER_WIN386_SESSION_ENV, NULL);
+    if (old_kernel_len && old_kernel_len < ARRAY_SIZE(old_kernel))
+        SetEnvironmentVariableA(WATER_VDM_KERNEL16_ENV, old_kernel);
+    else
+        SetEnvironmentVariableA(WATER_VDM_KERNEL16_ENV, NULL);
 
     UnmapViewOfFile(state);
     CloseHandle(mapping);
