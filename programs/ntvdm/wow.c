@@ -23,6 +23,7 @@
 WINE_DEFAULT_DEBUG_CHANNEL(ntvdm);
 
 typedef BOOL (WINAPI *w32_init_proc)(BOOL);
+typedef void (__cdecl *w32_register_vdm_profile_proc)(DWORD);
 typedef void (__cdecl *w32_register_dos_int21_proc)(void *);
 typedef void (__cdecl *w32_register_dem_proc)(void *, void *, void *);
 typedef HINSTANCE16 (WINAPI *load_library16_proc)(LPCSTR);
@@ -466,17 +467,31 @@ static char *build_win16_command_line( char **argv )
     return cmdline;
 }
 
-static const char *get_wow_personality(void)
+static const char *get_wow_personality( DWORD *profile )
 {
     static char value[24];
     DWORD len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
 
-    if (len && len < ARRAY_SIZE(value) &&
-        (!strcmp( value, WATER_VDM_PERSONALITY_NT31_WOW ) ||
-         !strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ) ||
-         !strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW )))
-        return value;
+    if (len && len < ARRAY_SIZE(value))
+    {
+        if (!strcmp( value, WATER_VDM_PERSONALITY_NT31_WOW ))
+        {
+            *profile = WATER_VDM_WOW_PROFILE_NT31;
+            return value;
+        }
+        if (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ))
+        {
+            *profile = WATER_VDM_WOW_PROFILE_NT351;
+            return value;
+        }
+        if (!strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW ))
+        {
+            *profile = WATER_VDM_WOW_PROFILE_NT5;
+            return value;
+        }
+    }
 
+    *profile = WATER_VDM_WOW_PROFILE_NT5;
     return WATER_VDM_PERSONALITY_NT5_WOW;
 }
 
@@ -502,15 +517,16 @@ int wow_run_app( const char *appname, char **argv )
     STARTUPINFOA startup;
     HINSTANCE16 instance;
     w32_init_proc w32_init;
+    w32_register_vdm_profile_proc register_vdm_profile;
     w32_register_dos_int21_proc register_dos_int21;
     w32_register_dem_proc register_dem;
     HMODULE wow32, kernel;
-    DWORD lock_count;
+    DWORD lock_count, vdm_profile;
     WORD show_cmd[2];
     const char *personality;
     char *cmdline;
 
-    personality = get_wow_personality();
+    personality = get_wow_personality( &vdm_profile );
     if (!SetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, personality ))
     {
         ERR( "unable to mark NT WOW personality %s, error %lu\n",
@@ -527,6 +543,15 @@ int wow_run_app( const char *appname, char **argv )
         ERR( "unable to initialize WOW32 before KRNL386\n" );
         return 1;
     }
+
+    register_vdm_profile =
+        (w32_register_vdm_profile_proc)GetProcAddress( wow32, "__wine_W32RegisterVdmProfile" );
+    if (!register_vdm_profile)
+    {
+        ERR( "WOW32 does not provide the NTVDM profile bridge\n" );
+        return 1;
+    }
+    register_vdm_profile( vdm_profile );
 
     register_dem =
         (w32_register_dem_proc)GetProcAddress( wow32, "__wine_W32RegisterDemHandlers" );

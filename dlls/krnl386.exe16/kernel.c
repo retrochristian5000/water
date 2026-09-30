@@ -44,21 +44,32 @@ static BOOL kernel_personality_is( const char *personality )
     return len && len < ARRAY_SIZE(value) && !strcmp( value, personality );
 }
 
+DWORD kernel_get_nt_wow_profile(void)
+{
+    typedef DWORD (__cdecl *w32_get_vdm_profile_proc)(void);
+    w32_get_vdm_profile_proc get_profile;
+    HMODULE wow32 = GetModuleHandleA( "wow32.dll" );
+
+    if (!wow32 ||
+        !(get_profile = (w32_get_vdm_profile_proc)GetProcAddress( wow32,
+                                                                  "__wine_W32GetVdmProfile" )))
+        return WATER_VDM_WOW_PROFILE_NONE;
+    return get_profile();
+}
+
 BOOL kernel_is_nt_wow_session(void)
 {
-    return kernel_personality_is( WATER_VDM_PERSONALITY_NT31_WOW ) ||
-           kernel_personality_is( WATER_VDM_PERSONALITY_NT351_WOW ) ||
-           kernel_personality_is( WATER_VDM_PERSONALITY_NT5_WOW );
+    return kernel_get_nt_wow_profile() != WATER_VDM_WOW_PROFILE_NONE;
 }
 
 static BOOL kernel_is_nt31_wow_session(void)
 {
-    return kernel_personality_is( WATER_VDM_PERSONALITY_NT31_WOW );
+    return kernel_get_nt_wow_profile() == WATER_VDM_WOW_PROFILE_NT31;
 }
 
 static BOOL kernel_is_nt351_wow_session(void)
 {
-    return kernel_personality_is( WATER_VDM_PERSONALITY_NT351_WOW );
+    return kernel_get_nt_wow_profile() == WATER_VDM_WOW_PROFILE_NT351;
 }
 
 static BOOL kernel_is_win95_osr2_session(void)

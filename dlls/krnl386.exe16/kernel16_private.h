@@ -232,6 +232,7 @@ extern void WINAPI __wine_dosx_pmode_entry( I386_CONTEXT *context );
 extern void WINAPI __wine_dosx_msdos_api( I386_CONTEXT *context );
 
 /* kernel.c */
+extern DWORD kernel_get_nt_wow_profile(void);
 extern BOOL kernel_is_nt_wow_session(void);
 extern BOOL kernel_is_standard_mode_session(void);
 

@@ -10,6 +10,8 @@
 
 # Water-private bridge used by NT5 KERNEL.506 WOW16Call.
 @ cdecl -private __wine_W32DispatchFrame(ptr)
+@ cdecl -private __wine_W32RegisterVdmProfile(long)
+@ cdecl -private __wine_W32GetVdmProfile()
 @ cdecl -private __wine_W32RegisterDosInt21Handler(ptr)
 @ cdecl -private __wine_W32DosInt21(ptr)
 @ cdecl -private __wine_W32RegisterDemHandlers(ptr ptr ptr)

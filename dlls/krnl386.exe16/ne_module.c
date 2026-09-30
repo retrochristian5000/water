@@ -367,15 +367,10 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
     if (!strcmp( buffer, "EXITWINDOWSEXECCONTINUE" ))
     {
         const BYTE *module_name = (const BYTE *)pModule + pModule->ne_restab;
-        char personality[16];
-        DWORD personality_len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV,
-                                                          personality,
-                                                          ARRAY_SIZE(personality) );
 
         if (*module_name == 6 &&
             !_strnicmp( (const char *)module_name + 1, "KERNEL", 6 ) &&
-            personality_len && personality_len < ARRAY_SIZE(personality) &&
-            !strcmp( personality, WATER_VDM_PERSONALITY_NT31_WOW ))
+            kernel_get_nt_wow_profile() == WATER_VDM_WOW_PROFILE_NT31)
             return 540;
     }
 
@@ -459,6 +454,16 @@ static enum krnl386_personality get_krnl386_personality(void)
         return cached = KRNL386_PERSONALITY_WIN386;
     }
 
+    switch (kernel_get_nt_wow_profile())
+    {
+    case WATER_VDM_WOW_PROFILE_NT31:
+        return cached = KRNL386_PERSONALITY_NT31_WOW;
+    case WATER_VDM_WOW_PROFILE_NT351:
+        return cached = KRNL386_PERSONALITY_NT351_WOW;
+    case WATER_VDM_WOW_PROFILE_NT5:
+        return cached = KRNL386_PERSONALITY_NT5_WOW;
+    }
+
     len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
     if (len && len < ARRAY_SIZE(value))
     {
@@ -468,12 +473,6 @@ static enum krnl386_personality get_krnl386_personality(void)
             return cached = KRNL386_PERSONALITY_WIN31_STANDARD;
         if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN95_OSR2 ))
             return cached = KRNL386_PERSONALITY_WIN95_OSR2;
-        if (!strcmp( value, WATER_VDM_PERSONALITY_NT31_WOW ))
-            return cached = KRNL386_PERSONALITY_NT31_WOW;
-        if (!strcmp( value, WATER_VDM_PERSONALITY_NT351_WOW ))
-            return cached = KRNL386_PERSONALITY_NT351_WOW;
-        if (!strcmp( value, WATER_VDM_PERSONALITY_NT5_WOW ))
-            return cached = KRNL386_PERSONALITY_NT5_WOW;
     }
 
     return cached = KRNL386_PERSONALITY_GENERIC;

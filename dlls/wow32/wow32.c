@@ -13,6 +13,7 @@
 #include "winbase.h"
 #include "winternl.h"
 #include "wine/wow32.h"
+#include "wine/vdm.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(wow);
@@ -44,6 +45,7 @@ typedef DWORD (FASTCALL *wow32_thunk_proc)(WINEVDMFRAME *);
 #endif
 
 static LONG wow32_initialized;
+static LONG wow32_vdm_profile;
 
 typedef BOOL (WINAPI *wow32_dos_int21_proc)(I386_CONTEXT *);
 typedef BOOL (__cdecl *wow32_dem_absread_proc)(BYTE, DWORD, DWORD, BYTE *, BOOL);
@@ -104,6 +106,34 @@ BOOL WINAPI W32Init( BOOL fMEoW )
     TRACE( "(%u)\n", fMEoW );
     InterlockedExchange( &wow32_initialized, TRUE );
     return TRUE;
+}
+
+/***********************************************************************
+ *           __wine_W32RegisterVdmProfile
+ *
+ * NTVDM owns NT WOW personality selection. WOW32 only transports the
+ * process-local scalar profile to Win16 consumers loaded later.
+ */
+void __cdecl __wine_W32RegisterVdmProfile( DWORD profile )
+{
+    switch (profile)
+    {
+    case WATER_VDM_WOW_PROFILE_NT31:
+    case WATER_VDM_WOW_PROFILE_NT351:
+    case WATER_VDM_WOW_PROFILE_NT5:
+        break;
+    default:
+        WARN( "invalid NTVDM WOW profile %#lx\n", profile );
+        profile = WATER_VDM_WOW_PROFILE_NONE;
+        break;
+    }
+
+    InterlockedExchange( &wow32_vdm_profile, profile );
+}
+
+DWORD __cdecl __wine_W32GetVdmProfile( void )
+{
+    return InterlockedCompareExchange( &wow32_vdm_profile, 0, 0 );
 }
 
 /***********************************************************************

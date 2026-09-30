@@ -11,6 +11,17 @@
 #define WATER_VDM_PERSONALITY_NT351_WOW "nt351-wow"
 #define WATER_VDM_PERSONALITY_NT5_WOW   "nt-wow"
 
+/*
+ * NTVDM -> WOW32 -> Win16 private profile ABI.
+ *
+ * Keep these as explicit 32-bit scalar values rather than a C enum so the
+ * process-local bridge is stable across host compilers and architectures.
+ */
+#define WATER_VDM_WOW_PROFILE_NONE  0x00000000u
+#define WATER_VDM_WOW_PROFILE_NT31  0x00000310u
+#define WATER_VDM_WOW_PROFILE_NT351 0x00000351u
+#define WATER_VDM_WOW_PROFILE_NT5   0x00000500u
+
 /* Backward-compatible name for the current NT5-oriented NTVDM owner. */
 #define WATER_VDM_PERSONALITY_NT_WOW WATER_VDM_PERSONALITY_NT5_WOW
 
