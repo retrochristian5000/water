@@ -1413,9 +1413,18 @@ SEGPTR WINAPI GetLPErrMode(void)
 UINT16 WINAPI SetErrorMode16( UINT16 mode )
 {
     TDB *pTask;
+    UINT16 old_mode;
+
     if (!(pTask = TASK_GetCurrent())) return 0;
+
+    /*
+     * Native KERNEL swaps TDB_ErrMode and returns the old task-local value.
+     * Do not call Win32 SetErrorMode(): that changes process-wide host policy
+     * and is not the Win16 KERNEL.107 contract.
+     */
+    old_mode = pTask->error_mode;
     pTask->error_mode = mode;
-    return SetErrorMode( mode );
+    return old_mode;
 }
 
 
