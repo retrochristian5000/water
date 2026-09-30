@@ -14,6 +14,7 @@
 #include "winbase.h"
 #include "winuser.h"
 #include "winternl.h"
+#include "wownt32.h"
 #include "wine/wow32.h"
 #include "wine/vdm.h"
 #include "wine/debug.h"
@@ -60,6 +61,11 @@ static void *wow32_dos_int21_handler;
 static void *wow32_dem_absread_handler;
 static void *wow32_dem_abswrite_handler;
 static void *wow32_dem_exit_handler;
+static water_wow_next_command_proc wow32_next_command_handler;
+
+C_ASSERT( sizeof(struct water_wowinfo16) == 32 );
+C_ASSERT( FIELD_OFFSET(struct water_wowinfo16, lp_current_directory) == 24 );
+C_ASSERT( FIELD_OFFSET(struct water_wowinfo16, show_window) == 30 );
 
 static BOOL wow32_query_region( const void *ptr, SIZE_T size, MEMORY_BASIC_INFORMATION *mbi )
 {
@@ -276,6 +282,78 @@ BOOL __cdecl __wine_WOWQueryPerformanceCounter( LARGE_INTEGER *counter,
     if (frequency) *frequency = local_frequency;
     return TRUE;
 }
+
+/***********************************************************************
+ *           __wine_W32RegisterWowCommandHandler
+ *
+ * Register NTVDM's process-local Base/VDM command provider.
+ */
+void __cdecl __wine_W32RegisterWowCommandHandler( void *handler )
+{
+    InterlockedExchangePointer( (void **)&wow32_next_command_handler, handler );
+}
+
+/***********************************************************************
+ *           __wine_WOWGetNextVdmCommand16
+ *
+ * Match native WOW32 ownership: translate guest WOWINFO segmented pointers
+ * here, then pass ordinary host buffers to the NTVDM command provider.
+ */
+BOOL __cdecl __wine_WOWGetNextVdmCommand16( struct water_wowinfo16 *info )
+{
+    struct water_wow_command_buffers buffers;
+    water_wow_next_command_proc proc;
+    BOOL ret;
+
+    if (!info) return FALSE;
+
+    proc = (water_wow_next_command_proc)InterlockedCompareExchangePointer(
+        (void **)&wow32_next_command_handler, NULL, NULL );
+    if (!proc)
+    {
+        info->cmd_line_size = 0;
+        return FALSE;
+    }
+
+    memset( &buffers, 0, sizeof(buffers) );
+    buffers.cmd_line_size = info->cmd_line_size;
+    buffers.app_name_size = info->app_name_size;
+    buffers.environment_size = info->environment_size;
+    buffers.current_directory_size = info->current_directory_size;
+    buffers.task_id = info->task_id;
+    buffers.current_drive = info->current_drive;
+    buffers.show_window = info->show_window;
+
+    if (info->lp_cmd_line && info->cmd_line_size)
+        buffers.cmd_line = WOWGetVDMPointer( info->lp_cmd_line, info->cmd_line_size, TRUE );
+    if (info->lp_app_name && info->app_name_size)
+        buffers.app_name = WOWGetVDMPointer( info->lp_app_name, info->app_name_size, TRUE );
+    if (info->lp_environment && info->environment_size)
+        buffers.environment = WOWGetVDMPointer( info->lp_environment,
+                                                info->environment_size, TRUE );
+    if (info->lp_current_directory && info->current_directory_size)
+        buffers.current_directory = WOWGetVDMPointer( info->lp_current_directory,
+                                                      info->current_directory_size, TRUE );
+
+    if ((info->lp_cmd_line && info->cmd_line_size && !buffers.cmd_line) ||
+        (info->lp_app_name && info->app_name_size && !buffers.app_name) ||
+        (info->lp_environment && info->environment_size && !buffers.environment) ||
+        (info->lp_current_directory && info->current_directory_size &&
+         !buffers.current_directory))
+        return FALSE;
+
+    ret = proc( &buffers );
+
+    info->cmd_line_size = buffers.cmd_line_size;
+    info->app_name_size = buffers.app_name_size;
+    info->environment_size = buffers.environment_size;
+    info->current_directory_size = buffers.current_directory_size;
+    info->task_id = buffers.task_id;
+    info->current_drive = buffers.current_drive;
+    info->show_window = buffers.show_window;
+    return ret;
+}
+
 
 /***********************************************************************
  *           __wine_W32RegisterDosInt21Handler

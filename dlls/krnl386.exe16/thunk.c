@@ -33,6 +33,7 @@
 #include "wownt32.h"
 #include "wine/winbase16.h"
 #include "wine/wow32.h"
+#include "wine/vdm16.h"
 
 #include "wine/debug.h"
 #include "kernel16_private.h"
@@ -2930,6 +2931,44 @@ DWORD WINAPIV CallProcEx32W16( DWORD nrofargs, DWORD argconvmask, FARPROC proc32
     }
     TRACE("])\n");
     return WOW_CallProc32W16( proc32, nrofargs, args );
+}
+
+
+typedef BOOL (__cdecl *WOW32_GET_NEXT_COMMAND_PROC)(struct water_wowinfo16 *);
+
+/**********************************************************************
+ *           WOWGetNextVdmCommand16   (NT KERNEL.502)
+ *
+ * Native KRNL386 reaches WOW32 through the WOW BOP-generated thunk. Water
+ * does not yet execute that native thunk table, so retain the exact WOWINFO
+ * guest ABI while crossing the same ownership boundary through WOW32.
+ */
+BOOL16 WINAPI WOWGetNextVdmCommand16( SEGPTR wowinfo )
+{
+    static WOW32_GET_NEXT_COMMAND_PROC get_next;
+    struct water_wowinfo16 *info;
+    HMODULE module;
+
+    C_ASSERT( sizeof(struct water_wowinfo16) == 32 );
+    C_ASSERT( FIELD_OFFSET(struct water_wowinfo16, lp_current_directory) == 24 );
+    C_ASSERT( FIELD_OFFSET(struct water_wowinfo16, show_window) == 30 );
+
+    if (!(info = MapSL( wowinfo ))) return FALSE;
+
+    if (!get_next)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            get_next = (WOW32_GET_NEXT_COMMAND_PROC)GetProcAddress(
+                module, "__wine_WOWGetNextVdmCommand16" );
+    }
+
+    if (!get_next)
+    {
+        WARN( "WOW32 command bridge is unavailable\n" );
+        return FALSE;
+    }
+    return get_next( info );
 }
 
 

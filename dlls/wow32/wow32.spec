@@ -17,6 +17,8 @@
 @ cdecl -private __wine_WOWShouldWeSayWin95(str long)
 @ cdecl -private __wine_WOWRegisterShellWindow(ptr ptr long)
 @ cdecl -private __wine_WOWQueryPerformanceCounter(ptr ptr)
+@ cdecl -private __wine_W32RegisterWowCommandHandler(ptr)
+@ cdecl -private __wine_WOWGetNextVdmCommand16(ptr)
 @ cdecl -private __wine_W32RegisterDosInt21Handler(ptr)
 @ cdecl -private __wine_W32DosInt21(ptr)
 @ cdecl -private __wine_W32RegisterDemHandlers(ptr ptr ptr)

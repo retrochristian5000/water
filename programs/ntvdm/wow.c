@@ -26,6 +26,7 @@ typedef BOOL (WINAPI *w32_init_proc)(BOOL);
 typedef void (__cdecl *w32_register_vdm_profile_proc)(DWORD);
 typedef void (__cdecl *w32_register_dos_int21_proc)(void *);
 typedef void (__cdecl *w32_register_dem_proc)(void *, void *, void *);
+typedef void (__cdecl *w32_register_command_proc)(void *);
 typedef HINSTANCE16 (WINAPI *load_library16_proc)(LPCSTR);
 typedef HINSTANCE16 (WINAPI *load_module16_proc)(LPCSTR, LPVOID);
 typedef SEGPTR (WINAPI *map_ls_proc)(void *);
@@ -51,6 +52,69 @@ struct wow_dos_state
 
 static struct wow_dos_state wow_dos;
 static map_sl_proc wow_map_sl;
+
+struct wow_pending_command
+{
+    const char *app_name;
+    const char *command_tail;
+    char current_directory[MAX_PATH];
+    DWORD task_id;
+    WORD show_window;
+    BOOL pending;
+};
+
+static struct wow_pending_command wow_command;
+
+/*
+ * One-command NTVDM queue used by the current one-app-per-VDM launcher.
+ * The command line follows BaseSrv's WOW queue convention: text followed by
+ * CR/LF/NUL. A full inherited-environment conversion remains future work; an
+ * empty double-NUL DOS environment is valid and keeps this ABI deterministic.
+ */
+static BOOL __cdecl wow_next_command( struct water_wow_command_buffers *buffers )
+{
+    WORD cmd_size, app_size, dir_size, env_size = 2;
+    BOOL enough;
+
+    if (!buffers) return FALSE;
+    if (!wow_command.pending)
+    {
+        buffers->cmd_line_size = 0;
+        return TRUE;
+    }
+
+    cmd_size = strlen( wow_command.command_tail ) + 3;
+    app_size = strlen( wow_command.app_name ) + 1;
+    dir_size = strlen( wow_command.current_directory ) + 1;
+
+    enough = buffers->cmd_line && buffers->cmd_line_size >= cmd_size &&
+             buffers->app_name && buffers->app_name_size >= app_size &&
+             buffers->current_directory && buffers->current_directory_size >= dir_size &&
+             buffers->environment && buffers->environment_size >= env_size;
+
+    buffers->cmd_line_size = cmd_size;
+    buffers->app_name_size = app_size;
+    buffers->current_directory_size = dir_size;
+    buffers->environment_size = env_size;
+    if (!enough) return FALSE;
+
+    memcpy( buffers->cmd_line, wow_command.command_tail, cmd_size - 3 );
+    buffers->cmd_line[cmd_size - 3] = '\r';
+    buffers->cmd_line[cmd_size - 2] = '\n';
+    buffers->cmd_line[cmd_size - 1] = 0;
+    memcpy( buffers->app_name, wow_command.app_name, app_size );
+    memcpy( buffers->current_directory, wow_command.current_directory, dir_size );
+    buffers->environment[0] = 0;
+    buffers->environment[1] = 0;
+    buffers->task_id = wow_command.task_id;
+    buffers->show_window = wow_command.show_window;
+    buffers->current_drive =
+        (wow_command.current_directory[1] == ':') ?
+        ((wow_command.current_directory[0] | 0x20) - 'a') : 0;
+
+    wow_command.pending = FALSE;
+    return TRUE;
+}
 
 static void set_reg_word( DWORD *reg, WORD value )
 {
@@ -559,11 +623,29 @@ int wow_run_app( const char *appname, char **argv )
     w32_register_vdm_profile_proc register_vdm_profile;
     w32_register_dos_int21_proc register_dos_int21;
     w32_register_dem_proc register_dem;
+    w32_register_command_proc register_command;
     HMODULE wow32, kernel;
     DWORD lock_count, vdm_profile;
     WORD show_cmd[2];
     const char *personality;
     char *cmdline;
+
+    if (!(cmdline = build_win16_command_line( argv ))) return 1;
+
+    memset( &startup, 0, sizeof(startup) );
+    startup.cb = sizeof(startup);
+    GetStartupInfoA( &startup );
+
+    memset( &wow_command, 0, sizeof(wow_command) );
+    wow_command.app_name = appname;
+    wow_command.command_tail = cmdline + 1;
+    wow_command.task_id = 1;
+    wow_command.show_window =
+        (startup.dwFlags & STARTF_USESHOWWINDOW) ? startup.wShowWindow : 1;
+    if (!GetCurrentDirectoryA( ARRAY_SIZE(wow_command.current_directory),
+                               wow_command.current_directory ))
+        lstrcpyA( wow_command.current_directory, "C:\\" );
+    wow_command.pending = TRUE;
 
     personality = get_wow_personality( &vdm_profile );
     publish_wow_profile_axes( vdm_profile );
@@ -601,12 +683,16 @@ int wow_run_app( const char *appname, char **argv )
 
     register_dem =
         (w32_register_dem_proc)GetProcAddress( wow32, "__wine_W32RegisterDemHandlers" );
-    if (!register_dem)
+    register_command =
+        (w32_register_command_proc)GetProcAddress( wow32,
+                                                   "__wine_W32RegisterWowCommandHandler" );
+    if (!register_dem || !register_command)
     {
-        ERR( "WOW32 does not provide the NTVDM DEM service bridge\n" );
+        ERR( "WOW32 does not provide the NTVDM service bridges\n" );
         return 1;
     }
     register_dem( DEM_AbsoluteRead, DEM_AbsoluteWrite, DEM_ExitTask );
+    register_command( wow_next_command );
 
     if (!(kernel = LoadLibraryA( "krnl386.exe16" )) ||
         !load_wow_kernel( kernel, &kernel_exports ))
@@ -632,12 +718,6 @@ int wow_run_app( const char *appname, char **argv )
     wow_map_sl = kernel_exports.map_sl;
     wow_dos_init();
     register_dos_int21( wow_ntvdm_int21 );
-
-    if (!(cmdline = build_win16_command_line( argv ))) return 1;
-
-    memset( &startup, 0, sizeof(startup) );
-    startup.cb = sizeof(startup);
-    GetStartupInfoA( &startup );
 
     show_cmd[0] = 2;
     show_cmd[1] = (startup.dwFlags & STARTF_USESHOWWINDOW) ? startup.wShowWindow : 1;
@@ -666,6 +746,13 @@ int wow_run_app( const char *appname, char **argv )
     }
 
     TRACE( "NT WOW task %04x started for %s\n", instance, debugstr_a(appname) );
+
+    /*
+     * Direct LoadModule remains a compatibility fallback until Water grows a
+     * real WOWEXEC.EXE16 server. Do not leave this same command queued for the
+     * launched target.
+     */
+    wow_command.pending = FALSE;
 
     /*
      * The Win16 scheduler owns the process lifetime.  Match winevdm's existing

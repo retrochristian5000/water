@@ -425,7 +425,7 @@
 
 500 varargs WOW16Call(word word word) WOW16Call
 501 stub KDDBGOUT                                               # Both NT/95 (?)
-502 stub WOWGETNEXTVDMCOMMAND
+502 pascal -ret16 WOWGETNEXTVDMCOMMAND(segptr) WOWGetNextVdmCommand16
 # OpenNT: WOWRegisterShellWindowHandle(HWND, LPVOID, HWND); host state in WOW32.
 503 pascal -ret16 WOWREGISTERSHELLWINDOWHANDLE(word segptr word) WOWRegisterShellWindowHandle16
 504 stub WOWLOADMODULE
