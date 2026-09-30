@@ -304,12 +304,25 @@ static TDB *TASK_Create( NE_MODULE *pModule, UINT16 cmdShow, LPCSTR cmdline, BYT
       /* Allocate a selector for the PDB */
 
     pTask->hPDB = GLOBAL_CreateBlock( GMEM_FIXED, &pTask->pdb, sizeof(PDB16), hModule, data_segment );
+    if (!pTask->hPDB)
+    {
+        ERR( "failed to allocate PDB selector for task %04x\n", hTask );
+        GlobalFree16( hTask );
+        return NULL;
+    }
 
       /* Fill the PDB */
 
     pTask->pdb.int20 = 0x20cd;
     pTask->pdb.dispatcher[0] = 0x9a;  /* ljmp */
-    proc = GetProcAddress16( GetModuleHandle16("KERNEL"), "DOS3Call" );
+    proc = KERNEL_GetProcAddressInternal16( GetModuleHandle16("KERNEL"), "DOS3Call" );
+    if (!proc)
+    {
+        ERR( "KERNEL.DOS3Call backing entry is unavailable\n" );
+        GLOBAL_FreeBlock( pTask->hPDB );
+        GlobalFree16( hTask );
+        return NULL;
+    }
     memcpy( &pTask->pdb.dispatcher[1], &proc, sizeof(proc) );
     pTask->pdb.savedint22 = 0;
     pTask->pdb.savedint23 = 0;

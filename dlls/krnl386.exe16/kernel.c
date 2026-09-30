@@ -335,8 +335,19 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     NE_SetEntryPoint( inst, 193, DOSMEM_BiosDataSeg ); /* KERNEL.193: __0040H */
     NE_SetEntryPoint( inst, 194, DOSMEM_BiosSysSeg );  /* KERNEL.194: __F000H */
 
-    /* Initialize KERNEL.THHOOK */
-    TASK_InstallTHHook(MapSL((SEGPTR)GetProcAddress16( inst, (LPCSTR)332 )));
+    /* Initialize KERNEL.THHOOK through the internal backing table. */
+    {
+        SEGPTR thhook = (SEGPTR)KERNEL_GetProcAddressInternal16( inst, (LPCSTR)332 );
+        THHOOK *hook = thhook ? MapSL( thhook ) : NULL;
+
+        if (!hook)
+        {
+            ERR( "KERNEL.THHOOK backing entry is unavailable\n" );
+            done = FALSE;
+            return FALSE;
+        }
+        TASK_InstallTHHook( hook );
+    }
     TASK_CreateMainTask();
 
     /* Initialize the real-mode selector entry points */
