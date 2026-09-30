@@ -28,6 +28,20 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dos);
 
+/* Boot drive reported by the Win9x IO.SYS/MSDOS.SYS startup state. */
+static BYTE iosys_boot_drive;
+
+static BYTE drive_number_from_string( const char *value )
+{
+    char drive;
+
+    if (!value || !(drive = value[0])) return 0;
+    if (drive >= 'a' && drive <= 'z') drive -= 'a' - 'A';
+    if (drive < 'A' || drive > 'Z') return 0;
+    if (value[1] && value[1] != ':') return 0;
+    return drive - 'A' + 1;
+}
+
 /*
  * Windows 95 and later 9x releases use a text MSDOS.SYS in the root of the
  * boot drive. Keep this separate from the pre-Windows-95 binary MSDOS.SYS.
@@ -128,6 +142,7 @@ void IOSYS_InitConfig(void)
     strcpy( windir, windows );
     strcpy( winbootdir, windows );
 
+    iosys_boot_drive = 0;
     have_file = get_msdos_sys_path( filename );
     if (have_file)
     {
@@ -135,9 +150,17 @@ void IOSYS_InitConfig(void)
         get_msdos_path_value( filename, "WinBootDir", windir, winbootdir, sizeof(winbootdir) );
         get_msdos_path_value( filename, "HostWinBootDrv", "", host_drive, sizeof(host_drive) );
 
-        TRACE( "%s: WinDir=%s WinBootDir=%s HostWinBootDrv=%s\n",
+        /*
+         * HostWinBootDrv is the Win9x boot-drive root, not the Windows
+         * installation drive.  Preserve it as boot state so INT 21h and
+         * CONFIG.SYS lookup do not silently follow GetWindowsDirectory().
+         */
+        iosys_boot_drive = drive_number_from_string( host_drive );
+        if (!iosys_boot_drive) iosys_boot_drive = drive_number_from_string( filename );
+
+        TRACE( "%s: WinDir=%s WinBootDir=%s HostWinBootDrv=%s boot drive=%u\n",
                debugstr_a(filename), debugstr_a(windir), debugstr_a(winbootdir),
-               debugstr_a(host_drive) );
+               debugstr_a(host_drive), iosys_boot_drive );
     }
     else
         TRACE( "no boot-drive MSDOS.SYS, using Windows directory %s\n", debugstr_a(windows) );
@@ -161,6 +184,8 @@ BYTE IOSYS_GetBootDrive(void)
     WCHAR current_directory[MAX_PATH];
     BYTE drive;
     UINT len;
+
+    if (iosys_boot_drive) return iosys_boot_drive;
 
     len = GetWindowsDirectoryW( windows_directory, MAX_PATH );
     if (len >= 2 && len < MAX_PATH && windows_directory[1] == ':')

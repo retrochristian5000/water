@@ -12,6 +12,13 @@ Water does **not** yet emit a bootable IO.SYS image from this directory. Do not
 turn it into a normal PE/Win16 module just to obtain the filename: the eventual
 artifact needs the proper real-mode boot-image ABI.
 
+For the Windows 95/98 line, that ABI includes the MSLOAD boot prefix: the disk
+bootstrap checks a leading MZ signature, but the MZ-shaped fields participate in
+the IO.SYS boot protocol and must not be handed to Water's generic DOS/NE/PE
+image loader. In particular, a future IO.SYS builder must preserve the loader's
+real-mode load-size/header semantics rather than assuming that an MZ signature
+means a conventional DOS EXE followed by an NE or PE image.
+
 KRNL386 currently reaches this implementation through a temporary source bridge
 only to preserve compatibility while the Win9x boot chain is being reconstructed.
 
