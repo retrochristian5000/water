@@ -12,6 +12,10 @@
 @ cdecl -private __wine_W32DispatchFrame(ptr)
 @ cdecl -private __wine_W32RegisterDosInt21Handler(ptr)
 @ cdecl -private __wine_W32DosInt21(ptr)
+@ cdecl -private __wine_W32RegisterDemHandlers(ptr ptr ptr)
+@ cdecl -private __wine_W32DemAbsoluteRead(long long long ptr long)
+@ cdecl -private __wine_W32DemAbsoluteWrite(long long long ptr long)
+@ cdecl -private __wine_W32DemExitTask(long)
 
 1 stdcall -import WOWGetDescriptor(long ptr) K32WOWGetDescriptor
 
