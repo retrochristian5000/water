@@ -497,35 +497,41 @@ static const char *get_wow_personality( DWORD *profile )
 
 static void publish_wow_profile_axes( DWORD profile )
 {
-    const char *version;
+    char value[32];
 
     SetEnvironmentVariableA( WATER_WIN16_LINE_ENV, WATER_WIN16_LINE_NT );
 
-    switch (profile)
+    /*
+     * The legacy WOW profile is intentionally coarse (NT3.1, NT3.51, NT5+).
+     * Use it to seed the version axis only when the VDM owner did not already
+     * select a more precise release.
+     */
+    if (!GetEnvironmentVariableA( WATER_WIN16_VERSION_ENV, value, ARRAY_SIZE(value) ))
     {
-    case WATER_VDM_WOW_PROFILE_NT31:
-        version = "3.10.511";
-        break;
-    case WATER_VDM_WOW_PROFILE_NT351:
-        version = "3.51.1057";
-        break;
-    default:
-        version = "5.0";
-        break;
+        const char *version;
+
+        switch (profile)
+        {
+        case WATER_VDM_WOW_PROFILE_NT31:
+            version = "3.10.511";
+            break;
+        case WATER_VDM_WOW_PROFILE_NT351:
+            version = "3.51.1057";
+            break;
+        default:
+            version = "5.0";
+            break;
+        }
+        SetEnvironmentVariableA( WATER_WIN16_VERSION_ENV, version );
     }
-    SetEnvironmentVariableA( WATER_WIN16_VERSION_ENV, version );
 
     /*
      * Current Water NTVDM is an x86 VDM by default.  Do not overwrite an
      * explicitly selected RISC ISA; future NT ports can publish Alpha, MIPS
      * or PowerPC here without creating new personality names.
      */
-    {
-        char isa[16];
-
-        if (!GetEnvironmentVariableA( WATER_WIN16_ISA_ENV, isa, ARRAY_SIZE(isa) ))
-            SetEnvironmentVariableA( WATER_WIN16_ISA_ENV, WATER_WIN16_ISA_X86 );
-    }
+    if (!GetEnvironmentVariableA( WATER_WIN16_ISA_ENV, value, ARRAY_SIZE(value) ))
+        SetEnvironmentVariableA( WATER_WIN16_ISA_ENV, WATER_WIN16_ISA_X86 );
 }
 
 static BOOL load_wow_kernel( HMODULE kernel, struct wow_kernel_exports *exports )
