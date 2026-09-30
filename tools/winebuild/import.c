@@ -954,6 +954,9 @@ static void output_delayed_import_thunks( const DLLSPEC *spec )
             output_cfi( ".cfi_adjust_cfa_offset -0x98" );
             output( "\tjmp *%%rax\n" );
             break;
+        case CPU_POWERPC:
+            fatal_error( "PowerPC delayed imports require NT TOC glue not yet supported by winebuild\n" );
+            break;
         default:
             assert( 0 );
             break;
@@ -982,6 +985,9 @@ static void output_delayed_import_thunks( const DLLSPEC *spec )
             case CPU_x86_64:
                 output( "\tleaq .L__wine_delay_IAT+%d(%%rip),%%rax\n", iat_pos );
                 output( "\tjmp %s\n", asm_name(module_func) );
+                break;
+            case CPU_POWERPC:
+                fatal_error( "PowerPC delayed imports require NT TOC glue not yet supported by winebuild\n" );
                 break;
             default:
                 assert( 0 );
@@ -1517,6 +1523,15 @@ static void build_windows_import_lib( const char *lib_name, DLLSPEC *spec, struc
         case CPU_ARM64EC:
             assert( 0 );
             break;
+        case CPU_POWERPC:
+            /*
+             * NT PowerPC import thunks need TOC restoration glue at the call
+             * site.  The internal archive generator cannot encode the
+             * IMAGE_REL_PPC_IMGLUE relocation, so keep this path behind
+             * PowerPC-capable dlltool support instead of emitting a raw jump.
+             */
+            fatal_error( "PowerPC import libraries require NT TOC glue; use a PowerPC-capable dlltool\n" );
+            break;
         }
         output_function_size( delay_load );
         output_gnu_stack_note();
@@ -1661,8 +1676,10 @@ static void build_windows_import_lib( const char *lib_name, DLLSPEC *spec, struc
                 }
                 break;
             case CPU_ARM64EC:
-            case CPU_POWERPC:
                 assert( 0 );
+                break;
+            case CPU_POWERPC:
+                fatal_error( "PowerPC import libraries require NT TOC glue; use a PowerPC-capable dlltool\n" );
                 break;
             }
 
@@ -1761,6 +1778,6 @@ void output_import_lib( DLLSPEC *spec, struct strarray files )
     if (!is_pe()) build_unix_import_lib( spec, files );
     else if (use_dlltool) build_dlltool_import_lib( output_file_name, spec, files );
     else if (target.cpu == CPU_POWERPC)
-        fatal_error( "PowerPC import libraries require a PowerPC-capable 'dlltool'\n" );
+        fatal_error( "PowerPC import libraries require a PowerPC-capable 'dlltool' for NT TOC glue\n" );
     else build_windows_import_lib( output_file_name, spec, files );
 }
