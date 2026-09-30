@@ -8,9 +8,11 @@
  */
 
 #include <stddef.h>
+#include <string.h>
 
 #include "windef.h"
 #include "winbase.h"
+#include "winuser.h"
 #include "winternl.h"
 #include "wine/wow32.h"
 #include "wine/vdm.h"
