@@ -34,13 +34,23 @@ static BOOL krnl386_legacy_absolute_read(BYTE drive, DWORD begin, DWORD nr_sect,
                     FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (h != INVALID_HANDLE_VALUE)
     {
-        DWORD read;
+        DWORD read, size = nr_sect * 512;
+        LARGE_INTEGER offset;
+        BOOL ret;
 
-        SetFilePointer(h, begin * 512, NULL, FILE_BEGIN);
-        ReadFile(h, dataptr, nr_sect * 512, &read, NULL);
+        offset.QuadPart = (ULONGLONG)begin * 512;
+        ret = SetFilePointerEx(h, offset, NULL, FILE_BEGIN) &&
+              ReadFile(h, dataptr, size, &read, NULL) && read == size;
         CloseHandle(h);
+        if (ret) return TRUE;
     }
 
+    /*
+     * Preserve the historical Wine fallback only when raw volume access is
+     * unavailable.  Successful reads must retain the real boot sector, BPB,
+     * FAT and directory data; zeroing them here breaks DOS/Win9x filesystem
+     * discovery before IO.SYS can consume it.
+     */
     memset(dataptr, 0, nr_sect * 512);
     if (!fake_success) return FALSE;
 
@@ -60,11 +70,15 @@ static BOOL krnl386_legacy_absolute_write(BYTE drive, DWORD begin, DWORD nr_sect
                     0, NULL);
     if (h != INVALID_HANDLE_VALUE)
     {
-        DWORD written;
+        DWORD written, size = nr_sect * 512;
+        LARGE_INTEGER offset;
+        BOOL ret;
 
-        SetFilePointer(h, begin * 512, NULL, FILE_BEGIN);
-        WriteFile(h, dataptr, nr_sect * 512, &written, NULL);
+        offset.QuadPart = (ULONGLONG)begin * 512;
+        ret = SetFilePointerEx(h, offset, NULL, FILE_BEGIN) &&
+              WriteFile(h, dataptr, size, &written, NULL) && written == size;
         CloseHandle(h);
+        if (ret) return TRUE;
     }
 
     return fake_success;
