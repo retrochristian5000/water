@@ -63,6 +63,7 @@ typedef struct
 static void appeared_callback( DADiskRef disk, void *context )
 {
     CFDictionaryRef dict = DADiskCopyDescription( disk );
+    const char *bsd_name;
     const void *ref;
     char device[64];
     CFURLRef volume_url;
@@ -76,20 +77,27 @@ static void appeared_callback( DADiskRef disk, void *context )
 
     if (!dict) return;
 
-    if ((ref = CFDictionaryGetValue( dict, CFSTR("DAVolumeUUID") )))
+    if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionVolumeUUIDKey )))
     {
         CFUUIDBytes bytes = CFUUIDGetUUIDBytes( ref );
         memcpy( &guid, &bytes, sizeof(guid) );
         guid_ptr = &guid;
     }
 
-    /* get device name */
-    if (!(ref = CFDictionaryGetValue( dict, CFSTR("DAMediaBSDName") ))) goto done;
-    strcpy( device, "/dev/r" );
-    CFStringGetCString( ref, device + 6, sizeof(device) - 6, kCFStringEncodingASCII );
+    /* DADiskGetBSDName() is the public API for the BSD device identifier. */
+    if (!(bsd_name = DADiskGetBSDName( disk ))) goto done;
+    if (snprintf( device, sizeof(device), "/dev/r%s", bsd_name ) >= sizeof(device)) goto done;
 
-    if ((volume_url = CFDictionaryGetValue( dict, CFSTR("DAVolumePath") )))
-        CFURLGetFileSystemRepresentation( volume_url, true, (UInt8 *)mount_point, sizeof(mount_point) );
+    if ((volume_url = CFDictionaryGetValue( dict, kDADiskDescriptionVolumePathKey )))
+    {
+        if (!CFURLGetFileSystemRepresentation( volume_url, true, (UInt8 *)mount_point,
+                                               sizeof(mount_point) ))
+        {
+            TRACE( "ignoring volume %s, uuid %s: invalid macOS volume path\n",
+                   device, wine_dbgstr_guid(guid_ptr) );
+            goto done;
+        }
+    }
     else
     {
         TRACE( "ignoring volume %s, uuid %s: no macOS volume path\n", device, wine_dbgstr_guid(guid_ptr) );
@@ -108,7 +116,7 @@ static void appeared_callback( DADiskRef disk, void *context )
         }
     }
 
-    if ((ref = CFDictionaryGetValue( dict, CFSTR("DAMediaKind") )))
+    if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionMediaKindKey )))
     {
         if (!CFStringCompare( ref, CFSTR("IOCDMedia"), 0 ))
         {
@@ -125,7 +133,7 @@ static void appeared_callback( DADiskRef disk, void *context )
             type = DEVICE_HARDDISK;
     }
 
-    if ((ref = CFDictionaryGetValue( dict, CFSTR("DADeviceVendor") )))
+    if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionDeviceVendorKey )))
     {
         CFIndex i;
 
@@ -135,7 +143,7 @@ static void appeared_callback( DADiskRef disk, void *context )
         for (i = 0; i < (CFIndex)8 - CFStringGetLength( ref ); ++i)
             scsi_info.model[model_len++] = ' ';
     }
-    if ((ref = CFDictionaryGetValue( dict, CFSTR("DADeviceModel") )))
+    if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionDeviceModelKey )))
     {
         CFIndex i;
 
@@ -145,7 +153,7 @@ static void appeared_callback( DADiskRef disk, void *context )
         for (i = 0; i < (CFIndex)16 - CFStringGetLength( ref ); ++i)
             scsi_info.model[model_len++] = ' ';
     }
-    if ((ref = CFDictionaryGetValue( dict, CFSTR("DADeviceRevision") )))
+    if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionDeviceRevisionKey )))
     {
         CFIndex i;
 
@@ -159,7 +167,7 @@ static void appeared_callback( DADiskRef disk, void *context )
     TRACE( "got mount notification for '%s' on '%s' uuid %s\n",
            device, mount_point, wine_dbgstr_guid(guid_ptr) );
 
-    if ((ref = CFDictionaryGetValue( dict, CFSTR("DAMediaRemovable") )))
+    if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionMediaRemovableKey )))
         removable = CFBooleanGetValue( ref );
 
     if (!access( device, R_OK ) &&
@@ -195,23 +203,15 @@ static void changed_callback( DADiskRef disk, CFArrayRef keys, void *context )
 
 static void disappeared_callback( DADiskRef disk, void *context )
 {
-    CFDictionaryRef dict = DADiskCopyDescription( disk );
-    const void *ref;
+    const char *bsd_name = DADiskGetBSDName( disk );
     char device[100];
 
-    if (!dict) return;
-
-    /* get device name */
-    if (!(ref = CFDictionaryGetValue( dict, CFSTR("DAMediaBSDName") ))) goto done;
-    strcpy( device, "/dev/r" );
-    CFStringGetCString( ref, device + 6, sizeof(device) - 6, kCFStringEncodingASCII );
+    if (!bsd_name) return;
+    if (snprintf( device, sizeof(device), "/dev/r%s", bsd_name ) >= sizeof(device)) return;
 
     TRACE( "got unmount notification for '%s'\n", device );
 
     queue_device_op( REMOVE_DEVICE, device, NULL, NULL, 0, NULL, NULL, NULL, NULL );
-
-done:
-    CFRelease( dict );
 }
 
 void run_diskarbitration_loop(void)
