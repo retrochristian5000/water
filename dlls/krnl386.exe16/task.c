@@ -1504,21 +1504,31 @@ FARPROC16 WINAPI SetTaskSignalProc( HTASK16 hTask, FARPROC16 proc )
 WORD WINAPI SetSigHandler16( FARPROC16 newhandler, FARPROC16* oldhandler,
                            UINT16 *oldmode, UINT16 newmode, UINT16 flag )
 {
-    FIXME("(%p,%p,%p,%d,%d), unimplemented.\n",
-	  newhandler,oldhandler,oldmode,newmode,flag );
+    FARPROC16 previous_handler;
+    TDB *pTask;
 
+    TRACE( "(%p,%p,%p,%u,%u)\n", newhandler, oldhandler, oldmode, newmode, flag );
+
+    /* Native KERNEL only handles signal number 1 (SIGINTR) here. */
     if (flag != 1) return 0;
-    if (!newmode) newhandler = NULL;  /* Default handler */
+    if (!(pTask = TASK_GetCurrent())) return 0;
+
+    /*
+     * Action 4 resets the handler pointer but deliberately leaves the action
+     * word and the caller's previous-value outputs untouched.
+     */
     if (newmode != 4)
     {
-        TDB *pTask;
-
-        if (!(pTask = TASK_GetCurrent())) return 0;
         if (oldmode) *oldmode = pTask->signal_flags;
         pTask->signal_flags = newmode;
-        if (oldhandler) *oldhandler = pTask->sighandler;
-        pTask->sighandler = newhandler;
     }
+
+    if (!newmode) newhandler = NULL;  /* Water has no separate default handler yet. */
+
+    previous_handler = pTask->sighandler;
+    pTask->sighandler = newhandler;
+    if (newmode != 4 && oldhandler) *oldhandler = previous_handler;
+
     return 0;
 }
 
