@@ -46,7 +46,13 @@ typedef DWORD (FASTCALL *wow32_thunk_proc)(WINEVDMFRAME *);
 static LONG wow32_initialized;
 
 typedef BOOL (WINAPI *wow32_dos_int21_proc)(I386_CONTEXT *);
+typedef BOOL (__cdecl *wow32_dem_absread_proc)(BYTE, DWORD, DWORD, BYTE *, BOOL);
+typedef BOOL (__cdecl *wow32_dem_abswrite_proc)(BYTE, DWORD, DWORD, const BYTE *, BOOL);
+typedef void (__cdecl *wow32_dem_exit_proc)(WORD);
 static void *wow32_dos_int21_handler;
+static void *wow32_dem_absread_handler;
+static void *wow32_dem_abswrite_handler;
+static void *wow32_dem_exit_handler;
 
 static BOOL wow32_query_region( const void *ptr, SIZE_T size, MEMORY_BASIC_INFORMATION *mbi )
 {
@@ -123,6 +129,52 @@ BOOL __cdecl __wine_W32DosInt21( I386_CONTEXT *context )
         (wow32_dos_int21_proc)InterlockedCompareExchangePointer( &wow32_dos_int21_handler, NULL, NULL );
 
     return proc ? proc( context ) : FALSE;
+}
+
+/***********************************************************************
+ *           __wine_W32RegisterDemHandlers
+ *
+ * NTVDM owns host-side DOS emulation manager services.  Keep those callbacks
+ * process-local and let KRNL386/NTDOS compatibility code cross the WOW32
+ * boundary instead of linking NTVDM implementation objects into KRNL386.
+ */
+void __cdecl __wine_W32RegisterDemHandlers( void *read_handler, void *write_handler,
+                                            void *exit_handler )
+{
+    InterlockedExchangePointer( &wow32_dem_absread_handler, read_handler );
+    InterlockedExchangePointer( &wow32_dem_abswrite_handler, write_handler );
+    InterlockedExchangePointer( &wow32_dem_exit_handler, exit_handler );
+}
+
+BOOL __cdecl __wine_W32DemAbsoluteRead( BYTE drive, DWORD begin, DWORD nr_sect,
+                                        BYTE *dataptr, BOOL fake_success )
+{
+    wow32_dem_absread_proc proc =
+        (wow32_dem_absread_proc)InterlockedCompareExchangePointer( &wow32_dem_absread_handler,
+                                                                   NULL, NULL );
+
+    return proc ? proc( drive, begin, nr_sect, dataptr, fake_success ) : FALSE;
+}
+
+BOOL __cdecl __wine_W32DemAbsoluteWrite( BYTE drive, DWORD begin, DWORD nr_sect,
+                                         const BYTE *dataptr, BOOL fake_success )
+{
+    wow32_dem_abswrite_proc proc =
+        (wow32_dem_abswrite_proc)InterlockedCompareExchangePointer( &wow32_dem_abswrite_handler,
+                                                                    NULL, NULL );
+
+    return proc ? proc( drive, begin, nr_sect, dataptr, fake_success ) : FALSE;
+}
+
+BOOL __cdecl __wine_W32DemExitTask( WORD retval )
+{
+    wow32_dem_exit_proc proc =
+        (wow32_dem_exit_proc)InterlockedCompareExchangePointer( &wow32_dem_exit_handler,
+                                                                NULL, NULL );
+
+    if (!proc) return FALSE;
+    proc( retval );
+    return TRUE;
 }
 
 static DWORD wow32_dispatch_frame( WINEVDMFRAME *frame )
