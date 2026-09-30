@@ -1,8 +1,9 @@
 MODULE    = krnl386.exe16
 PARENTSRC = ../../programs/ntvdm
 
-# NTVDM-owned host virtualization sources are compiled here temporarily for
-# the in-process WOW compatibility path. Do not move their ownership back.
+# Legacy execution-engine sources are still shared from programs/ntvdm while
+# their DOSX/WIN386 provider split is completed.  NTVDM DEM services must not
+# be linked into KRNL386; NT WOW reaches them through the WOW32 callback bridge.
 IMPORTLIB = kernel
 DELAYIMPORTS = user32
 
@@ -15,8 +16,6 @@ VER_PRODUCTVERSION = 1,0,0,0
 SOURCES = \
 	atom.c \
 	dosmem.c \
-	dem_disk.c \
-	dem_process.c \
 	error.c \
 	emm386_compat.c \
 	file.c \
