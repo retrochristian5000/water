@@ -5,6 +5,7 @@
  * exposed by the historical IE4TOUR component.
  */
 
+#pragma makedep ident
 #pragma makedep regtypelib
 #pragma makedep header
 
