@@ -991,7 +991,16 @@ static FARPROC16 NE_GetEntryPointInternal( HMODULE16 hModule, WORD ordinal, BOOL
     memcpy( &offset, &entry->offs, sizeof(WORD) );
 
     if (sel == 0xfe) sel = 0xffff;  /* constant entry */
-    else sel = GlobalHandleToSel16( NE_SEG_TABLE(pModule)[sel - 1].hSeg );
+    else
+    {
+        if (!sel || sel > pModule->ne_cseg)
+        {
+            WARN( "invalid segment %u for module %04x ordinal %u\n", sel, hModule, ordinal );
+            return 0;
+        }
+        sel = GlobalHandleToSel16( NE_SEG_TABLE(pModule)[sel - 1].hSeg );
+        if (!sel) return 0;
+    }
 
     if (sel == 0xffff || !snoop)
         return (FARPROC16)MAKESEGPTR( sel, offset );
