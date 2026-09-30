@@ -450,6 +450,13 @@ void TASK_CreateMainTask(void)
     pTask->hPrevInstance = 0;
     pTask->teb           = NtCurrentTeb();
 
+    /*
+     * Native KERNEL keeps its own PSP/PDB in THHOOK.TopPDB and returns it
+     * in DX from GetCurrentPDB.  Water's synthetic main task is the KERNEL
+     * process anchor, so its PDB is the corresponding top PDB.
+     */
+    pThhook->TopPDB = pTask->hPDB;
+
     /* Add the task to the linked list */
     /* (no need to get the win16 lock, we are the only thread at this point) */
     TASK_LinkTask( pTask->hSelf );
@@ -1344,14 +1351,15 @@ DWORD WINAPI WIN16_GetCurrentTask(void)
 /***********************************************************************
  *           GetCurrentPDB   (KERNEL.37)
  *
- * UNDOC: returns PSP of KERNEL in high word
+ * Native KRNL386 returns the current task PDB in AX and KERNEL's TopPDB
+ * in DX.
  */
 DWORD WINAPI GetCurrentPDB16(void)
 {
     TDB *pTask;
 
     if (!(pTask = TASK_GetCurrent())) return 0;
-    return MAKELONG(pTask->hPDB, 0); /* FIXME */
+    return MAKELONG( pTask->hPDB, pThhook->TopPDB );
 }
 
 
