@@ -576,11 +576,17 @@ int wow_run_app( const char *appname, char **argv )
     TRACE( "starting %s with Win16 kernel image selected by %s\n",
            debugstr_a(personality), WATER_WIN16_KERNEL_ENV );
 
+    /*
+     * Native NT loads/initializes WOW32 when the Win16 kernel crosses the WOW
+     * BOP.  Water does not have that BOP transport yet, so preload the host DLL
+     * for early thunk resolution but defer W32Init until KRNL386 has booted.
+     * W32Dispatch remains allowed to initialize lazily if the kernel reaches a
+     * WOW thunk before LoadLibraryA("krnl386.exe16") returns.
+     */
     if (!(wow32 = LoadLibraryA( "wow32.dll" )) ||
-        !(w32_init = (w32_init_proc)GetProcAddress( wow32, "W32Init" )) ||
-        !w32_init( FALSE ))
+        !(w32_init = (w32_init_proc)GetProcAddress( wow32, "W32Init" )))
     {
-        ERR( "unable to initialize WOW32 before KRNL386\n" );
+        ERR( "unable to preload WOW32 for NT WOW\n" );
         return 1;
     }
 
@@ -606,6 +612,12 @@ int wow_run_app( const char *appname, char **argv )
         !load_wow_kernel( kernel, &kernel_exports ))
     {
         ERR( "unable to load KRNL386 NT WOW entry points\n" );
+        return 1;
+    }
+
+    if (!w32_init( FALSE ))
+    {
+        ERR( "unable to initialize WOW32 after KRNL386 boot\n" );
         return 1;
     }
 
@@ -637,10 +649,11 @@ int wow_run_app( const char *appname, char **argv )
 
     kernel_exports.restore_thunk_lock( 1 );
 
-    /* Native NT WOW supplies the standard Win16 system DLL set in the VDM. */
-    kernel_exports.load_library16( "gdi.exe" );
-    kernel_exports.load_library16( "user.exe" );
-    kernel_exports.load_library16( "mmsystem.dll" );
+    /*
+     * KRNL386 owns the NT Win16 boot modules.  WOWEXEC will eventually own
+     * queued-app startup and multimedia/system.ini driver loading; NTVDM must
+     * not pre-load those modules as if they were properties of the host.
+     */
 
     instance = kernel_exports.load_module16( appname, &params );
     if (instance < 32)

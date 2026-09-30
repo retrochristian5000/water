@@ -86,7 +86,15 @@ static void kernel_get_guest_profile( struct water_win16_profile *profile )
 
 BOOL kernel_is_nt_wow_session(void)
 {
-    return kernel_get_nt_wow_profile() != WATER_VDM_WOW_PROFILE_NONE;
+    struct water_win16_profile profile;
+
+    /*
+     * NTVDM owns the guest line before WOW32 is initialized.  Native NT loads
+     * WOW32 from the WOW BOP, so KRNL386 must not require a preloaded WOW32
+     * merely to discover that it is running in the NT line.
+     */
+    kernel_get_guest_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_NT_FAMILY;
 }
 
 static BOOL kernel_is_nt31_wow_session(void)
@@ -238,6 +246,18 @@ static DWORD process_dword;
 static void load_boot_driver( const char *key )
 {
     char name[MAX_PATH];
+
+    /*
+     * The NT WOW kernel uses its fixed system-driver names during boot rather
+     * than trusting the Win3.x SYSTEM.INI [boot] substitutions.  Keep those
+     * substitutions for DOS Windows only.
+     */
+    if (kernel_is_nt_wow_session())
+    {
+        if (LoadLibrary16( key ) < 32)
+            WARN( "failed to load NT WOW boot module %s\n", debugstr_a(key) );
+        return;
+    }
 
     GetPrivateProfileStringA( "boot", key, key, name, sizeof(name), "SYSTEM.INI" );
     if (LoadLibrary16( name ) >= 32) return;
@@ -439,9 +459,24 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     SET_ENTRY_POINT( 190, 0xe0000 );  /* KERNEL.190: __E000H */
 #undef SET_ENTRY_POINT
 
-    /* Load the machine drivers selected by SYSTEM.INI. */
+    /* Load the machine drivers owned by the selected Windows line. */
     load_boot_driver( "system.drv" );
     load_boot_driver( "comm.drv" );
+
+    if (kernel_is_nt_wow_session())
+    {
+        /*
+         * Native NT's WOW KRNL386 boot path loads USER and GDI before handing
+         * control to WOWEXEC.  Keep that ownership in the 16-bit kernel
+         * instead of making NTVDM pre-load application-facing Win16 modules.
+         *
+         * OpenNT also names keyboard, mouse, VGA and sound drivers here.  Do
+         * not alias Water's generic display driver to VGA.DRV until that
+         * driver ABI is audited.
+         */
+        load_boot_driver( "user.exe" );
+        load_boot_driver( "gdi.exe" );
+    }
 
     /*
      * Windows for Workgroups starts its protected-mode network stack under
