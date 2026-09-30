@@ -2254,10 +2254,14 @@ prepare_one_llvm_libcxx()
 #ifndef _LIBCPP_NO_ABI_TAG
 # error WHP Microsoft-ABI libc++ provider unexpectedly enabled Itanium ABI tags
 #endif
+#include <cmath>
 #include <cstddef>
 #include <mutex>
 #include <string>
 static_assert(__is_same(std::size_t, decltype(sizeof(0))), "WHP libc++ std::size_t ABI mismatch");
+float whp_libcxx_math_probe(float value) {
+    return std::sinh(value) + std::cosh(value) + std::tanh(value);
+}
 int whp_libcxx_probe(std::mutex& mutex) {
     mutex.lock();
     mutex.unlock();
@@ -2273,6 +2277,11 @@ EOF
             -isystem "$whp_libcxx_sdk_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
             -c "$whp_libcxx_probe" -o "$whp_libcxx_build/.whp-libcxx-probe.o"
+        if [ "$whp_libcxx_arch" = i386 ] &&
+           "$whp_libcxx_nm" --undefined-only "$whp_libcxx_build/.whp-libcxx-probe.o" 2>/dev/null |
+           grep -E '(^|[[:space:]])_(sinhf|coshf|tanhf)$' >/dev/null; then
+            die "LLVM libc++ i386 math wrappers still require unavailable float hyperbolic CRT exports"
+        fi
         rm -f "$whp_libcxx_probe" "$whp_libcxx_build/.whp-libcxx-probe.o"
 
         printf '%s\n' "$whp_libcxx_signature" > "$whp_libcxx_state_file"
