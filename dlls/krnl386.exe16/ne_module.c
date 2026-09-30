@@ -532,12 +532,30 @@ static BOOL is_kernel_module( const NE_MODULE *module )
     return *name == 6 && !_strnicmp( (const char *)name + 1, "KERNEL", 6 );
 }
 
+#define KRNL386_BACKING_WOWSHOULDWESAYWIN95 2095
+
+static BOOL krnl386_is_nt_wow_personality( enum krnl386_personality personality )
+{
+    return personality == KRNL386_PERSONALITY_NT31_WOW ||
+           personality == KRNL386_PERSONALITY_NT351_WOW ||
+           personality == KRNL386_PERSONALITY_NT5_WOW;
+}
+
 static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
     enum krnl386_personality personality;
 
     if (!is_kernel_module( module )) return ordinal;
     personality = get_krnl386_personality();
+
+    /*
+     * Water keeps the NT-only meaning of ordinal 215 on a private backing
+     * ordinal because Win95 uses 215 for Local32ValidHandle. Named lookups of
+     * the private backing symbol must still report native NT ordinal 215.
+     */
+    if (krnl386_is_nt_wow_personality( personality ) &&
+        ordinal == KRNL386_BACKING_WOWSHOULDWESAYWIN95)
+        return 215;
 
     /*
      * NT 3.1 builds 511/528 publish WOWCursorIconOp, WOWFailedExec and
@@ -585,6 +603,9 @@ static WORD krnl386_backing_kernel_ordinal( const NE_MODULE *module, WORD ordina
 
     if (!is_kernel_module( module )) return ordinal;
     personality = get_krnl386_personality();
+
+    if (krnl386_is_nt_wow_personality( personality ) && ordinal == 215)
+        return KRNL386_BACKING_WOWSHOULDWESAYWIN95;
 
     if (personality == KRNL386_PERSONALITY_NT31_WOW)
     {
@@ -734,7 +755,7 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
         }
 
         if (ordinal >= 208 && ordinal <= 237)
-            return ordinal != 216 && ordinal != 217 &&
+            return ordinal != 215 && ordinal != 216 && ordinal != 217 &&
                    ordinal != 220 && ordinal != 223;
 
         return (ordinal >= 357 && ordinal <= 365) ||
@@ -755,7 +776,7 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
          * entries rather than exposing the wrong ABI.
          */
         if (ordinal >= 208 && ordinal <= 237)
-            return ordinal != 216 && ordinal != 217 &&
+            return ordinal != 215 && ordinal != 216 && ordinal != 217 &&
                    ordinal != 220 && ordinal != 223;
 
         return (ordinal >= 357 && ordinal <= 365) ||
@@ -891,6 +912,10 @@ static BOOL krnl386_native_hides_kernel_ordinal( const NE_MODULE *module, WORD o
 static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
     BOOL hidden;
+
+    /* Private superset backing entries are never directly guest-visible. */
+    if (is_kernel_module( module ) && ordinal == KRNL386_BACKING_WOWSHOULDWESAYWIN95)
+        return TRUE;
 
     if (krnl386_uses_native_export_policy())
         return krnl386_native_hides_kernel_ordinal( module, ordinal );

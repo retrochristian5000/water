@@ -582,6 +582,40 @@ DWORD WINAPI K32WOWCallback16( DWORD vpfn16, DWORD dwParam )
 
 
 /**********************************************************************
+ *           WOWShouldWeSayWin9516  (NT KERNEL.215)
+ *
+ * NT reuses ordinal 215, which is Local32ValidHandle on Win95. OpenNT shows
+ * this as a WOW32 compatibility-policy thunk taking (filename, caller DS).
+ * Keep only the 16-bit pointer conversion here; host compatibility policy is
+ * owned by WOW32.
+ */
+WORD WINAPI WOWShouldWeSayWin9516( SEGPTR filename_ptr, WORD caller_ds )
+{
+    typedef DWORD (__cdecl *wow_should_say_win95_proc)(const char *, DWORD);
+    static wow_should_say_win95_proc should_say_win95;
+    const char *filename = NULL;
+    HMODULE module;
+
+    if (filename_ptr)
+    {
+        filename = K32WOWGetVDMPointer( filename_ptr, 1, TRUE );
+        if (!filename) return 0;
+    }
+
+    if (!should_say_win95)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            should_say_win95 = (wow_should_say_win95_proc)GetProcAddress(
+                module, "__wine_WOWShouldWeSayWin95" );
+    }
+
+    if (!should_say_win95) return 0;
+    return LOWORD( should_say_win95( filename, caller_ds ) );
+}
+
+
+/**********************************************************************
  *           WOWRegisterShellWindowHandle16  (NT KERNEL.503)
  *
  * OpenNT declares this as:

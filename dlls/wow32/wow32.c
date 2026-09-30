@@ -140,6 +140,23 @@ DWORD __cdecl __wine_W32GetVdmProfile( void )
 }
 
 /***********************************************************************
+ *           __wine_WOWShouldWeSayWin95
+ *
+ * Native NT uses this only after its WOW app-compat database marks a caller
+ * for the GetVersion hack. Water does not yet have that per-app compatibility
+ * database, so the safe default is zero: report the configured NT/Win16
+ * version rather than falsely claiming Win95. Keeping this policy in WOW32
+ * fixes ordinal 215's ownership now and leaves room for the compatibility
+ * database without putting executable-version heuristics in KRNL386.
+ */
+DWORD __cdecl __wine_WOWShouldWeSayWin95( const char *filename, DWORD caller_ds )
+{
+    TRACE( "no Win95-version compatibility override for %s caller DS %04lx\n",
+           debugstr_a(filename), caller_ds );
+    return 0;
+}
+
+/***********************************************************************
  *           __wine_WOWRegisterShellWindow
  *
  * Native WOW32 owns the host-side WOWEXEC shell registration. KRNL386 keeps

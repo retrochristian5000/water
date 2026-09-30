@@ -233,8 +233,9 @@
 211 pascal K211(long long word) Local32Free16
 213 pascal K213(long long word word) Local32Translate16
 214 pascal K214(long long word) Local32Size16
-215 pascal K215(long word) Local32ValidHandle16  # Win95 only -- CONFLICT!
-#215 stub WOWShouldWeSayWin95                  # WinNT only -- CONFLICT!
+215 pascal K215(long word) Local32ValidHandle16  # Win95 meaning
+# NT uses the same public ordinal for WOWShouldWeSayWin95. ne_module.c maps
+# NT ordinal 215 to private backing ordinal 2095 below.
 216 pascal RegEnumKey(long long ptr long) RegEnumKey16                    # Both 95/NT
 217 pascal RegOpenKey(long str ptr) RegOpenKey16                          # Both 95/NT
 218 pascal RegCreateKey(long str ptr) RegCreateKey16
@@ -767,6 +768,11 @@
 2000 pascal -register __wine_call_int_handler(word) __wine_call_int_handler16
 2003 pascal -register __wine_dosx_pmode_entry()
 2004 pascal -register __wine_dosx_msdos_api()
+
+# Private backing entries for personality-specific public ordinal collisions.
+# OpenNT frame order is caller DS, filename; callable Pascal order is filename, DS.
+2095 pascal -ret16 WOWSHOULDWESAYWIN95(segptr word) WOWShouldWeSayWin9516
+
 @ stdcall -arch=win32 __wine_call_int_handler16(long ptr)
 
 # VxDs
