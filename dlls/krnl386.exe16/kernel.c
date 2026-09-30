@@ -72,6 +72,11 @@ static BOOL kernel_is_nt351_wow_session(void)
     return kernel_get_nt_wow_profile() == WATER_VDM_WOW_PROFILE_NT351;
 }
 
+static BOOL kernel_is_nt3_wow_session(void)
+{
+    return kernel_is_nt31_wow_session() || kernel_is_nt351_wow_session();
+}
+
 static BOOL kernel_is_win95_osr2_session(void)
 {
     return kernel_personality_is( WATER_WIN16_PERSONALITY_WIN95_OSR2 );
@@ -128,7 +133,7 @@ BOOL kernel_is_standard_mode_session(void)
      * Win16 kernel image instead of leaking the Water host CPU into the guest.
      */
     return kernel_is_win3_standard_session() ||
-           (kernel_is_nt31_wow_session() && kernel16_is_krnl286());
+           (kernel_is_nt3_wow_session() && kernel16_is_krnl286());
 }
 
 static BOOL kernel_is_workgroups_session(void)
@@ -252,8 +257,13 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
     /* create the shared heap for broken win95 native dlls */
     HeapCreate( HEAP_SHARED, 0, 0 );
 
-    /* Parse the Win9x boot configuration outside the PE loader lock. */
-    IOSYS_InitConfig();
+    /*
+     * Water's IOSYS bridge models the DOS/Win9x IO.SYS boot side.  NT WOW
+     * does not boot through IO.SYS, so do not inject that configuration into
+     * an NT-hosted KRNL386.  Keep the existing non-NT behavior until the
+     * DOS/Windows 3.x boot split is audited separately.
+     */
+    if (!kernel_is_nt_wow_session()) IOSYS_InitConfig();
 
     /*
      * The kernel image and execution mode are separate axes.  KRNL286 may
@@ -261,9 +271,9 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
      * service either standard mode (through DOSX) or enhanced mode (WIN386).
      */
     if (kernel16_is_krnl286() &&
-        !kernel_is_win3_standard_session() && !kernel_is_nt31_wow_session())
+        !kernel_is_win3_standard_session() && !kernel_is_nt3_wow_session())
     {
-        ERR( "KRNL286 selected outside Windows 3.x standard mode or NT 3.1 WOW\n" );
+        ERR( "KRNL286 selected outside Windows 3.x standard mode or NT 3.x WOW\n" );
         done = FALSE;
         return FALSE;
     }
@@ -384,7 +394,7 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
  */
 DWORD WINAPI GetVersion16(void)
 {
-    static WORD dosver, winver;
+    WORD winver;
     struct win386_session_info session;
 
     /*
@@ -401,18 +411,22 @@ DWORD WINAPI GetVersion16(void)
 
     if ((winver = kernel_win3_standard_version()))
     {
-        dosver = (winver == MAKEWORD( 3, 0 )) ? 0x0500 : 0x0616;
+        WORD dosver = (winver == MAKEWORD( 3, 0 )) ? 0x0500 : 0x0616;
+
         TRACE( "DOSX standard personality: DOS %d.%02d Win %d.%02d using %s\n",
                HIBYTE(dosver), LOBYTE(dosver), LOBYTE(winver), HIBYTE(winver),
                kernel16_image_name() );
         return MAKELONG( winver, dosver );
     }
 
-    if (kernel_is_nt31_wow_session())
+    /*
+     * Win16 GetVersion deliberately keeps the Windows 3.1 / DOS 5.0
+     * compatibility tuple under NT WOW.  Applications distinguish WOW from
+     * DOS Windows through WF_WINNT (WF_WIN32WOW), while GetVersionEx can
+     * expose the owning NT version where that API is available.
+     */
+    if (kernel_is_nt_wow_session())
         return MAKELONG( MAKEWORD( 3, 10 ), 0x0500 );
-
-    if (kernel_is_nt351_wow_session())
-        return MAKELONG( MAKEWORD( 3, 51 ), 0x0500 );
 
     /*
      * The built-in non-NT personality is retail Windows 95.  OSR2 keeps
@@ -421,50 +435,7 @@ DWORD WINAPI GetVersion16(void)
      */
     if (kernel_is_win95_osr2_session())
         return MAKELONG( MAKEWORD( 3, 95 ), 0x070a );
-    if (!kernel_is_nt_wow_session())
-        return MAKELONG( MAKEWORD( 3, 95 ), 0x0700 );
-
-    if (!dosver)  /* NT5 fallback follows the owning host personality. */
-    {
-        RTL_OSVERSIONINFOEXW info;
-
-        info.dwOSVersionInfoSize = sizeof(info);
-        if (RtlGetVersion( &info )) return 0;
-
-        if (info.dwMajorVersion <= 3)
-            winver = MAKEWORD( info.dwMajorVersion, info.dwMinorVersion );
-        else
-            winver = MAKEWORD( 3, 95 );
-
-        switch(info.dwPlatformId)
-        {
-        case VER_PLATFORM_WIN32s:
-            switch(MAKELONG( info.dwMinorVersion, info.dwMajorVersion ))
-            {
-            case 0x0200:
-                dosver = 0x0303;  /* DOS 3.3 for Windows 2.0 */
-                break;
-            case 0x0300:
-                dosver = 0x0500;  /* DOS 5.0 for Windows 3.0 */
-                break;
-            default:
-                dosver = 0x0616;  /* DOS 6.22 for Windows 3.1 and later */
-                break;
-            }
-            break;
-        case VER_PLATFORM_WIN32_WINDOWS:
-            /* DOS 8.0 for WinME, 7.0 for Win95/98 */
-            if (info.dwMinorVersion >= 90) dosver = 0x0800;
-            else dosver = 0x0700;
-            break;
-        case VER_PLATFORM_WIN32_NT:
-            dosver = 0x0500;  /* always DOS 5.0 for NT */
-            break;
-        }
-        TRACE( "DOS %d.%02d Win %d.%02d\n",
-               HIBYTE(dosver), LOBYTE(dosver), LOBYTE(winver), HIBYTE(winver) );
-    }
-    return MAKELONG( winver, dosver );
+    return MAKELONG( MAKEWORD( 3, 95 ), 0x0700 );
 }
 
 /***********************************************************************
