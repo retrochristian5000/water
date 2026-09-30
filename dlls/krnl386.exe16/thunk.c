@@ -1226,8 +1226,10 @@ AllocSLCallback(
 	DWORD finalizer,	/* [in] Finalizer function */
 	DWORD callback		/* [in] Callback function */
 ) {
-	LPBYTE	x,thunk = HeapAlloc( GetProcessHeap(), 0, 32 );
+	LPBYTE	x, thunk = HeapAlloc( GetProcessHeap(), 0, 32 );
 	WORD	sel;
+
+	if (!thunk) return 0;
 
 	x=thunk;
 	*x++=0x66;*x++=0x5a;				/* popl edx */
@@ -1237,8 +1239,12 @@ AllocSLCallback(
 
 	*(DWORD*)(thunk+18) = GetCurrentProcessId();
 
-	sel = SELECTOR_AllocBlock( thunk, 32, code16_segment );
-	return (sel<<16)|0;
+	if (!(sel = SELECTOR_AllocBlock( thunk, 32, code16_segment )))
+	{
+		HeapFree( GetProcessHeap(), 0, thunk );
+		return 0;
+	}
+	return MAKESEGPTR( sel, 0 );
 }
 
 /**********************************************************************
@@ -1250,9 +1256,21 @@ AllocSLCallback(
  */
 void WINAPI
 FreeSLCallback(
-	DWORD x	/* [in] 16 bit callback (segmented pointer?) */
+	DWORD x	/* [in] 16-bit callback returned by AllocSLCallback */
 ) {
-	FIXME("(0x%08lx): stub\n",x);
+	LPVOID thunk;
+	WORD sel = SELECTOROF( x );
+
+	if (!sel) return;
+
+	/*
+	 * AllocSLCallback creates one private code selector whose base is the
+	 * 32-byte process-heap block.  Recover the base before releasing the LDT
+	 * entry, then free both resources as one callback object.
+	 */
+	thunk = MapSL( MAKESEGPTR( sel, 0 ) );
+	SELECTOR_FreeBlock( sel );
+	if (thunk) HeapFree( GetProcessHeap(), 0, thunk );
 }
 
 /**********************************************************************
@@ -2408,8 +2426,13 @@ SEGPTR WINAPI Get16DLLAddress(HMODULE16 handle, LPSTR func_name)
  */
 DWORD WINAPI GetWin16DOSEnv(void)
 {
-	FIXME("stub, returning 0\n");
-	return 0;
+    /*
+     * KERNEL32 ordinal 34 is part of the Win9x private KERNEL32/KRNL386
+     * bridge.  KRNL386 already owns the canonical DOS-format Win16
+     * environment block, so expose the same guest segmented pointer here
+     * instead of inventing a second environment database.
+     */
+    return GetDOSEnvironment16();
 }
 
 /**********************************************************************
@@ -2470,10 +2493,16 @@ void WINAPI HouseCleanLogicallyDeadHandles(void)
 /**********************************************************************
  *		@ (KERNEL32.100)
  */
-BOOL WINAPI _KERNEL32_100(HANDLE threadid,DWORD exitcode,DWORD x)
+BOOL WINAPI _KERNEL32_100(HANDLE threadid, DWORD exitcode, BOOL cleanup)
 {
-	FIXME("(%p,%ld,0x%08lx): stub\n",threadid,exitcode,x);
-	return TRUE;
+    /*
+     * Win9x ordinal 100 is TerminateThreadEx.  Water's thread teardown is
+     * already centralized in the real TerminateThread/NtTerminateThread path,
+     * so the Win9x cleanup flag does not require a second private teardown
+     * implementation here.
+     */
+    TRACE( "TerminateThreadEx(%p,%lu,%u)\n", threadid, exitcode, cleanup );
+    return TerminateThread( threadid, exitcode );
 }
 
 /**********************************************************************
