@@ -1417,26 +1417,6 @@ static void dump_view( struct file_view *view )
 
 
 /***********************************************************************
- *           VIRTUAL_Dump
- */
-#ifdef WINE_VM_DEBUG
-static void VIRTUAL_Dump(void)
-{
-    sigset_t sigset;
-    struct file_view *view;
-
-    TRACE( "Dump of all virtual memory views:\n" );
-    server_enter_uninterrupted_section( &virtual_mutex, &sigset );
-    WINE_RB_FOR_EACH_ENTRY( view, &views_tree, struct file_view, entry )
-    {
-        dump_view( view );
-    }
-    server_leave_uninterrupted_section( &virtual_mutex, &sigset );
-}
-#endif
-
-
-/***********************************************************************
  *           find_view
  *
  * Find the view containing a given address. virtual_mutex must be held by caller.
