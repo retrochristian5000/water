@@ -73,6 +73,7 @@ static struct wow_pending_command wow_command;
  */
 static BOOL __cdecl wow_next_command( struct water_wow_command_buffers *buffers )
 {
+    SIZE_T cmd_length, app_length, dir_length;
     WORD cmd_size, app_size, dir_size, env_size = 2;
     BOOL enough;
 
@@ -83,9 +84,20 @@ static BOOL __cdecl wow_next_command( struct water_wow_command_buffers *buffers 
         return TRUE;
     }
 
-    cmd_size = strlen( wow_command.command_tail ) + 3;
-    app_size = strlen( wow_command.app_name ) + 1;
-    dir_size = strlen( wow_command.current_directory ) + 1;
+    cmd_length = strlen( wow_command.command_tail );
+    app_length = strlen( wow_command.app_name );
+    dir_length = strlen( wow_command.current_directory );
+    if (cmd_length > 0xfffc || app_length > 0xfffe || dir_length > 0xfffe)
+    {
+        buffers->cmd_line_size = buffers->app_name_size =
+            buffers->current_directory_size = 0xffff;
+        buffers->environment_size = env_size;
+        return FALSE;
+    }
+
+    cmd_size = cmd_length + 3;
+    app_size = app_length + 1;
+    dir_size = dir_length + 1;
 
     enough = buffers->cmd_line && buffers->cmd_line_size >= cmd_size &&
              buffers->app_name && buffers->app_name_size >= app_size &&
@@ -642,9 +654,13 @@ int wow_run_app( const char *appname, char **argv )
     wow_command.task_id = 1;
     wow_command.show_window =
         (startup.dwFlags & STARTF_USESHOWWINDOW) ? startup.wShowWindow : 1;
-    if (!GetCurrentDirectoryA( ARRAY_SIZE(wow_command.current_directory),
-                               wow_command.current_directory ))
-        lstrcpyA( wow_command.current_directory, "C:\\" );
+    {
+        DWORD cwd_len = GetCurrentDirectoryA( ARRAY_SIZE(wow_command.current_directory),
+                                              wow_command.current_directory );
+
+        if (!cwd_len || cwd_len >= ARRAY_SIZE(wow_command.current_directory))
+            lstrcpyA( wow_command.current_directory, "C:\\" );
+    }
     wow_command.pending = TRUE;
 
     personality = get_wow_personality( &vdm_profile );

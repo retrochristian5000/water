@@ -61,7 +61,7 @@ static void *wow32_dos_int21_handler;
 static void *wow32_dem_absread_handler;
 static void *wow32_dem_abswrite_handler;
 static void *wow32_dem_exit_handler;
-static water_wow_next_command_proc wow32_next_command_handler;
+static void *wow32_next_command_handler;
 
 C_ASSERT( sizeof(struct water_wowinfo16) == 32 );
 C_ASSERT( FIELD_OFFSET(struct water_wowinfo16, lp_current_directory) == 24 );
@@ -290,7 +290,7 @@ BOOL __cdecl __wine_WOWQueryPerformanceCounter( LARGE_INTEGER *counter,
  */
 void __cdecl __wine_W32RegisterWowCommandHandler( void *handler )
 {
-    InterlockedExchangePointer( (void **)&wow32_next_command_handler, handler );
+    InterlockedExchangePointer( &wow32_next_command_handler, handler );
 }
 
 /***********************************************************************
@@ -308,7 +308,7 @@ BOOL __cdecl __wine_WOWGetNextVdmCommand16( struct water_wowinfo16 *info )
     if (!info) return FALSE;
 
     proc = (water_wow_next_command_proc)InterlockedCompareExchangePointer(
-        (void **)&wow32_next_command_handler, NULL, NULL );
+        &wow32_next_command_handler, NULL, NULL );
     if (!proc)
     {
         info->cmd_line_size = 0;
