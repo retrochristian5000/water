@@ -6,6 +6,7 @@
  */
 
 #pragma makedep ident
+#pragma makedep register
 #pragma makedep regtypelib
 #pragma makedep header
 
