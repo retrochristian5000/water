@@ -824,22 +824,24 @@ BOOL16 WINAPI WaitEvent16( HTASK16 hTask )
 /***********************************************************************
  *           PostEvent  (KERNEL.31)
  */
-void WINAPI PostEvent16( HTASK16 hTask )
+BOOL16 WINAPI PostEvent16( HTASK16 hTask )
 {
     TDB *pTask;
 
     if (!hTask) hTask = GetCurrentTask();
-    if (!(pTask = TASK_GetPtr( hTask ))) return;
+    if (!(pTask = TASK_GetPtr( hTask ))) return FALSE;
 
     if (pTask->flags & TDBF_WIN32)
     {
-        FIXME("called for Win32 thread (%04lx)!\n", (DWORD)pTask->teb->ClientId.UniqueThread );
-        return;
+        FIXME("called for Win32 thread (%04lx)!\n",
+              pTask->teb ? (DWORD)pTask->teb->ClientId.UniqueThread : 0 );
+        return TRUE;
     }
 
     pTask->nEvents++;
 
     if (pTask->nEvents == 1) NtSetEvent( pTask->hEvent, NULL );
+    return TRUE;
 }
 
 
@@ -893,12 +895,13 @@ HTASK16 WINAPI IsTaskLocked16(void)
 /***********************************************************************
  *           OldYield  (KERNEL.117)
  */
-void WINAPI OldYield16(void)
+BOOL16 WINAPI OldYield16(void)
 {
    DWORD count;
 
    ReleaseThunkLock(&count);
    RestoreThunkLock(count);
+   return TRUE;
 }
 
 /***********************************************************************
@@ -923,7 +926,7 @@ void WINAPI DirectedYield16( HTASK16 hTask )
 /***********************************************************************
  *           Yield  (KERNEL.29)
  */
-void WINAPI Yield16(void)
+BOOL16 WINAPI Yield16(void)
 {
     TDB *pCurTask = TASK_GetCurrent();
 
@@ -938,11 +941,11 @@ void WINAPI Yield16(void)
             {
                 MSG msg;
                 pPeekMessageW( &msg, 0, 0, 0, PM_REMOVE | PM_QS_SENDMESSAGE );
-                return;
+                return TRUE;
             }
         }
     }
-    OldYield16();
+    return OldYield16();
 }
 
 /***********************************************************************
