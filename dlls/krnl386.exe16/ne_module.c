@@ -342,12 +342,23 @@ static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordi
 WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
 {
     char buffer[256], *p;
+    const char *end;
     BYTE *cpnt;
     BYTE len;
     NE_MODULE *pModule;
 
     if (!(pModule = NE_GetPtr( hModule ))) return 0;
     if (pModule->ne_flags & NE_FFLAGS_WIN32) return 0;
+
+    /*
+     * NE name-table entries store their length in one byte.  Reject names
+     * that cannot be represented before copying them into the local buffer.
+     */
+    if (!(end = memchr( name, 0, sizeof(buffer) )))
+    {
+        WARN( "rejecting overlong procedure name for module %04x\n", hModule );
+        return 0;
+    }
 
     TRACE("(%04x,'%s')\n", hModule, name );
 
@@ -357,9 +368,9 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
 
       /* Now copy and uppercase the string */
 
-    strcpy( buffer, name );
+    len = end - name;
+    memcpy( buffer, name, len + 1 );
     for (p = buffer; *p; p++) *p = RtlUpperChar(*p);
-    len = p - buffer;
 
     /*
      * NT 3.1 exports ExitWindowsExecContinue by name at ordinal 540, while
