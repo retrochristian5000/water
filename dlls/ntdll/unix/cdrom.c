@@ -295,44 +295,6 @@ static struct cdrom_cache cdrom_cache[MAX_CACHE_ENTRIES];
 
 static pthread_mutex_t cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* Proposed media change function: not really needed at this time */
-/* This is a 1 or 0 type of function */
-#if 0
-static int CDROM_MediaChanged(int dev)
-{
-   int i;
-
-   struct cdrom_tochdr	hdr;
-   struct cdrom_tocentry entry;
-
-   if (dev < 0 || dev >= MAX_CACHE_ENTRIES)
-      return 0;
-   if ( ioctl(cdrom_cache[dev].fd, CDROMREADTOCHDR, &hdr) == -1 )
-      return 0;
-
-   if ( memcmp(&hdr, &cdrom_cache[dev].hdr, sizeof(struct cdrom_tochdr)) )
-      return 1;
-
-   for (i=hdr.cdth_trk0; i<=hdr.cdth_trk1+1; i++)
-   {
-      if (i == hdr.cdth_trk1 + 1)
-      {
-	 entry.cdte_track = CDROM_LEADOUT;
-      } else {
-         entry.cdte_track = i;
-      }
-      entry.cdte_format = CDROM_MSF;
-      if ( ioctl(cdrom_cache[dev].fd, CDROMREADTOCENTRY, &entry) == -1)
-	 return 0;
-      if ( memcmp(&entry, cdrom_cache[dev].entry+i-hdr.cdth_trk0,
-			      sizeof(struct cdrom_tocentry)) )
-	 return 1;
-   }
-   return 0;
-}
-#endif
-
-
 /******************************************************************
  *		get_parent_device
  *
