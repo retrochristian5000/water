@@ -16,12 +16,15 @@
 #include "wine/win16_profile.h"
 #include "wine/debug.h"
 
+#include "dem_disk.h"
+#include "dem_process.h"
 #include "wow.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntvdm);
 
 typedef BOOL (WINAPI *w32_init_proc)(BOOL);
 typedef void (__cdecl *w32_register_dos_int21_proc)(void *);
+typedef void (__cdecl *w32_register_dem_proc)(void *, void *, void *);
 typedef HINSTANCE16 (WINAPI *load_library16_proc)(LPCSTR);
 typedef HINSTANCE16 (WINAPI *load_module16_proc)(LPCSTR, LPVOID);
 typedef SEGPTR (WINAPI *map_ls_proc)(void *);
@@ -500,6 +503,7 @@ int wow_run_app( const char *appname, char **argv )
     HINSTANCE16 instance;
     w32_init_proc w32_init;
     w32_register_dos_int21_proc register_dos_int21;
+    w32_register_dem_proc register_dem;
     HMODULE wow32, kernel;
     DWORD lock_count;
     WORD show_cmd[2];
@@ -523,6 +527,15 @@ int wow_run_app( const char *appname, char **argv )
         ERR( "unable to initialize WOW32 before KRNL386\n" );
         return 1;
     }
+
+    register_dem =
+        (w32_register_dem_proc)GetProcAddress( wow32, "__wine_W32RegisterDemHandlers" );
+    if (!register_dem)
+    {
+        ERR( "WOW32 does not provide the NTVDM DEM service bridge\n" );
+        return 1;
+    }
+    register_dem( DEM_AbsoluteRead, DEM_AbsoluteWrite, DEM_ExitTask );
 
     if (!(kernel = LoadLibraryA( "krnl386.exe16" )) ||
         !load_wow_kernel( kernel, &kernel_exports ))
