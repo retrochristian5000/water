@@ -433,6 +433,8 @@
 508 stub WOWCLOSECOMPORT
 #509 stub WOWCLOSECOMPORT # conflict with 508 !
 #509 stub WOWKILLREMOTETASK
+# Debugger-facing KERNEL entry points stay as 16-bit ABI gates.  Their NT-side
+# state/transport is owned by WOW32; KRNL386 must not create WOW32 itself.
 511 pascal -ret16 WOWKILLREMOTETASK(segptr) WOWKillRemoteTask16
 512 pascal -ret16 WOWQUERYDEBUG() WOWQueryDebug16
 513 pascal LoadLibraryEx32W(ptr long long) LoadLibraryEx32W16   # Both NT/95

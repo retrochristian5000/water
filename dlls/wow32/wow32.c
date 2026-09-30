@@ -345,3 +345,15 @@ DWORD __cdecl __wine_WOWDebugGetRemoteBlock( void )
 {
     return InterlockedCompareExchange( &wowdeb_remote_block, 0, 0 );
 }
+
+/***********************************************************************
+ *           __wine_WOWQueryDebug16
+ *
+ * NT-side backing for KERNEL.WOWQueryDebug.  KRNL386 owns the 16-bit export,
+ * but debugger attachment is a property of the hosting WOW/NTVDM process.
+ * Keep the private bridge scalar 32-bit so its ABI is host-compiler stable.
+ */
+DWORD __cdecl __wine_WOWQueryDebug16( void )
+{
+    return IsDebuggerPresent() ? 1u : 0u;
+}

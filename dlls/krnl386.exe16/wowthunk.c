@@ -602,8 +602,11 @@ BOOL16 WINAPI WOWKillRemoteTask16( SEGPTR block )
 
     if (!poll)
     {
+        /*
+         * NTVDM owns WOW32 lifetime.  Do not load it as a side effect of a
+         * KERNEL debug export; the host must have initialized WOW32 already.
+         */
         module = GetModuleHandleA( "wow32.dll" );
-        if (!module) module = LoadLibraryA( "wow32.dll" );
         if (module) poll = (wowdebug_poll_proc)GetProcAddress( module, "__wine_WOWDebugPoll16" );
     }
 
@@ -624,5 +627,22 @@ BOOL16 WINAPI WOWKillRemoteTask16( SEGPTR block )
  */
 WORD WINAPI WOWQueryDebug16( void )
 {
-    return IsDebuggerPresent() ? 1 : 0;
+    typedef DWORD (__cdecl *wowdebug_query_proc)(void);
+    static wowdebug_query_proc query;
+    HMODULE module;
+
+    if (!query)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            query = (wowdebug_query_proc)GetProcAddress( module, "__wine_WOWQueryDebug16" );
+    }
+
+    if (!query)
+    {
+        WARN( "WOW32 debugging state bridge is unavailable\n" );
+        return 0;
+    }
+
+    return LOWORD( query() );
 }

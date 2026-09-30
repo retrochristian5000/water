@@ -2,6 +2,7 @@
 # Water-private WOWDEB bridge.  These are not public Windows exports.
 @ cdecl -private __wine_WOWDebugPoll16(long)
 @ cdecl -private __wine_WOWDebugGetRemoteBlock()
+@ cdecl -private __wine_WOWQueryDebug16()
 
 # NT VDM dispatcher entry points.  Keep them name-only so the legacy
 # WOWGetDescriptor ordinal remains compatible with the existing Wine ABI.
