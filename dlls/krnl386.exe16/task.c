@@ -552,12 +552,35 @@ failed:
 HTASK16 TASK_GetTaskFromThread( DWORD thread )
 {
     TDB *p = TASK_GetPtr( hFirstTask );
+
     while (p)
     {
-        if (p->teb->ClientId.UniqueThread == (HANDLE)thread) return p->hSelf;
+        if (p->teb && p->teb->ClientId.UniqueThread == (HANDLE)thread)
+            return p->hSelf;
         p = TASK_GetPtr( p->hNext );
     }
     return 0;
+}
+
+/*
+ * Resolve a Win32 thread id to the TDB that owns its Win16 queue state.
+ * Historical Wine kept a separate queue field in the TEB; modern Water no
+ * longer does, so TDB.hQueue is the canonical queue store.
+ *
+ * GetThreadQueue/SetFastQueue historically also accepted a 16-bit task
+ * handle. SetThreadQueue did not, so keep that distinction explicit.
+ */
+static TDB *TASK_GetThreadQueueTask( DWORD thread, BOOL allow_task_handle )
+{
+    HTASK16 hTask;
+
+    if (!thread) return TASK_GetCurrent();
+
+    if (allow_task_handle && !HIWORD(thread) && IsTask16( (HTASK16)thread ))
+        return TASK_GetPtr( (HTASK16)thread );
+
+    hTask = TASK_GetTaskFromThread( thread );
+    return hTask ? TASK_GetPtr( hTask ) : NULL;
 }
 
 
@@ -1116,11 +1139,20 @@ BOOL16 WINAPI DefineHandleTable16( WORD wOffset )
 
 /***********************************************************************
  *           SetTaskQueue  (KERNEL.34)
+ *
+ * Native KRNL386 swaps TDB_queue and returns the previous queue handle.
  */
 HQUEUE16 WINAPI SetTaskQueue16( HTASK16 hTask, HQUEUE16 hQueue )
 {
-    FIXME( "stub, should not get called\n" );
-    return 0xbeef;
+    HQUEUE16 old_queue;
+    TDB *pTask;
+
+    if (!hTask) hTask = GetCurrentTask();
+    if (!(pTask = TASK_GetPtr( hTask ))) return 0;
+
+    old_queue = pTask->hQueue;
+    pTask->hQueue = hQueue;
+    return old_queue;
 }
 
 
@@ -1129,17 +1161,28 @@ HQUEUE16 WINAPI SetTaskQueue16( HTASK16 hTask, HQUEUE16 hQueue )
  */
 HQUEUE16 WINAPI GetTaskQueue16( HTASK16 hTask )
 {
-    FIXME( "stub, should not get called\n" );
-    return 0xbeef;
+    TDB *pTask;
+
+    if (!hTask) hTask = GetCurrentTask();
+    if (!(pTask = TASK_GetPtr( hTask ))) return 0;
+    return pTask->hQueue;
 }
 
 /***********************************************************************
  *           SetThreadQueue  (KERNEL.463)
+ *
+ * Old Wine mirrored a thread-local TEB queue into the owning TDB. Water no
+ * longer has that TEB field, so the owning TDB is the single source of truth.
  */
 HQUEUE16 WINAPI SetThreadQueue16( DWORD thread, HQUEUE16 hQueue )
 {
-    FIXME( "stub, should not get called\n" );
-    return 0xbeef;
+    HQUEUE16 old_queue;
+    TDB *pTask = TASK_GetThreadQueueTask( thread, FALSE );
+
+    if (!pTask) return 0;
+    old_queue = pTask->hQueue;
+    pTask->hQueue = hQueue;
+    return old_queue;
 }
 
 /***********************************************************************
@@ -1147,8 +1190,8 @@ HQUEUE16 WINAPI SetThreadQueue16( DWORD thread, HQUEUE16 hQueue )
  */
 HQUEUE16 WINAPI GetThreadQueue16( DWORD thread )
 {
-    FIXME( "stub, should not get called\n" );
-    return 0xbeef;
+    TDB *pTask = TASK_GetThreadQueueTask( thread, TRUE );
+    return pTask ? pTask->hQueue : 0;
 }
 
 /***********************************************************************
@@ -1156,7 +1199,8 @@ HQUEUE16 WINAPI GetThreadQueue16( DWORD thread )
  */
 VOID WINAPI SetFastQueue16( DWORD thread, HQUEUE16 hQueue )
 {
-    FIXME( "stub, should not get called\n" );
+    TDB *pTask = TASK_GetThreadQueueTask( thread, TRUE );
+    if (pTask) pTask->hQueue = hQueue;
 }
 
 /***********************************************************************
@@ -1164,8 +1208,8 @@ VOID WINAPI SetFastQueue16( DWORD thread, HQUEUE16 hQueue )
  */
 HQUEUE16 WINAPI GetFastQueue16( void )
 {
-    FIXME( "stub, should not get called\n" );
-    return 0xbeef;
+    TDB *pTask = TASK_GetCurrent();
+    return pTask ? pTask->hQueue : 0;
 }
 
 /***********************************************************************
