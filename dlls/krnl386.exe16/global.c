@@ -979,12 +979,20 @@ WORD WINAPI GlobalHandleToSel16( HGLOBAL16 handle )
  */
 DWORD WINAPI GetFreeMemInfo16(void)
 {
-    SYSTEM_BASIC_INFORMATION info;
+    SYSTEM_INFO info;
     MEMORYSTATUS status;
 
-    NtQuerySystemInformation( SystemBasicInformation, &info, sizeof(info), NULL );
+    /*
+     * KRNL386 needs only the host page size here.  Windows 9x NTDLL was a
+     * small compatibility library rather than NT's native-system-call layer,
+     * so do not make this shared Win16 path depend on NtQuerySystemInformation.
+     * GetSystemInfo provides the same page-size datum through the KERNEL32
+     * surface that exists in both the Win9x and NT families.
+     */
+    GetSystemInfo( &info );
     GlobalMemoryStatus( &status );
-    return MAKELONG( status.dwTotalVirtual / info.PageSize, status.dwAvailVirtual / info.PageSize );
+    return MAKELONG( status.dwTotalVirtual / info.dwPageSize,
+                     status.dwAvailVirtual / info.dwPageSize );
 }
 
 /***********************************************************************
