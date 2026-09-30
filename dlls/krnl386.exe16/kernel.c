@@ -82,6 +82,11 @@ static BOOL kernel_is_win95_osr2_session(void)
     return kernel_personality_is( WATER_WIN16_PERSONALITY_WIN95_OSR2 );
 }
 
+static BOOL kernel_is_winme_session(void)
+{
+    return kernel_personality_is( WATER_WIN16_PERSONALITY_WINME );
+}
+
 static WORD kernel_win3_standard_version(void)
 {
     /* A live WIN386 session is authoritative enhanced mode. */
@@ -429,10 +434,13 @@ DWORD WINAPI GetVersion16(void)
         return MAKELONG( MAKEWORD( 3, 10 ), 0x0500 );
 
     /*
-     * The built-in non-NT personality is retail Windows 95.  OSR2 keeps
-     * Win16's 3.95 compatibility version but advances the underlying DOS
-     * API from 7.00 to 7.10, which is the FAT32 capability boundary.
+     * DOS-based Win9x deliberately reports Windows 3.95 to Win16 callers for
+     * compatibility.  The DOS half still tracks the selected 9x generation:
+     * 7.00 for retail Win95/98 compatibility, 7.10 for Win95 OSR2, and 8.00
+     * for Windows Me.
      */
+    if (kernel_is_winme_session())
+        return MAKELONG( MAKEWORD( 3, 95 ), 0x0800 );
     if (kernel_is_win95_osr2_session())
         return MAKELONG( MAKEWORD( 3, 95 ), 0x070a );
     return MAKELONG( MAKEWORD( 3, 95 ), 0x0700 );
@@ -647,6 +655,16 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
         v->dwMinorVersion = 51;
         v->dwBuildNumber  = 1057;
         v->dwPlatformId   = VER_PLATFORM_WIN32_NT;
+        v->szCSDVersion[0] = 0;
+        return TRUE;
+    }
+
+    if (kernel_is_winme_session())
+    {
+        v->dwMajorVersion = 4;
+        v->dwMinorVersion = 90;
+        v->dwBuildNumber  = 3000;
+        v->dwPlatformId   = VER_PLATFORM_WIN32_WINDOWS;
         v->szCSDVersion[0] = 0;
         return TRUE;
     }

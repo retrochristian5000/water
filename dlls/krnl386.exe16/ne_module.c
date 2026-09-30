@@ -427,6 +427,7 @@ enum krnl386_personality
     KRNL386_PERSONALITY_WFW31,
     KRNL386_PERSONALITY_WFW311,
     KRNL386_PERSONALITY_WIN95_OSR2,
+    KRNL386_PERSONALITY_WINME,
     KRNL386_PERSONALITY_NT31_WOW,
     KRNL386_PERSONALITY_NT351_WOW,
     KRNL386_PERSONALITY_NT5_WOW
@@ -475,6 +476,8 @@ static enum krnl386_personality get_krnl386_personality(void)
             return cached = KRNL386_PERSONALITY_WIN31_STANDARD;
         if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN95_OSR2 ))
             return cached = KRNL386_PERSONALITY_WIN95_OSR2;
+        if (!strcmp( value, WATER_WIN16_PERSONALITY_WINME ))
+            return cached = KRNL386_PERSONALITY_WINME;
     }
 
     return cached = KRNL386_PERSONALITY_GENERIC;
@@ -504,7 +507,13 @@ static WORD builtin_expected_windows_version(void)
 
     case KRNL386_PERSONALITY_GENERIC:
     case KRNL386_PERSONALITY_WIN95_OSR2:
-        return 0x0400;  /* Windows 95 and OSR2 are Windows 4.00. */
+    case KRNL386_PERSONALITY_WINME:
+        /*
+         * Keep the NE expected-Windows compatibility field at 4.00 for the
+         * DOS-Windows 4.x line.  This field is not GetVersionEx and should
+         * not be inflated to 4.90 merely because the Me owner is selected.
+         */
+        return 0x0400;
 
     case KRNL386_PERSONALITY_NT31_WOW:
         return 0x030a;  /* NT 3.1 WOW presents Windows 3.10 to Win16. */
@@ -702,12 +711,14 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
     }
 
     if (personality == KRNL386_PERSONALITY_GENERIC ||
-        personality == KRNL386_PERSONALITY_WIN95_OSR2)
+        personality == KRNL386_PERSONALITY_WIN95_OSR2 ||
+        personality == KRNL386_PERSONALITY_WINME)
     {
         /*
-         * Retail Win95 and OSR2 share the Win95 KERNEL export surface here.
-         * OSR2 differs at the DOS/filesystem layer (DOS 7.10/FAT32), not by
-         * inheriting NT-only 262-274 or the Win98-only ordinal 495.
+         * Keep the existing Win95-compatible KERNEL projection for Me until
+         * a direct 4.90 KRNL386 export table is available.  Me's continued
+         * KERNEL32/Win16 thunk architecture is established, but that does not
+         * justify inventing guest-visible KRNL386 ordinal deltas here.
          */
         return ordinal == 495 || (ordinal >= 262 && ordinal <= 274);
     }

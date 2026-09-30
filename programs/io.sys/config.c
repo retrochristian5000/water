@@ -193,14 +193,23 @@ BOOL IOSYS_GetFat1216BPB(BYTE drive, struct iosys_fat_bpb *bpb)
  * boot policy such as BootGUI belongs to the Win9x boot owner and must not be
  * inferred from the Water host operating system here.
  */
-static BOOL is_win3_standard_personality(void)
+static BOOL iosys_personality_is(const char *personality)
 {
     char value[24];
     DWORD len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
 
-    return len && len < ARRAY_SIZE(value) &&
-           (!strcmp( value, WATER_WIN16_PERSONALITY_WIN30_STANDARD ) ||
-            !strcmp( value, WATER_WIN16_PERSONALITY_WIN31_STANDARD ));
+    return len && len < ARRAY_SIZE(value) && !strcmp( value, personality );
+}
+
+static BOOL is_win3_standard_personality(void)
+{
+    return iosys_personality_is( WATER_WIN16_PERSONALITY_WIN30_STANDARD ) ||
+           iosys_personality_is( WATER_WIN16_PERSONALITY_WIN31_STANDARD );
+}
+
+static BOOL is_winme_personality(void)
+{
+    return iosys_personality_is( WATER_WIN16_PERSONALITY_WINME );
 }
 
 void IOSYS_InitConfig(void)
@@ -329,6 +338,18 @@ void IOSYS_ReadConfigSys(struct iosys_config_sys *config)
     config->last_drive = 0;
     config->umb_linked = -1;
     config->break_on = FALSE;
+
+    /*
+     * Normal Windows Me hard-disk startup does not execute the DOS boot
+     * directives that earlier Win9x consumes from CONFIG.SYS.  Environment
+     * import is a separate Me compatibility path and is intentionally not
+     * represented by these BUFFERS/LASTDRIVE/DOS/BREAK fields.
+     */
+    if (is_winme_personality())
+    {
+        TRACE( "Windows Me personality: ignoring CONFIG.SYS DOS boot directives\n" );
+        return;
+    }
 
     selected_len = GetEnvironmentVariableA( "CONFIG", selected, sizeof(selected) );
     if (!selected_len || selected_len >= sizeof(selected)) selected[0] = 0;

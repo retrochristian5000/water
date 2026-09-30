@@ -22,6 +22,12 @@ means a conventional DOS EXE followed by an NE or PE image.
 KRNL386 currently reaches this implementation through a temporary source bridge
 only to preserve compatibility while the Win9x boot chain is being reconstructed.
 
+Windows Me is a distinct Win9x boot personality. Its normal hard-disk IO.SYS
+path bypasses the older real-mode CONFIG.SYS/AUTOEXEC driver startup and moves
+toward VMM32 directly, while the protected-mode Win16 environment still retains
+KRNL386.EXE. Water therefore keeps Me's KRNL386 compatibility surface separate
+from its reduced real-mode boot policy.
+
 
 The CONFIG.SYS parser was recovered from KRNL386's INT 21h implementation.
 IO.SYS owns that parse; INT 21h now consumes the resulting BUFFERS, LASTDRIVE,
