@@ -2277,6 +2277,28 @@ HINSTANCE16 WINAPI WinExec16( LPCSTR lpCmdLine, UINT16 nCmdShow )
     return ret;
 }
 
+static BOOL krnl386_is_internal_helper_ordinal( WORD ordinal )
+{
+    switch (ordinal)
+    {
+    case 102:  /* DOS3Call */
+    case 332:  /* THHOOK */
+    case 456:  /* DefResourceHandler */
+    case 604:  /* CBClientGlueSL */
+    case 631:  /* C16ThkSL01 */
+    case 666:  /* UTGlue16 */
+    case 2000: /* __wine_call_int_handler */
+    case 2001: /* __wine_snoop_entry */
+    case 2002: /* __wine_snoop_return */
+    case 2003: /* __wine_dosx_pmode_entry */
+    case 2004: /* __wine_dosx_msdos_api */
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+
 /***********************************************************************
  *           KERNEL_GetProcAddressInternal16
  *
@@ -2285,17 +2307,28 @@ HINSTANCE16 WINAPI WinExec16( LPCSTR lpCmdLine, UINT16 nCmdShow )
  */
 FARPROC16 KERNEL_GetProcAddressInternal16( HMODULE16 hModule, LPCSTR name )
 {
+    NE_MODULE *module;
     WORD ordinal;
 
     if (!hModule) hModule = GetCurrentTask();
     hModule = GetExePtr( hModule );
+    if (!hModule || !(module = NE_GetPtr( hModule )) || !is_kernel_module( module ))
+    {
+        WARN( "refusing internal procedure lookup for non-KERNEL module %04x\n", hModule );
+        return 0;
+    }
 
     if (HIWORD(name) != 0)
         ordinal = NE_GetOrdinal( hModule, name );
     else
         ordinal = LOWORD(name);
 
-    if (!ordinal) return 0;
+    if (!ordinal || !krnl386_is_internal_helper_ordinal( ordinal ))
+    {
+        WARN( "refusing non-internal KERNEL procedure lookup for ordinal %u\n", ordinal );
+        return 0;
+    }
+
     return NE_GetEntryPointInternal( hModule, ordinal, FALSE );
 }
 
