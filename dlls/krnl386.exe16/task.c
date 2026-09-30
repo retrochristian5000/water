@@ -1398,16 +1398,6 @@ WORD WINAPI GetExeVersion16(void)
 
 
 /***********************************************************************
- *           GetLPErrMode   (KERNEL.99)
- */
-SEGPTR WINAPI GetLPErrMode(void)
-{
-    FIXME("(): stub\n");
-    return 0;
-}
-
-
-/***********************************************************************
  *           SetErrorMode   (KERNEL.107)
  */
 UINT16 WINAPI SetErrorMode16( UINT16 mode )

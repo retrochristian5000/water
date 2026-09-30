@@ -39,6 +39,22 @@ static void WINAPI DOSVM_Int5cHandler(I386_CONTEXT *);
 static void WINAPI DOSVM_DefaultHandler(I386_CONTEXT *);
 
 static FARPROC16     DOSVM_Vectors16[256];
+
+/*
+ * KERNEL.99 exposes these two bytes as a stable far pointer.  Native KRNL386
+ * keeps them in this exact order: InDOS followed by InINT24.
+ *
+ * Water does not yet emulate KERNEL's full INT 24 critical-error path, so the
+ * second byte stays clear for now.  The InDOS byte is driven by real INT 21
+ * dispatch below instead of being a decorative compatibility value.
+ */
+static struct
+{
+    BYTE in_dos;
+    BYTE in_int24;
+} kernel_dos_state;
+static SEGPTR kernel_dos_state_ptr;
+
 static const INTPROC DOSVM_VectorsBuiltin[] =
 {
   /* 00 */ 0,                  0,                  0,                  0,
@@ -421,14 +437,35 @@ void DOSVM_SetPMHandler16( BYTE intnum, FARPROC16 handler )
  */
 static void DOSVM_CallBuiltinHandler( I386_CONTEXT *context, BYTE intnum )
 {
-    /*
-     * FIXME: Make all builtin interrupt calls go via this routine.
-     * FIXME: Check for PM->RM interrupt reflection.
-     * FIXME: Check for RM->PM interrupt reflection.
-     */
+    BYTE old_in_dos;
+    INTPROC proc = DOSVM_GetBuiltinHandler( intnum );
 
-  INTPROC proc = DOSVM_GetBuiltinHandler( intnum );
-  proc( context );
+    /*
+     * Native KERNEL marks the interval in which it has crossed into DOS.
+     * Preserve the previous value so nested dispatch cannot clear an outer
+     * DOS call.  INT 24 nesting gets its own byte when Water grows a real
+     * KERNEL critical-error path.
+     */
+    old_in_dos = kernel_dos_state.in_dos;
+    if (intnum == 0x21) kernel_dos_state.in_dos = 1;
+
+    proc( context );
+
+    if (intnum == 0x21) kernel_dos_state.in_dos = old_in_dos;
+}
+
+
+/***********************************************************************
+ *           GetLPErrMode   (KERNEL.99)
+ *
+ * Return a stable far pointer to KERNEL's InDOS/InINT24 bytes, matching the
+ * native DX:AX contract used by WIN386 and USER.
+ */
+SEGPTR WINAPI GetLPErrMode(void)
+{
+    if (!kernel_dos_state_ptr)
+        kernel_dos_state_ptr = MapLS( &kernel_dos_state );
+    return kernel_dos_state_ptr;
 }
 
 
