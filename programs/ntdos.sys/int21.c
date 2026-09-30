@@ -96,7 +96,7 @@ typedef struct _INT21_DPB {
     WORD   spare_boot_sector;    /* 27 sector number of backup boot sector or 0xffff for none */
     DWORD  first_cluster_sector; /* 29 sector number of the first cluster */
     DWORD  num_clusters2;        /* 2d maximum cluster number */
-    DWORD  fat_clusters;         /* 31 number of clusters occupied by FAT */
+    DWORD  fat_clusters;         /* 31 number of sectors occupied by one FAT */
     DWORD  root_cluster;         /* 35 cluster number of start of root directory */
     DWORD  search_cluster2;      /* 39 cluster at which to start searching for free space */
 } INT21_DPB;
@@ -713,6 +713,7 @@ static BOOL INT21_FillDrivePB( BYTE drive )
         dpb->media_ID          = bpb.media_descriptor;
         dpb->first_cluster_sector = first_data;
         dpb->num_clusters2     = data_clusters + 1;
+        dpb->fat_clusters      = bpb.sectors_per_fat;
     }
     else
     {
@@ -726,6 +727,7 @@ static BOOL INT21_FillDrivePB( BYTE drive )
         dpb->media_ID          = (drivetype == DRIVE_FIXED) ? 0xF8 : 0xF0;
         dpb->first_cluster_sector = 0;
         dpb->num_clusters2     = total_clusters;
+        dpb->fat_clusters      = 32;
     }
 
     dpb->drive           = drive;
@@ -751,7 +753,6 @@ static BOOL INT21_FillDrivePB( BYTE drive )
     dpb->mirroring_flags      = 0;
     dpb->info_sector          = 0xffff;
     dpb->spare_boot_sector    = 0xffff;
-    dpb->fat_clusters         = 32;
     dpb->root_cluster         = 0;
     dpb->search_cluster2      = 0;
 
