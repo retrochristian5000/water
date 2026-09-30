@@ -1,8 +1,9 @@
 /*
  * Temporary KRNL386 -> NTDOS.SYS process compatibility bridge.
  *
- * NTDOS owns DOS termination semantics.  The final host task exit remains an
- * NTVDM DEM service and crosses WOW32 instead of being linked into KRNL386.
+ * NTDOS owns DOS termination semantics.  NT WOW delegates the final host task
+ * exit to NTVDM DEM through WOW32.  DOS-based Windows keeps the old ExitThread
+ * fallback until its DOSX/WIN386 process provider is separated.
  */
 
 #include "windef.h"
@@ -17,7 +18,12 @@ static void ntdos_compat_dem_exit(WORD retval)
     HMODULE wow32;
     w32_dem_exit_proc proc;
 
-    if (!kernel_is_nt_wow_session()) return;
+    if (!kernel_is_nt_wow_session())
+    {
+        ExitThread(retval);
+        return;
+    }
+
     if (!(wow32 = GetModuleHandleA("wow32.dll"))) return;
     if (!(proc = (w32_dem_exit_proc)GetProcAddress(wow32, "__wine_W32DemExitTask"))) return;
     proc(retval);
