@@ -418,119 +418,134 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
 }
 
 
-enum krnl386_personality
+struct krnl386_guest_state
 {
-    KRNL386_PERSONALITY_GENERIC,
-    KRNL386_PERSONALITY_WIN30_STANDARD,
-    KRNL386_PERSONALITY_WIN31_STANDARD,
-    KRNL386_PERSONALITY_WIN386,
-    KRNL386_PERSONALITY_WFW31,
-    KRNL386_PERSONALITY_WFW311,
-    KRNL386_PERSONALITY_WIN95_OSR2,
-    KRNL386_PERSONALITY_WINME,
-    KRNL386_PERSONALITY_NT31_WOW,
-    KRNL386_PERSONALITY_NT351_WOW,
-    KRNL386_PERSONALITY_NT5_WOW
+    struct water_win16_profile profile;
+    BOOL win386_active;
+    DWORD win386_flags;
+    WORD win386_windows_version;
 };
 
 /*
- * Water uses one built-in KERNEL backend for several historical personalities
- * and kernel filenames. The VDM owner must select NT WOW explicitly; the host
- * OS version is not a safe substitute because Wine/Water can emulate several
- * guest personalities on the same host.
+ * KRNL386 consumes guest facts, not compatibility personalities.  WIN386 and
+ * NTVDM remain authoritative owners of their live hosting state; the selected
+ * ISA stays independent of both the Water host and the Windows release.
  */
-static enum krnl386_personality get_krnl386_personality(void)
+static const struct krnl386_guest_state *get_krnl386_guest_state(void)
 {
-    static int cached = -1;
+    static struct krnl386_guest_state state;
+    static BOOL initialized;
     struct win386_session_info session;
-    char value[16];
-    DWORD len;
 
-    if (cached != -1) return cached;
+    if (initialized) return &state;
+
+    water_win16_read_profile( &state.profile );
 
     if (WIN386_QuerySession( &session ))
     {
-        if (session.flags & WATER_WIN386_FLAG_WFW311)
-            return cached = KRNL386_PERSONALITY_WFW311;
-        if (session.flags & WATER_WIN386_FLAG_WORKGROUPS)
-            return cached = KRNL386_PERSONALITY_WFW31;
-        return cached = KRNL386_PERSONALITY_WIN386;
+        state.win386_active = TRUE;
+        state.win386_flags = session.flags;
+        state.win386_windows_version = session.windows_version;
+        state.profile.line = WATER_WIN16_LINE_PRE9X_FAMILY;
+        state.profile.major = LOBYTE( session.windows_version );
+        state.profile.minor = HIBYTE( session.windows_version );
+        state.profile.build = 0;
+        state.profile.mode = WATER_WIN16_MODE_ENHANCED_FAMILY;
     }
-
-    switch (kernel_get_nt_wow_profile())
+    else
     {
-    case WATER_VDM_WOW_PROFILE_NT31:
-        return cached = KRNL386_PERSONALITY_NT31_WOW;
-    case WATER_VDM_WOW_PROFILE_NT351:
-        return cached = KRNL386_PERSONALITY_NT351_WOW;
-    case WATER_VDM_WOW_PROFILE_NT5:
-        return cached = KRNL386_PERSONALITY_NT5_WOW;
+        switch (kernel_get_nt_wow_profile())
+        {
+        case WATER_VDM_WOW_PROFILE_NT31:
+            state.profile.line = WATER_WIN16_LINE_NT_FAMILY;
+            state.profile.major = 3;
+            state.profile.minor = 10;
+            state.profile.build = 511;
+            break;
+        case WATER_VDM_WOW_PROFILE_NT351:
+            state.profile.line = WATER_WIN16_LINE_NT_FAMILY;
+            state.profile.major = 3;
+            state.profile.minor = 51;
+            state.profile.build = 1057;
+            break;
+        case WATER_VDM_WOW_PROFILE_NT5:
+            state.profile.line = WATER_WIN16_LINE_NT_FAMILY;
+            if (state.profile.major < 5)
+            {
+                state.profile.major = 5;
+                state.profile.minor = 0;
+                state.profile.build = 0;
+            }
+            break;
+        }
     }
 
-    len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
-    if (len && len < ARRAY_SIZE(value))
-    {
-        if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN30_STANDARD ))
-            return cached = KRNL386_PERSONALITY_WIN30_STANDARD;
-        if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN31_STANDARD ))
-            return cached = KRNL386_PERSONALITY_WIN31_STANDARD;
-        if (!strcmp( value, WATER_WIN16_PERSONALITY_WIN95_OSR2 ))
-            return cached = KRNL386_PERSONALITY_WIN95_OSR2;
-        if (!strcmp( value, WATER_WIN16_PERSONALITY_WINME ))
-            return cached = KRNL386_PERSONALITY_WINME;
-    }
+    initialized = TRUE;
+    return &state;
+}
 
-    return cached = KRNL386_PERSONALITY_GENERIC;
+static BOOL krnl386_state_is_nt( const struct krnl386_guest_state *state )
+{
+    return state->profile.line == WATER_WIN16_LINE_NT_FAMILY;
+}
+
+static BOOL krnl386_state_is_nt_version( const struct krnl386_guest_state *state,
+                                         WORD major, WORD minor )
+{
+    return krnl386_state_is_nt( state ) &&
+           water_win16_profile_is_version( &state->profile, major, minor );
+}
+
+static BOOL krnl386_state_is_nt5_plus( const struct krnl386_guest_state *state )
+{
+    return krnl386_state_is_nt( state ) && state->profile.major >= 5;
+}
+
+static BOOL krnl386_state_is_pre9x_standard( const struct krnl386_guest_state *state )
+{
+    return state->profile.line == WATER_WIN16_LINE_PRE9X_FAMILY &&
+           state->profile.mode == WATER_WIN16_MODE_STANDARD_FAMILY &&
+           !state->win386_active;
+}
+
+static BOOL krnl386_state_is_pre9x_enhanced( const struct krnl386_guest_state *state )
+{
+    return state->profile.line == WATER_WIN16_LINE_PRE9X_FAMILY &&
+           state->win386_active;
+}
+
+static BOOL krnl386_state_is_win9x( const struct krnl386_guest_state *state )
+{
+    return state->profile.line == WATER_WIN16_LINE_WIN9X_FAMILY;
 }
 
 static WORD builtin_expected_windows_version(void)
 {
-    struct win386_session_info session;
+    const struct krnl386_guest_state *state = get_krnl386_guest_state();
 
-    switch (get_krnl386_personality())
+    if (state->win386_active)
     {
-    case KRNL386_PERSONALITY_WIN386:
-        if (WIN386_QuerySession( &session ))
-            return ((WORD)LOBYTE(session.windows_version) << 8) |
-                   HIBYTE(session.windows_version);
-        break;
+        if (state->win386_flags & WATER_WIN386_FLAG_WORKGROUPS)
+            return 0x030a;  /* WfW 3.11 preserves Windows 3.10 compatibility APIs. */
 
-    case KRNL386_PERSONALITY_WFW31:
-    case KRNL386_PERSONALITY_WFW311:
-        return 0x030a;  /* WfW 3.11 preserves Windows 3.10 compatibility APIs. */
-
-    case KRNL386_PERSONALITY_WIN30_STANDARD:
-        return 0x0300;
-
-    case KRNL386_PERSONALITY_WIN31_STANDARD:
-        return 0x030a;
-
-    case KRNL386_PERSONALITY_GENERIC:
-    case KRNL386_PERSONALITY_WIN95_OSR2:
-    case KRNL386_PERSONALITY_WINME:
-        /*
-         * Keep the NE expected-Windows compatibility field at 4.00 for the
-         * DOS-Windows 4.x line.  This field is not GetVersionEx and should
-         * not be inflated to 4.90 merely because the Me owner is selected.
-         */
-        return 0x0400;
-
-    case KRNL386_PERSONALITY_NT31_WOW:
-        return 0x030a;  /* NT 3.1 WOW presents Windows 3.10 to Win16. */
-
-    case KRNL386_PERSONALITY_NT351_WOW:
-        return 0x0333;  /* Windows NT 3.51; minor byte is decimal 51. */
-
-    case KRNL386_PERSONALITY_NT5_WOW:
-        break;
+        return ((WORD)LOBYTE(state->win386_windows_version) << 8) |
+               HIBYTE(state->win386_windows_version);
     }
 
-    /*
-     * NT5 currently spans multiple later NT personalities in Water. Until
-     * that family is split further, retain the configured PEB version there.
-     */
-    return ((NtCurrentTeb()->Peb->OSMajorVersion & 0xff) << 8) |
-           (NtCurrentTeb()->Peb->OSMinorVersion & 0xff);
+    if (krnl386_state_is_win9x( state ))
+    {
+        /*
+         * The NE expected-Windows field stays at the DOS-Windows 4.x
+         * compatibility level; it is not GetVersionEx.
+         */
+        return 0x0400;
+    }
+
+    if (state->profile.line == WATER_WIN16_LINE_PRE9X_FAMILY ||
+        state->profile.line == WATER_WIN16_LINE_NT_FAMILY)
+        return ((state->profile.major & 0xff) << 8) | (state->profile.minor & 0xff);
+
+    return 0;
 }
 
 
@@ -545,26 +560,19 @@ static BOOL is_kernel_module( const NE_MODULE *module )
 
 #define KRNL386_BACKING_WOWSHOULDWESAYWIN95 2095
 
-static BOOL krnl386_is_nt_wow_personality( enum krnl386_personality personality )
-{
-    return personality == KRNL386_PERSONALITY_NT31_WOW ||
-           personality == KRNL386_PERSONALITY_NT351_WOW ||
-           personality == KRNL386_PERSONALITY_NT5_WOW;
-}
-
 static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
-    enum krnl386_personality personality;
+    const struct krnl386_guest_state *state;
 
     if (!is_kernel_module( module )) return ordinal;
-    personality = get_krnl386_personality();
+    state = get_krnl386_guest_state();
 
     /*
      * Water keeps the NT-only meaning of ordinal 215 on a private backing
      * ordinal because Win95 uses 215 for Local32ValidHandle. Named lookups of
      * the private backing symbol must still report native NT ordinal 215.
      */
-    if (krnl386_is_nt_wow_personality( personality ) &&
+    if (krnl386_state_is_nt( state ) &&
         ordinal == KRNL386_BACKING_WOWSHOULDWESAYWIN95)
         return 215;
 
@@ -573,7 +581,7 @@ static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordi
      * WOWCloseComPort at 507/508/509.  The merged backing spec keeps the
      * older Wine slots one ordinal lower, so present the native NT 3.1 ABI.
      */
-    if (personality == KRNL386_PERSONALITY_NT31_WOW)
+    if (krnl386_state_is_nt_version( state, 3, 10 ))
     {
         switch (ordinal)
         {
@@ -584,13 +592,11 @@ static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordi
         }
     }
 
-    if (personality != KRNL386_PERSONALITY_NT5_WOW) return ordinal;
+    if (!krnl386_state_is_nt5_plus( state )) return ordinal;
 
     /*
-     * Water's static spec retains older NT/Win9x numbering.  NT5 moved several
-     * WOW exports while keeping their implementations.  Present the NT5 view
-     * to Win16 callers without changing the backing entry table used by other
-     * personalities.
+     * NT5+ keeps its own KERNEL ordinal layout.  The release is selected by
+     * the version axis rather than by a monolithic "NT5 personality".
      */
     switch (ordinal)
     {
@@ -610,15 +616,15 @@ static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordi
 
 static WORD krnl386_backing_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
-    enum krnl386_personality personality;
+    const struct krnl386_guest_state *state;
 
     if (!is_kernel_module( module )) return ordinal;
-    personality = get_krnl386_personality();
+    state = get_krnl386_guest_state();
 
-    if (krnl386_is_nt_wow_personality( personality ) && ordinal == 215)
+    if (krnl386_state_is_nt( state ) && ordinal == 215)
         return KRNL386_BACKING_WOWSHOULDWESAYWIN95;
 
-    if (personality == KRNL386_PERSONALITY_NT31_WOW)
+    if (krnl386_state_is_nt_version( state, 3, 10 ))
     {
         switch (ordinal)
         {
@@ -629,7 +635,7 @@ static WORD krnl386_backing_kernel_ordinal( const NE_MODULE *module, WORD ordina
         }
     }
 
-    if (personality != KRNL386_PERSONALITY_NT5_WOW) return ordinal;
+    if (!krnl386_state_is_nt5_plus( state )) return ordinal;
 
     switch (ordinal)
     {
@@ -679,13 +685,12 @@ static BOOL is_vxd_entry_ordinal( WORD ordinal )
  */
 static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
-    enum krnl386_personality personality;
+    const struct krnl386_guest_state *state;
 
     if (!is_kernel_module( module )) return FALSE;
-    personality = get_krnl386_personality();
+    state = get_krnl386_guest_state();
 
-    if (personality == KRNL386_PERSONALITY_WIN30_STANDARD ||
-        personality == KRNL386_PERSONALITY_WIN31_STANDARD)
+    if (krnl386_state_is_pre9x_standard( state ))
     {
         /* Standard mode has no WIN386/VMM VxD surface. */
         return ordinal == 495 ||
@@ -695,14 +700,11 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
                is_vxd_entry_ordinal( ordinal );
     }
 
-    if (personality == KRNL386_PERSONALITY_WIN386 ||
-        personality == KRNL386_PERSONALITY_WFW31 ||
-        personality == KRNL386_PERSONALITY_WFW311)
+    if (krnl386_state_is_pre9x_enhanced( state ))
     {
         /*
-         * DOS Windows 3.x predates the NT/Win9x extension blocks. Keep WfW
-         * separate in the personality ledger, but do not invent export deltas
-         * until a direct WfW KRNL386 export table is available.
+         * DOS Windows 3.x predates the NT/Win9x extension blocks. Workgroups
+         * remains a WIN386 feature flag, not a separate guest identity.
          */
         return ordinal == 495 ||
                (ordinal >= 500 && ordinal <= 568) ||
@@ -710,20 +712,17 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
                (ordinal >= 700 && ordinal <= 704);
     }
 
-    if (personality == KRNL386_PERSONALITY_GENERIC ||
-        personality == KRNL386_PERSONALITY_WIN95_OSR2 ||
-        personality == KRNL386_PERSONALITY_WINME)
+    if (krnl386_state_is_win9x( state ))
     {
         /*
-         * Keep the existing Win95-compatible KERNEL projection for Me until
-         * a direct 4.90 KRNL386 export table is available.  Me's continued
-         * KERNEL32/Win16 thunk architecture is established, but that does not
-         * justify inventing guest-visible KRNL386 ordinal deltas here.
+         * Keep the existing Win95-compatible KERNEL projection across the
+         * Win9x line until direct per-version export tables justify narrower
+         * gates. Version-specific differences can then key off major/minor.
          */
         return ordinal == 495 || (ordinal >= 262 && ordinal <= 274);
     }
 
-    if (personality == KRNL386_PERSONALITY_NT31_WOW)
+    if (krnl386_state_is_nt_version( state, 3, 10 ))
     {
         /*
          * The same NT 3.1 WOW survey records these Windows 3.1 KERNEL entry
@@ -753,18 +752,13 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
             return TRUE;
         }
 
-        /*
-         * Microsoft Systems Journal's NT 3.1 build 511/528 table documents
-         * 500-505, 507-509, 511-517, 520-532 and 540 in the NT KRNL386
-         * extension block.  Keep later thunk and Win9x additions out.
-         */
         if (ordinal >= 500 && ordinal <= 532)
         {
             if (ordinal <= 505) return FALSE;
             if (ordinal >= 507 && ordinal <= 509) return FALSE;
             if (ordinal >= 511 && ordinal <= 517) return FALSE;
             if (ordinal >= 520) return FALSE;
-            return TRUE;  /* 506, 510, 518-519 */
+            return TRUE;
         }
 
         if (ordinal >= 208 && ordinal <= 237)
@@ -780,14 +774,8 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
                is_vxd_entry_ordinal( ordinal );
     }
 
-    if (personality == KRNL386_PERSONALITY_NT351_WOW)
+    if (krnl386_state_is_nt_version( state, 3, 51 ))
     {
-        /*
-         * NT 3.x WOW keeps the older KERNEL ordinal layout.  Do not feed this
-         * personality through the NT5 renumbering below.  The merged spec also
-         * contains Win95 meanings at several colliding ordinals, so hide those
-         * entries rather than exposing the wrong ABI.
-         */
         if (ordinal >= 208 && ordinal <= 237)
             return ordinal != 215 && ordinal != 216 && ordinal != 217 &&
                    ordinal != 220 && ordinal != 223;
@@ -802,13 +790,8 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
                is_vxd_entry_ordinal( ordinal );
     }
 
-    if (personality == KRNL386_PERSONALITY_NT5_WOW)
+    if (krnl386_state_is_nt5_plus( state ))
     {
-        /*
-         * NT5 has its own KERNEL ordinal layout.  Do not expose older aliases
-         * or Win9x thunklet implementations at ordinals whose NT5 meanings
-         * differ.  Known compatible entries are translated separately.
-         */
         return ordinal == 495 ||
                ordinal == 500 || ordinal == 501 || ordinal == 503 ||
                (ordinal >= 521 && ordinal <= 543) ||
@@ -821,21 +804,6 @@ static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WO
     return FALSE;
 }
 
-/*
- * Return TRUE for exports Water can safely provide as cross-version
- * compatibility extensions.  These entries keep the same calling contract at
- * their backing ordinal and have no known personality-specific ordinal
- * collision.
- *
- * The NT 3.1 entries below are the functions documented as absent from native
- * WOW but for which Water already has a real/shared implementation.  ReplaceInst
- * (201) is intentionally excluded because the backing entry is still a stub.
- *
- * 274 and 495 are straightforward host-backed later-version APIs.  513-518 are
- * the Generic Thunk family already shared by NT/Win9x in the backing table;
- * making them available to older Water profiles is an extension, not a claim
- * that Windows 3.x exported them natively.
- */
 static BOOL krnl386_is_compat_backfill_ordinal( WORD ordinal )
 {
     switch (ordinal)
@@ -894,13 +862,12 @@ static BOOL krnl386_uses_native_export_policy(void)
  */
 static BOOL krnl386_native_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
-    enum krnl386_personality personality;
+    const struct krnl386_guest_state *state;
 
     if (!is_kernel_module( module )) return FALSE;
-    personality = get_krnl386_personality();
+    state = get_krnl386_guest_state();
 
-    if (personality == KRNL386_PERSONALITY_WIN30_STANDARD ||
-        personality == KRNL386_PERSONALITY_WIN31_STANDARD)
+    if (krnl386_state_is_pre9x_standard( state ))
         return (ordinal >= 208 && ordinal <= 237) ||
                (ordinal >= 262 && ordinal <= 274) ||
                (ordinal >= 357 && ordinal <= 365) ||
@@ -909,9 +876,7 @@ static BOOL krnl386_native_hides_kernel_ordinal( const NE_MODULE *module, WORD o
                (ordinal >= 700 && ordinal <= 704) ||
                is_vxd_entry_ordinal( ordinal );
 
-    if (personality == KRNL386_PERSONALITY_WIN386 ||
-        personality == KRNL386_PERSONALITY_WFW31 ||
-        personality == KRNL386_PERSONALITY_WFW311)
+    if (krnl386_state_is_pre9x_enhanced( state ))
         return (ordinal >= 208 && ordinal <= 237) ||
                (ordinal >= 262 && ordinal <= 274) ||
                (ordinal >= 357 && ordinal <= 365) ||
@@ -955,8 +920,13 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
     hidden = krnl386_compatible_hides_kernel_ordinal( module, ordinal );
     if (hidden && krnl386_is_compat_backfill_ordinal( ordinal ))
     {
-        TRACE( "backfilling KERNEL ordinal %u for personality %u\n",
-               ordinal, get_krnl386_personality() );
+        {
+            const struct krnl386_guest_state *state = get_krnl386_guest_state();
+
+            TRACE( "backfilling KERNEL ordinal %u for line %u version %u.%02u ISA %u\n",
+                   ordinal, state->profile.line, state->profile.major,
+                   state->profile.minor, state->profile.isa );
+        }
         return FALSE;
     }
     return hidden;
@@ -1016,8 +986,13 @@ FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
 
     if (krnl386_hides_kernel_ordinal( pModule, ordinal ))
     {
-        TRACE( "hiding KERNEL ordinal %u from personality %u\n",
-               ordinal, get_krnl386_personality() );
+        {
+            const struct krnl386_guest_state *state = get_krnl386_guest_state();
+
+            TRACE( "hiding KERNEL ordinal %u from line %u version %u.%02u ISA %u\n",
+                   ordinal, state->profile.line, state->profile.major,
+                   state->profile.minor, state->profile.isa );
+        }
         return 0;
     }
 
@@ -2182,18 +2157,11 @@ WORD WINAPI GetExpWinVer16( HMODULE16 hModule )
 
 static const char *krnl386_winoldap_module_name(void)
 {
-    switch (get_krnl386_personality())
-    {
-    case KRNL386_PERSONALITY_WIN386:
-    case KRNL386_PERSONALITY_WFW31:
-    case KRNL386_PERSONALITY_WFW311:
-    case KRNL386_PERSONALITY_GENERIC:
-    case KRNL386_PERSONALITY_WIN95_OSR2:
-        return "winoa386.mod";
+    const struct krnl386_guest_state *state = get_krnl386_guest_state();
 
-    default:
-        return "winoldap.mod";
-    }
+    if (krnl386_state_is_win9x( state ) || krnl386_state_is_pre9x_enhanced( state ))
+        return "winoa386.mod";
+    return "winoldap.mod";
 }
 
 
