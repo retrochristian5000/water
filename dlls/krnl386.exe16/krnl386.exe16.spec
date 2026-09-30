@@ -262,8 +262,10 @@
 
 # 262-274 are WinNT extensions; those are not present in Win95
 
+# WOWWaitForMsgAndEvent still needs NTVDM's WOW idle/interrupt event owner.
 262 stub WOWWaitForMsgAndEvent
-263 stub WOWMsgBox
+# OpenNT: void WowMsgBox(LPSTR msg, LPSTR title, DWORD style); host UI in WOW32.
+263 pascal WOWMsgBox(segptr segptr long) WOWMsgBox16
 273 stub K273
 274 pascal -ret16 GetShortPathName(str ptr word) GetShortPathName16
 

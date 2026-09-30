@@ -582,6 +582,51 @@ DWORD WINAPI K32WOWCallback16( DWORD vpfn16, DWORD dwParam )
 
 
 /**********************************************************************
+ *           WOWMsgBox16  (NT KERNEL.263)
+ *
+ * OpenNT exposes:
+ *   void FAR PASCAL WowMsgBox(LPSTR msg, LPSTR title, DWORD style)
+ * and immediately thunks the work to WOW32.  Validate/map the Win16 strings
+ * here; WOW32 copies them before returning so no guest pointer escapes.
+ */
+void WINAPI WOWMsgBox16( SEGPTR msg_ptr, SEGPTR title_ptr, DWORD style )
+{
+    typedef void (__cdecl *wow_msgbox_proc)(const char *, const char *, DWORD);
+    static wow_msgbox_proc msgbox;
+    const char *msg = NULL, *title = NULL;
+    HMODULE module;
+
+    if (msg_ptr)
+    {
+        if (IsBadStringPtr16( msg_ptr, 0xffff )) return;
+        msg = K32WOWGetVDMPointer( msg_ptr, 1, TRUE );
+        if (!msg) return;
+    }
+    if (title_ptr)
+    {
+        if (IsBadStringPtr16( title_ptr, 0xffff )) return;
+        title = K32WOWGetVDMPointer( title_ptr, 1, TRUE );
+        if (!title) return;
+    }
+
+    if (!msgbox)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            msgbox = (wow_msgbox_proc)GetProcAddress( module, "__wine_WOWMsgBox" );
+    }
+
+    if (!msgbox)
+    {
+        WARN( "WOW32 message-box bridge is unavailable\n" );
+        return;
+    }
+
+    msgbox( msg, title, style );
+}
+
+
+/**********************************************************************
  *           WOWShouldWeSayWin9516  (NT KERNEL.215)
  *
  * NT reuses ordinal 215, which is Local32ValidHandle on Win95. OpenNT shows

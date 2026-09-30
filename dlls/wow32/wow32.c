@@ -139,6 +139,78 @@ DWORD __cdecl __wine_W32GetVdmProfile( void )
     return InterlockedCompareExchange( &wow32_vdm_profile, 0, 0 );
 }
 
+struct wow32_msgbox_data
+{
+    char *message;
+    char *title;
+    DWORD style;
+};
+
+static char *wow32_strdup( const char *str )
+{
+    char *copy;
+    SIZE_T size;
+
+    if (!str) return NULL;
+    size = strlen( str ) + 1;
+    if ((copy = HeapAlloc( GetProcessHeap(), 0, size ))) memcpy( copy, str, size );
+    return copy;
+}
+
+static DWORD WINAPI wow32_msgbox_thread( void *arg )
+{
+    struct wow32_msgbox_data *data = arg;
+    typedef int (WINAPI *message_box_proc)(HWND, LPCSTR, LPCSTR, UINT);
+    message_box_proc message_box = NULL;
+    HMODULE user32 = LoadLibraryA( "user32.dll" );
+
+    if (user32) message_box = (message_box_proc)GetProcAddress( user32, "MessageBoxA" );
+    if (message_box)
+        message_box( NULL, data->message ? data->message : "",
+                     data->title ? data->title : "",
+                     data->style | MB_OK | MB_SYSTEMMODAL );
+    else
+        WARN( "USER32 MessageBoxA is unavailable\n" );
+
+    if (user32) FreeLibrary( user32 );
+    HeapFree( GetProcessHeap(), 0, data->message );
+    HeapFree( GetProcessHeap(), 0, data->title );
+    HeapFree( GetProcessHeap(), 0, data );
+    return 0;
+}
+
+/***********************************************************************
+ *           __wine_WOWMsgBox
+ *
+ * OpenNT creates the WOWEXEC message box asynchronously so WOWEXEC can keep
+ * servicing its special message/interrupt wait.  Copy the strings before
+ * returning from the bridge; the worker must never retain Win16 pointers.
+ */
+void __cdecl __wine_WOWMsgBox( const char *message, const char *title, DWORD style )
+{
+    struct wow32_msgbox_data *data;
+    HANDLE thread;
+
+    if (!(data = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*data) )))
+        return;
+
+    if ((message && !(data->message = wow32_strdup( message ))) ||
+        (title && !(data->title = wow32_strdup( title ))))
+    {
+        HeapFree( GetProcessHeap(), 0, data->message );
+        HeapFree( GetProcessHeap(), 0, data->title );
+        HeapFree( GetProcessHeap(), 0, data );
+        return;
+    }
+    data->style = style;
+
+    if ((thread = CreateThread( NULL, 0, wow32_msgbox_thread, data, 0, NULL )))
+        CloseHandle( thread );
+    else
+        wow32_msgbox_thread( data );
+}
+
+
 /***********************************************************************
  *           __wine_WOWShouldWeSayWin95
  *

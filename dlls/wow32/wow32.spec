@@ -13,6 +13,7 @@
 @ cdecl -private __wine_W32DispatchFrame(ptr)
 @ cdecl -private __wine_W32RegisterVdmProfile(long)
 @ cdecl -private __wine_W32GetVdmProfile()
+@ cdecl -private __wine_WOWMsgBox(str str long)
 @ cdecl -private __wine_WOWShouldWeSayWin95(str long)
 @ cdecl -private __wine_WOWRegisterShellWindow(ptr ptr long)
 @ cdecl -private __wine_WOWQueryPerformanceCounter(ptr ptr)
