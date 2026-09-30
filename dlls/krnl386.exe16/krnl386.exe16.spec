@@ -170,7 +170,7 @@
 151 stub WinOldApCall
 152 pascal -ret16 GetNumTasks() GetNumTasks16
 154 pascal -ret16 GlobalNotify(segptr) GlobalNotify16
-155 pascal -ret16 GetTaskDS() GetTaskDS16
+155 pascal GetTaskDS() GetTaskDS16
 156 pascal   LimitEMSPages(long) LimitEMSPages16
 157 pascal   GetCurPID(long) GetCurPID16
 158 pascal -ret16 IsWinOldApTask(word) IsWinOldApTask16

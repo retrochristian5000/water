@@ -1423,15 +1423,16 @@ UINT16 WINAPI GetNumTasks16(void)
 /***********************************************************************
  *           GetTaskDS   (KERNEL.155)
  *
- * Note: this function apparently returns a DWORD with LOWORD == HIWORD.
- * I don't think we need to bother with this.
+ * Native KRNL386 returns the task instance selector in both AX and DX.
  */
-HINSTANCE16 WINAPI GetTaskDS16(void)
+DWORD WINAPI GetTaskDS16(void)
 {
     TDB *pTask;
+    WORD selector;
 
     if (!(pTask = TASK_GetCurrent())) return 0;
-    return GlobalHandleToSel16(pTask->hInstance);
+    selector = GlobalHandleToSel16( pTask->hInstance );
+    return MAKELONG( selector, selector );
 }
 
 /***********************************************************************

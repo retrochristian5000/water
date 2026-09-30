@@ -382,7 +382,7 @@ SEGPTR      WINAPI GetpWin16Lock16(void);
 DWORD       WINAPI GetProcessDword(DWORD,INT);
 DWORD       WINAPI GetSelectorLimit16(WORD);
 FARPROC16   WINAPI GetSetKernelDOSProc16(FARPROC16 DosProc);
-HINSTANCE16 WINAPI GetTaskDS16(void);
+DWORD       WINAPI GetTaskDS16(void);
 HQUEUE16    WINAPI GetTaskQueue16(HTASK16);
 HQUEUE16    WINAPI GetThreadQueue16(DWORD);
 DWORD       WINAPI GetWinFlags16(void);
