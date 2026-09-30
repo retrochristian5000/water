@@ -168,7 +168,7 @@ static UTINFO *UTAlloc( HMODULE hModule, HMODULE16 hModule16,
     if ( !UTGlue16_Segptr )
     {
         HMODULE16 hMod = GetModuleHandle16( "KERNEL" );
-        UTGlue16_Segptr = GetProcAddress16( hMod, "UTGlue16" );
+        UTGlue16_Segptr = KERNEL_GetProcAddressInternal16( hMod, "UTGlue16" );
         if ( !UTGlue16_Segptr ) return NULL;
     }
 

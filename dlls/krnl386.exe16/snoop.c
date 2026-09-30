@@ -141,7 +141,7 @@ SNOOP16_GetProcAddress16(HMODULE16 hmod,DWORD ordinal,FARPROC16 origfun) {
 	fun = dll->funs+ordinal;
 	/* already done? */
 	fun->lcall 	= 0x9a;
-	fun->snoop_entry = GetProcAddress16( GetModuleHandle16( "KERNEL" ), "__wine_snoop_entry" );
+	fun->snoop_entry = KERNEL_GetProcAddressInternal16( GetModuleHandle16( "KERNEL" ), "__wine_snoop_entry" );
 	fun->origfun	= origfun;
 	if (fun->name)
 		return (FARPROC16)(SEGPTR)MAKELONG(((char*)fun-(char*)dll->funs),dll->funhandle);
@@ -187,7 +187,7 @@ SNOOP16_GetProcAddress16(HMODULE16 hmod,DWORD ordinal,FARPROC16 origfun) {
 		}
 	}
 	fun->lcall 	= 0x9a;
-	fun->snoop_entry = GetProcAddress16( GetModuleHandle16( "KERNEL" ), "__wine_snoop_entry" );
+	fun->snoop_entry = KERNEL_GetProcAddressInternal16( GetModuleHandle16( "KERNEL" ), "__wine_snoop_entry" );
 	fun->origfun	= origfun;
 	fun->nrofargs	= -1;
 	return (FARPROC16)(SEGPTR)MAKELONG(((char*)fun-(char*)dll->funs),dll->funhandle);
@@ -234,7 +234,7 @@ void WINAPI __wine_snoop_entry( I386_CONTEXT *context )
 	}
 	ret = &((*rets)->entry[i]);
 	ret->lcall 	= 0x9a;
-	ret->snoop_return = GetProcAddress16( GetModuleHandle16( "KERNEL" ), "__wine_snoop_return" );
+	ret->snoop_return = KERNEL_GetProcAddressInternal16( GetModuleHandle16( "KERNEL" ), "__wine_snoop_return" );
 	ret->origreturn	= (FARPROC16)CALLER1REF;
 	CALLER1REF	= MAKELONG((char*)&(ret->lcall)-(char*)((*rets)->entry),(*rets)->rethandle);
 	ret->dll	= dll;

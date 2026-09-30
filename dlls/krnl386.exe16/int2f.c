@@ -59,7 +59,7 @@ static void MSCDEX_Handler( I386_CONTEXT *context );
 
 static FARPROC16 get_dosx_entry( const char *name )
 {
-    return GetProcAddress16( GetModuleHandle16( "KERNEL" ), name );
+    return KERNEL_GetProcAddressInternal16( GetModuleHandle16( "KERNEL" ), name );
 }
 
 /*

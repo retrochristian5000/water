@@ -1638,7 +1638,8 @@ void WINAPI C16ThkSL01(I386_CONTEXT *context)
         struct ThunkDataSL16 *SL16 = MapSL(context->Edx);
         struct ThunkDataSL *td = find_sl_data( SL16->fpData );
 
-        DWORD procAddress = (DWORD)GetProcAddress16(GetModuleHandle16("KERNEL"), (LPCSTR)631);
+        DWORD procAddress = (DWORD)KERNEL_GetProcAddressInternal16(
+            GetModuleHandle16("KERNEL"), (LPCSTR)631 );
 
         if (!td)
         {
@@ -2103,7 +2104,7 @@ INT16 WINAPI UnRegisterCBClient16( INT16 wCBCId,
 void WINAPI InitCBClient16( FARPROC glueLS )
 {
     HMODULE16 kernel = GetModuleHandle16( "KERNEL" );
-    SEGPTR glueSL = (SEGPTR)GetProcAddress16( kernel, (LPCSTR)604 );
+    SEGPTR glueSL = (SEGPTR)KERNEL_GetProcAddressInternal16( kernel, (LPCSTR)604 );
 
     SetThunkletCallbackGlue16( glueLS, glueSL );
 }

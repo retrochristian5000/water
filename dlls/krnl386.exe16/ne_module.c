@@ -318,7 +318,9 @@ static void NE_InitResourceHandler( HMODULE16 hModule )
 
     TRACE("InitResourceHandler[%04x]\n", hModule );
 
-    if (!proc) proc = GetProcAddress16( GetModuleHandle16("KERNEL"), "DefResourceHandler" );
+    if (!proc)
+        proc = KERNEL_GetProcAddressInternal16( GetModuleHandle16("KERNEL"),
+                                                "DefResourceHandler" );
 
     pTypeInfo = (NE_TYPEINFO *)((char *)pModule + pModule->ne_rsrctab + 2);
     while(pTypeInfo->type_id)
@@ -909,12 +911,31 @@ static BOOL krnl386_native_hides_kernel_ordinal( const NE_MODULE *module, WORD o
     return krnl386_compatible_hides_kernel_ordinal( module, ordinal );
 }
 
+static BOOL krnl386_is_water_private_ordinal( WORD ordinal )
+{
+    switch (ordinal)
+    {
+    case 2000: /* __wine_call_int_handler */
+    case 2001: /* __wine_snoop_entry */
+    case 2002: /* __wine_snoop_return */
+    case 2003: /* __wine_dosx_pmode_entry */
+    case 2004: /* __wine_dosx_msdos_api */
+    case KRNL386_BACKING_WOWSHOULDWESAYWIN95:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
     BOOL hidden;
 
-    /* Private superset backing entries are never directly guest-visible. */
-    if (is_kernel_module( module ) && ordinal == KRNL386_BACKING_WOWSHOULDWESAYWIN95)
+    /*
+     * These entries exist only so KRNL386 can call its own implementation
+     * helpers. They are not part of any guest-visible KERNEL ABI.
+     */
+    if (is_kernel_module( module ) && krnl386_is_water_private_ordinal( ordinal ))
         return TRUE;
 
     if (krnl386_uses_native_export_policy())
@@ -932,6 +953,39 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
 
 
 
+static FARPROC16 NE_GetEntryPointInternal( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
+{
+    NE_MODULE *pModule;
+    WORD sel, offset, i;
+    ET_ENTRY *entry;
+    ET_BUNDLE *bundle;
+
+    if (!(pModule = NE_GetPtr( hModule ))) return 0;
+
+    ordinal = krnl386_backing_kernel_ordinal( pModule, ordinal );
+
+    bundle = (ET_BUNDLE *)((BYTE *)pModule + pModule->ne_enttab);
+    while ((ordinal < bundle->first + 1) || (ordinal > bundle->last))
+    {
+        if (!(bundle->next)) return 0;
+        bundle = (ET_BUNDLE *)((BYTE *)pModule + bundle->next);
+    }
+
+    entry = (ET_ENTRY *)((BYTE *)bundle + 6);
+    for (i = 0; i < (ordinal - bundle->first - 1); i++) entry++;
+
+    sel = entry->segnum;
+    memcpy( &offset, &entry->offs, sizeof(WORD) );
+
+    if (sel == 0xfe) sel = 0xffff;  /* constant entry */
+    else sel = GlobalHandleToSel16( NE_SEG_TABLE(pModule)[sel - 1].hSeg );
+
+    if (sel == 0xffff || !snoop)
+        return (FARPROC16)MAKESEGPTR( sel, offset );
+    return SNOOP16_GetProcAddress16( hModule, ordinal,
+                                    (FARPROC16)MAKESEGPTR( sel, offset ) );
+}
+
 /***********************************************************************
  *		NE_GetEntryPoint
  */
@@ -946,10 +1000,6 @@ FARPROC16 WINAPI NE_GetEntryPoint( HMODULE16 hModule, WORD ordinal )
 FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
 {
     NE_MODULE *pModule;
-    WORD sel, offset, i;
-
-    ET_ENTRY *entry;
-    ET_BUNDLE *bundle;
 
     if (!(pModule = NE_GetPtr( hModule ))) return 0;
 
@@ -960,31 +1010,7 @@ FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop )
         return 0;
     }
 
-    ordinal = krnl386_backing_kernel_ordinal( pModule, ordinal );
-
-    bundle = (ET_BUNDLE *)((BYTE *)pModule + pModule->ne_enttab);
-    while ((ordinal < bundle->first + 1) || (ordinal > bundle->last))
-    {
-        if (!(bundle->next))
-            return 0;
-        bundle = (ET_BUNDLE *)((BYTE *)pModule + bundle->next);
-    }
-
-    entry = (ET_ENTRY *)((BYTE *)bundle+6);
-    for (i=0; i < (ordinal - bundle->first - 1); i++)
-        entry++;
-
-    sel = entry->segnum;
-    memcpy( &offset, &entry->offs, sizeof(WORD) );
-
-    if (sel == 0xfe) sel = 0xffff;  /* constant entry */
-    else sel = GlobalHandleToSel16(NE_SEG_TABLE(pModule)[sel-1].hSeg);
-    if (sel==0xffff)
-        return (FARPROC16)MAKESEGPTR( sel, offset );
-    if (!snoop)
-        return (FARPROC16)MAKESEGPTR( sel, offset );
-    else
-        return SNOOP16_GetProcAddress16(hModule,ordinal,(FARPROC16)MAKESEGPTR( sel, offset ));
+    return NE_GetEntryPointInternal( hModule, ordinal, snoop );
 }
 
 
@@ -2270,6 +2296,28 @@ HINSTANCE16 WINAPI WinExec16( LPCSTR lpCmdLine, UINT16 nCmdShow )
         UnMapLS( params.showCmd );
     }
     return ret;
+}
+
+/***********************************************************************
+ *           KERNEL_GetProcAddressInternal16
+ *
+ * Resolve KRNL386 implementation helpers without applying the guest-visible
+ * export projection. This must never be exposed as a Win16 KERNEL API.
+ */
+FARPROC16 KERNEL_GetProcAddressInternal16( HMODULE16 hModule, LPCSTR name )
+{
+    WORD ordinal;
+
+    if (!hModule) hModule = GetCurrentTask();
+    hModule = GetExePtr( hModule );
+
+    if (HIWORD(name) != 0)
+        ordinal = NE_GetOrdinal( hModule, name );
+    else
+        ordinal = LOWORD(name);
+
+    if (!ordinal) return 0;
+    return NE_GetEntryPointInternal( hModule, ordinal, FALSE );
 }
 
 /***********************************************************************

@@ -244,6 +244,7 @@ extern NE_MODULE *NE_GetPtr( HMODULE16 hModule );
 extern WORD NE_GetOrdinal( HMODULE16 hModule, const char *name );
 extern FARPROC16 WINAPI NE_GetEntryPoint( HMODULE16 hModule, WORD ordinal );
 extern FARPROC16 NE_GetEntryPointEx( HMODULE16 hModule, WORD ordinal, BOOL16 snoop );
+extern FARPROC16 KERNEL_GetProcAddressInternal16( HMODULE16 hModule, LPCSTR name );
 extern BOOL16 NE_SetEntryPoint( HMODULE16 hModule, WORD ordinal, WORD offset );
 extern DWORD NE_StartTask(void);
 

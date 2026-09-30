@@ -110,8 +110,15 @@ static INTPROC DOSVM_GetBuiltinHandler( BYTE intnum )
  * that CURRENT_STACK16 points to the bottom of the used 16-bit stack. */
 static void return_to_interrupt_handler( I386_CONTEXT *context, BYTE intnum )
 {
-    FARPROC16 addr = GetProcAddress16( GetModuleHandle16( "KERNEL" ), "__wine_call_int_handler" );
+    FARPROC16 addr = KERNEL_GetProcAddressInternal16( GetModuleHandle16( "KERNEL" ),
+                                                       "__wine_call_int_handler" );
     WORD *stack = ldt_get_ptr( context->SegSs, context->Esp );
+
+    if (!addr || !stack)
+    {
+        ERR( "missing KRNL386 interrupt trampoline or invalid guest stack\n" );
+        return;
+    }
 
     *--stack = intnum;
     *--stack = context->SegCs;
