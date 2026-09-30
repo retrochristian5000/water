@@ -60,10 +60,19 @@ typedef struct
 
 #define DKIOCSCSIIDENTIFY _IOR('d', 254, dk_scsi_identify_t)
 
+static BOOL get_raw_device_name( DADiskRef disk, char *device, size_t size )
+{
+    const char *bsd_name = DADiskGetBSDName( disk );
+    int len;
+
+    if (!bsd_name) return FALSE;
+    len = snprintf( device, size, "/dev/r%s", bsd_name );
+    return len >= 0 && (size_t)len < size;
+}
+
 static void appeared_callback( DADiskRef disk, void *context )
 {
     CFDictionaryRef dict = DADiskCopyDescription( disk );
-    const char *bsd_name;
     const void *ref;
     char device[64];
     CFURLRef volume_url;
@@ -85,8 +94,7 @@ static void appeared_callback( DADiskRef disk, void *context )
     }
 
     /* DADiskGetBSDName() is the public API for the BSD device identifier. */
-    if (!(bsd_name = DADiskGetBSDName( disk ))) goto done;
-    if (snprintf( device, sizeof(device), "/dev/r%s", bsd_name ) >= sizeof(device)) goto done;
+    if (!get_raw_device_name( disk, device, sizeof(device) )) goto done;
 
     if ((volume_url = CFDictionaryGetValue( dict, kDADiskDescriptionVolumePathKey )))
     {
@@ -203,11 +211,9 @@ static void changed_callback( DADiskRef disk, CFArrayRef keys, void *context )
 
 static void disappeared_callback( DADiskRef disk, void *context )
 {
-    const char *bsd_name = DADiskGetBSDName( disk );
     char device[100];
 
-    if (!bsd_name) return;
-    if (snprintf( device, sizeof(device), "/dev/r%s", bsd_name ) >= sizeof(device)) return;
+    if (!get_raw_device_name( disk, device, sizeof(device) )) return;
 
     TRACE( "got unmount notification for '%s'\n", device );
 
