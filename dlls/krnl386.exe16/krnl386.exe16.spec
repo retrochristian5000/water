@@ -423,9 +423,11 @@
 500 varargs WOW16Call(word word word) WOW16Call
 501 stub KDDBGOUT                                               # Both NT/95 (?)
 502 stub WOWGETNEXTVDMCOMMAND
-503 stub WOWREGISTERSHELLWINDOWHANDLE
+# OpenNT: WOWRegisterShellWindowHandle(HWND, LPVOID, HWND); host state in WOW32.
+503 pascal -ret16 WOWREGISTERSHELLWINDOWHANDLE(word segptr word) WOWRegisterShellWindowHandle16
 504 stub WOWLOADMODULE
-505 stub WOWQUERYPERFORMANCECOUNTER
+# OpenNT thunk source order is (counter, frequency); WOW32 performs the NT query.
+505 pascal -ret16 WOWQUERYPERFORMANCECOUNTER(segptr segptr) WOWQueryPerformanceCounter16
 506 stub WOWCURSORICONOP
 #507 stub WOWCURSORICONOP # conflict with 506 !
 507 stub WOWFAILEDEXEC

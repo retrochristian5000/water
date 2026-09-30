@@ -582,6 +582,84 @@ DWORD WINAPI K32WOWCallback16( DWORD vpfn16, DWORD dwParam )
 
 
 /**********************************************************************
+ *           WOWRegisterShellWindowHandle16  (NT KERNEL.503)
+ *
+ * OpenNT declares this as:
+ *   WOWRegisterShellWindowHandle(HWND, LPVOID, HWND)
+ * and routes it through WOW32. The middle command-show pointer was already
+ * unused by native WOW32; preserve it in the ABI without dereferencing it.
+ */
+BOOL16 WINAPI WOWRegisterShellWindowHandle16( WORD hwnd_shell, SEGPTR cmd_show, WORD hwnd_fax )
+{
+    typedef BOOL (__cdecl *wow_register_shell_proc)(HWND, HWND, DWORD);
+    static wow_register_shell_proc register_shell;
+    HMODULE module;
+
+    (void)cmd_show;
+
+    if (!register_shell)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            register_shell = (wow_register_shell_proc)GetProcAddress(
+                module, "__wine_WOWRegisterShellWindow" );
+    }
+
+    if (!register_shell)
+    {
+        WARN( "WOW32 shell registration bridge is unavailable\n" );
+        return FALSE;
+    }
+
+    return register_shell( (HWND)K32WOWHandle32( hwnd_shell, WOW_TYPE_HWND ),
+                           (HWND)K32WOWHandle32( hwnd_fax, WOW_TYPE_HWND ),
+                           GetCurrentTask() );
+}
+
+/**********************************************************************
+ *           WOWQueryPerformanceCounter16  (NT KERNEL.505)
+ *
+ * OpenNT's WOW thunk frame stores the second Pascal argument first:
+ * frequency, then counter. The callable ABI is therefore
+ * (counter, frequency), matching the source-level argument order here.
+ */
+BOOL16 WINAPI WOWQueryPerformanceCounter16( SEGPTR counter_ptr, SEGPTR frequency_ptr )
+{
+    typedef BOOL (__cdecl *wow_query_counter_proc)(LARGE_INTEGER *, LARGE_INTEGER *);
+    static wow_query_counter_proc query_counter;
+    LARGE_INTEGER *counter = NULL, *frequency = NULL;
+    HMODULE module;
+
+    if (counter_ptr)
+    {
+        counter = K32WOWGetVDMPointer( counter_ptr, sizeof(*counter), TRUE );
+        if (!counter) return FALSE;
+    }
+    if (frequency_ptr)
+    {
+        frequency = K32WOWGetVDMPointer( frequency_ptr, sizeof(*frequency), TRUE );
+        if (!frequency) return FALSE;
+    }
+
+    if (!query_counter)
+    {
+        module = GetModuleHandleA( "wow32.dll" );
+        if (module)
+            query_counter = (wow_query_counter_proc)GetProcAddress(
+                module, "__wine_WOWQueryPerformanceCounter" );
+    }
+
+    if (!query_counter)
+    {
+        WARN( "WOW32 performance-counter bridge is unavailable\n" );
+        return FALSE;
+    }
+
+    return query_counter( counter, frequency );
+}
+
+
+/**********************************************************************
  *           WOWKillRemoteTask16       (KERNEL.511)
  *
  * Register/poll the WOWDEB communication block with WOW32.  Native NT

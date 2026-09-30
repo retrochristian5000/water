@@ -46,6 +46,9 @@ typedef DWORD (FASTCALL *wow32_thunk_proc)(WINEVDMFRAME *);
 
 static LONG wow32_initialized;
 static LONG wow32_vdm_profile;
+static void *wow32_shell_window;
+static void *wow32_fax_window;
+static LONG wow32_shell_tdb;
 
 typedef BOOL (WINAPI *wow32_dos_int21_proc)(I386_CONTEXT *);
 typedef BOOL (__cdecl *wow32_dem_absread_proc)(BYTE, DWORD, DWORD, BYTE *, BOOL);
@@ -134,6 +137,53 @@ void __cdecl __wine_W32RegisterVdmProfile( DWORD profile )
 DWORD __cdecl __wine_W32GetVdmProfile( void )
 {
     return InterlockedCompareExchange( &wow32_vdm_profile, 0, 0 );
+}
+
+/***********************************************************************
+ *           __wine_WOWRegisterShellWindow
+ *
+ * Native WOW32 owns the host-side WOWEXEC shell registration. KRNL386 keeps
+ * only the 16-bit KERNEL ABI gate and supplies already-converted host HWNDs.
+ *
+ * Water currently starts one Win16 application per NTVDM WOW process, so the
+ * process is a separate WOW VDM. Keep the saved state for the future shared
+ * WOW command queue, but report FALSE exactly as a separate VDM would.
+ */
+BOOL __cdecl __wine_WOWRegisterShellWindow( HWND shell, HWND fax, DWORD tdb )
+{
+    InterlockedExchangePointer( &wow32_shell_window, shell );
+    InterlockedExchangePointer( &wow32_fax_window, fax );
+    InterlockedExchange( &wow32_shell_tdb, tdb );
+
+    TRACE( "registered WOW shell %p fax %p tdb %04lx (separate VDM)\n",
+           shell, fax, tdb );
+    return FALSE;
+}
+
+/***********************************************************************
+ *           __wine_WOWQueryPerformanceCounter
+ *
+ * Host-side implementation of the NT KRNL386 WOWQueryPerformanceCounter
+ * thunk. OpenNT's WOW32 implementation calls NtQueryPerformanceCounter and
+ * copies the 64-bit counter/frequency back into VDM memory.
+ */
+BOOL __cdecl __wine_WOWQueryPerformanceCounter( LARGE_INTEGER *counter,
+                                                 LARGE_INTEGER *frequency )
+{
+    LARGE_INTEGER local_counter, local_frequency;
+
+    if ((counter && !wow32_is_writable( counter, sizeof(*counter) )) ||
+        (frequency && !wow32_is_writable( frequency, sizeof(*frequency) )))
+    {
+        WARN( "invalid WOW performance-counter output pointers %p/%p\n",
+              counter, frequency );
+        return FALSE;
+    }
+
+    NtQueryPerformanceCounter( &local_counter, &local_frequency );
+    if (counter) *counter = local_counter;
+    if (frequency) *frequency = local_frequency;
+    return TRUE;
 }
 
 /***********************************************************************
