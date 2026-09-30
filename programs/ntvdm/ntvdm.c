@@ -14,6 +14,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winreg.h"
+#include "winternl.h"
 #include "wine/doskeyb.h"
 #include "dosvm.h"
 #include "sb20.h"
