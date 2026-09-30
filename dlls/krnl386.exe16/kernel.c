@@ -30,7 +30,7 @@
 
 #include "kernel16_private.h"
 #include "win386.h"
-#include "wine/vdm.h"
+#include "wine/vdm16.h"
 #include "wine/win16_profile.h"
 #include "wine/debug.h"
 
