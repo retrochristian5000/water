@@ -1,3 +1,18 @@
+# Water KRNL386 backing ABI
+#
+# This file is a superset implementation table, not a promise that every guest
+# personality exports every entry below. dlls/krnl386.exe16/ne_module.c projects
+# the selected Windows personality onto this table at lookup time.
+#
+# Do not solve ordinal collisions by globally exposing both meanings. Known
+# collision/renumbering families (including 215, the NT/Win9x 5xx block, and
+# 531/532/540/541) require personality-aware canonical/backing mappings.
+#
+# WATER_KERNEL16_EXPORT_POLICY=native requests the closest documented native
+# export surface. The default compatible policy may backfill selected,
+# non-conflicting implemented APIs so applications are not needlessly tied to
+# the Windows release that first exposed them.
+#
 # 1-207 are the basic functions, those are (with minor variations)
 # present in win31, win95 and nt351
 

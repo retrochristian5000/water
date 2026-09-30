@@ -640,7 +640,12 @@ static BOOL is_vxd_entry_ordinal( WORD ordinal )
     }
 }
 
-static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
+/*
+ * The .spec file is a backing superset.  Keep Water's long-standing broad
+ * compatibility view separate from the stricter historical export projection
+ * so adding a new guest personality cannot silently remove working APIs.
+ */
+static BOOL krnl386_compatible_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
 {
     enum krnl386_personality personality;
 
@@ -781,6 +786,125 @@ static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal 
 
     return FALSE;
 }
+
+/*
+ * Return TRUE for exports Water can safely provide as cross-version
+ * compatibility extensions.  These entries keep the same calling contract at
+ * their backing ordinal and have no known personality-specific ordinal
+ * collision.
+ *
+ * The NT 3.1 entries below are the functions documented as absent from native
+ * WOW but for which Water already has a real/shared implementation.  ReplaceInst
+ * (201) is intentionally excluded because the backing entry is still a stub.
+ *
+ * 274 and 495 are straightforward host-backed later-version APIs.  513-518 are
+ * the Generic Thunk family already shared by NT/Win9x in the backing table;
+ * making them available to older Water profiles is an extension, not a claim
+ * that Windows 3.x exported them natively.
+ */
+static BOOL krnl386_is_compat_backfill_ordinal( WORD ordinal )
+{
+    switch (ordinal)
+    {
+    case 35:   /* GetTaskQueue */
+    case 41:   /* EnableDos */
+    case 42:   /* DisableDos */
+    case 77:   /* Reserved1 / AnsiNext */
+    case 78:   /* Reserved2 / AnsiPrev */
+    case 80:   /* Reserved4 / AnsiLower */
+    case 100:  /* ValidateCodeSegments */
+    case 122:  /* IsTaskLocked */
+    case 123:  /* KbdRst */
+    case 124:  /* EnableKernel */
+    case 156:  /* LimitEMSPages */
+    case 158:  /* IsWinOldApTask */
+    case 200:  /* ValidateFreeSpaces */
+    case 207:  /* IsDBCSLeadByte */
+    case 274:  /* GetShortPathName */
+    case 323:  /* IsRomModule */
+    case 326:  /* IsRomFile */
+    case 328:  /* _DebugOutput */
+    case 495:  /* WaitForMultipleObjectsEx */
+    case 513:  /* LoadLibraryEx32W */
+    case 514:  /* FreeLibrary32W */
+    case 515:  /* GetProcAddress32W */
+    case 516:  /* GetVDMPointer32W */
+    case 517:  /* CallProc32W */
+    case 518:  /* _CallProcEx32W */
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static BOOL krnl386_uses_native_export_policy(void)
+{
+    char value[16];
+    DWORD len = GetEnvironmentVariableA( WATER_WIN16_EXPORT_POLICY_ENV,
+                                         value, ARRAY_SIZE(value) );
+
+    if (!len) return FALSE;  /* Water defaults to compatibility. */
+    if (len >= ARRAY_SIZE(value)) return TRUE;
+    return !strcmp( value, WATER_WIN16_EXPORT_POLICY_NATIVE );
+}
+
+/*
+ * Stricter historical projection used when explicitly requested.  The Wine
+ * backing spec identifies 208-237, 357-365 and 406-494 as Win95 additions,
+ * 262-274 as NT additions, and 495 as Win98-only.  Enhanced-mode Windows 3.x
+ * retains its VxD entry points; Standard mode does not.
+ *
+ * Later NT personalities keep the more detailed compatibility/ordinal rules
+ * above, because those rules already encode their documented holes and 5xx
+ * renumbering constraints.
+ */
+static BOOL krnl386_native_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
+{
+    enum krnl386_personality personality;
+
+    if (!is_kernel_module( module )) return FALSE;
+    personality = get_krnl386_personality();
+
+    if (personality == KRNL386_PERSONALITY_WIN30_STANDARD ||
+        personality == KRNL386_PERSONALITY_WIN31_STANDARD)
+        return (ordinal >= 208 && ordinal <= 237) ||
+               (ordinal >= 262 && ordinal <= 274) ||
+               (ordinal >= 357 && ordinal <= 365) ||
+               (ordinal >= 406 && ordinal <= 568) ||
+               (ordinal >= 600 && ordinal <= 653) ||
+               (ordinal >= 700 && ordinal <= 704) ||
+               is_vxd_entry_ordinal( ordinal );
+
+    if (personality == KRNL386_PERSONALITY_WIN386 ||
+        personality == KRNL386_PERSONALITY_WFW31 ||
+        personality == KRNL386_PERSONALITY_WFW311)
+        return (ordinal >= 208 && ordinal <= 237) ||
+               (ordinal >= 262 && ordinal <= 274) ||
+               (ordinal >= 357 && ordinal <= 365) ||
+               (ordinal >= 406 && ordinal <= 568) ||
+               (ordinal >= 600 && ordinal <= 653) ||
+               (ordinal >= 700 && ordinal <= 704);
+
+    return krnl386_compatible_hides_kernel_ordinal( module, ordinal );
+}
+
+static BOOL krnl386_hides_kernel_ordinal( const NE_MODULE *module, WORD ordinal )
+{
+    BOOL hidden;
+
+    if (krnl386_uses_native_export_policy())
+        return krnl386_native_hides_kernel_ordinal( module, ordinal );
+
+    hidden = krnl386_compatible_hides_kernel_ordinal( module, ordinal );
+    if (hidden && krnl386_is_compat_backfill_ordinal( ordinal ))
+    {
+        TRACE( "backfilling KERNEL ordinal %u for personality %u\n",
+               ordinal, get_krnl386_personality() );
+        return FALSE;
+    }
+    return hidden;
+}
+
 
 
 /***********************************************************************
