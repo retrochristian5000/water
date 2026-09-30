@@ -663,6 +663,8 @@ static BOOL INT21_FillDrivePB( BYTE drive )
     DWORD       sector_bytes;
     DWORD       free_clusters;
     DWORD       total_clusters;
+    struct iosys_fat_bpb bpb;
+    BOOL         have_bpb;
 
     if (drive >= MAX_DOS_DRIVES)
         return FALSE;
@@ -685,10 +687,47 @@ static BOOL INT21_FillDrivePB( BYTE drive )
         return FALSE;
 
     /*
-     * FIXME: Most of the values listed below are incorrect.
-     *        All values should be validated.
+     * DOS gets classic FAT geometry from IO.SYS/block-device BPBs.  Prefer
+     * the real FAT12/FAT16 boot-sector values when raw access is available;
+     * retain the host-derived fallback for non-FAT and inaccessible volumes.
      */
- 
+    have_bpb = IOSYS_GetFat1216BPB( drive, &bpb );
+    if (have_bpb)
+    {
+        DWORD root_sectors = ((DWORD)bpb.root_entries * 32 + bpb.bytes_per_sector - 1) /
+                             bpb.bytes_per_sector;
+        DWORD first_dir = bpb.reserved_sectors + (DWORD)bpb.fat_count * bpb.sectors_per_fat;
+        DWORD first_data = first_dir + root_sectors;
+        DWORD data_clusters = (bpb.total_sectors - first_data) / bpb.sectors_per_cluster;
+
+        sector_bytes = bpb.bytes_per_sector;
+        cluster_sectors = bpb.sectors_per_cluster;
+
+        dpb->num_reserved      = bpb.reserved_sectors;
+        dpb->num_FAT           = bpb.fat_count;
+        dpb->num_root_entries  = bpb.root_entries;
+        dpb->first_data_sector = first_data;
+        dpb->num_clusters1     = data_clusters + 1;
+        dpb->sectors_per_FAT   = bpb.sectors_per_fat;
+        dpb->first_dir_sector  = first_dir;
+        dpb->media_ID          = bpb.media_descriptor;
+        dpb->first_cluster_sector = first_data;
+        dpb->num_clusters2     = data_clusters + 1;
+    }
+    else
+    {
+        dpb->num_reserved      = 0;
+        dpb->num_FAT           = 1;
+        dpb->num_root_entries  = 2;
+        dpb->first_data_sector = 2;
+        dpb->num_clusters1     = total_clusters;
+        dpb->sectors_per_FAT   = 1;
+        dpb->first_dir_sector  = 1;
+        dpb->media_ID          = (drivetype == DRIVE_FIXED) ? 0xF8 : 0xF0;
+        dpb->first_cluster_sector = 0;
+        dpb->num_clusters2     = total_clusters;
+    }
+
     dpb->drive           = drive;
     dpb->unit            = 0;
     dpb->sector_bytes    = sector_bytes;
@@ -701,17 +740,9 @@ static BOOL INT21_FillDrivePB( BYTE drive )
         dpb->shift++;
     }
 
-    dpb->num_reserved         = 0;
-    dpb->num_FAT              = 1;
-    dpb->num_root_entries     = 2;
-    dpb->first_data_sector    = 2;
-    dpb->num_clusters1        = total_clusters;
-    dpb->sectors_per_FAT      = 1;
-    dpb->first_dir_sector     = 1;
     /* No real-mode block-driver chain is installed yet.  DBLBUFF.SYS and
        similar DOS 7 drivers will need to populate this with their device header. */
     dpb->driver_header        = 0;
-    dpb->media_ID             = (drivetype == DRIVE_FIXED) ? 0xF8 : 0xF0;
     dpb->access_flag          = 0;
     dpb->next                 = 0;
     dpb->search_cluster1      = 0;
@@ -720,8 +751,6 @@ static BOOL INT21_FillDrivePB( BYTE drive )
     dpb->mirroring_flags      = 0;
     dpb->info_sector          = 0xffff;
     dpb->spare_boot_sector    = 0xffff;
-    dpb->first_cluster_sector = 0;
-    dpb->num_clusters2        = total_clusters;
     dpb->fat_clusters         = 32;
     dpb->root_cluster         = 0;
     dpb->search_cluster2      = 0;

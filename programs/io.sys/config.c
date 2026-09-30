@@ -93,6 +93,91 @@ static void get_msdos_path_value( const char *filename, const char *name,
     GetPrivateProfileStringA( "Paths", name, default_value, buffer, size, filename );
 }
 
+static WORD iosys_get_word( const BYTE *p )
+{
+    return p[0] | (p[1] << 8);
+}
+
+static DWORD iosys_get_dword( const BYTE *p )
+{
+    return iosys_get_word( p ) | ((DWORD)iosys_get_word( p + 2 ) << 16);
+}
+
+/***********************************************************************
+ *           IOSYS_GetFat1216BPB
+ *
+ * Read the classic FAT12/FAT16 BIOS parameter block from a DOS drive's boot
+ * sector.  IO.SYS/device drivers are the historical source of this geometry;
+ * DOS later exposes it through drive parameter blocks.
+ *
+ * The drive argument is zero based (0=A:, 1=B:, ...), matching DOS DPBs.
+ * FAT32 deliberately returns FALSE here because its root-directory and FAT
+ * geometry use the extended BPB rather than these classic fields.
+ */
+BOOL IOSYS_GetFat1216BPB(BYTE drive, struct iosys_fat_bpb *bpb)
+{
+    WCHAR volume[] = {'\\','\\','.','\\','A',':',0};
+    BYTE sector[512];
+    DWORD read;
+    DWORD total_sectors, root_sectors, first_data, data_sectors, clusters;
+    HANDLE file;
+
+    if (!bpb || drive >= 26) return FALSE;
+
+    volume[4] += drive;
+    file = CreateFileW( volume, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL );
+    if (file == INVALID_HANDLE_VALUE) return FALSE;
+
+    read = 0;
+    if (!ReadFile( file, sector, sizeof(sector), &read, NULL ) || read != sizeof(sector))
+    {
+        CloseHandle( file );
+        return FALSE;
+    }
+    CloseHandle( file );
+
+    if (sector[510] != 0x55 || sector[511] != 0xaa) return FALSE;
+
+    bpb->bytes_per_sector = iosys_get_word( sector + 0x0b );
+    bpb->sectors_per_cluster = sector[0x0d];
+    bpb->reserved_sectors = iosys_get_word( sector + 0x0e );
+    bpb->fat_count = sector[0x10];
+    bpb->root_entries = iosys_get_word( sector + 0x11 );
+    total_sectors = iosys_get_word( sector + 0x13 );
+    if (!total_sectors) total_sectors = iosys_get_dword( sector + 0x20 );
+    bpb->total_sectors = total_sectors;
+    bpb->media_descriptor = sector[0x15];
+    bpb->sectors_per_fat = iosys_get_word( sector + 0x16 );
+
+    if (!bpb->bytes_per_sector ||
+        (bpb->bytes_per_sector & (bpb->bytes_per_sector - 1)) ||
+        !bpb->sectors_per_cluster ||
+        (bpb->sectors_per_cluster & (bpb->sectors_per_cluster - 1)) ||
+        !bpb->reserved_sectors || !bpb->fat_count || bpb->fat_count > 2 ||
+        !bpb->root_entries || !bpb->sectors_per_fat || !bpb->total_sectors)
+        return FALSE;
+
+    root_sectors = ((DWORD)bpb->root_entries * 32 + bpb->bytes_per_sector - 1) /
+                   bpb->bytes_per_sector;
+    first_data = bpb->reserved_sectors +
+                 (DWORD)bpb->fat_count * bpb->sectors_per_fat + root_sectors;
+    if (first_data >= bpb->total_sectors) return FALSE;
+
+    data_sectors = bpb->total_sectors - first_data;
+    clusters = data_sectors / bpb->sectors_per_cluster;
+
+    /* 65525+ data clusters is FAT32 territory. */
+    if (!clusters || clusters >= 65525) return FALSE;
+
+    TRACE( "drive %c: FAT12/16 BPB: %u bytes/sector, %u sectors/cluster, "
+           "%u reserved, %u FATs, %u root entries, %u sectors/FAT, %lu sectors\n",
+           'A' + drive, bpb->bytes_per_sector, bpb->sectors_per_cluster,
+           bpb->reserved_sectors, bpb->fat_count, bpb->root_entries,
+           bpb->sectors_per_fat, bpb->total_sectors );
+    return TRUE;
+}
+
 /***********************************************************************
  *           IOSYS_InitConfig
  *
