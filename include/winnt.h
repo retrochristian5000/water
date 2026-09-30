@@ -2914,7 +2914,7 @@ typedef struct
     WORD  ne_imptab;            /* 2a Offset to imported name table */
     DWORD ne_nrestab;           /* 2c Offset to nonresident-name table */
     WORD  ne_cmovent;           /* 30 # of movable entry points */
-    WORD  ne_align;             /* 32 Logical sector alignment shift count */
+    WORD  ne_align;             /* 32 Logical sector alignment shift count (0 means 9) */
     WORD  ne_cres;              /* 34 # of resource segments */
     BYTE  ne_exetyp;            /* 36 Flags indicating target OS */
     BYTE  ne_flagsothers;       /* 37 Additional information flags */

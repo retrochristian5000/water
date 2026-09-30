@@ -112,6 +112,8 @@ static inline WORD get_word( const BYTE *ptr )
 
 static void dump_ne_header( const IMAGE_OS2_HEADER *ne )
 {
+    unsigned int align_shift = ne->ne_align ? ne->ne_align : 9;
+
     printf( "File header:\n" );
     printf( "Linker version:      %d.%d\n", ne->ne_ver, ne->ne_rev );
     printf( "Entry table:         %x len %d\n", ne->ne_enttab, ne->ne_cbenttab );
@@ -132,8 +134,8 @@ static void dump_ne_header( const IMAGE_OS2_HEADER *ne )
     printf( "Non-resident table:  %x\n", (UINT)ne->ne_nrestab );
     printf( "Exe type:            %x\n", ne->ne_exetyp );
     printf( "Other flags:         %x\n", ne->ne_flagsothers );
-    printf( "Fast load area:      %x-%x\n", ne->ne_pretthunks << ne->ne_align,
-            (ne->ne_pretthunks+ne->ne_psegrefbytes) << ne->ne_align );
+    printf( "Fast load area:      %x-%x\n", ne->ne_pretthunks << align_shift,
+            (ne->ne_pretthunks+ne->ne_psegrefbytes) << align_shift );
     printf( "Expected version:    %d.%d\n", HIBYTE(ne->ne_expver), LOBYTE(ne->ne_expver) );
 }
 
@@ -557,15 +559,19 @@ static void dump_ne_segment( const IMAGE_OS2_HEADER *ne, int segnum )
 {
     const struct ne_segtable_entry *table = (const struct ne_segtable_entry *)((const BYTE *)ne + ne->ne_segtab);
     const struct ne_segtable_entry *seg = table + segnum - 1;
+    unsigned int align_shift = ne->ne_align ? ne->ne_align : 9;
+    DWORD file_offset = (DWORD)seg->seg_data_offset << align_shift;
+    DWORD file_length = seg->seg_data_length ? seg->seg_data_length : 0x10000;
+    DWORD alloc_size = seg->min_alloc ? seg->min_alloc : 0x10000;
 
     printf( "\nSegment %d:\n", segnum );
-    printf( "  File offset: %08x\n", seg->seg_data_offset << ne->ne_align );
-    printf( "  Length:      %08x\n", seg->seg_data_length );
+    printf( "  File offset: %08x\n", file_offset );
+    printf( "  Length:      %08x\n", file_length );
     printf( "  Flags:       %08x %s\n", seg->seg_flags, get_seg_flags(seg->seg_flags) );
-    printf( "  Alloc size:  %08x\n", seg->min_alloc );
+    printf( "  Alloc size:  %08x\n", alloc_size );
     if (seg->seg_flags & NE_SEGFLAGS_RELOC_DATA)
     {
-        const BYTE *ptr = PRD((seg->seg_data_offset << ne->ne_align) + seg->seg_data_length, 0);
+        const BYTE *ptr = PRD(file_offset + file_length, 0);
         WORD count = get_word(ptr);
         ptr += sizeof(WORD);
         printf( "  Relocations:\n" );

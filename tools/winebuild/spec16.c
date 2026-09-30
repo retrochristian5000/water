@@ -952,9 +952,7 @@ static void output_fake_module16_data( DLLSPEC *spec, unsigned int seg_align )
 
 
 /*******************************************************************
- *         output_raw_module16
- *
- * Write the Win16 MZ/NE image itself instead of wrapping it in a PE owner.
+ *         output_fake_module16
  */
 void output_fake_module16( DLLSPEC *spec )
 {
