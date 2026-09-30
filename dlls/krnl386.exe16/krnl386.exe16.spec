@@ -460,7 +460,8 @@
 530 equate __MOD_TOOLHELP 4211
 531 equate __MOD_MMEDIA 4212
 532 equate __MOD_COMMDLG 4213
-541 stub WOWSETEXITONLASTAPP
+# OpenNT keeps this policy bit in 16-bit KERNEL; NT5 projects it at ordinal 520.
+541 pascal -ret16 WOWSETEXITONLASTAPP(word) WOWSetExitOnLastApp16
 544 stub WOWSETCOMPATHANDLE
 
 

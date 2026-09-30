@@ -74,6 +74,7 @@ THHOOK *pThhook = &DefaultThhook;
 #define hLockedTask  (pThhook->LockTDB)
 
 static UINT16 nTaskCount = 0;
+static BOOL wow_exit_on_last_app;
 
 static HTASK16 initial_task, main_task;
 
@@ -566,6 +567,55 @@ static void TASK_CallTaskSignalProc( UINT16 uCode, HANDLE16 hTaskOrModule )
 }
 
 
+/*
+ * Native WOW's fExitOnLastApp means "exit when WOWEXEC is the only Win16
+ * task left", not simply "exit when the task count reaches N". Water also has
+ * a synthetic Win32/main TDB, so identify WOWEXEC explicitly instead of
+ * copying the native count test.
+ */
+static BOOL TASK_OnlyWowExecRemains(void)
+{
+    HTASK16 task = hFirstTask;
+    BOOL found_wowexec = FALSE;
+
+    while (task)
+    {
+        TDB *tdb = TASK_GetPtr( task );
+        HTASK16 next;
+        char name[16];
+
+        if (!tdb) return FALSE;
+        next = tdb->hNext;
+
+        if (!(tdb->flags & TDBF_WIN32))
+        {
+            if (!tdb->hModule || !GetModuleName16( tdb->hModule, name, ARRAY_SIZE(name) ) ||
+                stricmp( name, "WOWEXEC" ))
+                return FALSE;
+            found_wowexec = TRUE;
+        }
+
+        task = next;
+    }
+
+    return found_wowexec;
+}
+
+/***********************************************************************
+ *           WOWSetExitOnLastApp16   (NT KERNEL.541 / NT5 KERNEL.520)
+ *
+ * OpenNT keeps this flag in 16-bit KERNEL data. WOWEXEC enables it for a
+ * separate WOW VDM so the VDM exits when the final application (other than
+ * WOWEXEC itself) terminates.
+ */
+WORD WINAPI WOWSetExitOnLastApp16( WORD enable )
+{
+    wow_exit_on_last_app = !!enable;
+    TRACE( "WOW exit-on-last-app %s\n", wow_exit_on_last_app ? "enabled" : "disabled" );
+    return enable;
+}
+
+
 /***********************************************************************
  *           TASK_ExitTask
  */
@@ -587,9 +637,11 @@ void TASK_ExitTask(void)
     /* Remove the task from the list to be sure we never switch back to it */
     TASK_UnlinkTask( pTask->hSelf );
 
-    if (!nTaskCount || (nTaskCount == 1 && hFirstTask == initial_task))
+    if ((kernel_is_nt_wow_session() && wow_exit_on_last_app && TASK_OnlyWowExecRemains()) ||
+        !nTaskCount || (nTaskCount == 1 && hFirstTask == initial_task))
     {
-        TRACE("this is the last task, exiting\n" );
+        TRACE("this is the last task%s, exiting\n",
+              wow_exit_on_last_app ? " for this WOW VDM" : "" );
         ExitKernel16();
     }
 
