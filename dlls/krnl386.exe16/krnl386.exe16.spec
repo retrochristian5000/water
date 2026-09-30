@@ -146,7 +146,7 @@
 127 pascal -ret16 GetPrivateProfileInt(str str s_word str) GetPrivateProfileInt16
 128 pascal -ret16 GetPrivateProfileString(str str str ptr word str) GetPrivateProfileString16
 129 pascal -ret16 WritePrivateProfileString(str str str str) WritePrivateProfileString16
-130 pascal FileCDR(ptr) FileCDR16
+130 pascal FileCDR(segptr) FileCDR16
 131 pascal GetDOSEnvironment() GetDOSEnvironment16
 132 pascal GetWinFlags() GetWinFlags16
 133 pascal -ret16 GetExePtr(word) WIN16_GetExePtr
@@ -273,7 +273,7 @@
 # 310-356 are again shared between all versions
 
 310 pascal -ret16 LocalHandleDelta(word) LocalHandleDelta16
-311 pascal GetSetKernelDOSProc(ptr) GetSetKernelDOSProc16
+311 pascal GetSetKernelDOSProc(segptr) GetSetKernelDOSProc16
 314 stub DebugDefineSegment
 315 pascal -ret16 WriteOutProfiles() WriteOutProfiles16
 316 pascal GetFreeMemInfo() GetFreeMemInfo16
@@ -282,7 +282,7 @@
 320 pascal -ret16 IsTask(word) IsTask16
 323 pascal -ret16 IsRomModule(word) IsRomModule16
 324 pascal -ret16 LogError(word ptr) LogError16
-325 pascal -ret16 LogParamError(word ptr ptr) LogParamError16
+325 pascal -ret16 LogParamError(word segptr ptr) LogParamError16
 326 pascal -ret16 IsRomFile(word) IsRomFile16
 327 pascal -register K327() HandleParamError
 328 varargs -ret16 _DebugOutput(word str) _DebugOutput
@@ -295,7 +295,7 @@
 338 pascal -ret16 HasGPHandler(segptr) HasGPHandler16
 339 pascal -ret16 DiagQuery() DiagQuery16
 340 pascal -ret16 DiagOutput(str) DiagOutput16
-341 pascal ToolHelpHook(ptr) ToolHelpHook16
+341 pascal ToolHelpHook(segptr) ToolHelpHook16
 342 variable __GP(0 0)
 343 stub RegisterWinOldApHook
 344 stub GetWinOldApHooks
