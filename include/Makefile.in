@@ -1119,6 +1119,8 @@ SOURCES = \
 	wine/asm.h \
 	wine/atsvc.idl \
 	wine/condrv.h \
+	wine/doskeyb.h \
+	wine/dosvm.h \
 	wine/dcetypes.idl \
 	wine/debug.h \
 	wine/dplaysp.h \
@@ -1150,9 +1152,13 @@ SOURCES = \
 	wine/svcctl.idl \
 	wine/test.h \
 	wine/unixlib.h \
+	wine/vdm.h \
+	wine/vdm16.h \
 	wine/vulkan.h \
 	wine/vulkan_driver.h \
 	wine/wgl.h \
+	wine/win16_profile.h \
+	wine/win386.h \
 	wine/winbase16.h \
 	wine/windef16.h \
 	wine/winebth.h \
@@ -1162,6 +1168,8 @@ SOURCES = \
 	wine/wingdi16.h \
 	wine/winnet16.h \
 	wine/winuser16.h \
+	wine/wow32.h \
+	wine/wowdeb.h \
 	winerror.h \
 	winevt.h \
 	wingdi.h \
