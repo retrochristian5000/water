@@ -839,13 +839,13 @@ void WINAPI PostEvent16( HTASK16 hTask )
 /***********************************************************************
  *           SetPriority  (KERNEL.32)
  */
-void WINAPI SetPriority16( HTASK16 hTask, INT16 delta )
+INT16 WINAPI SetPriority16( HTASK16 hTask, INT16 delta )
 {
     TDB *pTask;
     INT16 newpriority;
 
     if (!hTask) hTask = GetCurrentTask();
-    if (!(pTask = TASK_GetPtr( hTask ))) return;
+    if (!(pTask = TASK_GetPtr( hTask ))) return 0;
     newpriority = pTask->priority + delta;
     if (newpriority < -32) newpriority = -32;
     else if (newpriority > 15) newpriority = 15;
@@ -854,6 +854,12 @@ void WINAPI SetPriority16( HTASK16 hTask, INT16 delta )
     TASK_UnlinkTask( pTask->hSelf );
     TASK_LinkTask( pTask->hSelf );
     pTask->priority--;
+
+    /*
+     * Native KRNL386 returns the clamped priority in AX.  The old C port
+     * discarded that register result by declaring this function void.
+     */
+    return newpriority;
 }
 
 
