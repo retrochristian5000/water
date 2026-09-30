@@ -33,6 +33,10 @@
 #include <sys/ioctl.h>
 #ifdef __APPLE__
 #include <DiskArbitration/DiskArbitration.h>
+#include <IOKit/storage/IOBDMedia.h>
+#include <IOKit/storage/IOCDMedia.h>
+#include <IOKit/storage/IODVDMedia.h>
+#include <IOKit/storage/IOMedia.h>
 #include <SystemConfiguration/SCDynamicStoreCopyDHCPInfo.h>
 #include <SystemConfiguration/SCNetworkConfiguration.h>
 #endif
@@ -68,6 +72,31 @@ static BOOL get_raw_device_name( DADiskRef disk, char *device, size_t size )
     if (!bsd_name) return FALSE;
     len = snprintf( device, size, "/dev/r%s", bsd_name );
     return len >= 0 && (size_t)len < size;
+}
+
+static enum device_type get_device_type( DADiskRef disk, struct scsi_info *scsi_info )
+{
+    io_service_t media = DADiskCopyIOMedia( disk );
+    enum device_type type = DEVICE_UNKNOWN;
+
+    if (!media) return type;
+
+    if (IOObjectConformsTo( media, kIOBDMediaClass ) ||
+        IOObjectConformsTo( media, kIODVDMediaClass ))
+    {
+        type = DEVICE_DVD;
+        scsi_info->type = 5;
+    }
+    else if (IOObjectConformsTo( media, kIOCDMediaClass ))
+    {
+        type = DEVICE_CDROM;
+        scsi_info->type = 5;
+    }
+    else if (IOObjectConformsTo( media, kIOMediaClass ))
+        type = DEVICE_HARDDISK;
+
+    IOObjectRelease( media );
+    return type;
 }
 
 static void appeared_callback( DADiskRef disk, void *context )
@@ -124,22 +153,7 @@ static void appeared_callback( DADiskRef disk, void *context )
         }
     }
 
-    if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionMediaKindKey )))
-    {
-        if (!CFStringCompare( ref, CFSTR("IOCDMedia"), 0 ))
-        {
-            type = DEVICE_CDROM;
-            scsi_info.type = 5;
-        }
-        if (!CFStringCompare( ref, CFSTR("IODVDMedia"), 0 ) ||
-            !CFStringCompare( ref, CFSTR("IOBDMedia"), 0 ))
-        {
-            type = DEVICE_DVD;
-            scsi_info.type = 5;
-        }
-        if (!CFStringCompare( ref, CFSTR("IOMedia"), 0 ))
-            type = DEVICE_HARDDISK;
-    }
+    type = get_device_type( disk, &scsi_info );
 
     if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionDeviceVendorKey )))
     {
