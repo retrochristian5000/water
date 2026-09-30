@@ -193,23 +193,22 @@ BOOL IOSYS_GetFat1216BPB(BYTE drive, struct iosys_fat_bpb *bpb)
  * boot policy such as BootGUI belongs to the Win9x boot owner and must not be
  * inferred from the Water host operating system here.
  */
-static BOOL iosys_personality_is(const char *personality)
-{
-    char value[24];
-    DWORD len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
-
-    return len && len < ARRAY_SIZE(value) && !strcmp( value, personality );
-}
-
 static BOOL is_win3_standard_personality(void)
 {
-    return iosys_personality_is( WATER_WIN16_PERSONALITY_WIN30_STANDARD ) ||
-           iosys_personality_is( WATER_WIN16_PERSONALITY_WIN31_STANDARD );
+    struct water_win16_profile profile;
+
+    water_win16_read_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_PRE9X_FAMILY &&
+           profile.mode == WATER_WIN16_MODE_STANDARD_FAMILY;
 }
 
 static BOOL is_winme_personality(void)
 {
-    return iosys_personality_is( WATER_WIN16_PERSONALITY_WINME );
+    struct water_win16_profile profile;
+
+    water_win16_read_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_WIN9X_FAMILY &&
+           profile.major == 4 && profile.minor >= 90;
 }
 
 void IOSYS_InitConfig(void)

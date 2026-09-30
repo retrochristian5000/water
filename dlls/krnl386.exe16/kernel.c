@@ -36,14 +36,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
 
-static BOOL kernel_personality_is( const char *personality )
-{
-    char value[24];
-    DWORD len = GetEnvironmentVariableA( WATER_WIN16_PERSONALITY_ENV, value, ARRAY_SIZE(value) );
-
-    return len && len < ARRAY_SIZE(value) && !strcmp( value, personality );
-}
-
 DWORD kernel_get_nt_wow_profile(void)
 {
     typedef DWORD (__cdecl *w32_get_vdm_profile_proc)(void);
@@ -57,6 +49,41 @@ DWORD kernel_get_nt_wow_profile(void)
     return get_profile();
 }
 
+static void kernel_get_guest_profile( struct water_win16_profile *profile )
+{
+    water_win16_read_profile( profile );
+
+    /*
+     * A live NTVDM/WOW32 registration is authoritative for the NT line and
+     * version.  Keep ISA independent so an x86, MIPS, Alpha or PowerPC WOW
+     * host can select the same NT release without becoming a new personality.
+     */
+    switch (kernel_get_nt_wow_profile())
+    {
+    case WATER_VDM_WOW_PROFILE_NT31:
+        profile->line = WATER_WIN16_LINE_NT_FAMILY;
+        profile->major = 3;
+        profile->minor = 10;
+        profile->build = 511;
+        break;
+    case WATER_VDM_WOW_PROFILE_NT351:
+        profile->line = WATER_WIN16_LINE_NT_FAMILY;
+        profile->major = 3;
+        profile->minor = 51;
+        profile->build = 1057;
+        break;
+    case WATER_VDM_WOW_PROFILE_NT5:
+        profile->line = WATER_WIN16_LINE_NT_FAMILY;
+        if (profile->major < 5)
+        {
+            profile->major = 5;
+            profile->minor = 0;
+            profile->build = 0;
+        }
+        break;
+    }
+}
+
 BOOL kernel_is_nt_wow_session(void)
 {
     return kernel_get_nt_wow_profile() != WATER_VDM_WOW_PROFILE_NONE;
@@ -64,39 +91,65 @@ BOOL kernel_is_nt_wow_session(void)
 
 static BOOL kernel_is_nt31_wow_session(void)
 {
-    return kernel_get_nt_wow_profile() == WATER_VDM_WOW_PROFILE_NT31;
+    struct water_win16_profile profile;
+
+    if (!kernel_is_nt_wow_session()) return FALSE;
+    kernel_get_guest_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_NT_FAMILY &&
+           water_win16_profile_is_version( &profile, 3, 10 );
 }
 
 static BOOL kernel_is_nt351_wow_session(void)
 {
-    return kernel_get_nt_wow_profile() == WATER_VDM_WOW_PROFILE_NT351;
+    struct water_win16_profile profile;
+
+    if (!kernel_is_nt_wow_session()) return FALSE;
+    kernel_get_guest_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_NT_FAMILY &&
+           water_win16_profile_is_version( &profile, 3, 51 );
 }
 
 static BOOL kernel_is_nt3_wow_session(void)
 {
-    return kernel_is_nt31_wow_session() || kernel_is_nt351_wow_session();
+    struct water_win16_profile profile;
+
+    if (!kernel_is_nt_wow_session()) return FALSE;
+    kernel_get_guest_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_NT_FAMILY && profile.major == 3;
 }
 
 static BOOL kernel_is_win95_osr2_session(void)
 {
-    return kernel_personality_is( WATER_WIN16_PERSONALITY_WIN95_OSR2 );
+    struct water_win16_profile profile;
+
+    kernel_get_guest_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_WIN9X_FAMILY &&
+           water_win16_profile_is_version( &profile, 4, 0 ) &&
+           profile.build >= 1111;
 }
 
 static BOOL kernel_is_winme_session(void)
 {
-    return kernel_personality_is( WATER_WIN16_PERSONALITY_WINME );
+    struct water_win16_profile profile;
+
+    kernel_get_guest_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_WIN9X_FAMILY &&
+           profile.major == 4 && profile.minor >= 90;
 }
 
 static WORD kernel_win3_standard_version(void)
 {
+    struct water_win16_profile profile;
+
     /* A live WIN386 session is authoritative enhanced mode. */
     if (WIN386_QuerySession( NULL )) return 0;
 
-    if (kernel_personality_is( WATER_WIN16_PERSONALITY_WIN30_STANDARD ))
-        return MAKEWORD( 3, 0 );
-    if (kernel_personality_is( WATER_WIN16_PERSONALITY_WIN31_STANDARD ))
-        return MAKEWORD( 3, 10 );
-    return 0;
+    kernel_get_guest_profile( &profile );
+    if (profile.line != WATER_WIN16_LINE_PRE9X_FAMILY ||
+        profile.mode != WATER_WIN16_MODE_STANDARD_FAMILY)
+        return 0;
+
+    return MAKEWORD( profile.major, profile.minor );
 }
 
 static BOOL kernel_is_win3_standard_session(void)
@@ -132,13 +185,21 @@ static BOOL kernel16_is_krnl286(void)
 
 BOOL kernel_is_standard_mode_session(void)
 {
+    struct water_win16_profile profile;
+
+    if (kernel_is_win3_standard_session()) return TRUE;
+    if (!kernel_is_nt3_wow_session()) return FALSE;
+
+    kernel_get_guest_profile( &profile );
+
     /*
-     * NT 3.1 WOW used enhanced mode on x86 but standard mode on RISC.
-     * Represent that architecture distinction explicitly through the selected
-     * Win16 kernel image instead of leaking the Water host CPU into the guest.
+     * NT 3.x WOW execution mode is an ISA property: x86 uses enhanced mode,
+     * while the historical RISC ports use the standard-mode Win16 kernel.
+     * If no ISA was selected, retain KRNL286 as the compatibility fallback.
      */
-    return kernel_is_win3_standard_session() ||
-           (kernel_is_nt3_wow_session() && kernel16_is_krnl286());
+    if (profile.isa != WATER_WIN16_ISA_UNKNOWN)
+        return profile.isa != WATER_WIN16_ISA_X86_FAMILY;
+    return kernel16_is_krnl286();
 }
 
 static BOOL kernel_is_workgroups_session(void)
@@ -399,6 +460,7 @@ BOOL WINAPI KERNEL_DllEntryPoint( DWORD reasion, HINSTANCE16 inst, WORD ds,
  */
 DWORD WINAPI GetVersion16(void)
 {
+    struct water_win16_profile profile;
     WORD winver;
     struct win386_session_info session;
 
@@ -435,14 +497,17 @@ DWORD WINAPI GetVersion16(void)
 
     /*
      * DOS-based Win9x deliberately reports Windows 3.95 to Win16 callers for
-     * compatibility.  The DOS half still tracks the selected 9x generation:
-     * 7.00 for retail Win95/98 compatibility, 7.10 for Win95 OSR2, and 8.00
-     * for Windows Me.
+     * compatibility.  The DOS half is version-derived rather than a separate
+     * personality mask.
      */
-    if (kernel_is_winme_session())
-        return MAKELONG( MAKEWORD( 3, 95 ), 0x0800 );
-    if (kernel_is_win95_osr2_session())
-        return MAKELONG( MAKEWORD( 3, 95 ), 0x070a );
+    kernel_get_guest_profile( &profile );
+    if (profile.line == WATER_WIN16_LINE_WIN9X_FAMILY)
+    {
+        if (kernel_is_winme_session())
+            return MAKELONG( MAKEWORD( 3, 95 ), 0x0800 );
+        if (kernel_is_win95_osr2_session())
+            return MAKELONG( MAKEWORD( 3, 95 ), 0x070a );
+    }
     return MAKELONG( MAKEWORD( 3, 95 ), 0x0700 );
 }
 
@@ -659,24 +724,20 @@ BOOL16 WINAPI GetVersionEx16(OSVERSIONINFO16 *v)
         return TRUE;
     }
 
-    if (kernel_is_winme_session())
-    {
-        v->dwMajorVersion = 4;
-        v->dwMinorVersion = 90;
-        v->dwBuildNumber  = 3000;
-        v->dwPlatformId   = VER_PLATFORM_WIN32_WINDOWS;
-        v->szCSDVersion[0] = 0;
-        return TRUE;
-    }
-
     if (!kernel_is_nt_wow_session())
     {
-        v->dwMajorVersion = 4;
-        v->dwMinorVersion = 0;
-        v->dwBuildNumber  = kernel_is_win95_osr2_session() ? 1111 : 950;
-        v->dwPlatformId   = VER_PLATFORM_WIN32_WINDOWS;
-        v->szCSDVersion[0] = 0;
-        return TRUE;
+        struct water_win16_profile profile;
+
+        kernel_get_guest_profile( &profile );
+        if (profile.line == WATER_WIN16_LINE_WIN9X_FAMILY)
+        {
+            v->dwMajorVersion = profile.major;
+            v->dwMinorVersion = profile.minor;
+            v->dwBuildNumber  = profile.build;
+            v->dwPlatformId   = VER_PLATFORM_WIN32_WINDOWS;
+            v->szCSDVersion[0] = 0;
+            return TRUE;
+        }
     }
 
     info.dwOSVersionInfoSize = sizeof(info);
