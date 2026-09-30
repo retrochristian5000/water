@@ -1,5 +1,5 @@
 /*
- * BIOS interrupt 13h handler
+ * NTIO.SYS BIOS interrupt 13h handler
  *
  * Copyright 1997 Andreas Mohr
  * Copyright 2026 Water contributors
@@ -21,7 +21,7 @@
 
 #include <stdlib.h>
 
-#include "dosexe.h"
+#include "../../dlls/krnl386.exe16/dosexe.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);

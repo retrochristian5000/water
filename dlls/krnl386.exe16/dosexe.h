@@ -190,10 +190,10 @@ extern void WINAPI DOSVM_Int3cHandler(I386_CONTEXT *);
 extern void WINAPI DOSVM_Int3dHandler(I386_CONTEXT *);
 extern void WINAPI DOSVM_Int3eHandler(I386_CONTEXT *);
 
-/* int13.c */
+/* programs/ntio.sys/int13.c via temporary KRNL386 bridge */
 extern void WINAPI DOSVM_Int13Handler(I386_CONTEXT *);
 
-/* int15.c */
+/* programs/ntio.sys/int15.c via temporary KRNL386 bridge */
 extern void WINAPI DOSVM_Int15Handler(I386_CONTEXT *);
 
 /* programs/ntdos.sys/process.c (temporary KRNL386 bridge) */

@@ -1,5 +1,5 @@
 /*
- * BIOS interrupt 15h handler
+ * NTIO.SYS BIOS interrupt 15h handler
  *
  * Copyright 1997 Jan Willamowius
  *
@@ -19,7 +19,7 @@
  */
 
 #include <stdlib.h>
-#include "dosexe.h"
+#include "../../dlls/krnl386.exe16/dosexe.h"
 #include "wine/debug.h"
 #include "wine/winbase16.h"
 

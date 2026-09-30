@@ -2,8 +2,11 @@ MODULE    = krnl386.exe16
 PARENTSRC = ../../programs/ntvdm
 
 # Legacy execution-engine sources are still shared from programs/ntvdm while
-# their DOSX/WIN386 provider split is completed.  NTVDM DEM services must not
+# their DOSX/WIN386 provider split is completed. NTVDM DEM services must not
 # be linked into KRNL386; NT WOW reaches them through the WOW32 callback bridge.
+# NTIO BIOS implementations are source-owned by programs/ntio.sys and remain
+# linked only through temporary compatibility bridges until each VDM provider
+# owns its BIOS path.
 IMPORTLIB = kernel
 DELAYIMPORTS = user32
 
@@ -22,11 +25,12 @@ SOURCES = \
 	fpu.c \
 	global.c \
 	instr.c \
-	int13.c \
-	int15.c \
 	ntdos_int21_compat.c \
 	ntdos_process_compat.c \
 	ntdos_absdisk_compat.c \
+	ntio_bios_compat.c \
+	ntio_int13_compat.c \
+	ntio_int15_compat.c \
 	int2f.c \
 	int31.c \
 	interrupts.c \
