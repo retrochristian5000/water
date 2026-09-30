@@ -334,6 +334,27 @@ static void NE_InitResourceHandler( HMODULE16 hModule )
 static WORD krnl386_canonical_kernel_ordinal( const NE_MODULE *module, WORD ordinal );
 
 
+static WORD parse_proc_ordinal( const char *name )
+{
+    unsigned int ordinal = 0;
+    const char *p = name + 1;
+
+    if (!*p) return 0;
+
+    while (*p)
+    {
+        unsigned int digit;
+
+        if (*p < '0' || *p > '9') return 0;
+        digit = *p++ - '0';
+        if (ordinal > (0xffff - digit) / 10) return 0;
+        ordinal = ordinal * 10 + digit;
+    }
+
+    return ordinal;
+}
+
+
 /***********************************************************************
  *           NE_GetOrdinal
  *
@@ -364,7 +385,7 @@ WORD NE_GetOrdinal( HMODULE16 hModule, const char *name )
 
       /* First handle names of the form '#xxxx' */
 
-    if (name[0] == '#') return atoi( name + 1 );
+    if (name[0] == '#') return parse_proc_ordinal( name );
 
       /* Now copy and uppercase the string */
 
