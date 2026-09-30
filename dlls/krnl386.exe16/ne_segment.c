@@ -338,6 +338,7 @@ BOOL NE_LoadSegment( NE_MODULE *pModule, WORD segnum )
     DWORD pos;
     const struct relocation_entry_s *rep;
     int size;
+    unsigned int align_shift = pModule->ne_align;
     SEGTABLEENTRY *pSegTable = NE_SEG_TABLE( pModule );
     SEGTABLEENTRY *pSeg = pSegTable + segnum - 1;
 
@@ -356,9 +357,16 @@ BOOL NE_LoadSegment( NE_MODULE *pModule, WORD segnum )
 
     TRACE_(module)("Loading segment %d, hSeg=%04x, flags=%04x\n",
                     segnum, pSeg->hSeg, pSeg->flags );
-    pos = pSeg->filepos << pModule->ne_align;
-    if (pSeg->size) size = pSeg->size;
-    else size = pSeg->minsize ? pSeg->minsize : 0x10000;
+    /* On-disk NE uses a default 512-byte logical sector when ne_align is zero.
+     * Builtin Wine/Water modules are an internal representation that stores
+     * byte offsets with ne_align == 0, so keep their existing semantics. */
+    if (!align_shift && !(pModule->ne_flags & NE_FFLAGS_BUILTIN)) align_shift = 9;
+    pos = (DWORD)pSeg->filepos << align_shift;
+
+    /* The file-length and minimum-allocation fields have independent 64K
+     * sentinels. A zero file length always means 64K; it does not inherit
+     * the segment's minimum allocation size. */
+    size = pSeg->size ? pSeg->size : 0x10000;
 
     if (pModule->ne_flags & NE_FFLAGS_SELFLOAD && segnum > 1)
     {

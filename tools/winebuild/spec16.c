@@ -808,7 +808,7 @@ void output_spec16_file( DLLSPEC *spec16 )
  *
  * Create a fake 16-bit binary module.
  */
-void output_fake_module16( DLLSPEC *spec )
+static void output_fake_module16_data( DLLSPEC *spec, unsigned int seg_align )
 {
     static const unsigned char dos_stub[] = { 0xb8, 0x01, 0x4c, 0xcd, 0x21 };
     static const unsigned char code_segment[] = { 0x90, 0xc3 };
@@ -901,7 +901,7 @@ void output_fake_module16( DLLSPEC *spec )
     put_word( imptab - lfanew );           /* ne_imptab */
     put_dword( 0 );                        /* ne_nrestab */
     put_word( 0 );                         /* ne_cmovent */
-    put_word( 0 );                         /* ne_align */
+    put_word( seg_align );                 /* ne_align */
     put_word( 0 );                         /* ne_cres */
     put_byte( !strcmp( spec->dll_name, "kernel" ) ? 4 : 2 ); /* ne_exetyp */
     put_byte( 8 /*NE_AFLAGS_FASTLOAD*/ );  /* ne_flagsothers */
@@ -911,11 +911,11 @@ void output_fake_module16( DLLSPEC *spec )
     put_word( 0 );                         /* ne_expver */
 
     /* segment table */
-    put_word( codeseg );
+    put_word( codeseg >> seg_align );
     put_word( sizeof(code_segment) );
     put_word( 0x2000 /* NE_SEGFLAGS_32BIT */ );
     put_word( sizeof(code_segment) );
-    put_word( dataseg );
+    put_word( dataseg >> seg_align );
     put_word( sizeof(data_segment) );
     put_word( 0x0001 /* NE_SEGFLAGS_DATA */ );
     put_word( sizeof(data_segment) );
@@ -956,8 +956,21 @@ void output_fake_module16( DLLSPEC *spec )
  *
  * Write the Win16 MZ/NE image itself instead of wrapping it in a PE owner.
  */
+void output_fake_module16( DLLSPEC *spec )
+{
+    output_fake_module16_data( spec, 0 );
+}
+
+
+/*******************************************************************
+ *         output_raw_module16
+ *
+ * Write the Win16 MZ/NE image itself instead of wrapping it in a PE owner.
+ * Standalone NE segment offsets are logical-sector offsets; use a 2-byte
+ * sector so the compact placeholder image remains naturally aligned.
+ */
 void output_raw_module16( DLLSPEC *spec )
 {
-    output_fake_module16( spec );
+    output_fake_module16_data( spec, 1 );
     flush_output_buffer( output_file_name ? output_file_name : spec->file_name );
 }
