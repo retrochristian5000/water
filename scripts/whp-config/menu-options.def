@@ -26,6 +26,8 @@ WATER_SAST|Build behavior|Clang static analysis / SAST|choice|auto|auto,y,n|
 WATER_SILENT_RULES|Build behavior|Silent build rules|choice|auto|auto,y,n|
 WATER_WERROR|Build behavior|Treat warnings as errors|choice|auto|auto,y,n|
 WATER_COMPILER_CACHE|Build behavior|Compiler cache|choice|auto|auto,sccache,ccache,none|
+WATER_INSTALL|Installation|Install after successful build|choice|none|none,runtime,development,all|
+WATER_PREFIX|Installation|Install prefix|string|/usr/local||
 WATER_WITH_ALSA|Optional components|ALSA audio|choice|auto|auto,y,n|
 WATER_WITH_CAPI|Optional components|CAPI / ISDN|choice|auto|auto,y,n|
 WATER_WITH_COREAUDIO|Optional components|CoreAudio|choice|auto|auto,y,n|
