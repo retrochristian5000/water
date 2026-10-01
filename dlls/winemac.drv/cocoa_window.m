@@ -266,7 +266,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
             _displayID = displayID;
             _windows = [[NSMutableSet alloc] init];
 
-#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
             if (@available(macOS 14.0, *))
             {
                 NSScreen* screen = nil;
@@ -319,7 +319,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
     - (void) dealloc
     {
-#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
         if (_caLink)
         {
             [(CADisplayLink*)_caLink invalidate];
@@ -339,7 +339,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
     - (BOOL) isRunning
     {
-#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
         if (_caLink)
             return ![(CADisplayLink*)_caLink isPaused];
 #endif
@@ -398,7 +398,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
     - (void) caDisplayLinkDidFire:(id)displayLink
     {
-#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
         CADisplayLink* link = (CADisplayLink*)displayLink;
         NSTimeInterval period = link.targetTimestamp - link.timestamp;
         if (period > 0)
@@ -409,7 +409,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
     - (NSTimeInterval) refreshPeriod
     {
-#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
         if (_caLink)
         {
             CADisplayLink* link = (CADisplayLink*)_caLink;
@@ -440,7 +440,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
     - (void) start
     {
         _lastDisplayTime = [[NSProcessInfo processInfo] systemUptime];
-#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
         if (_caLink)
         {
             [(CADisplayLink*)_caLink setPaused:NO];
@@ -452,7 +452,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
     - (void) stop
     {
-#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
         if (_caLink)
         {
             [(CADisplayLink*)_caLink setPaused:YES];
