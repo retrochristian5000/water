@@ -40,13 +40,24 @@ falls back to a POSIX-shell menu otherwise.
 Use `./build.sh configure [options]` when one-run or advanced configure
 options are needed; explicit command-line options override the saved profile.
 
-Then either install Wine:
+Then either install the configured Water runtime only (recommended):
 
 ```
-./build.sh install
+./build.sh install-lib
 ```
 
-Or run Wine directly from the build directory:
+`install-lib` leaves development-only headers, import libraries, static libraries,
+and the bundled legacy libc++/libc++abi development archives out of a normal
+runtime installation. If a development environment is intentionally needed,
+use `./build.sh install-dev`; use plain `./build.sh install` only when both the
+runtime and development files are wanted.
+
+Before configuring, use `./build.sh menuconfig` or explicit configure options to
+disable optional components you do not want in the configured build. The install
+targets operate on that configured component graph rather than adding disabled
+features back at install time.
+
+Or run Water directly from the build directory:
 
 ```
 ./build/wine notepad
@@ -128,9 +139,14 @@ For more information, see https://gitlab.winehq.org/wine/wine/-/wikis/Building-W
 
 ## SETUP
 
-Once Wine has been built correctly, you can do `make install`; this
-will install the wine executable and libraries, the Wine man page, and
-other needed files.
+Once Water has been built correctly, prefer `./build.sh install-lib` for a
+runtime installation. This installs the runtime side of the configured build
+without also installing development headers, import libraries, or static
+libraries. Use `./build.sh install-dev` only when those development files are
+needed, and use `./build.sh install` only when both sets are intentionally
+wanted. Disable unwanted optional components in `./build.sh menuconfig` (or
+with configure options) before building so they are absent from the install
+graph as well.
 
 Don't forget to uninstall any conflicting previous Wine installation
 first.  Try either `dpkg -r wine` or `rpm -e wine` or `make uninstall`
