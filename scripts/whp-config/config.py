@@ -119,6 +119,10 @@ OPTIONS = (
     Option('WATER_COMPILER_CACHE', 'Build behavior', 'Compiler cache', 'choice',
            'auto', ('auto', 'sccache', 'ccache', 'none')),
 
+    Option('WATER_INSTALL', 'Installation', 'Install after successful build', 'choice',
+           'none', ('none', 'runtime', 'development', 'all')),
+    Option('WATER_PREFIX', 'Installation', 'Install prefix', 'string', '/usr/local'),
+
     *tuple(
         Option(f'WATER_WITH_{key}', 'Optional components', label, 'choice',
                'auto', ('auto', 'y', 'n'))
