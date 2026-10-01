@@ -1,0 +1,11 @@
+# Water CodeQL default-setup overrides.
+#
+# These files intentionally contain legacy/invalid JScript syntax used to test
+# parser behavior. CodeQL's JavaScript extractor follows modern ECMAScript
+# grammar, so treating these fixtures as ordinary JavaScript creates extraction
+# diagnostics without improving coverage of executable Water code.
+paths-ignore:
+  - dlls/jscript/tests/cc.js
+  - dlls/jscript/tests/lang.js
+  - dlls/jscript/tests/api.js
+  - dlls/mshtml/tests/es5.js
