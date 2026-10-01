@@ -7,6 +7,7 @@ BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
 LLVM_LIBCXX_RUNTIME_DIR=${WHP_LIBCXX_RUNTIME_DIR:-"$BUILD_DIR/llvm-libcxx-pe"}
+AUTOMAKE_SOURCE_DIR=${WHP_AUTOMAKE_SOURCE_DIR:-"$SOURCE_DIR/toolchains/automake"}
 BASH_SOURCE_DIR=${WHP_BASH_SOURCE_DIR:-"$SOURCE_DIR/toolchains/bash"}
 BASH_STAGE_DIR=${WHP_BASH_STAGE_DIR:-"$BUILD_DIR/bash-source"}
 BASH_EFFECTIVE_SOURCE_DIR=$BASH_SOURCE_DIR
@@ -85,6 +86,7 @@ Environment:
   WHP_LLVM_SOURCE_DIR   LLVM source tree (default: ./toolchains/llvm-project)
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LIBCXX_RUNTIME_DIR LLVM libc++ PE runtime cache (default: ./build/llvm-libcxx-pe)
+  WHP_AUTOMAKE_SOURCE_DIR Pinned Automake macro source (default: ./toolchains/automake)
   WHP_BASH_SOURCE_DIR   WHP Bash source tree (default: ./toolchains/bash)
   WHP_BASH_BUILD_DIR    Cached WHP Bash host-tool build (default: ./build/bash-bootstrap)
   WHP_BASH_STAGE_DIR    Immutable pinned Bash source snapshot (default: ./build/bash-source)
@@ -425,12 +427,16 @@ init_submodules()
     # Ninja initializes its own source lazily only when its bootstrap path
     # is selected. Keep unconditional submodule work to build-required modules.
     whp_submodules="libs/fluidsynth toolchains/bash"
+    if [ "$AUTOMAKE_SOURCE_DIR" = "$SOURCE_DIR/toolchains/automake" ]; then
+        whp_submodules="$whp_submodules toolchains/automake"
+    fi
     if [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
 
-    # Bash is updated with the other pinned build submodules here, then
-    # prepare_bash_toolchain() stages its immutable Water-gitlink snapshot.
+    # Bash and its Automake macro provenance are updated with the other pinned
+    # build submodules here. prepare_bash_toolchain() stages the immutable Bash
+    # gitlink snapshot and validates its vendored AM_* macros against Automake.
     git -C "$SOURCE_DIR" submodule sync --recursive
     git -C "$SOURCE_DIR" submodule update --init --recursive $whp_submodules
     unset whp_submodules
@@ -1611,6 +1617,81 @@ selected_llvm_libcxx_archs()
     unset whp_libcxx_selected whp_libcxx_prepare whp_libcxx_arch
 }
 
+
+automake_pinned_revision()
+{
+    [ "$AUTOMAKE_SOURCE_DIR" = "$SOURCE_DIR/toolchains/automake" ] || return 1
+    git -C "$SOURCE_DIR" rev-parse --git-dir >/dev/null 2>&1 || return 1
+    git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/automake 2>/dev/null |
+        awk '$2 == "commit" { print $3; exit }'
+}
+
+automake_source_id()
+{
+    whp_automake_source_id=
+    if [ "$AUTOMAKE_SOURCE_DIR" = "$SOURCE_DIR/toolchains/automake" ]; then
+        whp_automake_source_id=$(automake_pinned_revision || true)
+    elif [ -d "$AUTOMAKE_SOURCE_DIR" ]; then
+        whp_automake_source_id=$(git -C "$AUTOMAKE_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+        if [ -z "$whp_automake_source_id" ]; then
+            whp_automake_source_id=$(cksum "$AUTOMAKE_SOURCE_DIR/m4/install-sh.m4" \
+                "$AUTOMAKE_SOURCE_DIR/m4/strip.m4" 2>/dev/null |
+                awk '{ printf "%s:%s;", $1, $2 }')
+        fi
+    fi
+    printf '%s\n' "$whp_automake_source_id"
+    unset whp_automake_source_id
+}
+
+ensure_bash_automake_dependency()
+{
+    grep -q 'AM_PROG_INSTALL_SH' "$BASH_EFFECTIVE_SOURCE_DIR/configure.ac" ||
+        return 0
+    grep -q 'AM_PROG_INSTALL_STRIP' "$BASH_EFFECTIVE_SOURCE_DIR/configure.ac" ||
+        return 0
+
+    grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_SH\]' "$BASH_EFFECTIVE_SOURCE_DIR/aclocal.m4" ||
+        die "WHP Bash aclocal.m4 is missing AM_PROG_INSTALL_SH"
+    grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_STRIP\]' "$BASH_EFFECTIVE_SOURCE_DIR/aclocal.m4" ||
+        die "WHP Bash aclocal.m4 is missing AM_PROG_INSTALL_STRIP"
+
+    whp_automake_expected=$(automake_source_id)
+    [ -n "$whp_automake_expected" ] ||
+        die "WHP Bash uses Automake macros but no Automake source revision is available"
+
+    if [ "$AUTOMAKE_SOURCE_DIR" = "$SOURCE_DIR/toolchains/automake" ]; then
+        if ! git -C "$AUTOMAKE_SOURCE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+            [ "$WHP_SUBMODULES" = 1 ] ||
+                die "Automake submodule is required by WHP Bash and WHP_SUBMODULES=0"
+            git -C "$SOURCE_DIR" submodule update --init --depth 1 toolchains/automake ||
+                git -C "$SOURCE_DIR" submodule update --init toolchains/automake ||
+                die "failed to initialize pinned Automake dependency"
+        fi
+        if ! git -C "$AUTOMAKE_SOURCE_DIR" cat-file -e "$whp_automake_expected^{commit}" 2>/dev/null; then
+            [ "$WHP_SUBMODULES" = 1 ] ||
+                die "pinned Automake commit $whp_automake_expected is unavailable"
+            git -C "$AUTOMAKE_SOURCE_DIR" fetch --no-tags --depth 1 origin "$whp_automake_expected" ||
+                die "failed to fetch pinned Automake dependency $whp_automake_expected"
+        fi
+        git -C "$AUTOMAKE_SOURCE_DIR" show "$whp_automake_expected:m4/install-sh.m4" |
+            grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_SH\]' ||
+            die "pinned Automake source is missing AM_PROG_INSTALL_SH"
+        git -C "$AUTOMAKE_SOURCE_DIR" show "$whp_automake_expected:m4/strip.m4" |
+            grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_STRIP\]' ||
+            die "pinned Automake source is missing AM_PROG_INSTALL_STRIP"
+    else
+        grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_SH\]' "$AUTOMAKE_SOURCE_DIR/m4/install-sh.m4" ||
+            die "Automake source is missing AM_PROG_INSTALL_SH"
+        grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_STRIP\]' "$AUTOMAKE_SOURCE_DIR/m4/strip.m4" ||
+            die "Automake source is missing AM_PROG_INSTALL_STRIP"
+    fi
+
+    WHP_AUTOMAKE_STATE=$whp_automake_expected
+    export WHP_AUTOMAKE_STATE
+    printf 'WHP Bash Automake dependency: %s\n' "$WHP_AUTOMAKE_STATE" >&2
+    unset whp_automake_expected
+}
+
 bash_pinned_revision()
 {
     [ "$BASH_SOURCE_DIR" = "$SOURCE_DIR/toolchains/bash" ] || return 1
@@ -1736,6 +1817,8 @@ bootstrap_bash()
     [ -f "$BASH_EFFECTIVE_SOURCE_DIR/configure" ] ||
         die "WHP Bash source tree is missing: $BASH_EFFECTIVE_SOURCE_DIR"
 
+    ensure_bash_automake_dependency
+
     whp_bash_make=${MAKE:-}
     if [ -z "$whp_bash_make" ]; then
         whp_bash_make=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
@@ -1755,6 +1838,7 @@ bootstrap_bash()
     whp_bash_signature=$(printf '%s\n' \
         "BASH_BOOTSTRAP_RECIPE=$BASH_BOOTSTRAP_RECIPE" \
         "BASH_SOURCE=$whp_bash_source" \
+        "AUTOMAKE_SOURCE=$WHP_AUTOMAKE_STATE" \
         "CC=$whp_bash_cc" \
         "CC_VERSION=$whp_bash_cc_version" \
         "SDKROOT=${SDKROOT:-}" \
@@ -2493,6 +2577,7 @@ profile_signature()
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
         "WATER_PREFIX=${WATER_PREFIX:-/usr/local}" \
         "WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}" \
+        "WHP_AUTOMAKE_STATE=${WHP_AUTOMAKE_STATE:-}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
         "WHP_LIBCXX_INSTALL_MODE=${WHP_LIBCXX_INSTALL_MODE:-}" \
         "WHP_LIBCXX_INSTALL_ROOT=${WHP_LIBCXX_INSTALL_ROOT:-}" \
