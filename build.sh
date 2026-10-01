@@ -2909,6 +2909,11 @@ configure_build()
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "$@"
     )
+    configured_host=$(sed -n 's/^HOST_ARCH[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
+    configured_pe=$(sed -n 's/^PE_ARCHS[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
+    [ -n "$configured_pe" ] || configured_pe=none
+    printf 'WHP architectures: host=%s PE=%s\n' "$configured_host" "$configured_pe" >&2
+    unset configured_host configured_pe
     record_profile_signature
 }
 
