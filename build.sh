@@ -123,6 +123,10 @@ Environment:
   WATER_WITH_MINGW      PE compiler policy: auto, clang, llvm-mingw, y, or n
                          (auto prefers Water's selected LLVM clang)
 
+Build modes:
+  build                Build normally; WATER_INSTALL may run afterward
+  incremental          Build only the current dependency graph; no automatic install
+
 Install targets:
   install-lib          Install runtime files only (recommended for normal Water use)
   install-dev          Install development files and the selected libc++ provider
@@ -3090,7 +3094,7 @@ case "${1:-build}" in
             configure_saved
         fi
         ;;
-    build|incremental)
+    build)
         if [ "$#" -gt 0 ]; then shift; fi
         ensure_configured
         record_cxx_profile
@@ -3098,6 +3102,12 @@ case "${1:-build}" in
         run_build "$@"
         if [ "$auto_install" = 1 ]; then run_profile_install; fi
         unset auto_install
+        ;;
+    incremental)
+        shift
+        ensure_configured
+        record_cxx_profile
+        run_build "$@"
         ;;
     *)
         ensure_configured
