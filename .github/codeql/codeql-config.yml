@@ -1,4 +1,6 @@
 # Water CodeQL default-setup overrides.
+# Apply with repository property:
+#   github-codeql-config-file=.github/codeql/codeql-config.yml
 #
 # These files intentionally contain legacy/invalid JScript syntax used to test
 # parser behavior. CodeQL's JavaScript extractor follows modern ECMAScript
