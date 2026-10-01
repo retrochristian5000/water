@@ -349,7 +349,7 @@ validate_configure_rules()
         END { exit bad ? 1 : 0 }
     ' "$SOURCE_DIR/configure.ac"
     then
-        die "configure.ac contains raw \\$(NAME) syntax inside WINE_APPEND_RULE; use \\\\$(NAME)"
+        die 'configure.ac contains raw $(NAME) syntax inside WINE_APPEND_RULE; use \$(NAME)'
     fi
 }
 
