@@ -2563,10 +2563,32 @@ prepare_libcxx_provider()
 }
 
 
+water_libdir()
+{
+    case "$WATER_PREFIX" in
+        /)  printf '%s\n' /lib ;;
+        */) printf '%s/lib\n' "${WATER_PREFIX%/}" ;;
+        *)  printf '%s/lib\n' "$WATER_PREFIX" ;;
+    esac
+}
+
+configured_install_layout_changed()
+{
+    [ -f "$BUILD_DIR/Makefile" ] || return 1
+
+    configured_prefix=$(sed -n 's/^prefix[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
+    configured_libdir=$(sed -n 's/^libdir[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
+
+    [ "$configured_prefix" = "$WATER_PREFIX" ] &&
+        [ "$configured_libdir" = "$(water_libdir)" ] &&
+        return 1
+    return 0
+}
+
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=9" \
+        "WHP_PROFILE_SCHEMA=10" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2576,6 +2598,7 @@ profile_signature()
         "WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}" \
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
         "WATER_PREFIX=${WATER_PREFIX:-/usr/local}" \
+        "WATER_LIBDIR=$(water_libdir)" \
         "WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}" \
         "WHP_AUTOMAKE_STATE=${WHP_AUTOMAKE_STATE:-}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
@@ -2813,9 +2836,10 @@ configure_build()
     # Water owns the install root.  Put the managed layout options after any
     # saved/raw configure arguments so stale --prefix/--libdir values cannot
     # redirect an install outside WATER_PREFIX.
-    set -- "$@" "--prefix=$WATER_PREFIX" "--libdir=$WATER_PREFIX/lib"
+    set -- "$@" "--prefix=$WATER_PREFIX" "--libdir=$(water_libdir)"
 
-    printf 'WHP configure: %s (prefix %s)\n' "$BUILD_DIR" "$WATER_PREFIX" >&2
+    printf 'WHP configure: %s (prefix %s, libdir %s)\n' \
+        "$BUILD_DIR" "$WATER_PREFIX" "$(water_libdir)" >&2
     (
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "$@"
@@ -2857,6 +2881,9 @@ ensure_configured()
         if [ ! -f "$CONFIGURE_USER_ARGS_FILE" ]; then
             save_user_configure_args
         fi
+        configure_saved
+    elif configured_install_layout_changed; then
+        printf 'WHP configure: configured install layout is stale\n' >&2
         configure_saved
     elif profile_changed; then
         printf 'WHP configure: menu/toolchain profile changed\n' >&2
