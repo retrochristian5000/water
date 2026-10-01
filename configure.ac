@@ -4058,16 +4058,10 @@ dnl graph handles CRT and Windows SDK headers; this overlays the selected,
 dnl architecture-specific libc++ provider and removes stale bundled archives.
 WINE_APPEND_RULE(
 [install-libcxx-dev:
-	@\$(SHELL) ${wine_srcdir}scripts/install-libcxx.sh install \
-		"\$(WHP_LIBCXX_INSTALL_MODE)" "\$(WHP_LIBCXX_INSTALL_ROOT)" \
-		"\$(WHP_LIBCXX_INSTALL_ARCHS)" "\$(WHP_LIBCXX_INSTALL_LEGACY_HEADERS)" \
-		"\$(DESTDIR)" "\$(includedir)" "\$(libdir)" "${wine_srcdir}include/msvcrt"
+	@\$(SHELL) \"${wine_srcdir}scripts/install-libcxx.sh\" install \"\$(WHP_LIBCXX_INSTALL_MODE)\" \"\$(WHP_LIBCXX_INSTALL_ROOT)\" \"\$(WHP_LIBCXX_INSTALL_ARCHS)\" \"\$(WHP_LIBCXX_INSTALL_LEGACY_HEADERS)\" \"\$(DESTDIR)\" \"\$(includedir)\" \"\$(libdir)\" \"${wine_srcdir}include/msvcrt\"
 install-dev:: install-libcxx-dev
 uninstall::
-	@\$(SHELL) ${wine_srcdir}scripts/install-libcxx.sh uninstall \
-		"\$(WHP_LIBCXX_INSTALL_MODE)" "\$(WHP_LIBCXX_INSTALL_ROOT)" \
-		"\$(WHP_LIBCXX_INSTALL_ARCHS)" "\$(WHP_LIBCXX_INSTALL_LEGACY_HEADERS)" \
-		"\$(DESTDIR)" "\$(includedir)" "\$(libdir)" "${wine_srcdir}include/msvcrt"
+	@\$(SHELL) \"${wine_srcdir}scripts/install-libcxx.sh\" uninstall \"\$(WHP_LIBCXX_INSTALL_MODE)\" \"\$(WHP_LIBCXX_INSTALL_ROOT)\" \"\$(WHP_LIBCXX_INSTALL_ARCHS)\" \"\$(WHP_LIBCXX_INSTALL_LEGACY_HEADERS)\" \"\$(DESTDIR)\" \"\$(includedir)\" \"\$(libdir)\" \"${wine_srcdir}include/msvcrt\"
 .PHONY: install-libcxx-dev])
 
 dnl Rules for generated source files
