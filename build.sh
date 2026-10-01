@@ -2584,12 +2584,12 @@ configured_install_layout_changed()
     [ "$configured_prefix" = "$WATER_PREFIX" ] || return 0
     [ "$configured_libdir" = "$(water_libdir)" ] || return 0
     case "$configured_exec_prefix" in
-        "$WATER_PREFIX") ;;
-        *prefix*) ;;
+        "$WATER_PREFIX"|'${prefix}'|'$(prefix)') ;;
         *) return 0 ;;
     esac
     return 1
 }
+
 profile_signature()
 {
     printf '%s\n' \
