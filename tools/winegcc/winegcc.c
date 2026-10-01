@@ -511,6 +511,16 @@ static struct strarray get_translator(void)
     return empty_strarray;
 }
 
+static struct strarray get_cxx_provider_flags( const char *suffix )
+{
+    const char *value;
+
+    if (processor != proc_cxx || !is_pe || !use_msvcrt) return empty_strarray;
+    value = getenv( strmake( "%s_%s", get_cpu_name( target.cpu ), suffix ));
+    if (!value || !*value) return empty_strarray;
+    return strarray_fromstring( value, " \t" );
+}
+
 static int try_link( struct strarray link_tool, const char *cflags )
 {
     const char *in = make_temp_file( "try_link", ".c" );
@@ -992,6 +1002,9 @@ static void compile( struct strarray files, const char *output_name, int compile
 
     strarray_add(&comp_args, "-D__WINE__");
 
+    if (processor == proc_cxx)
+        strarray_addall( &comp_args, get_cxx_provider_flags( "CXX_PE_CFLAGS" ));
+
     /* options we handle explicitly */
     if (compile_only)
 	strarray_add(&comp_args, "-c");
@@ -1146,6 +1159,33 @@ static void add_library( struct strarray lib_dirs, struct strarray *files, const
         break;
     }
     free(fullname);
+}
+
+static bool add_cxx_provider_libs( struct strarray *lib_dirs, struct strarray *files )
+{
+    struct strarray args = get_cxx_provider_flags( "CXX_PE_LIBS" );
+    unsigned int i;
+
+    if (!args.count) return false;
+
+    for (i = 0; i < args.count; i++)
+    {
+        const char *arg = args.str[i];
+
+        if (!strcmp( arg, "-L" ) && i + 1 < args.count)
+            strarray_add( lib_dirs, args.str[++i] );
+        else if (!strncmp( arg, "-L", 2 ) && arg[2])
+            strarray_add( lib_dirs, arg + 2 );
+        else if (!strcmp( arg, "-l" ) && i + 1 < args.count)
+            add_library( *lib_dirs, files, args.str[++i] );
+        else if (!strncmp( arg, "-l", 2 ) && arg[2])
+            add_library( *lib_dirs, files, arg + 2 );
+        else if (arg[0] == '-')
+            strarray_add( files, arg );
+        else
+            add_library( *lib_dirs, files, arg );
+    }
+    return true;
 }
 
 /* run winebuild to generate the .spec.o file */
@@ -1386,7 +1426,7 @@ static void build(struct strarray input_files, const char *output)
         if (is_pe) add_library(lib_dirs, &files, "compiler-rt");
         if (use_msvcrt)
         {
-            if (processor == proc_cxx)
+            if (processor == proc_cxx && !add_cxx_provider_libs( &lib_dirs, &files ))
             {
                 add_library(lib_dirs, &files, "c++");
                 add_library(lib_dirs, &files, "msvcp140");
