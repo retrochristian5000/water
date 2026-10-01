@@ -91,6 +91,7 @@ Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|clean|dist
 Environment:
   WHP_BUILD_DIR         Out-of-tree build directory (default: ./build)
   WHP_BUILD_JOBS        Parallel build jobs (default: detected CPU count)
+  WATER_ARCHS_MODE      PE architectures: auto (all buildable), custom, or none
   WATER_KEEP_GOING      Continue independent work after errors: y or n (default: y)
   WHP_LLVM_SOURCE_DIR   LLVM source tree (default: ./toolchains/llvm-project)
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
@@ -921,6 +922,13 @@ select_llvm_targets()
         saved_archs=$(select_saved_configure_archs || true)
         if [ -n "$saved_archs" ]; then
             llvm_add_arch_list "$saved_archs"
+        elif [ "$WATER_ARCHS_MODE" = auto ]; then
+            # Auto is portability-first: bootstrap every backend Water can use,
+            # then let configure retain only PE lanes that pass its target probes.
+            llvm_add_target X86
+            llvm_add_target ARM
+            llvm_add_target AArch64
+            llvm_add_target PowerPC
         elif [ "$WATER_ARCHS_MODE" = custom ]; then
             for item in \
                 WATER_ARCH_I386:X86 WATER_ARCH_X86_64:X86 WATER_ARCH_ARM:ARM \
@@ -1583,15 +1591,10 @@ selected_libcxx_archs()
                 unset whp_libcxx_item whp_libcxx_var whp_libcxx_arch whp_libcxx_value
                 ;;
             auto)
-                case "$(uname -m 2>/dev/null || true):$(uname -s 2>/dev/null || true)" in
-                    x86_64:Darwin|amd64:Darwin) whp_libcxx_archs=x86_64 ;;
-                    x86_64:*|amd64:*)            whp_libcxx_archs=i386,x86_64 ;;
-                    arm64:*|aarch64:*)           whp_libcxx_archs=aarch64 ;;
-                    i?86:*)                      whp_libcxx_archs=i386 ;;
-                    armv7*:*)                    whp_libcxx_archs=arm ;;
-                    ppc*:*|powerpc*:*)           whp_libcxx_archs=powerpc ;;
-                    *)                           whp_libcxx_archs=none ;;
-                esac
+                # Match automatic PE discovery.  Architectures without a
+                # supported LLVM libc++ provider fall back to Water's legacy
+                # headers/runtime below instead of disabling the PE lane.
+                whp_libcxx_archs=i386,x86_64,arm,aarch64,arm64ec,powerpc
                 ;;
         esac
     fi
@@ -1613,7 +1616,7 @@ selected_llvm_libcxx_archs()
     for whp_libcxx_arch in $whp_libcxx_selected
     do
         case "$whp_libcxx_arch" in
-            i386|x86_64|aarch64|arm64ec)
+            x86_64|aarch64|arm64ec)
                 case " $whp_libcxx_prepare " in
                     *" $whp_libcxx_arch "*) ;;
                     *) whp_libcxx_prepare="$whp_libcxx_prepare $whp_libcxx_arch" ;;
@@ -2502,6 +2505,10 @@ prepare_libcxx_provider()
     for whp_libcxx_arch in $whp_libcxx_selected
     do
         case "$whp_libcxx_arch" in
+            i386)
+                WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
+                printf 'WHP libc++ i386: legacy provider retained until the LLVM i386 CRT math ABI probe passes\n' >&2
+                ;;
             arm)
                 WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
                 printf 'WHP libc++ arm: legacy provider retained for armv7-windows-gnu ABI\n' >&2
@@ -2656,7 +2663,7 @@ configured_install_layout_changed()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=11" \
+        "WHP_PROFILE_SCHEMA=12" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2779,6 +2786,9 @@ configure_build()
     mkdir -p "$BUILD_DIR"
 
     case "$WATER_ARCHS_MODE" in
+        auto)
+            set -- "--enable-archs=auto" "$@"
+            ;;
         none)
             set -- "--enable-archs=none" "$@"
             ;;
