@@ -1394,16 +1394,18 @@ find_clang_cpp_for_compiler()
         *) whp_cpp_suffix= ;;
     esac
 
-    for whp_cpp_candidate in         "$whp_cpp_dir/clang-cpp$whp_cpp_suffix"         "$whp_cpp_dir/clang-cpp"
+    for whp_cpp_candidate in "$whp_cpp_dir/clang-cpp$whp_cpp_suffix" "$whp_cpp_dir/clang-cpp"
     do
         if [ -x "$whp_cpp_candidate" ]; then
             printf '%s\n' "$whp_cpp_candidate"
-            unset whp_cpp_compiler whp_cpp_path whp_cpp_dir whp_cpp_base                 whp_cpp_suffix whp_cpp_candidate
+            unset whp_cpp_compiler whp_cpp_path whp_cpp_dir whp_cpp_base
+            unset whp_cpp_suffix whp_cpp_candidate
             return 0
         fi
     done
 
-    unset whp_cpp_compiler whp_cpp_path whp_cpp_dir whp_cpp_base         whp_cpp_suffix whp_cpp_candidate
+    unset whp_cpp_compiler whp_cpp_path whp_cpp_dir whp_cpp_base
+    unset whp_cpp_suffix whp_cpp_candidate
     return 1
 }
 
