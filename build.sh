@@ -112,7 +112,7 @@ Environment:
 
 Install targets:
   install-lib          Install runtime files only (recommended for normal Water use)
-  install-dev          Install development headers/import/static libraries only
+  install-dev          Install development files and the selected libc++ provider
   install              Install both runtime and development files; use only when wanted
 
 Run ./build.sh menuconfig to edit the persistent .whpconfig profile.
