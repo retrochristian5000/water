@@ -2810,7 +2810,10 @@ configure_build()
         *) set -- "--with-wine64=$WATER_WINE64" "$@" ;;
     esac
 
-    set -- "--prefix=$WATER_PREFIX" "$@"
+    # Water owns the install root.  Put the managed layout options after any
+    # saved/raw configure arguments so stale --prefix/--libdir values cannot
+    # redirect an install outside WATER_PREFIX.
+    set -- "$@" "--prefix=$WATER_PREFIX" "--libdir=$WATER_PREFIX/lib"
 
     printf 'WHP configure: %s (prefix %s)\n' "$BUILD_DIR" "$WATER_PREFIX" >&2
     (
