@@ -1272,7 +1272,7 @@ bootstrap_llvm()
         printf 'WHP LLVM CMake: cached\n' >&2
     fi
 
-    for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
+    for whp_required_target in clang clang-cpp lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
     do
         llvm_bootstrap_has_target "$whp_required_target" ||
             die "LLVM bootstrap target '$whp_required_target' is missing after CMake generation"
@@ -1366,6 +1366,45 @@ find_llvm_bin()
     clang_path=$(command -v clang 2>/dev/null || true)
     [ -n "$clang_path" ] || return 1
     dirname -- "$clang_path"
+}
+
+find_clang_cpp_for_compiler()
+{
+    whp_cpp_compiler=$1
+    set -- $whp_cpp_compiler
+    whp_cpp_compiler=${1:-}
+    case "$whp_cpp_compiler" in
+        *clang*) ;;
+        *) unset whp_cpp_compiler; return 1 ;;
+    esac
+
+    case "$whp_cpp_compiler" in
+        */*) whp_cpp_path=$whp_cpp_compiler ;;
+        *) whp_cpp_path=$(command -v "$whp_cpp_compiler" 2>/dev/null || true) ;;
+    esac
+    [ -n "$whp_cpp_path" ] || {
+        unset whp_cpp_compiler whp_cpp_path
+        return 1
+    }
+
+    whp_cpp_dir=$(dirname -- "$whp_cpp_path")
+    whp_cpp_base=$(basename -- "$whp_cpp_path")
+    case "$whp_cpp_base" in
+        clang-[0-9]*) whp_cpp_suffix=${whp_cpp_base#clang} ;;
+        *) whp_cpp_suffix= ;;
+    esac
+
+    for whp_cpp_candidate in         "$whp_cpp_dir/clang-cpp$whp_cpp_suffix"         "$whp_cpp_dir/clang-cpp"
+    do
+        if [ -x "$whp_cpp_candidate" ]; then
+            printf '%s\n' "$whp_cpp_candidate"
+            unset whp_cpp_compiler whp_cpp_path whp_cpp_dir whp_cpp_base                 whp_cpp_suffix whp_cpp_candidate
+            return 0
+        fi
+    done
+
+    unset whp_cpp_compiler whp_cpp_path whp_cpp_dir whp_cpp_base         whp_cpp_suffix whp_cpp_candidate
+    return 1
 }
 
 setup_toolchain()
@@ -1491,13 +1530,22 @@ setup_toolchain()
     fi
 
     if [ -z "${CPPBIN:-}" ]; then
-        if [ -n "$LLVM_BIN" ] && [ -x "$LLVM_BIN/clang-cpp" ]; then
-            CPPBIN="$LLVM_BIN/clang-cpp"
-        else
+        whp_cpp_real=
+        if [ -n "${WHP_HOST_CC_REAL:-}" ]; then
+            whp_cpp_real=$(find_clang_cpp_for_compiler "$WHP_HOST_CC_REAL" || true)
+            if [ -n "$whp_cpp_real" ] && [ -n "${WHP_DARWIN_SDKROOT:-}" ]; then
+                CPPBIN=$(write_darwin_compiler_wrapper clang-cpp "$whp_cpp_real" "$WHP_DARWIN_SDKROOT")
+            fi
+        fi
+        if [ -z "${CPPBIN:-}" ]; then
+            CPPBIN=$(find_clang_cpp_for_compiler "$CC" || true)
+        fi
+        if [ -z "${CPPBIN:-}" ]; then
             case "$CC" in
                 *clang*) CPPBIN="$CC --driver-mode=cpp" ;;
             esac
         fi
+        unset whp_cpp_real
     fi
 
     export CC CXX
