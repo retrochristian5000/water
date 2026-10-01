@@ -2507,7 +2507,7 @@ EOF
     WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
 
     unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs \
-        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_rc whp_libcxx_nm whp_libcxx_sdk_headers whp_libcxx_crt_headers \
+        whp_libcxx_cmake whp_libcxx_cmake_version whp_libcxx_ar whp_libcxx_ranlib whp_libcxx_dlltool whp_libcxx_rc whp_libcxx_nm whp_libcxx_sdk_headers whp_libcxx_crt_headers \
         whp_libcxx_build whp_libcxx_provider whp_libcxx_state_file whp_libcxx_headers \
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
