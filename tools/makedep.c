@@ -3944,11 +3944,12 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
 
     output( "%s: %s", obj_dir_path( make, obj_name ), source->filename );
     /*
-     * C++ provider flags are configure-time ABI state.  Rebuild C++ objects
-     * after reconfiguration so static providers cannot inherit stale DLL
-     * import annotations or other runtime ABI choices.
+     * C++ compiler/provider state is tracked separately from config.status.
+     * This avoids rebuilding C++ objects after unrelated reconfiguration
+     * while still invalidating them when the selected compiler, flags, or
+     * provider libraries change.
      */
-    if (source->file->flags & FLAG_C_CXX) output_filename( "config.status" );
+    if (source->file->flags & FLAG_C_CXX) output_filename( ".whp-cxx-profile" );
     if (use_pch) output_filename( obj_dir_path( make, ".wine-pch.h.gch" ));
     output( "\n" );
     output( "\t%s", cmd_prefix( "CC" ) );
