@@ -90,6 +90,7 @@ AC_ARG_WITH(system-dllpath,AS_HELP_STRING([--with-system-dllpath=PATH],[load ext
             AC_SUBST(system_dllpath,[$withval]))
 AC_ARG_WITH(compiler-cache,AS_HELP_STRING([--with-compiler-cache@<:@=PROGRAM@:>@],[use compiler cache launcher (auto-detect sccache or ccache when enabled)]))
 AC_ARG_VAR(COMPILER_CACHE,[compiler cache launcher (sccache, ccache, or compatible wrapper)])
+AC_ARG_VAR(CPPBIN,[standalone C preprocessor used by winecpp])
 AC_ARG_VAR(WHP_LIBCXX_INSTALL_MODE,[Water libc++ development install provider])
 AC_ARG_VAR(WHP_LIBCXX_INSTALL_ROOT,[Water LLVM libc++ provider staging root])
 AC_ARG_VAR(WHP_LIBCXX_INSTALL_ARCHS,[Water LLVM libc++ architectures to install])
@@ -174,11 +175,36 @@ then
         enable_ninja=yes
     fi
 fi
-dnl winegcc needs a standalone preprocessor command.  Keep it in the selected
-dnl compiler family instead of baking an unrelated GNU cpp into winecpp.
+dnl winegcc needs a standalone preprocessor command.  Prefer clang-cpp
+dnl from the selected Clang directory; it is the dedicated Clang preprocessing
+dnl driver and avoids baking an unrelated GNU cpp into winecpp.
 AS_IF([test -z "$CPPBIN"],
       [case "$CC" in
-         *clang*) CPPBIN="$CC --driver-mode=cpp" ;;
+         *clang*)
+           set x $CC
+           shift
+           wine_cpp_cc=$1
+           case "$wine_cpp_cc" in
+             */*) wine_cpp_path=$wine_cpp_cc ;;
+             *) wine_cpp_path=`command -v "$wine_cpp_cc" 2>/dev/null` ;;
+           esac
+           wine_cpp_dir=`dirname "$wine_cpp_path" 2>/dev/null`
+           wine_cpp_base=`basename "$wine_cpp_path" 2>/dev/null`
+           case "$wine_cpp_base" in
+             clang-[0-9]*) wine_cpp_suffix=${wine_cpp_base#clang} ;;
+             *) wine_cpp_suffix= ;;
+           esac
+           if test -n "$wine_cpp_dir" && test -x "$wine_cpp_dir/clang-cpp$wine_cpp_suffix"
+           then
+               CPPBIN="$wine_cpp_dir/clang-cpp$wine_cpp_suffix"
+           elif test -n "$wine_cpp_dir" && test -x "$wine_cpp_dir/clang-cpp"
+           then
+               CPPBIN="$wine_cpp_dir/clang-cpp"
+           else
+               CPPBIN="$CC --driver-mode=cpp"
+           fi
+           unset wine_cpp_cc wine_cpp_path wine_cpp_dir wine_cpp_base wine_cpp_suffix
+           ;;
          *) AC_CHECK_TOOL(CPPBIN,cpp,cpp) ;;
        esac])
 AC_SUBST(CPPBIN)
