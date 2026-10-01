@@ -2575,6 +2575,21 @@ prepare_libcxx_provider()
 
 cxx_profile_signature()
 {
+    if [ -f "$BUILD_DIR/Makefile" ]; then
+        awk '
+            /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ {
+                key = $0
+                sub(/[[:space:]]*=.*/, "", key)
+                if (key == "CXX" || key == "CXXFLAGS" ||
+                    key == "CPPFLAGS" || key == "EXTRACXXFLAGS" ||
+                    key == "CXX_PE_CFLAGS" || key == "CXX_PE_LIBS" ||
+                    key ~ /_(CXX|CXXFLAGS|EXTRACXXFLAGS|CXX_PE_CFLAGS|CXX_PE_LIBS)$/)
+                    print
+            }
+        ' "$BUILD_DIR/Makefile" | LC_ALL=C sort
+        return
+    fi
+
     printf '%s\n' \
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
@@ -2582,17 +2597,14 @@ cxx_profile_signature()
         "LLVM_BIN=${LLVM_BIN:-}" \
         "CXX=${CXX:-}" \
         "CXXFLAGS=${CXXFLAGS:-}" \
+        "CPPFLAGS=${CPPFLAGS:-}" \
         "WHP_LLVM_TOOLCHAIN_STATE=${WHP_LLVM_TOOLCHAIN_STATE:-}"
 
     for arch in i386 x86_64 arm aarch64 arm64ec powerpc
     do
-        eval "cxx=\${${arch}_CXX:-}"
-        eval "cxxflags=\${${arch}_CXXFLAGS:-}"
         eval "pe_cflags=\${${arch}_CXX_PE_CFLAGS:-}"
         eval "pe_libs=\${${arch}_CXX_PE_LIBS:-}"
         printf '%s\n' \
-            "${arch}_CXX=$cxx" \
-            "${arch}_CXXFLAGS=$cxxflags" \
             "${arch}_CXX_PE_CFLAGS=$pe_cflags" \
             "${arch}_CXX_PE_LIBS=$pe_libs"
     done
@@ -3064,7 +3076,6 @@ prepare_llvm_toolchain
 setup_toolchain
 prepare_bash_toolchain
 prepare_libcxx_provider
-record_cxx_profile
 
 case "${1:-build}" in
     configure)
@@ -3082,6 +3093,7 @@ case "${1:-build}" in
     build|incremental)
         if [ "$#" -gt 0 ]; then shift; fi
         ensure_configured
+        record_cxx_profile
         if [ "$#" -eq 0 ]; then auto_install=1; else auto_install=0; fi
         run_build "$@"
         if [ "$auto_install" = 1 ]; then run_profile_install; fi
@@ -3089,6 +3101,7 @@ case "${1:-build}" in
         ;;
     *)
         ensure_configured
+        record_cxx_profile
         run_build "$@"
         ;;
 esac
