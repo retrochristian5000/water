@@ -66,6 +66,7 @@ case "$action" in
         done
         ;;
     uninstall)
+        remove_legacy_headers
         for arch in $archs
         do
             rm -rf "$destdir$includedir/wine/c++/$arch"
