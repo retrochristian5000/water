@@ -16,7 +16,7 @@ AC_PREREQ([2.69d],[AC_CONFIG_AUX_DIR(tools)],
 
 dnl **** Command-line arguments ****
 
-AC_ARG_ENABLE(archs, AS_HELP_STRING([--enable-archs={i386,x86_64,arm,aarch64,arm64ec,powerpc,none}],[enable multiple architectures for PE compilation]))
+AC_ARG_ENABLE(archs, AS_HELP_STRING([--enable-archs={auto,i386,x86_64,arm,aarch64,arm64ec,powerpc,none}],[enable PE architectures; auto keeps every buildable target]))
 AC_ARG_ENABLE(win16, AS_HELP_STRING([--disable-win16],[do not include Win16 support]))
 AC_ARG_ENABLE(win64, AS_HELP_STRING([--enable-win64],[build a Win64 emulator on AMD64 (won't run Win32 binaries)]))
 AC_ARG_ENABLE(tests, AS_HELP_STRING([--disable-tests],[do not build the regression tests]))
@@ -457,21 +457,28 @@ dnl **** Check for PE cross compiler ****
 
 AC_SUBST(PE_ARCHS,"")
 cross_archs=
+wine_archs_auto=no
 AS_VAR_SET_IF([enable_archs],
     [test "x$with_system_dllpath" = "x" || AC_MSG_ERROR("The --with-system-dllpath option is not compatible with --enable-archs")
-     ac_save_IFS=$IFS
-     IFS=' ,'
-     set x $enable_archs
-     IFS=$ac_save_IFS
-     shift
-     for arch
-     do
-         case $arch in
-           i386|x86_64|arm|aarch64|arm64ec|powerpc) cross_archs="$cross_archs $arch" ;;
-           no|none) PE_ARCHS=none ;;
-           *) AC_MSG_ERROR([Unknown cross-compilation architecture '$arch']) ;;
-         esac
-     done],
+     if test "x$enable_archs" = xauto
+     then
+         cross_archs="i386 x86_64 arm aarch64 arm64ec powerpc"
+         wine_archs_auto=yes
+     else
+         ac_save_IFS=$IFS
+         IFS=' ,'
+         set x $enable_archs
+         IFS=$ac_save_IFS
+         shift
+         for arch
+         do
+             case $arch in
+               i386|x86_64|arm|aarch64|arm64ec|powerpc) cross_archs="$cross_archs $arch" ;;
+               no|none) PE_ARCHS=none ;;
+               *) AC_MSG_ERROR([Unknown cross-compilation architecture '$arch']) ;;
+             esac
+         done
+     fi],
     [cross_archs=$HOST_ARCH
      case $HOST_ARCH-$host_os in
        unknown-*) PE_ARCHS=none ;;
@@ -502,10 +509,13 @@ do
 done
 
 AC_DEFUN([WINE_NO_PE_ERROR],[AS_IF([$1],
-    [AS_VAR_SET_IF([enable_archs],
-        [AC_MSG_ERROR([$2
+    [AS_IF([test "$wine_archs_auto" = yes],
+        [AC_MSG_NOTICE([$2
+Skipping $wine_arch because --enable-archs=auto only retains buildable targets.])],
+        [AS_VAR_SET_IF([enable_archs],
+            [AC_MSG_ERROR([$2
 This is an error since --enable-archs=$wine_arch was requested.])],
-        [AC_MSG_ERROR([$2$mingw_notice])])
+            [AC_MSG_ERROR([$2$mingw_notice])])])
      continue])])
 
 for wine_arch in $cross_archs $extra_arch
