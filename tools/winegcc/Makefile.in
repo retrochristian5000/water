@@ -15,4 +15,6 @@ winegcc_EXTRADEFS = \
 	-DCXX="\"$(CXX)\"" \
 	-DLD="\"$(LD)\""
 
+winegcc_OBJDEPS = Makefile
+
 INSTALL_DEV = $(PROGRAMS) $(winegcc_SYMLINKS)
