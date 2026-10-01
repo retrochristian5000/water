@@ -626,6 +626,7 @@
 @ stdcall -arch=win32 GetThunkBuff()
 @ stdcall -arch=win32 GetThunkStuff(str str)
 @ stdcall -arch=win32 K32WOWCallback16(long long)
+@ stdcall -arch=win32 WOWKillRemoteTask16(long)
 @ stdcall -arch=win32 K32WOWCallback16Ex(long long long ptr ptr)
 @ stdcall -arch=win32 K32WOWGetVDMPointer(long long long)
 @ stdcall -arch=win32 K32WOWHandle32(long long)
