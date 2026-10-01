@@ -877,28 +877,6 @@ llvm_add_arch_list()
     done
 }
 
-select_saved_configure_archs()
-{
-    saved_archs=
-    saved_archs_set=0
-    [ -f "$CONFIGURE_USER_ARGS_FILE" ] || return 0
-
-    while IFS= read -r arg || [ -n "$arg" ]; do
-        case "$arg" in
-            --enable-archs=*)
-                saved_archs=${arg#--enable-archs=}
-                saved_archs_set=1
-                ;;
-            --disable-archs)
-                saved_archs=none
-                saved_archs_set=1
-                ;;
-        esac
-    done < "$CONFIGURE_USER_ARGS_FILE"
-
-    [ "$saved_archs_set" = 1 ] && printf '%s\n' "$saved_archs"
-}
-
 select_llvm_targets()
 {
     llvm_targets=
@@ -919,10 +897,7 @@ select_llvm_targets()
     if [ "$WHP_CONFIGURE_ARCHS_SET" = 1 ]; then
         llvm_add_arch_list "$WHP_CONFIGURE_ARCHS"
     else
-        saved_archs=$(select_saved_configure_archs || true)
-        if [ -n "$saved_archs" ]; then
-            llvm_add_arch_list "$saved_archs"
-        elif [ "$WATER_ARCHS_MODE" = auto ]; then
+        if [ "$WATER_ARCHS_MODE" = auto ]; then
             # Auto is portability-first: bootstrap every backend Water can use,
             # then let configure retain only PE lanes that pass its target probes.
             llvm_add_target X86
@@ -1548,20 +1523,6 @@ selected_libcxx_archs()
     if [ "$WHP_CONFIGURE_ARCHS_SET" = 1 ]; then
         whp_libcxx_archs=$WHP_CONFIGURE_ARCHS
         whp_libcxx_archs_found=1
-    elif [ -f "$CONFIGURE_USER_ARGS_FILE" ]; then
-        while IFS= read -r whp_libcxx_arg || [ -n "$whp_libcxx_arg" ]; do
-            case "$whp_libcxx_arg" in
-                --enable-archs=*)
-                    whp_libcxx_archs=${whp_libcxx_arg#--enable-archs=}
-                    whp_libcxx_archs_found=1
-                    ;;
-                --disable-archs)
-                    whp_libcxx_archs=none
-                    whp_libcxx_archs_found=1
-                    ;;
-            esac
-        done < "$CONFIGURE_USER_ARGS_FILE"
-        unset whp_libcxx_arg
     fi
 
     if [ "$whp_libcxx_archs_found" = 0 ]; then
@@ -2775,6 +2736,11 @@ save_user_configure_args()
                     "${arg%%=*}" >&2
                 continue
                 ;;
+            --enable-archs=*|--disable-archs)
+                printf 'WHP configure: %s is managed by Water architecture policy; not persisting raw option\n' \
+                    "${arg%%=*}" >&2
+                continue
+                ;;
         esac
         printf '%s\n' "$arg" >> "$tmp"
     done
@@ -2785,7 +2751,10 @@ configure_build()
 {
     mkdir -p "$BUILD_DIR"
 
-    case "$WATER_ARCHS_MODE" in
+    if [ "$WHP_CONFIGURE_ARCHS_SET" = 1 ]; then
+        set -- "--enable-archs=$WHP_CONFIGURE_ARCHS" "$@"
+    else
+        case "$WATER_ARCHS_MODE" in
         auto)
             set -- "--enable-archs=auto" "$@"
             ;;
@@ -2812,7 +2781,8 @@ configure_build()
                 die "WATER_ARCHS_MODE=custom requires at least one enabled architecture"
             set -- "--enable-archs=$archs" "$@"
             ;;
-    esac
+        esac
+    fi
 
     value=${WATER_WIN16:-auto}
     case "$value" in
@@ -2957,7 +2927,7 @@ configure_saved()
                     skip_managed_value=1
                     continue
                     ;;
-                --prefix=*|--exec-prefix=*|--libdir=*)
+                --prefix=*|--exec-prefix=*|--libdir=*|--enable-archs=*|--disable-archs)
                     continue
                     ;;
             esac
