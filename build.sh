@@ -2038,9 +2038,10 @@ audit_llvm_libcxx_archive()
 register_llvm_libcxx_install_arch()
 {
     whp_libcxx_install_arch=$1
-    case " $WHP_LIBCXX_INSTALL_ARCHS " in
+    whp_libcxx_install_archs=${WHP_LIBCXX_INSTALL_ARCHS:-}
+    case " $whp_libcxx_install_archs " in
         *" $whp_libcxx_install_arch "*) ;;
-        *) WHP_LIBCXX_INSTALL_ARCHS="${WHP_LIBCXX_INSTALL_ARCHS:+$WHP_LIBCXX_INSTALL_ARCHS }$whp_libcxx_install_arch" ;;
+        *) WHP_LIBCXX_INSTALL_ARCHS="${whp_libcxx_install_archs:+$whp_libcxx_install_archs }$whp_libcxx_install_arch" ;;
     esac
 
     eval "whp_libcxx_disabled=\${${whp_libcxx_install_arch}_DISABLED_SUBDIRS:-}"
@@ -2053,7 +2054,7 @@ register_llvm_libcxx_install_arch()
     done
     export "$whp_libcxx_install_arch"_DISABLED_SUBDIRS="$whp_libcxx_disabled"
     export WHP_LIBCXX_INSTALL_ARCHS
-    unset whp_libcxx_install_arch whp_libcxx_disabled whp_libcxx_dir
+    unset whp_libcxx_install_arch whp_libcxx_install_archs whp_libcxx_disabled whp_libcxx_dir
 }
 
 prepare_one_llvm_libcxx()
