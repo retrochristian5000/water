@@ -3989,9 +3989,9 @@ AC_CONFIG_COMMANDS([Makefile], [wine_fn_output_makefile Makefile],
 # distclean:       also remove all files created by configure
 # test:            run tests
 # testclean:       clean test results to force running all tests again
-# install-lib:     install libraries needed to run applications
-# install-dev:     install development environment
-# install:         install everything
+# install-lib:     install runtime files needed to run configured applications (recommended)
+# install-dev:     install development headers, import libraries, and static libraries
+# install:         install both runtime and development files; use only when wanted
 # uninstall:       uninstall everything
 # ctags:           create a tags file for vim and others.
 # etags:           create a TAGS file for Emacs.
