@@ -652,24 +652,17 @@ void WINAPI OutputDebugString16( LPCSTR str )
 
 BYTE DOSVM_GetX86ProcessorLevel(void)
 {
-    SYSTEM_INFO si;
     BYTE level = kernel_configured_x86_cpu_level();
 
     if (level) return level;
 
-    GetSystemInfo( &si );
-
     /*
-     * The host CPU is only a fallback.  KRNL286/KRNL386 describe guest kernel
-     * images, not the native Water host; non-x86 hosts therefore get the
-     * minimum CPU appropriate to the selected image.
+     * CPU level is guest state, not a property to infer from the Water host.
+     * Until a guest CPU model owns this field, use the minimum class required
+     * by the selected Win16 kernel image.  Explicit WATER_X86_CPU_LEVEL still
+     * overrides this compatibility default.
      */
-    if (si.wProcessorArchitecture != PROCESSOR_ARCHITECTURE_INTEL)
-        return kernel16_is_krnl286() ? 2 : 3;
-
-    level = min( max( si.wProcessorLevel, 2 ), 4 );
-    if (!kernel16_is_krnl286() && level < 3) level = 3;
-    return level;
+    return kernel16_is_krnl286() ? 2 : 3;
 }
 
 
