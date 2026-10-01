@@ -2725,13 +2725,34 @@ static void install_data_file_src( struct makefile *make, const char *target,
 }
 
 
+static bool is_legacy_libcxx_header( const char *name )
+{
+    const char *base;
+
+    if (strncmp( name, "msvcrt/", 7 )) return false;
+    if (!strcmp( name, "msvcrt/xlocinfo" )) return false;
+
+    base = strrchr( name, '/' );
+    base = base ? base + 1 : name;
+    return !strchr( base, '.' );
+}
+
+
 /*******************************************************************
  *         install_header
  */
 static void install_header( struct makefile *make, const char *target, const char *obj )
 {
     const char *dir, *end;
+    const char *libcxx_mode, *legacy_headers;
     bool is_obj = !!obj;
+
+    libcxx_mode = get_make_variable( top_makefile, "WHP_LIBCXX_INSTALL_MODE" );
+    legacy_headers = get_make_variable( top_makefile, "WHP_LIBCXX_INSTALL_LEGACY_HEADERS" );
+    if (libcxx_mode && !strcmp( libcxx_mode, "llvm" ) &&
+        legacy_headers && !strcmp( legacy_headers, "0" ) &&
+        is_legacy_libcxx_header( target ))
+        return;
 
     if (!obj) obj = target;
     if (!strncmp( obj, "wine/", 5 )) dir = "$(includedir)";
