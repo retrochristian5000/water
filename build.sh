@@ -38,7 +38,7 @@ AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
-LLVM_BOOTSTRAP_RECIPE=6
+LLVM_BOOTSTRAP_RECIPE=7
 LLVM_LIBCXX_RECIPE=13
 BASH_BOOTSTRAP_RECIPE=4
 WHP_CONFIGURE_ARCHS=
@@ -114,6 +114,7 @@ Environment:
   WATER_BASH_BOOTSTRAP   Pinned WHP Bash policy: auto, y, or n
   CC_FOR_BUILD           Host C compiler for bootstrap/build tools (default: CC)
   CPPFLAGS_FOR_BUILD     Host preprocessor flags for bootstrap/build tools
+  CPPBIN                 Standalone C preprocessor (default: selected LLVM clang-cpp)
   CFLAGS_FOR_BUILD       Host compile flags for bootstrap/build tools
   LDFLAGS_FOR_BUILD      Host link flags for bootstrap/build tools
   LIBS_FOR_BUILD         Host libraries for bootstrap/build tools
@@ -1234,7 +1235,7 @@ bootstrap_llvm()
         previous=$(cat "$LLVM_BOOTSTRAP_CONFIG_FILE")
         if [ "$current" = "$previous" ]; then
             llvm_configure=0
-            for whp_required_target in clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
+            for whp_required_target in clang clang-cpp lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
             do
                 if ! llvm_bootstrap_has_target "$whp_required_target"; then
                     printf 'WHP LLVM CMake: cached target %s is missing; regenerating\n' "$whp_required_target" >&2
@@ -1285,20 +1286,20 @@ bootstrap_llvm()
         case "$llvm_generator" in
             Ninja*)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip -- -k 0
+                    --target clang clang-cpp lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip -- -k 0
                 ;;
             *Makefiles*)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip -- -k
+                    --target clang clang-cpp lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip -- -k
                 ;;
             *)
                 "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-                    --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
+                    --target clang clang-cpp lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
                 ;;
         esac
     else
         "$cmake_cmd" --build "$LLVM_BOOTSTRAP_DIR" --parallel "$jobs" \
-            --target clang lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
+            --target clang clang-cpp lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
     fi
     unset llvm_generator
     PATH=$llvm_bootstrap_saved_path
@@ -1489,10 +1490,22 @@ setup_toolchain()
         if [ -z "${RANLIB:-}" ] && [ -x "$LLVM_BIN/llvm-ranlib" ]; then RANLIB="$LLVM_BIN/llvm-ranlib"; fi
     fi
 
+    if [ -z "${CPPBIN:-}" ]; then
+        if [ -n "$LLVM_BIN" ] && [ -x "$LLVM_BIN/clang-cpp" ]; then
+            CPPBIN="$LLVM_BIN/clang-cpp"
+        else
+            case "$CC" in
+                *clang*) CPPBIN="$CC --driver-mode=cpp" ;;
+            esac
+        fi
+    fi
+
     export CC CXX
     [ -z "${AR:-}" ] || export AR
     [ -z "${NM:-}" ] || export NM
     [ -z "${RANLIB:-}" ] || export RANLIB
+    [ -z "${CPPBIN:-}" ] || export CPPBIN
+    [ -z "${CPPBIN:-}" ] || printf 'WHP preprocessor: %s\n' "$CPPBIN" >&2
     export LLVM_SOURCE_DIR
     WHP_LLVM_SOURCE_DIR=$LLVM_SOURCE_DIR
     export WHP_LLVM_SOURCE_DIR
@@ -2624,7 +2637,7 @@ configured_install_layout_changed()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=12" \
+        "WHP_PROFILE_SCHEMA=13" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2655,7 +2668,7 @@ profile_signature()
         "WATER_SYSTEM_DLLPATH=${WATER_SYSTEM_DLLPATH:-auto}" \
         "WATER_WINE_TOOLS=${WATER_WINE_TOOLS:-auto}" \
         "WATER_WINE64=${WATER_WINE64:-auto}" \
-        "CC=${CC:-}" "CXX=${CXX:-}" "AR=${AR:-}" "NM=${NM:-}" "RANLIB=${RANLIB:-}" \
+        "CC=${CC:-}" "CXX=${CXX:-}" "CPPBIN=${CPPBIN:-}" "AR=${AR:-}" "NM=${NM:-}" "RANLIB=${RANLIB:-}" \
         "LD=${LD:-}" "LDFLAGS=${LDFLAGS:-}" "WHP_HOST_LINKER=${WHP_HOST_LINKER:-}"
 
     for var in \
