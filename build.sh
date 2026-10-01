@@ -1817,24 +1817,6 @@ libcxx_ms_target()
     esac
 }
 
-disable_legacy_libcxx_arch()
-{
-    whp_legacy_arch=$1
-    eval "whp_legacy_disabled=\${${whp_legacy_arch}_DISABLED_SUBDIRS:-}"
-
-    for whp_legacy_dir in libs/c++ libs/c++abi
-    do
-        case " $whp_legacy_disabled " in
-            *" $whp_legacy_dir "*) ;;
-            *) whp_legacy_disabled="${whp_legacy_disabled:+$whp_legacy_disabled }$whp_legacy_dir" ;;
-        esac
-    done
-
-    export "$whp_legacy_arch"_DISABLED_SUBDIRS="$whp_legacy_disabled"
-    printf 'WHP libc++ %s: disabled bundled libc++/libc++abi for this architecture\n' "$whp_legacy_arch" >&2
-    unset whp_legacy_arch whp_legacy_disabled whp_legacy_dir
-}
-
 prepare_llvm_windows_sdk_headers()
 {
     whp_win_sdk_wtypes_idl="$SOURCE_DIR/include/wtypes.idl"
@@ -2059,7 +2041,6 @@ prepare_one_llvm_libcxx()
         [ -n "$whp_libcxx_user_cflags" ] && [ -n "$whp_libcxx_user_libs" ] ||
             die "$whp_libcxx_arch C++ provider override must set both ${whp_libcxx_arch}_CXX_PE_CFLAGS and ${whp_libcxx_arch}_CXX_PE_LIBS"
         printf 'WHP libc++ %s: explicit provider override\n' "$whp_libcxx_arch" >&2
-        disable_legacy_libcxx_arch "$whp_libcxx_arch"
         WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:override"
         unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs
         return
@@ -2315,7 +2296,6 @@ EOF
     whp_libcxx_libs="-L$whp_libcxx_provider -lwhp-libcxx vcruntime140"
     export "${whp_libcxx_arch}_CXX_PE_CFLAGS=$whp_libcxx_cflags"
     export "${whp_libcxx_arch}_CXX_PE_LIBS=$whp_libcxx_libs"
-    disable_legacy_libcxx_arch "$whp_libcxx_arch"
     whp_libcxx_state_sum=$(cksum "$whp_libcxx_state_file" | awk '{ printf "%s:%s", $1, $2 }')
     WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
 
@@ -2418,7 +2398,7 @@ prepare_libcxx_provider()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=7" \
+        "WHP_PROFILE_SCHEMA=6" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2451,11 +2431,6 @@ profile_signature()
     do
         eval "value=\${$var:-y}"
         printf '%s=%s\n' "$var" "$value"
-    done
-    for arch in i386 x86_64 arm aarch64 arm64ec powerpc
-    do
-        eval "value=\${${arch}_DISABLED_SUBDIRS:-}"
-        printf '%s_DISABLED_SUBDIRS=%s\n' "$arch" "$value"
     done
 
     for var in \
