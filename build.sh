@@ -2677,7 +2677,8 @@ profile_changed()
 save_user_configure_args()
 {
     mkdir -p "$BUILD_DIR"
-    tmp=$(mktemp "$CONFIGURE_USER_ARGS_FILE.tmp.XXXXXX") ||\n        die "could not create configure-args temporary file"
+    tmp=$(mktemp "$CONFIGURE_USER_ARGS_FILE.tmp.XXXXXX") ||
+        die "could not create configure-args temporary file"
     while [ "$#" -gt 0 ]
     do
         arg=$1
