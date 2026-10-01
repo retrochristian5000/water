@@ -13,6 +13,7 @@
 #include "ntstatus.h"
 #include "windef.h"
 #include "winbase.h"
+#include "winnls.h"
 #include "winreg.h"
 #include "winternl.h"
 #include "wine/doskeyb.h"
