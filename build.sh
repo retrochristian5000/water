@@ -93,6 +93,8 @@ Environment:
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
   WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (default: auto)
   WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
+  WATER_INSTALL         Post-build install: none, runtime, development, or all (default: none)
+  WATER_PREFIX          Install prefix passed to configure (default: /usr/local)
   WHP_LLVM_BOOTSTRAP_CC Stage-0 C compiler (default: prefer clang)
   WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
@@ -199,6 +201,8 @@ validate_profile()
     WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
     WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}
     WATER_LIBCXX=${WATER_LIBCXX:-llvm}
+    WATER_INSTALL=${WATER_INSTALL:-none}
+    WATER_PREFIX=${WATER_PREFIX:-/usr/local}
     WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
     WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}
@@ -235,6 +239,16 @@ validate_profile()
     case "$WATER_LIBCXX" in
         llvm|legacy) ;;
         *) die "WATER_LIBCXX must be llvm or legacy" ;;
+    esac
+    case "$WATER_INSTALL" in
+        none|runtime|development|all) ;;
+        *) die "WATER_INSTALL must be none, runtime, development, or all" ;;
+    esac
+    case "$WATER_PREFIX" in
+        '') die "WATER_PREFIX must not be empty" ;;
+        *'
+'*|*'
+'*) die "WATER_PREFIX must not contain line breaks" ;;
     esac
     case "$WATER_BASH_BOOTSTRAP" in
         auto|y|n|0|1) ;;
@@ -2439,7 +2453,7 @@ prepare_libcxx_provider()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=7" \
+        "WHP_PROFILE_SCHEMA=8" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2448,6 +2462,8 @@ profile_signature()
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}" \
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
+        "WATER_INSTALL=${WATER_INSTALL:-none}" \
+        "WATER_PREFIX=${WATER_PREFIX:-/usr/local}" \
         "WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
         "WHP_LIBCXX_INSTALL_MODE=${WHP_LIBCXX_INSTALL_MODE:-}" \
@@ -2681,7 +2697,9 @@ configure_build()
         *) set -- "--with-wine64=$WATER_WINE64" "$@" ;;
     esac
 
-    printf 'WHP configure: %s\n' "$BUILD_DIR" >&2
+    set -- "--prefix=$WATER_PREFIX" "$@"
+
+    printf 'WHP configure: %s (prefix %s)\n' "$BUILD_DIR" "$WATER_PREFIX" >&2
     (
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "$@"
@@ -2762,6 +2780,20 @@ run_build()
     fi
 }
 
+run_profile_install()
+{
+    case "$WATER_INSTALL" in
+        none) return 0 ;;
+        runtime) install_target=install-lib ;;
+        development) install_target=install-dev ;;
+        all) install_target=install ;;
+    esac
+
+    printf 'WHP install: %s -> %s\n' "$install_target" "$WATER_PREFIX" >&2
+    run_build "$install_target"
+    unset install_target
+}
+
 case "${1:-build}" in
     __libcxx_one)
         [ "$#" -eq 2 ] || die "__libcxx_one requires exactly one architecture"
@@ -2823,6 +2855,7 @@ case "${1:-build}" in
         if [ "$#" -gt 0 ]; then shift; fi
         ensure_configured
         run_build "$@"
+        run_profile_install
         ;;
     *)
         ensure_configured
