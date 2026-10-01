@@ -332,15 +332,33 @@ autoconf_state_signature()
 record_autoconf_state()
 {
     mkdir -p "$BUILD_DIR"
-    tmp="$AUTOCONF_STATE_FILE.tmp.$$"
+    tmp="$AUTOCONF_STATE_FILE.tmp.$"
     autoconf_state_signature > "$tmp"
     mv -f "$tmp" "$AUTOCONF_STATE_FILE"
+}
+
+validate_configure_rules()
+{
+    if ! awk '
+        /WINE_APPEND_RULE\(/ { in_rule = 1 }
+        in_rule && match($0, /(^|[^\\])\$\([A-Za-z_][A-Za-z0-9_]*\)/) {
+            printf "%s:%d: unescaped Make variable in WINE_APPEND_RULE: %s\n", FILENAME, NR, $0 > "/dev/stderr"
+            bad = 1
+        }
+        in_rule && /\]\)/ { in_rule = 0 }
+        END { exit bad ? 1 : 0 }
+    ' "$SOURCE_DIR/configure.ac"
+    then
+        die "configure.ac contains raw \\$(NAME) syntax inside WINE_APPEND_RULE; use \\\\$(NAME)"
+    fi
 }
 
 generate_configure()
 {
     command -v "$AUTOCONF" >/dev/null 2>&1 ||
         die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
+
+    validate_configure_rules
 
     if [ -f "$SOURCE_DIR/configure" ] && [ -f "$AUTOCONF_STATE_FILE" ]; then
         current=$(autoconf_state_signature)
@@ -364,6 +382,10 @@ generate_configure()
     fi
 
     chmod +x "$configure_tmp"
+    if ! /bin/sh -n "$configure_tmp"; then
+        rm -f "$configure_tmp"
+        die "generated configure script failed shell syntax validation"
+    fi
 
     if [ -f "$SOURCE_DIR/configure" ] && cmp -s "$configure_tmp" "$SOURCE_DIR/configure"; then
         rm -f "$configure_tmp"
