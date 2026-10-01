@@ -351,16 +351,13 @@ static int macdrv_get_gpu_info_from_display_id_using_metal(struct macdrv_gpu* gp
  */
 static int macdrv_get_gpu_info_from_display_id(struct macdrv_gpu* gpu, CGDirectDisplayID display_id)
 {
-    int ret;
-    io_registry_entry_t entry;
-
-    ret = macdrv_get_gpu_info_from_display_id_using_metal(gpu, display_id);
-    if (ret)
-    {
-        entry = CGDisplayIOServicePort(display_id);
-        ret = macdrv_get_gpu_info_from_entry(gpu, entry);
-    }
-    return ret;
+    /*
+     * CGDisplayIOServicePort() is deprecated and exposes an undocumented
+     * display-to-IOKit bridge.  Supported Water hosts have Metal, and the
+     * Metal device registry ID gives us the documented device identity needed
+     * to reach the corresponding registry entry.
+     */
+    return macdrv_get_gpu_info_from_display_id_using_metal(gpu, display_id);
 }
 
 /***********************************************************************
