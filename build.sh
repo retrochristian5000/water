@@ -2034,6 +2034,28 @@ audit_llvm_libcxx_archive()
     return 0
 }
 
+
+register_llvm_libcxx_install_arch()
+{
+    whp_libcxx_install_arch=$1
+    case " $WHP_LIBCXX_INSTALL_ARCHS " in
+        *" $whp_libcxx_install_arch "*) ;;
+        *) WHP_LIBCXX_INSTALL_ARCHS="${WHP_LIBCXX_INSTALL_ARCHS:+$WHP_LIBCXX_INSTALL_ARCHS }$whp_libcxx_install_arch" ;;
+    esac
+
+    eval "whp_libcxx_disabled=\${${whp_libcxx_install_arch}_DISABLED_SUBDIRS:-}"
+    for whp_libcxx_dir in libs/c++ libs/c++abi
+    do
+        case " $whp_libcxx_disabled " in
+            *" $whp_libcxx_dir "*) ;;
+            *) whp_libcxx_disabled="${whp_libcxx_disabled:+$whp_libcxx_disabled }$whp_libcxx_dir" ;;
+        esac
+    done
+    export "$whp_libcxx_install_arch"_DISABLED_SUBDIRS="$whp_libcxx_disabled"
+    export WHP_LIBCXX_INSTALL_ARCHS
+    unset whp_libcxx_install_arch whp_libcxx_disabled whp_libcxx_dir
+}
+
 prepare_one_llvm_libcxx()
 {
     whp_libcxx_arch=$1
@@ -2046,6 +2068,8 @@ prepare_one_llvm_libcxx()
         [ -n "$whp_libcxx_user_cflags" ] && [ -n "$whp_libcxx_user_libs" ] ||
             die "$whp_libcxx_arch C++ provider override must set both ${whp_libcxx_arch}_CXX_PE_CFLAGS and ${whp_libcxx_arch}_CXX_PE_LIBS"
         printf 'WHP libc++ %s: explicit provider override\n' "$whp_libcxx_arch" >&2
+        WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
+        export WHP_LIBCXX_INSTALL_LEGACY_HEADERS
         WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:override"
         unset whp_libcxx_arch whp_libcxx_target whp_libcxx_user_cflags whp_libcxx_user_libs
         return
@@ -2301,6 +2325,7 @@ EOF
     whp_libcxx_libs="-L$whp_libcxx_provider -lwhp-libcxx vcruntime140"
     export "${whp_libcxx_arch}_CXX_PE_CFLAGS=$whp_libcxx_cflags"
     export "${whp_libcxx_arch}_CXX_PE_LIBS=$whp_libcxx_libs"
+    register_llvm_libcxx_install_arch "$whp_libcxx_arch"
     whp_libcxx_state_sum=$(cksum "$whp_libcxx_state_file" | awk '{ printf "%s:%s", $1, $2 }')
     WHP_LIBCXX_STATE="${WHP_LIBCXX_STATE:+$WHP_LIBCXX_STATE;}$whp_libcxx_arch:$whp_libcxx_state_sum"
 
@@ -2317,9 +2342,16 @@ EOF
 prepare_libcxx_provider()
 {
     WHP_LIBCXX_STATE=$WATER_LIBCXX
-    export WHP_LIBCXX_STATE
+    WHP_LIBCXX_INSTALL_MODE=$WATER_LIBCXX
+    WHP_LIBCXX_INSTALL_ROOT=$LLVM_LIBCXX_RUNTIME_DIR
+    WHP_LIBCXX_INSTALL_ARCHS=
+    WHP_LIBCXX_INSTALL_LEGACY_HEADERS=0
+    export WHP_LIBCXX_STATE WHP_LIBCXX_INSTALL_MODE WHP_LIBCXX_INSTALL_ROOT \
+        WHP_LIBCXX_INSTALL_ARCHS WHP_LIBCXX_INSTALL_LEGACY_HEADERS
 
     if [ "$WATER_LIBCXX" = legacy ]; then
+        WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
+        export WHP_LIBCXX_INSTALL_LEGACY_HEADERS
         printf 'WHP libc++ provider: legacy Water libc++ (_LIBCPP_VERSION 8000)\n' >&2
         return
     fi
@@ -2329,9 +2361,11 @@ prepare_libcxx_provider()
     do
         case "$whp_libcxx_arch" in
             arm)
+                WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
                 printf 'WHP libc++ arm: legacy provider retained for armv7-windows-gnu ABI\n' >&2
                 ;;
             powerpc)
+                WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
                 printf 'WHP libc++ powerpc: legacy provider retained pending PowerPC COFF runtime support\n' >&2
                 ;;
         esac
@@ -2394,7 +2428,8 @@ prepare_libcxx_provider()
         done
     fi
 
-    export WHP_LIBCXX_STATE
+    export WHP_LIBCXX_STATE WHP_LIBCXX_INSTALL_MODE WHP_LIBCXX_INSTALL_ROOT \
+        WHP_LIBCXX_INSTALL_ARCHS WHP_LIBCXX_INSTALL_LEGACY_HEADERS
     unset whp_libcxx_selected whp_libcxx_prepare whp_libcxx_arch whp_libcxx_count \
         whp_libcxx_total_jobs whp_libcxx_parallel whp_libcxx_jobs
 }
@@ -2403,7 +2438,7 @@ prepare_libcxx_provider()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=6" \
+        "WHP_PROFILE_SCHEMA=7" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2414,6 +2449,10 @@ profile_signature()
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
         "WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
+        "WHP_LIBCXX_INSTALL_MODE=${WHP_LIBCXX_INSTALL_MODE:-}" \
+        "WHP_LIBCXX_INSTALL_ROOT=${WHP_LIBCXX_INSTALL_ROOT:-}" \
+        "WHP_LIBCXX_INSTALL_ARCHS=${WHP_LIBCXX_INSTALL_ARCHS:-}" \
+        "WHP_LIBCXX_INSTALL_LEGACY_HEADERS=${WHP_LIBCXX_INSTALL_LEGACY_HEADERS:-1}" \
         "WHP_LLVM_LINK_JOBS=$LLVM_LINK_JOBS" \
         "WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}" \
         "BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}" \
@@ -2436,6 +2475,12 @@ profile_signature()
     do
         eval "value=\${$var:-y}"
         printf '%s=%s\n' "$var" "$value"
+    done
+
+    for arch in i386 x86_64 arm aarch64 arm64ec powerpc
+    do
+        eval "value=\${${arch}_DISABLED_SUBDIRS:-}"
+        printf '%s_DISABLED_SUBDIRS=%s\n' "$arch" "$value"
     done
 
     for var in \
