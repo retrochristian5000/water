@@ -23,6 +23,11 @@ run:
 The build funnel regenerates the ignored `./configure` script from
 `configure.ac` with Autoconf, initializes the pinned submodules, selects the
 LLVM toolchain, configures an out-of-tree build, and invokes Ninja or Make.
+The pinned bootstrap graph is transitive: the Bash fork consumes
+`AM_PROG_INSTALL_SH` and `AM_PROG_INSTALL_STRIP` from its vendored `aclocal.m4`,
+so Water also pins the Automake fork that provides those macros. Water validates
+that provenance during the Bash bootstrap; it does not require a separate
+system-installed `automake` executable for the normal build.
 Use `./build.sh menuconfig` to edit the persistent ignored `.whpconfig`
 profile. The menu controls PE architectures, the WHP LLVM bootstrap and host
 linker policies, build behavior, installation, and optional Wine components. The LLVM menu
