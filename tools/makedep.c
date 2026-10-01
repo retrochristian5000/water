@@ -3838,7 +3838,8 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
 {
     const char *obj_name, *var_cc, *var_cflags;
     struct compile_command *cmd;
-    struct strarray cflags = empty_strarray, cxx_provider_cflags = empty_strarray, pch_flags = empty_strarray;
+    struct strarray cflags = empty_strarray, cxx_provider_cflags = empty_strarray;
+    struct strarray pch_flags = empty_strarray, obj_deps;
     bool use_pch;
 
     if (make->disabled[arch] && !(source->file->flags & FLAG_C_IMPLIB)) return;
@@ -3867,6 +3868,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
 
     obj_name = strmake( "%s%s.o", source->arch ? "" : arch_dirs[arch], obj );
     strarray_add( targets, obj_name );
+    obj_deps = get_expanded_file_local_var( make, obj, "OBJDEPS" );
     use_pch = source_uses_pch( make, source, obj, arch );
 
     if (source->file->flags & FLAG_C_UNIX)
@@ -3960,6 +3962,7 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     }
 
     output( "%s: %s", obj_dir_path( make, obj_name ), source->filename );
+    output_filenames( obj_deps );
     /*
      * C++ compiler/provider state is tracked separately from config.status.
      * This avoids rebuilding C++ objects after unrelated reconfiguration
