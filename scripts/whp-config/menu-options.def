@@ -1,5 +1,5 @@
 # WHP Water menu fallback schema: key|section|label|kind|default|choices|group
-WATER_ARCHS_MODE|Architectures|PE architecture selection|choice|auto|auto,custom,none|
+WATER_ARCHS_MODE|Architectures|PE architecture selection (auto = all buildable)|choice|auto|auto,custom,none|
 WATER_ARCH_I386|Architectures|i386|bool|y||
 WATER_ARCH_X86_64|Architectures|x86_64|bool|y||
 WATER_ARCH_ARM|Architectures|ARM|bool|y||
