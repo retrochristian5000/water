@@ -24,7 +24,6 @@
 #import <CoreVideo/CoreVideo.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
-#include <dlfcn.h>
 
 #import "cocoa_window.h"
 
@@ -2407,23 +2406,23 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
                 return;
         }
 
-        static CGImageRef __nullable (*pCGWindowListCreateImageFromArray)(CGRect, CFArrayRef, CGWindowImageOption);
-        static dispatch_once_t once;
-        dispatch_once(&once, ^{
-            void *h = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY | RTLD_LOCAL);
-            if (h)
-                MACDRV_DLSYM_FUNCTION(pCGWindowListCreateImageFromArray, h, "CGWindowListCreateImageFromArray");
-        });
-
-        if (!pCGWindowListCreateImageFromArray)
+        /*
+         * Capture our own view directly instead of asking the Window Server for
+         * a CGWindow image.  CGWindowListCreateImageFromArray() is deprecated
+         * and can trigger screen-capture privacy handling on current macOS.
+         */
+        NSView* contentView = window.contentView;
+        NSRect snapshotRect = contentView.visibleRect;
+        if (NSIsEmptyRect(snapshotRect))
             return;
 
-        const void* windowID = (const void*)(uintptr_t)(CGWindowID)window.windowNumber;
-        CFArrayRef windowIDs = CFArrayCreate(NULL, &windowID, 1, NULL);
-        CGImageRef windowImage = pCGWindowListCreateImageFromArray(CGRectNull, windowIDs, kCGWindowImageBoundsIgnoreFraming);
-        CFRelease(windowIDs);
-        if (!windowImage)
+        NSBitmapImageRep* windowImageRep = [contentView bitmapImageRepForCachingDisplayInRect:snapshotRect];
+        if (!windowImageRep)
             return;
+        [contentView cacheDisplayInRect:snapshotRect toBitmapImageRep:windowImageRep];
+
+        NSImage* windowImage = [[[NSImage alloc] initWithSize:snapshotRect.size] autorelease];
+        [windowImage addRepresentation:windowImageRep];
 
         NSImage* appImage = [NSApp applicationIconImage];
         if (!appImage)
@@ -2432,23 +2431,26 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         NSImage* dockIcon = [[[NSImage alloc] initWithSize:NSMakeSize(256, 256)] autorelease];
         [dockIcon lockFocus];
 
-        CGContextRef cgcontext = [[NSGraphicsContext currentContext] CGContext];
-
-        CGRect rect = CGRectMake(8, 8, 240, 240);
-        size_t width = CGImageGetWidth(windowImage);
-        size_t height = CGImageGetHeight(windowImage);
+        NSRect rect = NSMakeRect(8, 8, 240, 240);
+        NSInteger width = windowImageRep.pixelsWide;
+        NSInteger height = windowImageRep.pixelsHigh;
         if (width > height)
         {
             rect.size.height *= height / (double)width;
-            rect.origin.y += (CGRectGetWidth(rect) - CGRectGetHeight(rect)) / 2;
+            rect.origin.y += (NSWidth(rect) - NSHeight(rect)) / 2;
         }
         else if (width != height)
         {
             rect.size.width *= width / (double)height;
-            rect.origin.x += (CGRectGetHeight(rect) - CGRectGetWidth(rect)) / 2;
+            rect.origin.x += (NSHeight(rect) - NSWidth(rect)) / 2;
         }
 
-        CGContextDrawImage(cgcontext, rect, windowImage);
+        [windowImage drawInRect:rect
+                      fromRect:NSZeroRect
+                     operation:NSCompositingOperationSourceOver
+                      fraction:1
+                respectFlipped:YES
+                         hints:nil];
         [appImage drawInRect:NSMakeRect(156, 4, 96, 96)
                     fromRect:NSZeroRect
                    operation:NSCompositingOperationSourceOver
@@ -2458,7 +2460,6 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
         [dockIcon unlockFocus];
 
-        CGImageRelease(windowImage);
 
         NSImageView* imageView = (NSImageView*)self.dockTile.contentView;
         if (![imageView isKindOfClass:[NSImageView class]])
