@@ -2252,12 +2252,18 @@ prepare_one_llvm_libcxx()
     whp_libcxx_cmake=$(command -v cmake 2>/dev/null || true)
     [ -n "$whp_libcxx_cmake" ] || die "CMake is required to build LLVM libc++"
 
-    whp_libcxx_ar=${AR:-}
-    [ -n "$whp_libcxx_ar" ] || whp_libcxx_ar=$(command -v llvm-ar 2>/dev/null || command -v ar 2>/dev/null || true)
-    [ -n "$whp_libcxx_ar" ] || die "an archiver is required to build LLVM libc++"
-    whp_libcxx_ranlib=${RANLIB:-}
-    [ -n "$whp_libcxx_ranlib" ] || whp_libcxx_ranlib=$(command -v llvm-ranlib 2>/dev/null || command -v ranlib 2>/dev/null || true)
-    [ -n "$whp_libcxx_ranlib" ] || die "ranlib is required to build LLVM libc++"
+    # Keep PE runtime tooling inside one LLVM family. Mixing GNU ar/dlltool
+    # artifacts with LLD on AArch64 can produce invalid PAGEOFFSET_12L
+    # targets that surface as "misaligned ldr/str offset".
+    whp_libcxx_ar="$LLVM_BIN/llvm-ar"
+    [ -x "$whp_libcxx_ar" ] ||
+        die "WATER_LIBCXX=llvm requires llvm-ar in the selected LLVM toolchain: $whp_libcxx_ar"
+    whp_libcxx_ranlib="$LLVM_BIN/llvm-ranlib"
+    [ -x "$whp_libcxx_ranlib" ] ||
+        die "WATER_LIBCXX=llvm requires llvm-ranlib in the selected LLVM toolchain: $whp_libcxx_ranlib"
+    whp_libcxx_dlltool="$LLVM_BIN/llvm-dlltool"
+    [ -x "$whp_libcxx_dlltool" ] ||
+        die "WATER_LIBCXX=llvm requires llvm-dlltool in the selected LLVM toolchain: $whp_libcxx_dlltool"
     whp_libcxx_rc="$LLVM_BIN/llvm-rc"
     [ -x "$whp_libcxx_rc" ] ||
         die "WATER_LIBCXX=llvm requires llvm-rc in the selected LLVM toolchain: $whp_libcxx_rc"
@@ -2292,6 +2298,7 @@ prepare_one_llvm_libcxx()
         "CXX_VERSION=$whp_libcxx_compiler" \
         "AR=$whp_libcxx_ar" \
         "RANLIB=$whp_libcxx_ranlib" \
+        "DLLTOOL=$whp_libcxx_dlltool" \
         "RC=$whp_libcxx_rc" \
         "SDK_HEADERS=$(cat "$whp_libcxx_sdk_headers/.whp-state")" \
         "CRT_HEADERS=$(cat "$whp_libcxx_crt_headers/.whp-state")" \
@@ -2338,6 +2345,7 @@ prepare_one_llvm_libcxx()
             "-DCMAKE_CXX_COMPILER_TARGET=$whp_libcxx_target" \
             "-DCMAKE_AR=$whp_libcxx_ar" \
             "-DCMAKE_RANLIB=$whp_libcxx_ranlib" \
+            "-DCMAKE_DLLTOOL=$whp_libcxx_dlltool" \
             "-DCMAKE_RC_COMPILER=$whp_libcxx_rc" \
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
             -DCMAKE_C_COMPILER_WORKS=ON \
