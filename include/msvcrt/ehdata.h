@@ -124,7 +124,7 @@ typedef struct EHExceptionRecord
     DWORD NumberParameters;
     struct
     {
-        ULONG_PTR magicNumber;
+        DWORD magicNumber;
         void *pExceptionObject;
         ThrowInfo *pThrowInfo;
 #if _EH_RELATIVE_TYPEINFO
@@ -135,6 +135,17 @@ typedef struct EHExceptionRecord
 
 #if defined(_WIN64)
 #pragma pack(pop)
+#endif
+
+#if (defined(_M_ARM64) || defined(__aarch64__)) && !defined(_M_ARM64EC) && !defined(__arm64ec__)
+C_ASSERT(sizeof(PMD) == 12);
+C_ASSERT(sizeof(CatchableType) == 28);
+C_ASSERT(sizeof(ThrowInfo) == 16);
+C_ASSERT(FIELD_OFFSET(EHExceptionRecord, params) == 32);
+C_ASSERT(FIELD_OFFSET(EHExceptionRecord, params.pExceptionObject) == 40);
+C_ASSERT(FIELD_OFFSET(EHExceptionRecord, params.pThrowInfo) == 48);
+C_ASSERT(FIELD_OFFSET(EHExceptionRecord, params.pThrowImageBase) == 56);
+C_ASSERT(sizeof(EHExceptionRecord) == 64);
 #endif
 
 #define PER_CODE(per)       ((per)->ExceptionCode)
