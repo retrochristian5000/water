@@ -50,7 +50,12 @@ Then either install the configured Water runtime only (recommended):
 and the bundled legacy libc++/libc++abi development archives out of a normal
 runtime installation. If a development environment is intentionally needed,
 use `./build.sh install-dev`; use plain `./build.sh install` only when both the
-runtime and development files are wanted.
+runtime and development files are wanted. With the default `WATER_LIBCXX=llvm`,
+`install-dev` installs the generated LLVM-fork libc++ headers under a per-architecture
+`wine/c++/<arch>/v1` tree and installs `libwhp-libcxx.a` beside that architecture's
+Water PE libraries. The bundled libc++ 8 headers and `libc++.a`/`libc++abi.a` are
+kept only when a selected ABI still requires the legacy provider (currently ARM or
+PowerPC) or when an explicit external C++ provider needs the compatibility fallback.
 
 Before configuring, use `./build.sh menuconfig` or explicit configure options to
 disable optional components you do not want in the configured build. The install
@@ -144,7 +149,8 @@ runtime installation. This installs the runtime side of the configured build
 without also installing development headers, import libraries, or static
 libraries. Use `./build.sh install-dev` only when those development files are
 needed, and use `./build.sh install` only when both sets are intentionally
-wanted. Disable unwanted optional components in `./build.sh menuconfig` (or
+wanted. The default LLVM libc++ provider is installed from the pinned LLVM fork rather
+than from Water's old bundled libc++ tree on supported PE ABIs. Disable unwanted optional components in `./build.sh menuconfig` (or
 with configure options) before building so they are absent from the install
 graph as well.
 
