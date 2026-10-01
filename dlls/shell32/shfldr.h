@@ -61,8 +61,8 @@ BOOL trash_file( const WCHAR *path );
 
 static inline int SHELL32_GUIDToStringA (REFGUID guid, LPSTR str)
 {
-    return sprintf(str, "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
-            guid->Data1, guid->Data2, guid->Data3,
+    return sprintf(str, "{%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+            (unsigned long)guid->Data1, guid->Data2, guid->Data3,
             guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3],
             guid->Data4[4], guid->Data4[5], guid->Data4[6], guid->Data4[7]);
 }
@@ -70,12 +70,12 @@ static inline int SHELL32_GUIDToStringA (REFGUID guid, LPSTR str)
 static inline int SHELL32_GUIDToStringW (REFGUID guid, LPWSTR str)
 {
     static const WCHAR fmtW[] =
-     { '{','%','0','8','x','-','%','0','4','x','-','%','0','4','x','-',
+     { '{','%','0','8','l','x','-','%','0','4','x','-','%','0','4','x','-',
      '%','0','2','x','%','0','2','x','-',
      '%','0','2','x','%','0','2','x','%','0','2','x','%','0','2','x',
      '%','0','2','x','%','0','2','x','}',0 };
     return swprintf(str, CHARS_IN_GUID, fmtW,
-            guid->Data1, guid->Data2, guid->Data3,
+            (unsigned long)guid->Data1, guid->Data2, guid->Data3,
             guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3],
             guid->Data4[4], guid->Data4[5], guid->Data4[6], guid->Data4[7]);
 }
