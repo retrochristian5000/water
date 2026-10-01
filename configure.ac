@@ -188,12 +188,19 @@ AS_IF([test -z "$CPPBIN"],
              */*) wine_cpp_path=$wine_cpp_cc ;;
              *) wine_cpp_path=`command -v "$wine_cpp_cc" 2>/dev/null` ;;
            esac
-           wine_cpp_dir=`dirname "$wine_cpp_path" 2>/dev/null`
-           wine_cpp_base=`basename "$wine_cpp_path" 2>/dev/null`
-           case "$wine_cpp_base" in
-             clang-[0-9]*) wine_cpp_suffix=${wine_cpp_base#clang} ;;
-             *) wine_cpp_suffix= ;;
-           esac
+           if test -n "$wine_cpp_path"
+           then
+               wine_cpp_dir=`dirname "$wine_cpp_path" 2>/dev/null`
+               wine_cpp_base=`basename "$wine_cpp_path" 2>/dev/null`
+               case "$wine_cpp_base" in
+                 clang-[0-9]*) wine_cpp_suffix=${wine_cpp_base#clang} ;;
+                 *) wine_cpp_suffix= ;;
+               esac
+           else
+               wine_cpp_dir=
+               wine_cpp_base=
+               wine_cpp_suffix=
+           fi
            if test -n "$wine_cpp_dir" && test -x "$wine_cpp_dir/clang-cpp$wine_cpp_suffix"
            then
                CPPBIN="$wine_cpp_dir/clang-cpp$wine_cpp_suffix"
