@@ -120,7 +120,8 @@ Install targets:
   install              Install both runtime and development files; use only when wanted
 
 Run ./build.sh menuconfig to edit the persistent .whpconfig profile.
-Explicit environment variables and explicit configure arguments override menu defaults.
+Explicit environment variables override menu defaults.
+WATER_PREFIX owns --prefix, --exec-prefix, and --libdir; raw configure copies are ignored.
 CC/CXX/AR/NM/RANLIB/LD and linker flags remain authoritative when explicitly set.
 EOF
 }
@@ -2676,13 +2677,30 @@ profile_changed()
 save_user_configure_args()
 {
     mkdir -p "$BUILD_DIR"
-    tmp="$CONFIGURE_USER_ARGS_FILE.tmp.$$"
+    tmp="$CONFIGURE_USER_ARGS_FILE.tmp.$"
     : > "$tmp"
-    for arg
+    while [ "$#" -gt 0 ]
     do
+        arg=$1
+        shift
         case "$arg" in
             *'
 '*) rm -f "$tmp"; die "configure arguments may not contain newlines" ;;
+            --prefix|--exec-prefix|--libdir)
+                [ "$#" -gt 0 ] || {
+                    rm -f "$tmp"
+                    die "$arg requires a value"
+                }
+                printf 'WHP configure: %s is managed by WATER_PREFIX; ignoring raw value %s\n' \
+                    "$arg" "$1" >&2
+                shift
+                continue
+                ;;
+            --prefix=*|--exec-prefix=*|--libdir=*)
+                printf 'WHP configure: %s is managed by WATER_PREFIX; ignoring raw option\n' \
+                    "${arg%%=*}" >&2
+                continue
+                ;;
         esac
         printf '%s\n' "$arg" >> "$tmp"
     done
@@ -2851,9 +2869,24 @@ configure_saved()
 {
     set --
     if [ -f "$CONFIGURE_USER_ARGS_FILE" ]; then
+        skip_managed_value=0
         while IFS= read -r arg || [ -n "$arg" ]; do
+            if [ "$skip_managed_value" = 1 ]; then
+                skip_managed_value=0
+                continue
+            fi
+            case "$arg" in
+                --prefix|--exec-prefix|--libdir)
+                    skip_managed_value=1
+                    continue
+                    ;;
+                --prefix=*|--exec-prefix=*|--libdir=*)
+                    continue
+                    ;;
+            esac
             set -- "$@" "$arg"
         done < "$CONFIGURE_USER_ARGS_FILE"
+        unset skip_managed_value
     fi
     configure_build "$@"
 }
@@ -2861,7 +2894,7 @@ configure_saved()
 configure_new()
 {
     save_user_configure_args "$@"
-    configure_build "$@"
+    configure_saved
 }
 
 recheck_build()
