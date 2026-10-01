@@ -511,15 +511,34 @@ static struct strarray get_translator(void)
     return empty_strarray;
 }
 
+static const char *get_installed_libcxx_headers(void)
+{
+    struct stat st;
+    const char *dir, *config;
+
+    if (wine_objdir || !includedir) return NULL;
+    dir = strmake( "%s/wine/c++/%s/v1", includedir, get_cpu_name( target.cpu ));
+    config = strmake( "%s/__config_site", dir );
+    if (!stat( config, &st ) && S_ISREG( st.st_mode )) return dir;
+    return NULL;
+}
+
 static struct strarray get_cxx_provider_flags( const char *suffix )
 {
-    const char *value;
+    struct strarray ret = empty_strarray;
+    const char *value, *headers;
 
-    if (processor != proc_cxx || !is_pe || !use_msvcrt) return empty_strarray;
+    if (processor != proc_cxx || !is_pe || !use_msvcrt) return ret;
     value = getenv( strmake( "%s_%s", get_cpu_name( target.cpu ), suffix ));
     if (!value || !*value) value = getenv( suffix );
-    if (!value || !*value) return empty_strarray;
-    return strarray_fromstring( value, " \t" );
+    if (value && *value) return strarray_fromstring( value, " \t" );
+
+    if (strcmp( suffix, "CXX_PE_CFLAGS" ) || !(headers = get_installed_libcxx_headers())) return ret;
+    strarray_add( &ret, "-D_LIBCPP_NO_AUTO_LINK" );
+    strarray_add( &ret, "-D_LIBCPP_NO_ABI_TAG" );
+    strarray_add( &ret, "-nostdinc++" );
+    strarray_add( &ret, strmake( "-I%s", headers ));
+    return ret;
 }
 
 static int try_link( struct strarray link_tool, const char *cflags )
@@ -1167,7 +1186,21 @@ static bool add_cxx_provider_libs( struct strarray *lib_dirs, struct strarray *f
     struct strarray args = get_cxx_provider_flags( "CXX_PE_LIBS" );
     unsigned int i;
 
-    if (!args.count) return false;
+    if (!args.count)
+    {
+        char *provider = NULL;
+
+        if (!get_installed_libcxx_headers() ||
+            get_lib_type( *lib_dirs, "whp-libcxx", &provider ) == file_na)
+        {
+            free( provider );
+            return false;
+        }
+        free( provider );
+        add_library( *lib_dirs, files, "whp-libcxx" );
+        add_library( *lib_dirs, files, "vcruntime140" );
+        return true;
+    }
 
     for (i = 0; i < args.count; i++)
     {
