@@ -76,7 +76,7 @@ esac
 usage()
 {
     cat <<EOF
-Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|clean|distclean|install|test|TARGET...]
+Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|clean|distclean|install-lib|install-dev|install|test|TARGET...]
 
 Environment:
   WHP_BUILD_DIR         Out-of-tree build directory (default: ./build)
@@ -109,6 +109,11 @@ Environment:
   AUTOCONF              Autoconf program used to generate ./configure
   WATER_WITH_MINGW      PE compiler policy: auto, clang, llvm-mingw, y, or n
                          (auto prefers Water's selected LLVM clang)
+
+Install targets:
+  install-lib          Install runtime files only (recommended for normal Water use)
+  install-dev          Install development headers/import/static libraries only
+  install              Install both runtime and development files; use only when wanted
 
 Run ./build.sh menuconfig to edit the persistent .whpconfig profile.
 Explicit environment variables and explicit configure arguments override menu defaults.
