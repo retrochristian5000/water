@@ -1190,12 +1190,10 @@ static bool add_cxx_provider_libs( struct strarray *lib_dirs, struct strarray *f
     {
         char *provider = NULL;
 
-        if (!get_installed_libcxx_headers() ||
-            get_lib_type( *lib_dirs, "whp-libcxx", &provider ) == file_na)
-        {
-            free( provider );
-            return false;
-        }
+        if (!get_installed_libcxx_headers()) return false;
+        if (get_lib_type( *lib_dirs, "whp-libcxx", &provider ) == file_na)
+            error( "Installed LLVM libc++ headers found for %s, but libwhp-libcxx is missing\n",
+                   get_cpu_name( target.cpu ) );
         free( provider );
         add_library( *lib_dirs, files, "whp-libcxx" );
         add_library( *lib_dirs, files, "vcruntime140" );
