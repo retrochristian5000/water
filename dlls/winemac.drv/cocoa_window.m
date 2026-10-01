@@ -201,6 +201,7 @@ static inline BOOL stage_manager_enabled(void)
 }
 
     - (id) initWithOwner:(WineDisplayLink*)owner;
+    - (void) clearOwner;
     - (void) displayLinkDidFire:(id)displayLink;
 
 @end
@@ -244,6 +245,11 @@ static inline BOOL stage_manager_enabled(void)
         if (self)
             _owner = owner;
         return self;
+    }
+
+    - (void) clearOwner
+    {
+        _owner = nil;
     }
 
     - (void) displayLinkDidFire:(id)displayLink
@@ -319,6 +325,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
     - (void) dealloc
     {
+        [_caTarget clearOwner];
 #if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
         if (_caLink)
         {
