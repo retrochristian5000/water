@@ -345,11 +345,19 @@ validate_configure_rules()
             printf "%s:%d: unescaped Make variable in WINE_APPEND_RULE: %s\n", FILENAME, NR, $0 > "/dev/stderr"
             bad = 1
         }
+        in_rule && match($0, /(^|[^\\])"/) {
+            printf "%s:%d: unescaped double quote in WINE_APPEND_RULE: %s\n", FILENAME, NR, $0 > "/dev/stderr"
+            bad = 1
+        }
+        in_rule && /\\$/ {
+            printf "%s:%d: trailing backslash in WINE_APPEND_RULE: %s\n", FILENAME, NR, $0 > "/dev/stderr"
+            bad = 1
+        }
         in_rule && /\]\)/ { in_rule = 0 }
         END { exit bad ? 1 : 0 }
     ' "$SOURCE_DIR/configure.ac"
     then
-        die 'configure.ac contains raw $(NAME) syntax inside WINE_APPEND_RULE; use \$(NAME)'
+        die 'configure.ac has unsafe WINE_APPEND_RULE quoting; escape Make variables/quotes and keep recipes on one line'
     fi
 }
 
