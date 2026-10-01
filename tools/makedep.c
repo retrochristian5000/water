@@ -5362,12 +5362,16 @@ static char *expand_ninja_command( const char *command, const char *target )
             }
 
             raw = get_make_variable( top_makefile, name );
-            if (is_ninja_runtime_variable( name ) || !raw)
+            if (is_ninja_runtime_variable( name ))
             {
                 ninja_buffer_add_dollars( &buffer, 2 );
                 ninja_buffer_add_char( &buffer, '{' );
                 ninja_buffer_add( &buffer, name );
                 ninja_buffer_add_char( &buffer, '}' );
+            }
+            else if (!raw)
+            {
+                fatal_error( "unknown make variable '%s' in Ninja command '%s'\n", name, command );
             }
             else if ((value = get_expanded_make_variable( top_makefile, name )))
             {
