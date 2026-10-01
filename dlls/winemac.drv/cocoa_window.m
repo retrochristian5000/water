@@ -193,10 +193,25 @@ static inline BOOL stage_manager_enabled(void)
 @end
 
 
+@class WineDisplayLink;
+
+@interface WineDisplayLinkTarget : NSObject
+{
+    WineDisplayLink* _owner;
+}
+
+    - (id) initWithOwner:(WineDisplayLink*)owner;
+    - (void) displayLinkDidFire:(id)displayLink;
+
+@end
+
+
 @interface WineDisplayLink : NSObject
 {
     CGDirectDisplayID _displayID;
-    CVDisplayLinkRef _link;
+    CVDisplayLinkRef _cvLink;
+    id _caLink;
+    WineDisplayLinkTarget* _caTarget;
     NSMutableSet* _windows;
 
     NSTimeInterval _actualRefreshPeriod;
@@ -212,9 +227,32 @@ static inline BOOL stage_manager_enabled(void)
 
     - (NSTimeInterval) refreshPeriod;
 
+    - (void) fire;
     - (void) start;
+    - (void) stop;
+    - (BOOL) isRunning;
+    - (void) caDisplayLinkDidFire:(id)displayLink;
 
 @end
+
+
+@implementation WineDisplayLinkTarget
+
+    - (id) initWithOwner:(WineDisplayLink*)owner
+    {
+        self = [super init];
+        if (self)
+            _owner = owner;
+        return self;
+    }
+
+    - (void) displayLinkDidFire:(id)displayLink
+    {
+        [_owner caDisplayLinkDidFire:displayLink];
+    }
+
+@end
+
 
 @implementation WineDisplayLink
 
@@ -225,32 +263,87 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         self = [super init];
         if (self)
         {
-            CVReturn status = CVDisplayLinkCreateWithCGDisplay(displayID, &_link);
-            if (status == kCVReturnSuccess && !_link)
-                status = kCVReturnError;
-            if (status == kCVReturnSuccess)
-                status = CVDisplayLinkSetOutputCallback(_link, WineDisplayLinkCallback, self);
-            if (status != kCVReturnSuccess)
-            {
-                [self release];
-                return nil;
-            }
-
             _displayID = displayID;
             _windows = [[NSMutableSet alloc] init];
+
+#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+            if (@available(macOS 14.0, *))
+            {
+                NSScreen* screen = nil;
+
+                for (NSScreen* candidate in [NSScreen screens])
+                {
+                    NSNumber* screenNumber = candidate.deviceDescription[@"NSScreenNumber"];
+                    if ([screenNumber unsignedIntValue] == displayID)
+                    {
+                        screen = candidate;
+                        break;
+                    }
+                }
+
+                if (screen)
+                {
+                    _caTarget = [[WineDisplayLinkTarget alloc] initWithOwner:self];
+                    _caLink = [[screen displayLinkWithTarget:_caTarget selector:@selector(displayLinkDidFire:)] retain];
+                    if (_caLink)
+                    {
+                        CADisplayLink* link = (CADisplayLink*)_caLink;
+                        [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+                        link.paused = YES;
+                    }
+                    else
+                    {
+                        [_caTarget release];
+                        _caTarget = nil;
+                    }
+                }
+            }
+#endif
+
+            if (!_caLink)
+            {
+                CVReturn status = CVDisplayLinkCreateWithCGDisplay(displayID, &_cvLink);
+                if (status == kCVReturnSuccess && !_cvLink)
+                    status = kCVReturnError;
+                if (status == kCVReturnSuccess)
+                    status = CVDisplayLinkSetOutputCallback(_cvLink, WineDisplayLinkCallback, self);
+                if (status != kCVReturnSuccess)
+                {
+                    [self release];
+                    return nil;
+                }
+            }
         }
         return self;
     }
 
     - (void) dealloc
     {
-        if (_link)
+#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+        if (_caLink)
         {
-            CVDisplayLinkStop(_link);
-            CVDisplayLinkRelease(_link);
+            [(CADisplayLink*)_caLink invalidate];
+            [_caLink release];
+        }
+#endif
+        [_caTarget release];
+
+        if (_cvLink)
+        {
+            CVDisplayLinkStop(_cvLink);
+            CVDisplayLinkRelease(_cvLink);
         }
         [_windows release];
         [super dealloc];
+    }
+
+    - (BOOL) isRunning
+    {
+#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+        if (_caLink)
+            return ![(CADisplayLink*)_caLink isPaused];
+#endif
+        return _cvLink && CVDisplayLinkIsRunning(_cvLink);
     }
 
     - (void) addWindow:(WineWindow*)window
@@ -260,7 +353,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
             firstWindow = !_windows.count;
             [_windows addObject:window];
         }
-        if (firstWindow || !CVDisplayLinkIsRunning(_link))
+        if (firstWindow || ![self isRunning])
             [self start];
     }
 
@@ -273,8 +366,8 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
             if (hadWindows && !_windows.count)
                 lastWindow = TRUE;
         }
-        if (lastWindow && CVDisplayLinkIsRunning(_link))
-            CVDisplayLinkStop(_link);
+        if (lastWindow && [self isRunning])
+            [self stop];
     }
 
     - (void) fire
@@ -298,20 +391,46 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
             if (anyDisplayed)
                 _lastDisplayTime = now;
             else if (_lastDisplayTime + 2.0 < now)
-                CVDisplayLinkStop(_link);
+                [self stop];
         });
         [windows release];
     }
 
+    - (void) caDisplayLinkDidFire:(id)displayLink
+    {
+#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+        CADisplayLink* link = (CADisplayLink*)displayLink;
+        NSTimeInterval period = link.targetTimestamp - link.timestamp;
+        if (period > 0)
+            _actualRefreshPeriod = period;
+#endif
+        [self fire];
+    }
+
     - (NSTimeInterval) refreshPeriod
     {
-        if (_actualRefreshPeriod || (_actualRefreshPeriod = CVDisplayLinkGetActualOutputVideoRefreshPeriod(_link)))
+#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+        if (_caLink)
+        {
+            CADisplayLink* link = (CADisplayLink*)_caLink;
+            NSTimeInterval period = link.targetTimestamp - link.timestamp;
+            if (period > 0)
+                return period;
+            if (_actualRefreshPeriod > 0)
+                return _actualRefreshPeriod;
+            if (link.duration > 0)
+                return link.duration;
+            return 1.0 / 60.0;
+        }
+#endif
+
+        if (_actualRefreshPeriod || (_actualRefreshPeriod = CVDisplayLinkGetActualOutputVideoRefreshPeriod(_cvLink)))
             return _actualRefreshPeriod;
 
         if (_nominalRefreshPeriod)
             return _nominalRefreshPeriod;
 
-        CVTime time = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(_link);
+        CVTime time = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(_cvLink);
         if (time.flags & kCVTimeIsIndefinite)
             return 1.0 / 60.0;
         _nominalRefreshPeriod = time.timeValue / (double)time.timeScale;
@@ -321,7 +440,27 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
     - (void) start
     {
         _lastDisplayTime = [[NSProcessInfo processInfo] systemUptime];
-        CVDisplayLinkStart(_link);
+#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+        if (_caLink)
+        {
+            [(CADisplayLink*)_caLink setPaused:NO];
+            return;
+        }
+#endif
+        CVDisplayLinkStart(_cvLink);
+    }
+
+    - (void) stop
+    {
+#if defined(MAC_OS_X_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_14_0
+        if (_caLink)
+        {
+            [(CADisplayLink*)_caLink setPaused:YES];
+            return;
+        }
+#endif
+        if (_cvLink)
+            CVDisplayLinkStop(_cvLink);
     }
 
 static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* inNow, const CVTimeStamp* inOutputTime, CVOptionFlags flagsIn, CVOptionFlags* flagsOut, void* displayLinkContext)
@@ -332,7 +471,6 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 }
 
 @end
-
 
 @interface CAShapeLayer (WineShapeMaskExtensions)
 
