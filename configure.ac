@@ -90,6 +90,10 @@ AC_ARG_WITH(system-dllpath,AS_HELP_STRING([--with-system-dllpath=PATH],[load ext
             AC_SUBST(system_dllpath,[$withval]))
 AC_ARG_WITH(compiler-cache,AS_HELP_STRING([--with-compiler-cache@<:@=PROGRAM@:>@],[use compiler cache launcher (auto-detect sccache or ccache when enabled)]))
 AC_ARG_VAR(COMPILER_CACHE,[compiler cache launcher (sccache, ccache, or compatible wrapper)])
+AC_ARG_VAR(WHP_LIBCXX_INSTALL_MODE,[Water libc++ development install provider])
+AC_ARG_VAR(WHP_LIBCXX_INSTALL_ROOT,[Water LLVM libc++ provider staging root])
+AC_ARG_VAR(WHP_LIBCXX_INSTALL_ARCHS,[Water LLVM libc++ architectures to install])
+AC_ARG_VAR(WHP_LIBCXX_INSTALL_LEGACY_HEADERS,[whether legacy Water libc++ headers remain required])
 AC_ARG_WITH(wine-tools,AS_HELP_STRING([--with-wine-tools=DIR],[use Wine tools from directory DIR]))
 AC_ARG_WITH(wine64,    AS_HELP_STRING([--with-wine64=DIR],[use the 64-bit Wine in DIR for a Wow64 build]))
 
@@ -4048,6 +4052,23 @@ server/wineserver"
       *) TOP_INSTALL_LIB="$TOP_INSTALL_LIB loader/wine.desktop" ;;
     esac
 fi
+
+dnl Water-managed LLVM libc++ development install. The normal makedep install
+dnl graph handles CRT and Windows SDK headers; this overlays the selected,
+dnl architecture-specific libc++ provider and removes stale bundled archives.
+WINE_APPEND_RULE(
+[install-libcxx-dev:
+	@$(SHELL) ${wine_srcdir}scripts/install-libcxx.sh install \
+		"$(WHP_LIBCXX_INSTALL_MODE)" "$(WHP_LIBCXX_INSTALL_ROOT)" \
+		"$(WHP_LIBCXX_INSTALL_ARCHS)" "$(WHP_LIBCXX_INSTALL_LEGACY_HEADERS)" \
+		"$(DESTDIR)" "$(includedir)" "$(libdir)" "${wine_srcdir}include/msvcrt"
+install-dev:: install-libcxx-dev
+uninstall::
+	@$(SHELL) ${wine_srcdir}scripts/install-libcxx.sh uninstall \
+		"$(WHP_LIBCXX_INSTALL_MODE)" "$(WHP_LIBCXX_INSTALL_ROOT)" \
+		"$(WHP_LIBCXX_INSTALL_ARCHS)" "$(WHP_LIBCXX_INSTALL_LEGACY_HEADERS)" \
+		"$(DESTDIR)" "$(includedir)" "$(libdir)" "${wine_srcdir}include/msvcrt"
+.PHONY: install-libcxx-dev])
 
 dnl Rules for generated source files
 
