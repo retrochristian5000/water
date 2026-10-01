@@ -203,6 +203,8 @@ extern void WINAPI DOSVM_Int20Handler(I386_CONTEXT *);
 extern void WINAPI DOSVM_Int21Handler(I386_CONTEXT *);
 
 /* programs/ntdos.sys/absdisk.c (temporary KRNL386 bridge) */
+BOOL DOSVM_RawRead(BYTE, DWORD, DWORD, BYTE *, BOOL);
+BOOL DOSVM_RawWrite(BYTE, DWORD, DWORD, const BYTE *, BOOL);
 void WINAPI DOSVM_Int25Handler(I386_CONTEXT *);
 void WINAPI DOSVM_Int26Handler(I386_CONTEXT *);
 

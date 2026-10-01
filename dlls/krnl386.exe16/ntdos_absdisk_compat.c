@@ -84,8 +84,8 @@ static BOOL krnl386_legacy_absolute_write(BYTE drive, DWORD begin, DWORD nr_sect
     return fake_success;
 }
 
-static BOOL ntdos_compat_dem_read(BYTE drive, DWORD begin, DWORD nr_sect,
-                                  BYTE *dataptr, BOOL fake_success)
+BOOL DOSVM_RawRead(BYTE drive, DWORD begin, DWORD nr_sect,
+                   BYTE *dataptr, BOOL fake_success)
 {
     HMODULE wow32;
     w32_dem_absread_proc proc;
@@ -99,8 +99,8 @@ static BOOL ntdos_compat_dem_read(BYTE drive, DWORD begin, DWORD nr_sect,
     return proc ? proc(drive, begin, nr_sect, dataptr, fake_success) : FALSE;
 }
 
-static BOOL ntdos_compat_dem_write(BYTE drive, DWORD begin, DWORD nr_sect,
-                                   const BYTE *dataptr, BOOL fake_success)
+BOOL DOSVM_RawWrite(BYTE drive, DWORD begin, DWORD nr_sect,
+                    const BYTE *dataptr, BOOL fake_success)
 {
     HMODULE wow32;
     w32_dem_abswrite_proc proc;
@@ -114,8 +114,8 @@ static BOOL ntdos_compat_dem_write(BYTE drive, DWORD begin, DWORD nr_sect,
     return proc ? proc(drive, begin, nr_sect, dataptr, fake_success) : FALSE;
 }
 
-#define DEM_AbsoluteRead ntdos_compat_dem_read
-#define DEM_AbsoluteWrite ntdos_compat_dem_write
+#define DEM_AbsoluteRead DOSVM_RawRead
+#define DEM_AbsoluteWrite DOSVM_RawWrite
 #include "../../programs/ntdos.sys/absdisk.c"
 #undef DEM_AbsoluteRead
 #undef DEM_AbsoluteWrite
