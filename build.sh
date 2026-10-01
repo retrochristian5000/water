@@ -33,6 +33,7 @@ WHP_MENU_SCHEMA="$SOURCE_DIR/scripts/whp-config/menu-options.def"
 NINJA_BOOTSTRAP_TOOL="$SOURCE_DIR/scripts/ensure-ninja.py"
 CONFIGURE_USER_ARGS_FILE="$BUILD_DIR/.whp-configure-args"
 PROFILE_FILE="$BUILD_DIR/.whp-profile"
+CXX_PROFILE_FILE="$BUILD_DIR/.whp-cxx-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
@@ -2572,6 +2573,44 @@ prepare_libcxx_provider()
 }
 
 
+cxx_profile_signature()
+{
+    printf '%s\n' \
+        "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
+        "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
+        "WATER_WITH_MINGW=${WATER_WITH_MINGW:-auto}" \
+        "LLVM_BIN=${LLVM_BIN:-}" \
+        "CXX=${CXX:-}" \
+        "CXXFLAGS=${CXXFLAGS:-}" \
+        "WHP_LLVM_TOOLCHAIN_STATE=${WHP_LLVM_TOOLCHAIN_STATE:-}"
+
+    for arch in i386 x86_64 arm aarch64 arm64ec powerpc
+    do
+        eval "cxx=\${${arch}_CXX:-}"
+        eval "cxxflags=\${${arch}_CXXFLAGS:-}"
+        eval "pe_cflags=\${${arch}_CXX_PE_CFLAGS:-}"
+        eval "pe_libs=\${${arch}_CXX_PE_LIBS:-}"
+        printf '%s\n' \
+            "${arch}_CXX=$cxx" \
+            "${arch}_CXXFLAGS=$cxxflags" \
+            "${arch}_CXX_PE_CFLAGS=$pe_cflags" \
+            "${arch}_CXX_PE_LIBS=$pe_libs"
+    done
+}
+
+record_cxx_profile()
+{
+    mkdir -p "$BUILD_DIR"
+    tmp=$(mktemp "$CXX_PROFILE_FILE.tmp.XXXXXX") ||
+        die "could not create C++ profile temporary file"
+    cxx_profile_signature > "$tmp"
+    if [ -f "$CXX_PROFILE_FILE" ] && cmp -s "$tmp" "$CXX_PROFILE_FILE"; then
+        rm -f "$tmp"
+    else
+        mv -f "$tmp" "$CXX_PROFILE_FILE"
+    fi
+}
+
 water_libdir()
 {
     case "$WATER_PREFIX" in
@@ -3025,6 +3064,7 @@ prepare_llvm_toolchain
 setup_toolchain
 prepare_bash_toolchain
 prepare_libcxx_provider
+record_cxx_profile
 
 case "${1:-build}" in
     configure)
