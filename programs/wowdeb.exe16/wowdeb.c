@@ -130,7 +130,7 @@ WORD WINAPI WinMain16( HINSTANCE16 inst, HINSTANCE16 prev, LPSTR cmdline, WORD s
             continue;
         }
 
-        if (!WOWCallback16Ex( proc, WCB16_PASCAL, header->wArgsPassed,
+        if (!WOWCallback16Ex( (DWORD)proc, WCB16_PASCAL, header->wArgsPassed,
                               block + sizeof(*header), &ret ))
         {
             WARN( "remote Win16 call %s!%s failed\n",
