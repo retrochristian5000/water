@@ -517,6 +517,7 @@ static struct strarray get_cxx_provider_flags( const char *suffix )
 
     if (processor != proc_cxx || !is_pe || !use_msvcrt) return empty_strarray;
     value = getenv( strmake( "%s_%s", get_cpu_name( target.cpu ), suffix ));
+    if (!value || !*value) value = getenv( suffix );
     if (!value || !*value) return empty_strarray;
     return strarray_fromstring( value, " \t" );
 }
