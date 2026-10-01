@@ -5326,6 +5326,9 @@ static bool is_ninja_runtime_variable( const char *name )
     {
         "ANDROID_HOME",
         "DESTDIR",
+        "INSTALL_DATA_FLAGS",
+        "INSTALL_PROGRAM_FLAGS",
+        "INSTALL_SCRIPT_FLAGS",
         "RUNTESTFLAGS",
         "SASTFLAGS",
         NULL
