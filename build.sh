@@ -247,7 +247,6 @@ validate_profile()
     case "$WATER_PREFIX" in
         '') die "WATER_PREFIX must not be empty" ;;
         *'
-'*|*'
 '*) die "WATER_PREFIX must not contain line breaks" ;;
     esac
     case "$WATER_BASH_BOOTSTRAP" in
@@ -2462,7 +2461,6 @@ profile_signature()
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}" \
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
-        "WATER_INSTALL=${WATER_INSTALL:-none}" \
         "WATER_PREFIX=${WATER_PREFIX:-/usr/local}" \
         "WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
@@ -2854,8 +2852,10 @@ case "${1:-build}" in
     build|incremental)
         if [ "$#" -gt 0 ]; then shift; fi
         ensure_configured
+        if [ "$#" -eq 0 ]; then auto_install=1; else auto_install=0; fi
         run_build "$@"
-        run_profile_install
+        if [ "$auto_install" = 1 ]; then run_profile_install; fi
+        unset auto_install
         ;;
     *)
         ensure_configured
