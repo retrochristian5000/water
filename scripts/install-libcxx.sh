@@ -12,6 +12,13 @@ includedir=$7
 libdir=$8
 legacy_source=$9
 
+case "$includedir" in
+    ''|/) echo "error: invalid include install directory: $includedir" >&2; exit 1 ;;
+esac
+case "$libdir" in
+    ''|/) echo "error: invalid library install directory: $libdir" >&2; exit 1 ;;
+esac
+
 [ "$provider" = llvm ] || exit 0
 
 remove_legacy_headers()
