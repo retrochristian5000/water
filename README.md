@@ -25,7 +25,7 @@ The build funnel regenerates the ignored `./configure` script from
 LLVM toolchain, configures an out-of-tree build, and invokes Ninja or Make.
 Use `./build.sh menuconfig` to edit the persistent ignored `.whpconfig`
 profile. The menu controls PE architectures, the WHP LLVM bootstrap and host
-linker policies, build behavior, and optional Wine components. The LLVM menu
+linker policies, build behavior, installation, and optional Wine components. The LLVM menu
 defaults to a lean Water-only graph: unused tests, docs, examples, benchmarks,
 utilities, runtimes, bindings, and default tool sweeps are excluded while
 required Clang, LLD, archive, symbol, and strip tools remain available. The
@@ -40,7 +40,18 @@ falls back to a POSIX-shell menu otherwise.
 Use `./build.sh configure [options]` when one-run or advanced configure
 options are needed; explicit command-line options override the saved profile.
 
-Then either install the configured Water runtime only (recommended):
+To make the normal build command install Water automatically, set **Install after
+successful build** in `./build.sh menuconfig` to `runtime`, `development`, or
+`all`. Set **Install prefix** in the same menu to the desired configure prefix
+(default `/usr/local`). A normal `./build.sh` or `./build.sh build` then performs
+the selected install only after the full build succeeds. Explicit internal build
+targets do not trigger the automatic install.
+
+Changing the prefix causes Water to reconfigure because install paths are part of
+the configured build. Changing only the post-build install mode does not.
+
+Or install the configured Water runtime explicitly (recommended for a manual
+install):
 
 ```
 ./build.sh install-lib
@@ -144,7 +155,8 @@ For more information, see https://gitlab.winehq.org/wine/wine/-/wikis/Building-W
 
 ## SETUP
 
-Once Water has been built correctly, prefer `./build.sh install-lib` for a
+Once Water has been built correctly, either enable post-build installation in
+`./build.sh menuconfig` or run `./build.sh install-lib` explicitly for a
 runtime installation. This installs the runtime side of the configured build
 without also installing development headers, import libraries, or static
 libraries. Use `./build.sh install-dev` only when those development files are
