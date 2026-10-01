@@ -332,7 +332,7 @@ autoconf_state_signature()
 record_autoconf_state()
 {
     mkdir -p "$BUILD_DIR"
-    tmp="$AUTOCONF_STATE_FILE.tmp.$"
+    tmp="$AUTOCONF_STATE_FILE.tmp.$$"
     autoconf_state_signature > "$tmp"
     mv -f "$tmp" "$AUTOCONF_STATE_FILE"
 }
