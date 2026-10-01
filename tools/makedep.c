@@ -5316,6 +5316,23 @@ static bool is_ninja_runtime_variable( const char *name )
     return false;
 }
 
+static bool is_ninja_install_directory_variable( const char *name )
+{
+    static const char * const names[] =
+    {
+        "bindir",
+        "datadir",
+        "includedir",
+        "libdir",
+        "mandir",
+        NULL
+    };
+    unsigned int i;
+
+    for (i = 0; names[i]; i++) if (!strcmp( name, names[i] )) return true;
+    return false;
+}
+
 static char *expand_ninja_command( const char *command, const char *target )
 {
     struct ninja_buffer buffer = { 0 };
@@ -5375,6 +5392,9 @@ static char *expand_ninja_command( const char *command, const char *target )
             }
             else if ((value = get_expanded_make_variable( top_makefile, name )))
             {
+                if (is_ninja_install_directory_variable( name ) && !value[0])
+                    fatal_error( "empty install directory variable '%s' in Ninja command '%s'\n",
+                                 name, command );
                 ninja_buffer_add_shell_text( &buffer, value );
                 free( value );
             }
