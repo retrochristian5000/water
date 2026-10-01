@@ -83,3 +83,4 @@ unix_loader_EXTRADEFS = \
 	-DLIBDIR=\"${libdir}\" \
 	-DDATADIR=\"${datadir}\" \
 	-DSYSTEMDLLPATH=\"${system_dllpath}\"
+unix_loader_OBJDEPS = Makefile
