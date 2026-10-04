@@ -91,6 +91,8 @@ OPTIONS = (
     Option('WATER_LLVM_PCH', 'LLVM toolchain', 'LLVM precompiled headers', 'bool', 'n'),
     Option('WATER_LLVM_LINKER', 'LLVM toolchain', 'Host linker (macOS: system)', 'choice',
            'auto', ('auto', 'lld', 'system')),
+    Option('WATER_PE_LTO', 'LLVM toolchain', 'PE link-time optimization', 'choice',
+           'none', ('none', 'thin', 'full')),
     Option('WATER_LIBCXX', 'LLVM toolchain', 'PE libc++ provider', 'choice',
            'llvm', ('llvm', 'legacy')),
 

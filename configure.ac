@@ -91,6 +91,7 @@ AC_ARG_WITH(system-dllpath,AS_HELP_STRING([--with-system-dllpath=PATH],[load ext
 AC_ARG_WITH(compiler-cache,AS_HELP_STRING([--with-compiler-cache@<:@=PROGRAM@:>@],[use compiler cache launcher (auto-detect sccache or ccache when enabled)]))
 AC_ARG_VAR(COMPILER_CACHE,[compiler cache launcher (sccache, ccache, or compatible wrapper)])
 AC_ARG_VAR(CPPBIN,[standalone C preprocessor used by winecpp])
+AC_ARG_VAR(WATER_PE_LTO,[PE link-time optimization mode (none, thin, or full)])
 AC_ARG_VAR(WHP_LIBCXX_INSTALL_MODE,[Water libc++ development install provider])
 AC_ARG_VAR(WHP_LIBCXX_INSTALL_ROOT,[Water LLVM libc++ provider staging root])
 AC_ARG_VAR(WHP_LIBCXX_INSTALL_ARCHS,[Water LLVM libc++ architectures to install])
@@ -855,6 +856,33 @@ EOF
     WINE_TRY_PE_CFLAGS([-Wenum-enum-conversion],[:],WINE_TRY_PE_CFLAGS([-Wenum-conversion]))
     WINE_TRY_PE_CFLAGS([-ffunction-sections])
     WINE_TRY_PE_CFLAGS([-ffp-exception-behavior=maytrap])
+
+    dnl ThinLTO keeps backend work parallel and avoids the single combined
+    dnl module used by full LTO. Apply the menu policy only when lower-level
+    dnl per-architecture flags did not already select an LTO mode.
+    wine_pe_lto_explicit=no
+    for wine_flag in $CFLAGS $CXXFLAGS $LDFLAGS
+    do
+        case "$wine_flag" in
+          -flto|-flto=*|-fno-lto) wine_pe_lto_explicit=yes ;;
+        esac
+    done
+    if test "$wine_pe_lto_explicit" = no
+    then
+        case "$WATER_PE_LTO" in
+          thin) wine_pe_lto_flag=-flto=thin ;;
+          full) wine_pe_lto_flag=-flto=full ;;
+          *)    wine_pe_lto_flag= ;;
+        esac
+        if test -n "$wine_pe_lto_flag"
+        then
+            WINE_TRY_PE_CFLAGS([$wine_pe_lto_flag],
+                [AS_VAR_APPEND([${wine_arch}_EXTRACFLAGS],[" $wine_pe_lto_flag"])
+                 AS_VAR_APPEND([${wine_arch}_LDFLAGS],[" $wine_pe_lto_flag"])],
+                [AC_MSG_ERROR([$wine_arch PE compiler/linker does not support $wine_pe_lto_flag])])
+        fi
+    fi
+    unset wine_pe_lto_explicit wine_pe_lto_flag wine_flag
 
     dnl clang had broken -fms-hotpatch support before version 18 (https://github.com/llvm/llvm-project/pull/77245)
     WINE_TRY_PE_CFLAGS([-fms-hotpatch -DMIN_CLANG_VERSION=18],

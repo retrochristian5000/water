@@ -105,6 +105,7 @@ Environment:
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
   WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (macOS default: system; others: auto)
+  WATER_PE_LTO          PE LTO mode: none, thin, or full (default: none; thin recommended for testing)
   WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
   WATER_INSTALL         Post-build install: none, runtime, development, or all (default: none)
   WATER_PREFIX          Install prefix passed to configure (default: /usr/local)
@@ -228,6 +229,7 @@ validate_profile()
             *)      WATER_LLVM_LINKER=auto ;;
         esac
     fi
+    WATER_PE_LTO=${WATER_PE_LTO:-none}
     WATER_LIBCXX=${WATER_LIBCXX:-llvm}
     WATER_INSTALL=${WATER_INSTALL:-none}
     WATER_PREFIX=${WATER_PREFIX:-/usr/local}
@@ -263,6 +265,10 @@ validate_profile()
     case "$WATER_LLVM_LINKER" in
         auto|lld|system) ;;
         *) die "WATER_LLVM_LINKER must be auto, lld, or system" ;;
+    esac
+    case "$WATER_PE_LTO" in
+        none|thin|full) ;;
+        *) die "WATER_PE_LTO must be none, thin, or full" ;;
     esac
     case "$WATER_LIBCXX" in
         llvm|legacy) ;;
@@ -2755,7 +2761,7 @@ configured_install_layout_changed()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=14" \
+        "WHP_PROFILE_SCHEMA=15" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2763,6 +2769,7 @@ profile_signature()
         "WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}" \
         "WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}" \
         "WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}" \
+        "WATER_PE_LTO=${WATER_PE_LTO:-none}" \
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
         "WATER_PREFIX=${WATER_PREFIX:-/usr/local}" \
         "WATER_LIBDIR=$(water_libdir)" \
@@ -3054,7 +3061,7 @@ configure_build()
         "$BUILD_DIR" "$WATER_PREFIX" "$(water_libdir)" >&2
     (
         cd "$BUILD_DIR"
-        "$SOURCE_DIR/configure" "$@"
+        WATER_PE_LTO="$WATER_PE_LTO" "$SOURCE_DIR/configure" "$@"
     )
     configured_host=$(sed -n 's/^HOST_ARCH[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
     configured_pe=$(sed -n 's/^PE_ARCHS[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
