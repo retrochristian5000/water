@@ -438,7 +438,7 @@ static NTSTATUS linux_wait_objs( int device, DWORD count, const int *objs, WAIT_
             static const LARGE_INTEGER timeout;
 
             ret = server_wait( NULL, 0, SELECT_INTERRUPTIBLE | SELECT_ALERTABLE, &timeout );
-            assert( ret == STATUS_USER_APC );
+            assert( ret == STATUS_USER_APC || ret == STATUS_ALERTED );
             return ret;
         }
 

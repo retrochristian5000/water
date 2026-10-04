@@ -88,6 +88,7 @@ struct thread
     int                    base_priority; /* base priority level (relative to process base priority class) */
     int                    disable_boost; /* disable thread priority boost */
     int                    suspend;       /* suspend count */
+    bool                   alerted;       /* pending classic user-mode thread alert */
     bool                   is_system;     /* system thread (kernel mode only) */
     bool                   dbg_hidden;    /* hidden from debugger */
     bool                   bypass_proc_suspend; /* will still run if the process is suspended */

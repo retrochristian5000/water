@@ -28,6 +28,8 @@
 #include "wine/test.h"
 
 static NTSTATUS (WINAPI *pNtAlertMultipleThreadByThreadId)( HANDLE *, ULONG, void *, void * );
+static NTSTATUS (WINAPI *pNtAlertResumeThread)( HANDLE, ULONG * );
+static NTSTATUS (WINAPI *pNtAlertThread)( HANDLE );
 static NTSTATUS (WINAPI *pNtAlertThreadByThreadId)( HANDLE );
 static NTSTATUS (WINAPI *pNtClose)( HANDLE );
 static NTSTATUS (WINAPI *pNtCreateEvent) ( PHANDLE, ACCESS_MASK, const OBJECT_ATTRIBUTES *, EVENT_TYPE, BOOLEAN);
@@ -768,6 +770,72 @@ static void test_resource(void)
     pRtlDeleteResource(&resource);
 }
 
+struct classic_alert_args
+{
+    HANDLE ready;
+    NTSTATUS status;
+};
+
+static DWORD WINAPI classic_alert_wait_thread( void *arg )
+{
+    struct classic_alert_args *args = arg;
+    LARGE_INTEGER timeout;
+
+    timeout.QuadPart = -10 * 1000 * 10000LL;
+    SetEvent( args->ready );
+    args->status = pNtDelayExecution( TRUE, &timeout );
+    return 0;
+}
+
+static void test_classic_thread_alert(void)
+{
+    struct classic_alert_args args;
+    LARGE_INTEGER timeout = {{0}};
+    HANDLE thread;
+    ULONG count = 0xdeadbeef;
+    NTSTATUS ret;
+
+    if (!pNtAlertThread || !pNtAlertResumeThread || !pNtDelayExecution)
+    {
+        win_skip("classic thread alert APIs are not available\n");
+        return;
+    }
+
+    /* An alert is sticky until an alertable wait consumes it. */
+    ret = pNtAlertThread( GetCurrentThread() );
+    ok(!ret, "NtAlertThread returned %#lx\n", ret);
+    ret = pNtDelayExecution( TRUE, &timeout );
+    ok(ret == STATUS_ALERTED, "alertable wait returned %#lx\n", ret);
+    ret = pNtDelayExecution( TRUE, &timeout );
+    ok(ret == STATUS_SUCCESS || ret == STATUS_NO_YIELD_PERFORMED,
+       "consumed alert survived, got %#lx\n", ret);
+
+    args.ready = CreateEventW( NULL, FALSE, FALSE, NULL );
+    args.status = STATUS_PENDING;
+    ok(!!args.ready, "CreateEventW failed %lu\n", GetLastError());
+    if (!args.ready) return;
+
+    thread = CreateThread( NULL, 0, classic_alert_wait_thread, &args, CREATE_SUSPENDED, NULL );
+    ok(!!thread, "CreateThread failed %lu\n", GetLastError());
+    if (!thread)
+    {
+        CloseHandle( args.ready );
+        return;
+    }
+
+    ret = pNtAlertResumeThread( thread, &count );
+    ok(!ret, "NtAlertResumeThread returned %#lx\n", ret);
+    ok(count == 1, "previous suspend count %lu, expected 1\n", count);
+
+    WaitForSingleObject( args.ready, 1000 );
+    WaitForSingleObject( thread, 1000 );
+    ok(args.status == STATUS_ALERTED, "resumed alertable wait returned %#lx\n", args.status);
+
+    CloseHandle( thread );
+    CloseHandle( args.ready );
+}
+
+
 static DWORD WINAPI tid_alert_thread( void *arg )
 {
     NTSTATUS ret;
@@ -1438,7 +1506,9 @@ START_TEST(sync)
     if (argc > 2) return;
 
     pNtAlertMultipleThreadByThreadId = (void *)GetProcAddress(module, "NtAlertMultipleThreadByThreadId");
-    pNtAlertThreadByThreadId        = (void *)GetProcAddress(module, "NtAlertThreadByThreadId");
+    pNtAlertResumeThread             = (void *)GetProcAddress(module, "NtAlertResumeThread");
+    pNtAlertThread                   = (void *)GetProcAddress(module, "NtAlertThread");
+    pNtAlertThreadByThreadId         = (void *)GetProcAddress(module, "NtAlertThreadByThreadId");
     pNtClose                        = (void *)GetProcAddress(module, "NtClose");
     pNtCreateEvent                  = (void *)GetProcAddress(module, "NtCreateEvent");
     pNtCreateKeyedEvent             = (void *)GetProcAddress(module, "NtCreateKeyedEvent");
@@ -1479,6 +1549,7 @@ START_TEST(sync)
     test_semaphore();
     test_keyed_events();
     test_resource();
+    test_classic_thread_alert();
     test_tid_alert( argv );
     test_completion_port_scheduling();
     test_delayexecution();

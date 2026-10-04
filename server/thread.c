@@ -370,6 +370,7 @@ static inline void init_thread_structure( struct thread *thread )
     thread->base_priority   = 0;
     thread->disable_boost   = 0;
     thread->suspend         = 0;
+    thread->alerted         = 0;
     thread->dbg_hidden      = 0;
     thread->bypass_proc_suspend = 0;
     thread->is_system       = 0;
@@ -1145,6 +1146,13 @@ static int check_wait( struct thread *thread )
             if (object_sync_signaled( entry->obj, entry )) return i;
     }
 
+    if ((wait->flags & SELECT_ALERTABLE) && thread->alerted)
+    {
+        thread->alerted = 0;
+        if (thread->alert_sync && list_empty(&thread->user_apc))
+            reset_inproc_sync( thread->alert_sync );
+        return STATUS_ALERTED;
+    }
     if ((wait->flags & SELECT_ALERTABLE) && !list_empty(&thread->user_apc)) return STATUS_USER_APC;
     if (wait->when >= 0 && wait->when <= current_time) return STATUS_TIMEOUT;
     if (wait->when < 0 && -wait->when <= monotonic_time) return STATUS_TIMEOUT;
@@ -1469,7 +1477,7 @@ void thread_cancel_apc( struct thread *thread, struct object *owner, enum apc_ty
         apc->executed = 1;
         signal_sync( apc->sync );
         release_object( apc );
-        if (list_empty( &thread->user_apc ) && thread->alert_sync)
+        if (list_empty( &thread->user_apc ) && !thread->alerted && thread->alert_sync)
             reset_inproc_sync( thread->alert_sync );
         return;
     }
@@ -1485,7 +1493,7 @@ static struct thread_apc *thread_dequeue_apc( struct thread *thread, int system 
     {
         apc = LIST_ENTRY( ptr, struct thread_apc, entry );
         list_remove( ptr );
-        if (list_empty( &thread->user_apc ) && thread->alert_sync)
+        if (list_empty( &thread->user_apc ) && !thread->alerted && thread->alert_sync)
             reset_inproc_sync( thread->alert_sync );
     }
     return apc;
@@ -1895,6 +1903,35 @@ DECL_HANDLER(resume_thread)
     if ((thread = get_thread_from_handle( req->handle, THREAD_SUSPEND_RESUME )))
     {
         reply->count = resume_thread( thread );
+        release_object( thread );
+    }
+}
+
+/* alert a thread */
+DECL_HANDLER(alert_thread)
+{
+    struct thread *thread;
+
+    if ((thread = get_thread_from_handle( req->handle, THREAD_SUSPEND_RESUME )))
+    {
+        thread->alerted = 1;
+        if (thread->alert_sync) signal_inproc_sync( thread->alert_sync );
+        wake_thread( thread );
+        release_object( thread );
+    }
+}
+
+/* alert and resume a thread as one server operation */
+DECL_HANDLER(alert_resume_thread)
+{
+    struct thread *thread;
+
+    if ((thread = get_thread_from_handle( req->handle, THREAD_SUSPEND_RESUME )))
+    {
+        thread->alerted = 1;
+        if (thread->alert_sync) signal_inproc_sync( thread->alert_sync );
+        reply->count = resume_thread( thread );
+        wake_thread( thread );
         release_object( thread );
     }
 }

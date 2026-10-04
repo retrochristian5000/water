@@ -1753,8 +1753,17 @@ NTSTATUS WINAPI NtResumeThread( HANDLE handle, ULONG *count )
  */
 NTSTATUS WINAPI NtAlertResumeThread( HANDLE handle, ULONG *count )
 {
-    FIXME( "stub: should alert thread %p\n", handle );
-    return NtResumeThread( handle, count );
+    unsigned int ret;
+
+    TRACE( "%p %p\n", handle, count );
+
+    SERVER_START_REQ( alert_resume_thread )
+    {
+        req->handle = wine_server_obj_handle( handle );
+        if (!(ret = wine_server_call( req )) && count) *count = reply->count;
+    }
+    SERVER_END_REQ;
+    return ret;
 }
 
 
@@ -1763,8 +1772,17 @@ NTSTATUS WINAPI NtAlertResumeThread( HANDLE handle, ULONG *count )
  */
 NTSTATUS WINAPI NtAlertThread( HANDLE handle )
 {
-    FIXME( "stub: %p\n", handle );
-    return STATUS_NOT_IMPLEMENTED;
+    unsigned int ret;
+
+    TRACE( "%p\n", handle );
+
+    SERVER_START_REQ( alert_thread )
+    {
+        req->handle = wine_server_obj_handle( handle );
+        ret = wine_server_call( req );
+    }
+    SERVER_END_REQ;
+    return ret;
 }
 
 

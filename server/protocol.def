@@ -1383,6 +1383,20 @@ typedef volatile struct
 @END
 
 
+/* Alert a thread so its next alertable wait returns STATUS_ALERTED */
+@REQ(alert_thread)
+    obj_handle_t handle;       /* thread handle */
+@END
+
+
+/* Atomically mark a thread alerted and resume it */
+@REQ(alert_resume_thread)
+    obj_handle_t handle;       /* thread handle */
+@REPLY
+    int          count;        /* previous suspend count */
+@END
+
+
 /* Queue an APC for a thread or process */
 @REQ(queue_apc)
     obj_handle_t handle;       /* thread or process handle */
