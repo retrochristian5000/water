@@ -117,7 +117,7 @@ static BOOL16 save_driver_settings( HWND16 hwnd )
 
         strcpy( setting->value, value );
         changed = TRUE;
-        TRACE( "updated [boot] %s=%s\n", setting->key, debugstr_a(value) );
+        TRACE( "updated [boot] %s=%s\n", setting->key, wine_dbgstr_a(value) );
     }
 
     if (changed)
