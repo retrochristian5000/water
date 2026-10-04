@@ -908,10 +908,10 @@
 @ stub PsCreateSystemProcess
 @ stdcall PsCreateSystemThread(ptr long ptr long ptr ptr ptr)
 @ stub PsDereferenceImpersonationToken
-@ stub PsDereferencePrimaryToken
+@ stdcall PsDereferencePrimaryToken(ptr)
 @ stub PsDisableImpersonation
 @ stub PsEstablishWin32Callouts
-@ stub PsGetContextThread
+@ stdcall PsGetContextThread(ptr ptr long)
 @ stdcall PsGetCurrentProcess() IoGetCurrentProcess
 @ stdcall PsGetCurrentProcessId()
 @ stdcall PsGetCurrentProcessSessionId()
@@ -961,7 +961,7 @@
 @ stdcall PsLookupThreadByThreadId(ptr ptr)
 @ extern PsProcessType
 @ stub PsReferenceImpersonationToken
-@ stub PsReferencePrimaryToken
+@ stdcall PsReferencePrimaryToken(ptr)
 @ stdcall PsReferenceProcessFilePointer(ptr ptr)
 @ stdcall PsReleaseProcessExitSynchronization(ptr)
 @ stdcall PsRemoveCreateThreadNotifyRoutine(ptr)

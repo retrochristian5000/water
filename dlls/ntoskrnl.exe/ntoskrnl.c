@@ -2749,6 +2749,31 @@ HANDLE WINAPI PsGetThreadProcessId( PETHREAD thread )
     return thread->kthread.id.UniqueProcess;
 }
 
+/*********************************************************************
+ *           PsGetContextThread    (NTOSKRNL.@)
+ */
+NTSTATUS WINAPI PsGetContextThread( PETHREAD thread, CONTEXT *context, KPROCESSOR_MODE mode )
+{
+    NTSTATUS status;
+    HANDLE handle;
+
+    TRACE( "%p %p %u\n", thread, context, mode );
+
+    if (mode == KernelMode)
+        return STATUS_UNSUCCESSFUL;
+
+    if ((status = ObOpenObjectByPointer( thread, 0, NULL, THREAD_ALL_ACCESS,
+                                         NULL, KernelMode, &handle )))
+    {
+        WARN( "failed to open thread object, status %#lx\n", status );
+        return status;
+    }
+
+    status = NtGetContextThread( handle, context );
+    NtClose( handle );
+    return status;
+}
+
 /***********************************************************************
  *           KeInsertQueue   (NTOSKRNL.EXE.@)
  */
@@ -3478,6 +3503,49 @@ NTSTATUS WINAPI PsReferenceProcessFilePointer(PEPROCESS process, FILE_OBJECT **f
     return STATUS_NOT_IMPLEMENTED;
 }
 
+
+/*********************************************************************
+ *           PsDereferencePrimaryToken    (NTOSKRNL.@)
+ */
+void WINAPI PsDereferencePrimaryToken( PACCESS_TOKEN token )
+{
+    TRACE( "%p\n", token );
+    ObDereferenceObject( token );
+}
+
+/*********************************************************************
+ *           PsReferencePrimaryToken    (NTOSKRNL.@)
+ */
+PACCESS_TOKEN WINAPI PsReferencePrimaryToken( PEPROCESS process )
+{
+    NTSTATUS status;
+    HANDLE process_handle, token_handle;
+    PACCESS_TOKEN token = NULL;
+
+    TRACE( "%p\n", process );
+
+    if ((status = ObOpenObjectByPointer( process, 0, NULL, PROCESS_ALL_ACCESS,
+                                         NULL, KernelMode, &process_handle )))
+    {
+        WARN( "failed to open process object, status %#lx\n", status );
+        return NULL;
+    }
+
+    if ((status = NtOpenProcessToken( process_handle, TOKEN_ALL_ACCESS, &token_handle )))
+    {
+        NtClose( process_handle );
+        return NULL;
+    }
+
+    if ((status = ObReferenceObjectByHandle( token_handle, TOKEN_ALL_ACCESS,
+                                             SeTokenObjectType, KernelMode,
+                                             &token, NULL )))
+        token = NULL;
+
+    NtClose( token_handle );
+    NtClose( process_handle );
+    return token;
+}
 
 /***********************************************************************
  *           PsTerminateSystemThread   (NTOSKRNL.EXE.@)

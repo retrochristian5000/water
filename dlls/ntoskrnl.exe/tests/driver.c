@@ -453,9 +453,11 @@ static void test_current_thread(BOOL is_system)
     const char *file_name;
     LONGLONG create_time;
     ULONG session_id, len;
+    PACCESS_TOKEN token, token2;
     PEPROCESS current;
     PETHREAD thread;
     WCHAR *p, *end;
+    CONTEXT context;
     NTSTATUS ret;
     PEB *peb;
 
@@ -486,6 +488,23 @@ static void test_current_thread(BOOL is_system)
        PsGetThreadProcess(thread), current);
     if (!is_system)
     {
+        memset(&context, 0, sizeof(context));
+        context.ContextFlags = CONTEXT_CONTROL;
+        ret = PsGetContextThread(thread, &context, UserMode);
+        ok(!ret, "PsGetContextThread failed: %#lx\n", ret);
+        ret = PsGetContextThread(thread, &context, KernelMode);
+        ok(ret == STATUS_UNSUCCESSFUL, "got status %#lx\n", ret);
+
+        token = PsReferencePrimaryToken(current);
+        ok(!!token, "PsReferencePrimaryToken returned NULL\n");
+        if (token)
+        {
+            token2 = PsReferencePrimaryToken(current);
+            ok(token2 == token, "got token %p, expected %p\n", token2, token);
+            if (token2) PsDereferencePrimaryToken(token2);
+            PsDereferencePrimaryToken(token);
+        }
+
         ok(create_caller_thread == KeGetCurrentThread(), "thread is not create caller thread\n");
         ok(create_irp_thread == (PETHREAD)KeGetCurrentThread(), "thread of create request is not current thread\n");
     }
