@@ -110,6 +110,7 @@ struct thread_data
     DWORD        tid;               /* thread id */
     BOOL         allow_writes;      /* ThreadAllowWrites flags */
     BOOL         suspend;           /* suspend on startup */
+    EXECUTION_STATE execution_state; /* persistent SetThreadExecutionState request */
     pthread_t    pthread_id;        /* pthread thread id */
     void        *jmp_buf;           /* setjmp buffer for exception handling */
     void        *start;             /* thread entry point */

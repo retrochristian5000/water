@@ -38,6 +38,7 @@ static NTSTATUS (WINAPI * pNtSetSystemInformation)(SYSTEM_INFORMATION_CLASS, PVO
 static NTSTATUS (WINAPI * pRtlGetNativeSystemInformation)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
 static NTSTATUS (WINAPI * pNtQuerySystemInformationEx)(SYSTEM_INFORMATION_CLASS, void*, ULONG, void*, ULONG, ULONG*);
 static NTSTATUS (WINAPI * pNtPowerInformation)(POWER_INFORMATION_LEVEL, PVOID, ULONG, PVOID, ULONG);
+static NTSTATUS (WINAPI * pNtSetThreadExecutionState)(EXECUTION_STATE, EXECUTION_STATE *);
 static NTSTATUS (WINAPI * pNtQueryInformationThread)(HANDLE, THREADINFOCLASS, PVOID, ULONG, PULONG);
 static NTSTATUS (WINAPI * pNtSetInformationProcess)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG);
 static NTSTATUS (WINAPI * pNtSetInformationThread)(HANDLE, THREADINFOCLASS, PVOID, ULONG);
@@ -98,6 +99,7 @@ static void InitFunctionPtrs(void)
     NTDLL_GET_PROC(NtSetSystemInformation);
     NTDLL_GET_PROC(RtlGetNativeSystemInformation);
     NTDLL_GET_PROC(NtPowerInformation);
+    NTDLL_GET_PROC(NtSetThreadExecutionState);
     NTDLL_GET_PROC(NtQueryInformationThread);
     NTDLL_GET_PROC(NtSetInformationProcess);
     NTDLL_GET_PROC(NtSetInformationThread);
@@ -1642,6 +1644,86 @@ static void test_query_firmware(void)
        "Expected length %lu, got %lu\n", len1 - min_sfti_len, sfti->TableBufferLength);
 
     HeapFree(GetProcessHeap(), 0, sfti);
+}
+
+struct execution_state_thread_args
+{
+    HANDLE ready;
+    HANDLE done;
+    NTSTATUS status;
+};
+
+static DWORD WINAPI execution_state_thread(void *arg)
+{
+    struct execution_state_thread_args *args = arg;
+    EXECUTION_STATE old_state;
+
+    args->status = pNtSetThreadExecutionState( ES_CONTINUOUS | ES_DISPLAY_REQUIRED, &old_state );
+    SetEvent( args->ready );
+    WaitForSingleObject( args->done, INFINITE );
+    pNtSetThreadExecutionState( ES_CONTINUOUS, &old_state );
+    return 0;
+}
+
+static void test_power_contracts(void)
+{
+    struct execution_state_thread_args args;
+    EXECUTION_STATE old_state, previous;
+    SYSTEM_POWER_CAPABILITIES caps;
+    SYSTEM_BATTERY_STATE battery;
+    HANDLE thread;
+    ULONG state;
+    NTSTATUS status;
+
+    if (!pNtPowerInformation || !pNtSetThreadExecutionState) return;
+
+    status = pNtPowerInformation( SystemPowerCapabilities, &state, sizeof(state),
+                                  &caps, sizeof(caps) );
+    ok(status == STATUS_INVALID_PARAMETER, "SystemPowerCapabilities returned %#lx\n", status);
+
+    status = pNtPowerInformation( SystemBatteryState, &state, sizeof(state),
+                                  &battery, sizeof(battery) );
+    ok(status == STATUS_INVALID_PARAMETER, "SystemBatteryState returned %#lx\n", status);
+
+    status = pNtPowerInformation( SystemExecutionState, &state, sizeof(state),
+                                  &state, sizeof(state) );
+    ok(status == STATUS_INVALID_PARAMETER, "SystemExecutionState returned %#lx\n", status);
+
+    status = pNtPowerInformation( SystemExecutionState, NULL, 0, &state, 0 );
+    ok(status == STATUS_BUFFER_TOO_SMALL, "SystemExecutionState short buffer returned %#lx\n", status);
+
+    status = pNtSetThreadExecutionState( ES_CONTINUOUS | ES_SYSTEM_REQUIRED, &old_state );
+    ok(status == STATUS_SUCCESS, "NtSetThreadExecutionState returned %#lx\n", status);
+
+    args.ready = CreateEventW( NULL, FALSE, FALSE, NULL );
+    args.done = CreateEventW( NULL, FALSE, FALSE, NULL );
+    args.status = STATUS_PENDING;
+    ok(!!args.ready && !!args.done, "failed to create execution-state events\n");
+
+    thread = CreateThread( NULL, 0, execution_state_thread, &args, 0, NULL );
+    ok(!!thread, "CreateThread failed %lu\n", GetLastError());
+
+    if (thread)
+    {
+        WaitForSingleObject( args.ready, INFINITE );
+        ok(args.status == STATUS_SUCCESS, "worker NtSetThreadExecutionState returned %#lx\n", args.status);
+
+        status = pNtSetThreadExecutionState( ES_CONTINUOUS | ES_SYSTEM_REQUIRED, &previous );
+        ok(status == STATUS_SUCCESS, "main NtSetThreadExecutionState returned %#lx\n", status);
+        ok(previous & ES_SYSTEM_REQUIRED,
+           "worker thread overwrote main thread execution state, previous %#x\n", previous);
+
+        SetEvent( args.done );
+        WaitForSingleObject( thread, INFINITE );
+        CloseHandle( thread );
+    }
+
+    pNtSetThreadExecutionState( ES_CONTINUOUS, &previous );
+    if (old_state != ES_CONTINUOUS)
+        pNtSetThreadExecutionState( old_state | ES_CONTINUOUS, &previous );
+
+    if (args.ready) CloseHandle( args.ready );
+    if (args.done) CloseHandle( args.done );
 }
 
 static void test_query_battery(void)
@@ -4713,6 +4795,7 @@ START_TEST(info)
     test_query_numa_map();
 
     /* NtPowerInformation */
+    test_power_contracts();
     test_query_battery();
     test_query_processor_power_info();
 

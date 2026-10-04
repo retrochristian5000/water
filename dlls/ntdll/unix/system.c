@@ -4344,8 +4344,8 @@ NTSTATUS WINAPI NtSystemDebugControl( SYSDBG_COMMAND command, void *in_buff, ULO
  */
 NTSTATUS WINAPI NtShutdownSystem( SHUTDOWN_ACTION action )
 {
-    FIXME( "%d\n", action );
-    return STATUS_SUCCESS;
+    FIXME( "%d: host shutdown backend not implemented\n", action );
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 
@@ -4635,7 +4635,9 @@ NTSTATUS WINAPI NtPowerInformation( POWER_INFORMATION_LEVEL level, void *input, 
     {
         PSYSTEM_POWER_CAPABILITIES PowerCaps = output;
         FIXME("semi-stub: SystemPowerCapabilities\n");
+        if (input) return STATUS_INVALID_PARAMETER;
         if (out_size < sizeof(SYSTEM_POWER_CAPABILITIES)) return STATUS_BUFFER_TOO_SMALL;
+        if (!output) return STATUS_ACCESS_VIOLATION;
         /* FIXME: These values are based off a native XP desktop, should probably use APM/ACPI to get the 'real' values */
         PowerCaps->PowerButtonPresent = TRUE;
         PowerCaps->SleepButtonPresent = FALSE;
@@ -4673,7 +4675,9 @@ NTSTATUS WINAPI NtPowerInformation( POWER_INFORMATION_LEVEL level, void *input, 
 
     case SystemBatteryState:
     {
+        if (input) return STATUS_INVALID_PARAMETER;
         if (out_size < sizeof(SYSTEM_BATTERY_STATE)) return STATUS_BUFFER_TOO_SMALL;
+        if (!output) return STATUS_ACCESS_VIOLATION;
         memset(output, 0, sizeof(SYSTEM_BATTERY_STATE));
         return fill_battery_state(output);
     }
@@ -4681,9 +4685,10 @@ NTSTATUS WINAPI NtPowerInformation( POWER_INFORMATION_LEVEL level, void *input, 
     case SystemExecutionState:
     {
         ULONG *state = output;
-        WARN("semi-stub: SystemExecutionState\n"); /* Needed for .NET Framework, but using a FIXME is really noisy. */
-        if (input != NULL) return STATUS_INVALID_PARAMETER;
-        /* FIXME: The actual state should be the value set by SetThreadExecutionState which is not currently implemented. */
+        WARN("semi-stub: SystemExecutionState\n"); /* System-wide aggregation still needs a server-side backend. */
+        if (input) return STATUS_INVALID_PARAMETER;
+        if (out_size < sizeof(*state)) return STATUS_BUFFER_TOO_SMALL;
+        if (!output) return STATUS_ACCESS_VIOLATION;
         *state = ES_USER_PRESENT;
         return STATUS_SUCCESS;
     }
@@ -4867,10 +4872,27 @@ NTSTATUS WINAPI NtInitiatePowerAction( POWER_ACTION action, SYSTEM_POWER_STATE s
  */
 NTSTATUS WINAPI NtSetThreadExecutionState( EXECUTION_STATE new_state, EXECUTION_STATE *old_state )
 {
-    static EXECUTION_STATE current = ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED | ES_USER_PRESENT;
+    const EXECUTION_STATE supported = ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
+                                      ES_DISPLAY_REQUIRED | ES_AWAYMODE_REQUIRED;
+    struct thread_data *data = get_thread_data();
 
-    WARN( "(0x%x, %p): stub, harmless.\n", new_state, old_state );
-    *old_state = current;
-    if (!(current & ES_CONTINUOUS) || (new_state & ES_CONTINUOUS)) current = new_state;
+    TRACE( "(0x%x, %p)\n", new_state, old_state );
+
+    if (!old_state) return STATUS_ACCESS_VIOLATION;
+    if (new_state & ~supported) return STATUS_INVALID_PARAMETER;
+    if ((new_state & ES_AWAYMODE_REQUIRED) && !(new_state & ES_CONTINUOUS))
+        return STATUS_INVALID_PARAMETER;
+
+    *old_state = data->execution_state;
+
+    /*
+     * Calls without ES_CONTINUOUS reset idle timers on Windows but do not
+     * replace the thread's persistent execution requirement.  Water does
+     * not yet drive host idle timers, so only the persistent state is
+     * recorded here.
+     */
+    if (new_state & ES_CONTINUOUS)
+        data->execution_state = new_state;
+
     return STATUS_SUCCESS;
 }
