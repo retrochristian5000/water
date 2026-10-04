@@ -1,0 +1,6 @@
+MODULE    = setup.exe16
+
+EXTRADLLFLAGS = -mwindows -m16
+
+SOURCES = \
+	setup.c
