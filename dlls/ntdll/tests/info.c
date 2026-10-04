@@ -1700,8 +1700,10 @@ static void test_power_contracts(void)
     args.status = STATUS_PENDING;
     ok(!!args.ready && !!args.done, "failed to create execution-state events\n");
 
-    thread = CreateThread( NULL, 0, execution_state_thread, &args, 0, NULL );
-    ok(!!thread, "CreateThread failed %lu\n", GetLastError());
+    thread = NULL;
+    if (args.ready && args.done)
+        thread = CreateThread( NULL, 0, execution_state_thread, &args, 0, NULL );
+    ok(!!thread || !args.ready || !args.done, "CreateThread failed %lu\n", GetLastError());
 
     if (thread)
     {
