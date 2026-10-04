@@ -33,10 +33,6 @@
 #include <sys/ioctl.h>
 #ifdef __APPLE__
 #include <DiskArbitration/DiskArbitration.h>
-#include <IOKit/storage/IOBDMedia.h>
-#include <IOKit/storage/IOCDMedia.h>
-#include <IOKit/storage/IODVDMedia.h>
-#include <IOKit/storage/IOMedia.h>
 #include <SystemConfiguration/SCDynamicStoreCopyDHCPInfo.h>
 #include <SystemConfiguration/SCNetworkConfiguration.h>
 #endif
@@ -74,29 +70,34 @@ static BOOL get_raw_device_name( DADiskRef disk, char *device, size_t size )
     return len >= 0 && (size_t)len < size;
 }
 
-static enum device_type get_device_type( DADiskRef disk, struct scsi_info *scsi_info )
+static enum device_type get_device_type( CFDictionaryRef dict, struct scsi_info *scsi_info )
 {
-    io_service_t media = DADiskCopyIOMedia( disk );
-    enum device_type type = DEVICE_UNKNOWN;
+    CFStringRef kind = CFDictionaryGetValue( dict, kDADiskDescriptionMediaKindKey );
 
-    if (!media) return type;
-
-    if (IOObjectConformsTo( media, kIOBDMediaClass ) ||
-        IOObjectConformsTo( media, kIODVDMediaClass ))
+    /*
+     * Disk Arbitration already publishes the IOMedia class name in its
+     * description.  Avoid opening the I/O Registry only to rediscover the
+     * same information.
+     *
+     * Treat other mountable media as disks.  The media kind may name an
+     * IOMedia subclass (for example a filesystem-specific media class), so
+     * requiring an exact "IOMedia" string would misclassify ordinary disks.
+     */
+    if (kind && CFGetTypeID( kind ) == CFStringGetTypeID())
     {
-        type = DEVICE_DVD;
-        scsi_info->type = 5;
+        if (CFEqual( kind, CFSTR("IOBDMedia") ) || CFEqual( kind, CFSTR("IODVDMedia") ))
+        {
+            scsi_info->type = 5;
+            return DEVICE_DVD;
+        }
+        if (CFEqual( kind, CFSTR("IOCDMedia") ))
+        {
+            scsi_info->type = 5;
+            return DEVICE_CDROM;
+        }
     }
-    else if (IOObjectConformsTo( media, kIOCDMediaClass ))
-    {
-        type = DEVICE_CDROM;
-        scsi_info->type = 5;
-    }
-    else if (IOObjectConformsTo( media, kIOMediaClass ))
-        type = DEVICE_HARDDISK;
 
-    IOObjectRelease( media );
-    return type;
+    return DEVICE_HARDDISK;
 }
 
 static void appeared_callback( DADiskRef disk, void *context )
@@ -153,7 +154,7 @@ static void appeared_callback( DADiskRef disk, void *context )
         }
     }
 
-    type = get_device_type( disk, &scsi_info );
+    type = get_device_type( dict, &scsi_info );
 
     if ((ref = CFDictionaryGetValue( dict, kDADiskDescriptionDeviceVendorKey )))
     {
