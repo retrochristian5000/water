@@ -870,19 +870,21 @@ EOF
     if test "$wine_pe_lto_explicit" = no
     then
         case "$WATER_PE_LTO" in
-          thin) wine_pe_lto_flag=-flto=thin ;;
-          full) wine_pe_lto_flag=-flto=full ;;
-          *)    wine_pe_lto_flag= ;;
+          thin)
+            WINE_TRY_PE_CFLAGS([-flto=thin],
+                [AS_VAR_APPEND([${wine_arch}_EXTRACFLAGS],[" -flto=thin"])
+                 AS_VAR_APPEND([${wine_arch}_LDFLAGS],[" -flto=thin"])],
+                [AC_MSG_ERROR([$wine_arch PE compiler/linker does not support ThinLTO])])
+            ;;
+          full)
+            WINE_TRY_PE_CFLAGS([-flto=full],
+                [AS_VAR_APPEND([${wine_arch}_EXTRACFLAGS],[" -flto=full"])
+                 AS_VAR_APPEND([${wine_arch}_LDFLAGS],[" -flto=full"])],
+                [AC_MSG_ERROR([$wine_arch PE compiler/linker does not support full LTO])])
+            ;;
         esac
-        if test -n "$wine_pe_lto_flag"
-        then
-            WINE_TRY_PE_CFLAGS([$wine_pe_lto_flag],
-                [AS_VAR_APPEND([${wine_arch}_EXTRACFLAGS],[" $wine_pe_lto_flag"])
-                 AS_VAR_APPEND([${wine_arch}_LDFLAGS],[" $wine_pe_lto_flag"])],
-                [AC_MSG_ERROR([$wine_arch PE compiler/linker does not support $wine_pe_lto_flag])])
-        fi
     fi
-    unset wine_pe_lto_explicit wine_pe_lto_flag wine_flag
+    unset wine_pe_lto_explicit wine_flag
 
     dnl clang had broken -fms-hotpatch support before version 18 (https://github.com/llvm/llvm-project/pull/77245)
     WINE_TRY_PE_CFLAGS([-fms-hotpatch -DMIN_CLANG_VERSION=18],
