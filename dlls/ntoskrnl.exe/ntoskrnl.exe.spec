@@ -718,7 +718,7 @@
 @ stub MmCanFileBeTruncated
 @ stub MmCommitSessionMappedView
 @ stdcall MmCopyVirtualMemory(ptr ptr ptr ptr long long ptr)
-@ stub MmCreateMdl
+@ stdcall MmCreateMdl(ptr ptr long)
 @ stdcall MmCreateSection(ptr long ptr ptr long long long ptr)
 @ stub MmDisableModifiedWriteOfSection
 @ stub MmFlushImageSection
@@ -729,7 +729,7 @@
 @ stdcall MmFreeNonCachedMemory(ptr long)
 @ stub MmFreePagesFromMdl
 @ stdcall MmGetPhysicalAddress(ptr)
-@ stub MmGetPhysicalMemoryRanges
+@ stdcall MmGetPhysicalMemoryRanges()
 @ stdcall MmGetSystemRoutineAddress(ptr)
 @ stub MmGetVirtualForPhysical
 @ stub MmGrowKernelStack
@@ -768,7 +768,7 @@
 @ stub MmSecureVirtualMemory
 @ stub MmSetAddressRangeModified
 @ stub MmSetBankedSection
-@ stub MmSizeOfMdl
+@ stdcall MmSizeOfMdl(ptr long)
 @ stub MmSystemRangeStart
 @ stub MmTrimAllSystemPagableMemory
 @ stdcall MmUnlockPagableImageSection(ptr)

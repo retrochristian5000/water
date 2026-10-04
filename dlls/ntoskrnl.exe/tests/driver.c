@@ -280,8 +280,29 @@ static void test_queue(void)
 static void test_mdl_map(void)
 {
     char buffer[20] = "test buffer";
+    SIZE_T mdl_size, expected_size;
     void *addr;
-    MDL *mdl;
+    MDL *mdl, *created;
+
+    expected_size = sizeof(MDL) + sizeof(PFN_NUMBER) *
+                    ADDRESS_AND_SIZE_TO_SPAN_PAGES(buffer, sizeof(buffer));
+    mdl_size = MmSizeOfMdl(buffer, sizeof(buffer));
+    ok(mdl_size == expected_size, "got MDL size %Iu, expected %Iu\n", mdl_size, expected_size);
+
+    created = MmCreateMdl(NULL, buffer, sizeof(buffer));
+    ok(created != NULL, "MmCreateMdl failed\n");
+    if (created)
+    {
+        ok(created->Size == mdl_size, "got MDL header size %u, expected %Iu\n",
+           created->Size, mdl_size);
+        ok(created->StartVa == PAGE_ALIGN(buffer), "got StartVa %p, expected %p\n",
+           created->StartVa, PAGE_ALIGN(buffer));
+        ok(created->ByteOffset == BYTE_OFFSET(buffer), "got byte offset %lu, expected %lu\n",
+           created->ByteOffset, BYTE_OFFSET(buffer));
+        ok(created->ByteCount == sizeof(buffer), "got byte count %lu, expected %Iu\n",
+           created->ByteCount, sizeof(buffer));
+        ExFreePool(created);
+    }
 
     mdl = IoAllocateMdl(buffer, sizeof(buffer), FALSE, FALSE, NULL);
     ok(mdl != NULL, "IoAllocateMdl failed\n");
@@ -305,6 +326,48 @@ static void test_mdl_map(void)
 
     MmUnlockPages(mdl);
     IoFreeMdl(mdl);
+}
+
+static void test_physical_memory_ranges(void)
+{
+    SYSTEM_BASIC_INFORMATION info;
+    PHYSICAL_MEMORY_RANGE *ranges;
+    ULONGLONG total = 0, expect, prev_end = 0;
+    unsigned int i;
+    NTSTATUS status;
+
+    ranges = MmGetPhysicalMemoryRanges();
+    ok(ranges != NULL, "MmGetPhysicalMemoryRanges failed\n");
+    if (!ranges) return;
+
+    for (i = 0; ranges[i].BaseAddress.QuadPart || ranges[i].NumberOfBytes.QuadPart; ++i)
+    {
+        ok(ranges[i].NumberOfBytes.QuadPart > 0, "range %u: got size %#I64x\n",
+           i, ranges[i].NumberOfBytes.QuadPart);
+        ok(!(ranges[i].BaseAddress.QuadPart & (PAGE_SIZE - 1)),
+           "range %u: got unaligned base %#I64x\n", i, ranges[i].BaseAddress.QuadPart);
+        ok(!(ranges[i].NumberOfBytes.QuadPart & (PAGE_SIZE - 1)),
+           "range %u: got unaligned size %#I64x\n", i, ranges[i].NumberOfBytes.QuadPart);
+        ok(ranges[i].BaseAddress.QuadPart >= prev_end,
+           "range %u: got base %#I64x, previous range ends at %#I64x\n",
+           i, ranges[i].BaseAddress.QuadPart, prev_end);
+        prev_end = ranges[i].BaseAddress.QuadPart + ranges[i].NumberOfBytes.QuadPart;
+        total += ranges[i].NumberOfBytes.QuadPart;
+    }
+    ok(i > 0, "got no ranges\n");
+
+    status = ZwQuerySystemInformation(SystemBasicInformation, &info, sizeof(info), NULL);
+    ok(!status, "ZwQuerySystemInformation failed: %#lx\n", status);
+    if (!status)
+    {
+        expect = (ULONGLONG)info.MmNumberOfPhysicalPages * info.PageSize;
+        ok(total == expect, "got total %#I64x, expected %#I64x\n", total, expect);
+        ok(ranges[0].BaseAddress.QuadPart ==
+           (ULONGLONG)info.MmLowestPhysicalPage * info.PageSize,
+           "got base %#I64x\n", ranges[0].BaseAddress.QuadPart);
+    }
+
+    ExFreePool(ranges);
 }
 
 static void test_init_funcs(void)
@@ -2704,6 +2767,7 @@ static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *st
     test_current_thread(FALSE);
     test_critical_region(TRUE);
     test_mdl_map();
+    test_physical_memory_ranges();
     test_init_funcs();
     test_load_driver();
     test_sync();

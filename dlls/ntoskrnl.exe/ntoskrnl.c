@@ -3026,6 +3026,29 @@ PMDL WINAPI MmAllocatePagesForMdl(PHYSICAL_ADDRESS lowaddress, PHYSICAL_ADDRESS 
 }
 
 /***********************************************************************
+ *           MmSizeOfMdl   (NTOSKRNL.EXE.@)
+ */
+SIZE_T WINAPI MmSizeOfMdl( void *base, SIZE_T length )
+{
+    return sizeof(MDL) + sizeof(PFN_NUMBER) * ADDRESS_AND_SIZE_TO_SPAN_PAGES( base, length );
+}
+
+/***********************************************************************
+ *           MmCreateMdl   (NTOSKRNL.EXE.@)
+ */
+PMDL WINAPI MmCreateMdl( PMDL mdl, void *base, SIZE_T length )
+{
+    if (!mdl)
+    {
+        if (!(mdl = ExAllocatePool( NonPagedPool, MmSizeOfMdl( base, length ) )))
+            return NULL;
+    }
+
+    MmInitializeMdl( mdl, base, length );
+    return mdl;
+}
+
+/***********************************************************************
  *           MmBuildMdlForNonPagedPool   (NTOSKRNL.EXE.@)
  */
 void WINAPI MmBuildMdlForNonPagedPool(MDL *mdl)
@@ -3082,6 +3105,41 @@ PHYSICAL_ADDRESS WINAPI MmGetPhysicalAddress(void *virtual_address)
     FIXME("(%p): semi-stub\n", virtual_address);
     ret.QuadPart = (ULONG_PTR)virtual_address;
     return ret;
+}
+
+/***********************************************************************
+ *           MmGetPhysicalMemoryRanges   (NTOSKRNL.EXE.@)
+ */
+PHYSICAL_MEMORY_RANGE * WINAPI MmGetPhysicalMemoryRanges(void)
+{
+    SYSTEM_BASIC_INFORMATION info;
+    PHYSICAL_MEMORY_RANGE *ranges;
+    NTSTATUS status;
+
+    TRACE("()\n");
+
+    if ((status = NtQuerySystemInformation( SystemBasicInformation, &info, sizeof(info), NULL )))
+    {
+        WARN("failed to query system information, status %#lx\n", status);
+        return NULL;
+    }
+
+    if (!(ranges = ExAllocatePool( NonPagedPool, 2 * sizeof(*ranges) )))
+        return NULL;
+
+    /*
+     * The Wine/Water host abstraction exposes the total physical-memory
+     * extent, not the host firmware's complete hole map.  Preserve the NT
+     * API contract with one page-aligned range plus the required zero
+     * terminator instead of fabricating hardware holes.
+     */
+    ranges[0].BaseAddress.QuadPart =
+        (ULONGLONG)info.MmLowestPhysicalPage * info.PageSize;
+    ranges[0].NumberOfBytes.QuadPart =
+        (ULONGLONG)info.MmNumberOfPhysicalPages * info.PageSize;
+    memset( &ranges[1], 0, sizeof(ranges[1]) );
+
+    return ranges;
 }
 
 /***********************************************************************
