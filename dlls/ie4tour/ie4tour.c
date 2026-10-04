@@ -212,7 +212,7 @@ static HRESULT WINAPI runonce_put_ShowIE4State(IRunOnceCheckBox *iface, BOOL val
                             (const BYTE *)&data, sizeof(data));
     RegCloseKey(key);
 
-    TRACE("ShowIE4State <- %u\n", data);
+    TRACE("ShowIE4State <- %u\n", (unsigned int)data);
     return status == ERROR_SUCCESS ? S_OK : HRESULT_FROM_WIN32(status);
 }
 
