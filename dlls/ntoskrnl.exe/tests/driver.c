@@ -444,12 +444,20 @@ static NTSTATUS wait_single_handle(HANDLE handle, ULONGLONG timeout)
 
 static void test_current_thread(BOOL is_system)
 {
+    UNICODE_STRING image, *expect_name;
     PROCESS_BASIC_INFORMATION info;
+    char expect_file_name[15];
     DISPATCHER_HEADER *header;
     HANDLE process_handle, id;
+    KERNEL_USER_TIMES times;
+    const char *file_name;
+    LONGLONG create_time;
+    ULONG session_id, len;
     PEPROCESS current;
     PETHREAD thread;
+    WCHAR *p, *end;
     NTSTATUS ret;
+    PEB *peb;
 
     current = IoGetCurrentProcess();
     ok(current != NULL, "Expected current process to be non-NULL\n");
@@ -474,6 +482,8 @@ static void test_current_thread(BOOL is_system)
     ok(PsGetThreadId((PETHREAD)KeGetCurrentThread()) == PsGetCurrentThreadId(), "thread IDs don't match\n");
     ok(PsIsSystemThread((PETHREAD)KeGetCurrentThread()) == is_system, "unexpected system thread\n");
     ok(ExGetPreviousMode() == is_system ? KernelMode : UserMode, "previous mode is not correct\n");
+    ok(PsGetThreadProcess(thread) == current, "got process %p, expected %p\n",
+       PsGetThreadProcess(thread), current);
     if (!is_system)
     {
         ok(create_caller_thread == KeGetCurrentThread(), "thread is not create caller thread\n");
@@ -488,6 +498,53 @@ static void test_current_thread(BOOL is_system)
 
     id = PsGetProcessInheritedFromUniqueProcessId(current);
     ok(id == (HANDLE)info.InheritedFromUniqueProcessId, "unexpected process id %p\n", id);
+
+    session_id = 0xdeadbeef;
+    ret = ZwQueryInformationProcess(process_handle, ProcessSessionInformation, &session_id, sizeof(session_id), NULL);
+    ok(!ret, "ZwQueryInformationProcess failed: %#lx\n", ret);
+    ok(PsGetProcessSessionId(current) == session_id, "got session id %lu, expected %lu\n",
+       PsGetProcessSessionId(current), session_id);
+
+    memset(&times, 0xcc, sizeof(times));
+    ret = ZwQueryInformationProcess(process_handle, ProcessTimes, &times, sizeof(times), NULL);
+    ok(!ret, "ZwQueryInformationProcess failed: %#lx\n", ret);
+    create_time = PsGetProcessCreateTimeQuadPart(current);
+    ok(create_time == times.CreateTime.QuadPart, "got create time %#I64x, expected %#I64x\n",
+       create_time, times.CreateTime.QuadPart);
+
+    peb = PsGetProcessPeb(current);
+    ok(peb == info.PebBaseAddress, "got peb %p, expected %p\n", peb, info.PebBaseAddress);
+
+    if (!is_system)
+    {
+        ret = ZwQueryInformationProcess(process_handle, ProcessImageFileName, &image, sizeof(image), &len);
+        ok(ret == STATUS_INFO_LENGTH_MISMATCH, "got %#lx\n", ret);
+        expect_name = ExAllocatePool(PagedPool, len);
+        ok(!!expect_name, "failed to allocate image-name buffer\n");
+
+        if (expect_name)
+        {
+            ret = ZwQueryInformationProcess(process_handle, ProcessImageFileName, expect_name, len, NULL);
+            ok(!ret, "ZwQueryInformationProcess failed: %#lx\n", ret);
+            if (!ret)
+            {
+                end = expect_name->Buffer + expect_name->Length / sizeof(WCHAR);
+                p = end;
+                while (p > expect_name->Buffer && p[-1] != '\\') p--;
+
+                memset(expect_file_name, 0, sizeof(expect_file_name));
+                RtlUnicodeToMultiByteN(expect_file_name, sizeof(expect_file_name) - 1, NULL,
+                                       p, (end - p) * sizeof(WCHAR));
+
+                file_name = PsGetProcessImageFileName(current);
+                ok(!!file_name, "got NULL image file name\n");
+                if (file_name)
+                    ok(!strncmp(file_name, expect_file_name, sizeof(expect_file_name)),
+                       "got %.*s, expected %s\n", (int)sizeof(expect_file_name), file_name, expect_file_name);
+            }
+            ExFreePool(expect_name);
+        }
+    }
 
     ret = ZwClose(process_handle);
     ok(!ret, "ZwClose failed: %#lx\n", ret);
