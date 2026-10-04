@@ -2458,6 +2458,40 @@ static inline DWORD INT21_Ioctl_CylHeadSect2Lin(DWORD cyl, WORD head, WORD sec, 
 }
 
 /***********************************************************************
+ *           INT21_GetMediaId
+ *
+ * Fill the DOS media ID structure from the mounted volume. DOS exposes
+ * fixed-width 11-byte label and 8-byte file-system fields, so query the
+ * complete Win32 strings first and only then truncate/pad for the DOS ABI.
+ */
+static BOOL INT21_GetMediaId( BYTE drive, BYTE *data )
+{
+    WCHAR root[] = {'A', ':', '\\', 0};
+    WCHAR label[MAX_PATH + 1], fsname[MAX_PATH + 1];
+    char labelA[MAX_PATH * 2 + 2], fsnameA[MAX_PATH * 2 + 2];
+    DWORD serial;
+    int len;
+
+    root[0] += drive;
+    if (!GetVolumeInformationW( root, label, ARRAY_SIZE(label), &serial, NULL, NULL,
+                                fsname, ARRAY_SIZE(fsname) ))
+        return FALSE;
+
+    *(WORD *)data = 0;
+    memcpy( data + 2, &serial, sizeof(serial) );
+    memset( data + 6, ' ', 19 );
+
+    len = WideCharToMultiByte( CP_OEMCP, 0, label, -1, labelA, ARRAY_SIZE(labelA), NULL, NULL );
+    if (len > 1) memcpy( data + 6, labelA, len - 1 < 11 ? len - 1 : 11 );
+
+    len = WideCharToMultiByte( CP_OEMCP, 0, fsname, -1, fsnameA, ARRAY_SIZE(fsnameA), NULL, NULL );
+    if (len > 1) memcpy( data + 17, fsnameA, len - 1 < 8 ? len - 1 : 8 );
+
+    return TRUE;
+}
+
+
+/***********************************************************************
  *           INT21_Ioctl_Block
  *
  * Handler for block device IOCTLs.
@@ -2621,17 +2655,11 @@ static void INT21_Ioctl_Block( I386_CONTEXT *context )
             break;
 
         case 0x0866: /* get volume serial number */
+            TRACE( "GENERIC IOCTL - Get media id - %c:\n", 'A' + drive );
+            if (!INT21_GetMediaId( drive, dataptr ))
             {
-                WCHAR	label[12],fsname[9];
-                DWORD	serial;
-                TRACE( "GENERIC IOCTL - Get media id - %c:\n",
-                       'A' + drive );
-
-                GetVolumeInformationW(drivespec, label, 12, &serial, NULL, NULL, fsname, 9);
-                *(WORD*)dataptr	= 0;
-                memcpy(dataptr+2,&serial,4);
-                WideCharToMultiByte(CP_OEMCP, 0, label, 11, (LPSTR)dataptr + 6, 11, NULL, NULL);
-                WideCharToMultiByte(CP_OEMCP, 0, fsname, 8, (LPSTR)dataptr + 17, 8, NULL, NULL);
+                SET_AX( context, GetLastError() );
+                SET_CFLAG( context );
             }
             break;
 
@@ -3332,21 +3360,8 @@ static BOOL INT21_NetworkFunc (I386_CONTEXT *context)
 static int INT21_GetDiskSerialNumber( I386_CONTEXT *context )
 {
     BYTE *dataptr = ldt_get_ptr(context->SegDs, context->Edx);
-    WCHAR path[] = {'A',':','\\',0}, label[11];
-    DWORD serial;
 
-    path[0] += INT21_MapDrive(BL_reg(context));
-    if (!GetVolumeInformationW( path, label, 11, &serial, NULL, NULL, NULL, 0))
-    {
-        SetLastError( ERROR_INVALID_DRIVE );
-        return 0;
-    }
-
-    *(WORD *)dataptr = 0;
-    memcpy(dataptr + 2, &serial, sizeof(DWORD));
-    WideCharToMultiByte(CP_OEMCP, 0, label, 11, (LPSTR)dataptr + 6, 11, NULL, NULL);
-    memcpy(dataptr + 17, "FAT16   ", 8);
-    return 1;
+    return INT21_GetMediaId( INT21_MapDrive(BL_reg(context)), dataptr );
 }
 
 

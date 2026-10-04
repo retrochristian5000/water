@@ -58,7 +58,8 @@ enum fs_type
     FS_FAT1216,
     FS_FAT32,
     FS_ISO9660,
-    FS_UDF       /* For reference [E] = Ecma-167.pdf, [U] = udf260.pdf */
+    FS_UDF,      /* For reference [E] = Ecma-167.pdf, [U] = udf260.pdf */
+    FS_NTFS
 };
 
 /* struct disk_device represents any drive or filesystem (partition).
@@ -227,9 +228,9 @@ static DWORD VOLUME_FindCdRomDataBestVoldesc( HANDLE handle )
 
 
 /***********************************************************************
- *           VOLUME_ReadFATSuperblock
+ *           VOLUME_ReadDiskSuperblock
  */
-static enum fs_type VOLUME_ReadFATSuperblock( HANDLE handle, BYTE *buff )
+static enum fs_type VOLUME_ReadDiskSuperblock( HANDLE handle, BYTE *buff )
 {
     DWORD size;
 
@@ -242,6 +243,21 @@ static enum fs_type VOLUME_ReadFATSuperblock( HANDLE handle, BYTE *buff )
     }
 
     if (size < SUPERBLOCK_SIZE) return FS_UNKNOWN;
+
+    /* NTFS stores its file-system identifier in the OEM ID field. Validate
+     * the basic geometry and boot signature as well so random data is not
+     * promoted to NTFS merely because eight bytes happen to match. */
+    if (!memcmp(buff + 0x03, "NTFS    ", 8))
+    {
+        unsigned int bytes_per_sector = GETWORD(buff, 0x0b);
+        unsigned int sectors_per_cluster = buff[0x0d];
+
+        if ((bytes_per_sector == 512 || bytes_per_sector == 1024 ||
+             bytes_per_sector == 2048 || bytes_per_sector == 4096) &&
+            sectors_per_cluster && !(sectors_per_cluster & (sectors_per_cluster - 1)) &&
+            buff[510] == 0x55 && buff[511] == 0xaa)
+            return FS_NTFS;
+    }
 
     /* FIXME: do really all FAT have their name beginning with
      * "FAT" ? (At least FAT12, FAT16 and FAT32 have :)
@@ -404,6 +420,10 @@ static void VOLUME_GetSuperblockLabel( struct volume *volume, HANDLE handle, con
     case FS_UNKNOWN:
         get_filesystem_label( volume );
         return;
+    case FS_NTFS:
+        /* The NTFS volume label lives in metadata, not in the boot sector. */
+        get_filesystem_label( volume );
+        return;
     case FS_FAT1216:
         label_ptr = superblock + 0x2b;
         label_len = 11;
@@ -538,6 +558,9 @@ static void VOLUME_GetSuperblockSerial( struct volume *volume, HANDLE handle, co
         break;
     case FS_UNKNOWN:
         get_filesystem_serial( volume );
+        break;
+    case FS_NTFS:
+        volume->serial = GETLONG( superblock, 0x48 );
         break;
     case FS_FAT1216:
         volume->serial = GETLONG( superblock, 0x27 );
@@ -928,7 +951,7 @@ static BOOL get_volume_device_info( struct volume *volume )
             return TRUE;
         }
 
-        volume->fs_type = VOLUME_ReadFATSuperblock( handle, superblock );
+        volume->fs_type = VOLUME_ReadDiskSuperblock( handle, superblock );
         if (volume->fs_type == FS_UNKNOWN) volume->fs_type = VOLUME_ReadCDSuperblock( handle, superblock );
     }
 
@@ -1417,6 +1440,7 @@ static enum mountmgr_fs_type get_mountmgr_fs_type(enum fs_type fs_type)
     case FS_UDF:     return MOUNTMGR_FS_TYPE_UDF;
     case FS_FAT1216: return MOUNTMGR_FS_TYPE_FAT;
     case FS_FAT32:   return MOUNTMGR_FS_TYPE_FAT32;
+    case FS_NTFS:    return MOUNTMGR_FS_TYPE_NTFS;
     default:         return MOUNTMGR_FS_TYPE_NTFS;
     }
 }
