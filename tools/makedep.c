@@ -3964,12 +3964,15 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
     output( "%s: %s", obj_dir_path( make, obj_name ), source->filename );
     output_filenames( obj_deps );
     /*
-     * C++ compiler/provider state is tracked separately from config.status.
-     * This avoids rebuilding C++ objects after unrelated reconfiguration
-     * while still invalidating them when the selected compiler, flags, or
-     * provider libraries change.
+     * Compiler/provider state is tracked separately from config.status.
+     * Keep C and C++ stamps distinct so provider-only C++ changes do not
+     * rebuild unrelated C objects, while compiler/flag changes invalidate
+     * objects produced with the old profile.
      */
-    if (source->file->flags & FLAG_C_CXX) output_filename( ".whp-cxx-profile" );
+    if (source->file->flags & FLAG_C_CXX)
+        output_filename( ".whp-cxx-profile" );
+    else
+        output_filename( ".whp-cc-profile" );
     if (use_pch) output_filename( obj_dir_path( make, ".wine-pch.h.gch" ));
     output( "\n" );
     output( "\t%s", cmd_prefix( "CC" ) );

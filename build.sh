@@ -33,6 +33,7 @@ WHP_MENU_SCHEMA="$SOURCE_DIR/scripts/whp-config/menu-options.def"
 NINJA_BOOTSTRAP_TOOL="$SOURCE_DIR/scripts/ensure-ninja.py"
 CONFIGURE_USER_ARGS_FILE="$BUILD_DIR/.whp-configure-args"
 PROFILE_FILE="$BUILD_DIR/.whp-profile"
+CC_PROFILE_FILE="$BUILD_DIR/.whp-cc-profile"
 CXX_PROFILE_FILE="$BUILD_DIR/.whp-cxx-profile"
 AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
@@ -116,6 +117,10 @@ Environment:
   CPPFLAGS_FOR_BUILD     Host preprocessor flags for bootstrap/build tools
   CPPBIN                 Standalone C preprocessor (default: selected LLVM clang-cpp)
   CFLAGS_FOR_BUILD       Host compile flags for bootstrap/build tools
+  CFLAGS/CXXFLAGS        Host compile flags; PE lanes use CROSSCFLAGS or per-arch flags
+  CPPFLAGS               Host preprocessor flags; not forwarded to PE object builds
+  CROSSCFLAGS            Default PE compile flags when per-arch CFLAGS are unset
+  CROSSLDFLAGS           Default PE link flags when per-arch LDFLAGS are unset
   LDFLAGS_FOR_BUILD      Host link flags for bootstrap/build tools
   LIBS_FOR_BUILD         Host libraries for bootstrap/build tools
   WHP_GIT_UPDATE        Rebase Water onto its configured upstream: 1 or 0 (default: 1)
@@ -2616,8 +2621,78 @@ prepare_libcxx_provider()
 }
 
 
+cc_profile_signature()
+{
+    printf '%s\n' \
+        "LLVM_BIN=${LLVM_BIN:-}" \
+        "CC=${CC:-}" \
+        "CFLAGS=${CFLAGS:-}" \
+        "CPPFLAGS=${CPPFLAGS:-}" \
+        "CROSSCFLAGS=${CROSSCFLAGS:-}" \
+        "WHP_LLVM_TOOLCHAIN_STATE=${WHP_LLVM_TOOLCHAIN_STATE:-}"
+
+    for arch in i386 x86_64 arm aarch64 arm64ec powerpc
+    do
+        eval "arch_cc=\${${arch}_CC:-}"
+        eval "arch_cflags=\${${arch}_CFLAGS:-}"
+        printf '%s\n' \
+            "${arch}_CC=$arch_cc" \
+            "${arch}_CFLAGS=$arch_cflags"
+    done
+
+    if [ -f "$BUILD_DIR/Makefile" ]; then
+        awk '
+            /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ {
+                key = $0
+                sub(/[[:space:]]*=.*/, "", key)
+                if (key == "CC" || key == "CFLAGS" ||
+                    key == "CPPFLAGS" || key == "EXTRACFLAGS" ||
+                    key ~ /_(CC|CFLAGS|EXTRACFLAGS)$/)
+                    print
+            }
+        ' "$BUILD_DIR/Makefile" | LC_ALL=C sort
+    fi
+}
+
+record_cc_profile()
+{
+    mkdir -p "$BUILD_DIR"
+    tmp=$(mktemp "$CC_PROFILE_FILE.tmp.XXXXXX") ||
+        die "could not create C profile temporary file"
+    cc_profile_signature > "$tmp"
+    if [ -f "$CC_PROFILE_FILE" ] && cmp -s "$tmp" "$CC_PROFILE_FILE"; then
+        rm -f "$tmp"
+    else
+        mv -f "$tmp" "$CC_PROFILE_FILE"
+    fi
+}
+
 cxx_profile_signature()
 {
+    printf '%s\n' \
+        "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
+        "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
+        "WATER_WITH_MINGW=${WATER_WITH_MINGW:-auto}" \
+        "LLVM_BIN=${LLVM_BIN:-}" \
+        "CXX=${CXX:-}" \
+        "CXXFLAGS=${CXXFLAGS:-}" \
+        "CPPFLAGS=${CPPFLAGS:-}" \
+        "CROSSCFLAGS=${CROSSCFLAGS:-}" \
+        "WHP_LLVM_TOOLCHAIN_STATE=${WHP_LLVM_TOOLCHAIN_STATE:-}"
+
+    for arch in i386 x86_64 arm aarch64 arm64ec powerpc
+    do
+        eval "arch_cxx=\${${arch}_CXX:-}"
+        eval "arch_cxxflags=\${${arch}_CXXFLAGS:-}"
+        eval "pe_cflags=\${${arch}_CXX_PE_CFLAGS:-}"
+        eval "pe_libs=\${${arch}_CXX_PE_LIBS:-}"
+        printf '%s\n' \
+            "${arch}_CXX=$arch_cxx" \
+            "${arch}_CXXFLAGS=$arch_cxxflags" \
+            "${arch}_CXX_PE_CFLAGS=$pe_cflags" \
+            "${arch}_CXX_PE_LIBS=$pe_libs"
+    done
+
     if [ -f "$BUILD_DIR/Makefile" ]; then
         awk '
             /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ {
@@ -2630,27 +2705,7 @@ cxx_profile_signature()
                     print
             }
         ' "$BUILD_DIR/Makefile" | LC_ALL=C sort
-        return
     fi
-
-    printf '%s\n' \
-        "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
-        "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
-        "WATER_WITH_MINGW=${WATER_WITH_MINGW:-auto}" \
-        "LLVM_BIN=${LLVM_BIN:-}" \
-        "CXX=${CXX:-}" \
-        "CXXFLAGS=${CXXFLAGS:-}" \
-        "CPPFLAGS=${CPPFLAGS:-}" \
-        "WHP_LLVM_TOOLCHAIN_STATE=${WHP_LLVM_TOOLCHAIN_STATE:-}"
-
-    for arch in i386 x86_64 arm aarch64 arm64ec powerpc
-    do
-        eval "pe_cflags=\${${arch}_CXX_PE_CFLAGS:-}"
-        eval "pe_libs=\${${arch}_CXX_PE_LIBS:-}"
-        printf '%s\n' \
-            "${arch}_CXX_PE_CFLAGS=$pe_cflags" \
-            "${arch}_CXX_PE_LIBS=$pe_libs"
-    done
 }
 
 record_cxx_profile()
@@ -2665,7 +2720,6 @@ record_cxx_profile()
         mv -f "$tmp" "$CXX_PROFILE_FILE"
     fi
 }
-
 water_libdir()
 {
     case "$WATER_PREFIX" in
@@ -2695,7 +2749,7 @@ configured_install_layout_changed()
 profile_signature()
 {
     printf '%s\n' \
-        "WHP_PROFILE_SCHEMA=13" \
+        "WHP_PROFILE_SCHEMA=14" \
         "WATER_ARCHS_MODE=${WATER_ARCHS_MODE:-auto}" \
         "WATER_LLVM_BOOTSTRAP=${WATER_LLVM_BOOTSTRAP:-auto}" \
         "WATER_LLVM_BUILD_TYPE=${WATER_LLVM_BUILD_TYPE:-Release}" \
@@ -2727,6 +2781,8 @@ profile_signature()
         "WATER_WINE_TOOLS=${WATER_WINE_TOOLS:-auto}" \
         "WATER_WINE64=${WATER_WINE64:-auto}" \
         "CC=${CC:-}" "CXX=${CXX:-}" "CPPBIN=${CPPBIN:-}" "AR=${AR:-}" "NM=${NM:-}" "RANLIB=${RANLIB:-}" \
+        "CFLAGS=${CFLAGS:-}" "CXXFLAGS=${CXXFLAGS:-}" "CPPFLAGS=${CPPFLAGS:-}" \
+        "CROSSCFLAGS=${CROSSCFLAGS:-}" "CROSSLDFLAGS=${CROSSLDFLAGS:-}" \
         "LD=${LD:-}" "LDFLAGS=${LDFLAGS:-}" "WHP_HOST_LINKER=${WHP_HOST_LINKER:-}"
 
     for var in \
@@ -2739,10 +2795,24 @@ profile_signature()
 
     for arch in i386 x86_64 arm aarch64 arm64ec powerpc
     do
-        eval "value=\${${arch}_DISABLED_SUBDIRS:-}"
-        printf '%s_DISABLED_SUBDIRS=%s\n' "$arch" "$value"
+        eval "arch_cc=\${${arch}_CC:-}"
+        eval "arch_cxx=\${${arch}_CXX:-}"
+        eval "arch_cflags=\${${arch}_CFLAGS:-}"
+        eval "arch_cxxflags=\${${arch}_CXXFLAGS:-}"
+        eval "arch_ldflags=\${${arch}_LDFLAGS:-}"
+        eval "arch_pe_cflags=\${${arch}_CXX_PE_CFLAGS:-}"
+        eval "arch_pe_libs=\${${arch}_CXX_PE_LIBS:-}"
+        eval "disabled=\${${arch}_DISABLED_SUBDIRS:-}"
+        printf '%s\n' \
+            "${arch}_CC=$arch_cc" \
+            "${arch}_CXX=$arch_cxx" \
+            "${arch}_CFLAGS=$arch_cflags" \
+            "${arch}_CXXFLAGS=$arch_cxxflags" \
+            "${arch}_LDFLAGS=$arch_ldflags" \
+            "${arch}_CXX_PE_CFLAGS=$arch_pe_cflags" \
+            "${arch}_CXX_PE_LIBS=$arch_pe_libs" \
+            "${arch}_DISABLED_SUBDIRS=$disabled"
     done
-
     for var in \
         WATER_WIN16 WATER_WIN64 WATER_TESTS WATER_BUILD_ID WATER_NINJA \
         WATER_MAINTAINER_MODE WATER_SAST WATER_SILENT_RULES WATER_WERROR \
@@ -2986,6 +3056,8 @@ configure_build()
     printf 'WHP architectures: host=%s PE=%s\n' "$configured_host" "$configured_pe" >&2
     unset configured_host configured_pe
     record_profile_signature
+    record_cc_profile
+    record_cxx_profile
 }
 
 configure_saved()
@@ -3153,6 +3225,7 @@ case "${1:-build}" in
     build)
         if [ "$#" -gt 0 ]; then shift; fi
         ensure_configured
+        record_cc_profile
         record_cxx_profile
         if [ "$#" -eq 0 ]; then auto_install=1; else auto_install=0; fi
         run_build "$@"
@@ -3162,11 +3235,13 @@ case "${1:-build}" in
     incremental)
         shift
         ensure_configured
+        record_cc_profile
         record_cxx_profile
         run_build "$@"
         ;;
     *)
         ensure_configured
+        record_cc_profile
         record_cxx_profile
         run_build "$@"
         ;;
