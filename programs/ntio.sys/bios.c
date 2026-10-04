@@ -162,6 +162,7 @@ void WINAPI DOSVM_Int16Handler( I386_CONTEXT *context )
  */
 void WINAPI DOSVM_Int11Handler( I386_CONTEXT *context )
 {
+    BIOSDATA *bios = DOSVM_BiosData();
     int diskdrives = 0;
     int parallelports = 0;
     int serialports = 0;
@@ -184,15 +185,17 @@ void WINAPI DOSVM_Int11Handler( I386_CONTEXT *context )
             CloseHandle( handle );
             serialports++;
         }
-
-        sprintf( file, "\\\\.\\LPT%d", x+1 );
-        handle = CreateFileA( file, 0, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0 );
-        if (handle != INVALID_HANDLE_VALUE)
-        {
-            CloseHandle( handle );
-            parallelports++;
-        }
     }
+
+    /*
+     * Parallel ports are guest hardware.  Count the BIOS data-area entries
+     * that INT 17h and direct I/O actually use instead of probing host LPT
+     * device names, which made INT 11h disagree with the emulated BDA.
+     */
+    if (bios->Lpt1Addr) parallelports++;
+    if (bios->Lpt2Addr) parallelports++;
+    if (bios->Lpt3Addr) parallelports++;
+    if (bios->Lpt4Addr) parallelports++;
 
     if (serialports > 7) /* 3 bits -- maximum value = 7 */
         serialports = 7;
@@ -203,7 +206,6 @@ void WINAPI DOSVM_Int11Handler( I386_CONTEXT *context )
     SET_AX( context,
             (diskdrives << 6) | (serialports << 9) | (parallelports << 14) | 0x06 );
 }
-
 
 /**********************************************************************
  *         DOSVM_Int12Handler
@@ -221,27 +223,70 @@ void WINAPI DOSVM_Int12Handler( I386_CONTEXT *context )
  *
  * Handler for int 17h (printer - output character).
  */
-void WINAPI DOSVM_Int17Handler( I386_CONTEXT *context )
+static WORD DOSVM_GetLptBase( WORD index )
 {
-    switch( AH_reg(context) )
+    BIOSDATA *bios = DOSVM_BiosData();
+
+    switch (index)
     {
-       case 0x00:/* Send character*/
-            FIXME("Send character not supported yet\n");
-            SET_AH( context, 0x00 );/*Timeout*/
-            break;
-        case 0x01:              /* PRINTER - INITIALIZE */
-            FIXME("Initialize Printer - Not Supported\n");
-            SET_AH( context, 0x30 ); /* selected | out of paper */
-            break;
-        case 0x02:              /* PRINTER - GET STATUS */
-            FIXME("Get Printer Status - Not Supported\n");
-            break;
-        default:
-            SET_AH( context, 0 ); /* time out */
-            INT_BARF( context, 0x17 );
+    case 0: return bios->Lpt1Addr;
+    case 1: return bios->Lpt2Addr;
+    case 2: return bios->Lpt3Addr;
+    case 3: return bios->Lpt4Addr;
+    default: return 0;
     }
 }
 
+static BYTE DOSVM_GetLptStatus( WORD base )
+{
+    /*
+     * The hardware status register exposes /ACK and /ERROR polarity, while
+     * INT 17h returns the BIOS view.  IBM-compatible BIOS code inverts bits
+     * 6 and 3 before returning AH.
+     */
+    return (BYTE)DOSVM_inport( base + 1, 1 ) ^ 0x48;
+}
+
+void WINAPI DOSVM_Int17Handler( I386_CONTEXT *context )
+{
+    WORD base = DOSVM_GetLptBase( DX_reg(context) );
+    BYTE control;
+
+    if (!base) return;
+
+    switch( AH_reg(context) )
+    {
+    case 0x00: /* send character */
+        DOSVM_outport( base, 1, AL_reg(context) );
+
+        /*
+         * The PC printer BIOS keeps the control register at 0Ch when idle
+         * and pulses the active-low STROBE through bit 0.  Preserve the
+         * other control bits while forcing bidirectional direction clear.
+         */
+        control = (BYTE)DOSVM_inport( base + 2, 1 ) & 0x1e;
+        DOSVM_outport( base + 2, 1, control );
+        DOSVM_outport( base + 2, 1, control | 0x01 );
+        DOSVM_outport( base + 2, 1, control );
+        SET_AH( context, DOSVM_GetLptStatus( base ) );
+        break;
+
+    case 0x01: /* initialize printer */
+        control = (BYTE)DOSVM_inport( base + 2, 1 ) & 0x1f;
+        DOSVM_outport( base + 2, 1, control & ~0x04 );
+        DOSVM_outport( base + 2, 1, control | 0x04 );
+        SET_AH( context, DOSVM_GetLptStatus( base ) );
+        break;
+
+    case 0x02: /* get printer status */
+        SET_AH( context, DOSVM_GetLptStatus( base ) );
+        break;
+
+    default:
+        INT_BARF( context, 0x17 );
+        break;
+    }
+}
 
 /**********************************************************************
  *          DOSVM_Int19Handler

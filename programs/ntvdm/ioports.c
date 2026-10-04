@@ -66,6 +66,96 @@ static struct {
 
 static BYTE parport_8255[4] = {0x4f, 0x20, 0xff, 0xff};
 
+#define LPT_STATUS_READY_RAW 0xd8
+#define LPT_CONTROL_DEFAULT  0x0c
+
+struct lpt_port
+{
+    WORD base;
+    BYTE data;
+    BYTE status;
+    BYTE control;
+};
+
+static struct lpt_port lpt_ports[] =
+{
+    {0x378, 0x00, LPT_STATUS_READY_RAW, LPT_CONTROL_DEFAULT},
+    {0x278, 0x00, LPT_STATUS_READY_RAW, LPT_CONTROL_DEFAULT},
+    {0x3bc, 0x00, LPT_STATUS_READY_RAW, LPT_CONTROL_DEFAULT}
+};
+
+static struct lpt_port *find_lpt_port( int port, unsigned int *reg )
+{
+    unsigned int i;
+
+    for (i = 0; i < ARRAY_SIZE(lpt_ports); i++)
+    {
+        if (port >= lpt_ports[i].base && port <= lpt_ports[i].base + 2)
+        {
+            *reg = port - lpt_ports[i].base;
+            return &lpt_ports[i];
+        }
+    }
+    return NULL;
+}
+
+static BOOL lpt_inport( int port, int size, DWORD *value )
+{
+    struct lpt_port *lpt;
+    unsigned int reg;
+
+    if (!(lpt = find_lpt_port( port, &reg ))) return FALSE;
+
+    if (size != 1)
+        WARN("non-byte LPT read (%d bytes) from port %04x; returning the 8-bit register value\n",
+             size, port);
+
+    switch (reg)
+    {
+    case 0:
+        *value = lpt->data;
+        break;
+    case 1:
+        *value = lpt->status;
+        break;
+    case 2:
+        *value = lpt->control;
+        break;
+    default:
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOL lpt_outport( int port, int size, DWORD value )
+{
+    struct lpt_port *lpt;
+    unsigned int reg;
+
+    if (!(lpt = find_lpt_port( port, &reg ))) return FALSE;
+
+    if (size != 1)
+        WARN("non-byte LPT write (%d bytes) to port %04x; using the low byte only\n",
+             size, port);
+
+    switch (reg)
+    {
+    case 0:
+        lpt->data = (BYTE)value;
+        break;
+    case 1:
+        TRACE("ignoring write %02x to read-only LPT status port %04x\n",
+              (BYTE)value, port);
+        break;
+    case 2:
+        lpt->control = (BYTE)value & 0x1f;
+        break;
+    default:
+        return FALSE;
+    }
+    return TRUE;
+}
+
 static BYTE cmosaddress;
 
 static BOOL cmos_image_initialized = FALSE;
@@ -246,6 +336,8 @@ DWORD DOSVM_inport( int port, int size )
 
     DOSMEM_InitDosMemory();
 
+    if (lpt_inport( port, size, &res )) return res;
+
     switch (port)
     {
     case 0x40:
@@ -335,6 +427,8 @@ void DOSVM_outport( int port, int size, DWORD value )
     TRACE("IO: 0x%lx (%d-byte value) to port 0x%04x\n", value, size, port );
 
     DOSMEM_InitDosMemory();
+
+    if (lpt_outport( port, size, value )) return;
 
     switch (port)
     {
