@@ -622,6 +622,33 @@ do
              fi],
             [AS_VAR_COPY([${wine_arch}_CXX],[${wine_arch}_CC])])])
     AS_VAR_SET_IF([${wine_arch}_CXXFLAGS],[],[AS_VAR_COPY([${wine_arch}_CXXFLAGS],[${wine_arch}_CFLAGS])])
+
+    dnl LTO is a compile-and-link mode.  Keep the per-architecture link
+    dnl command in sync when users enable it through CFLAGS/CXXFLAGS, but
+    dnl preserve an explicitly selected LTO mode in LDFLAGS.
+    AS_VAR_COPY([wine_pe_cflags],[${wine_arch}_CFLAGS])
+    AS_VAR_COPY([wine_pe_cxxflags],[${wine_arch}_CXXFLAGS])
+    AS_VAR_COPY([wine_pe_ldflags],[${wine_arch}_LDFLAGS])
+    wine_lto_link_flag=
+    for wine_flag in $wine_pe_ldflags
+    do
+        case "$wine_flag" in
+          -flto|-flto=*|-fno-lto) wine_lto_link_flag=$wine_flag ;;
+        esac
+    done
+    if test -z "$wine_lto_link_flag"
+    then
+        for wine_flag in $wine_pe_cflags $wine_pe_cxxflags
+        do
+            case "$wine_flag" in
+              -flto|-flto=*|-fno-lto) wine_lto_link_flag=$wine_flag ;;
+            esac
+        done
+        test -z "$wine_lto_link_flag" ||
+            AS_VAR_APPEND([${wine_arch}_LDFLAGS],[" $wine_lto_link_flag"])
+    fi
+    unset wine_pe_cflags wine_pe_cxxflags wine_pe_ldflags wine_lto_link_flag wine_flag
+
     AS_VAR_COPY([CC],[${wine_arch}_CC])
     AS_VAR_COPY([CXX],[${wine_arch}_CXX])
     AS_VAR_COPY([CFLAGS],[${wine_arch}_CFLAGS])
