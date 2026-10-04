@@ -5,6 +5,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SCHEMA="$SCRIPT_DIR/menu-options.def"
 CONFIG=${1:-.whpconfig}
+HOST_OS=$(uname -s 2>/dev/null || true)
 if [ "$#" -gt 0 ]; then
     shift
 fi
@@ -72,7 +73,7 @@ set_value()
 
 render_menu()
 {
-    awk '
+    awk -v host_os="$HOST_OS" '
         FNR == NR {
             if ($0 ~ /^[A-Z][A-Z0-9_]*=/) {
                 pos = index($0, "=")
@@ -88,6 +89,8 @@ render_menu()
             section = field[2]
             label = field[3]
             default_value = field[5]
+            if (key == "WATER_LLVM_LINKER" && host_os == "Darwin")
+                default_value = "system"
             group = field[7]
             if (section != previous_section) {
                 printf "\n[%s]\n", section
@@ -208,6 +211,10 @@ while :; do
     kind=$4
     default_value=$5
     choices=$6
+
+    if [ "$key" = WATER_LLVM_LINKER ] && [ "$HOST_OS" = Darwin ]; then
+        default_value=system
+    fi
 
     current=$(get_value "$key")
     if [ -z "$current" ]; then

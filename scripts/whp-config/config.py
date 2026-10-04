@@ -89,7 +89,7 @@ OPTIONS = (
     Option('WATER_LLVM_ASSERTIONS', 'LLVM toolchain', 'LLVM assertions', 'bool', 'n'),
     Option('WATER_LLVM_LEAN', 'LLVM toolchain', 'Lean Water-only LLVM graph', 'bool', 'y'),
     Option('WATER_LLVM_PCH', 'LLVM toolchain', 'LLVM precompiled headers', 'bool', 'n'),
-    Option('WATER_LLVM_LINKER', 'LLVM toolchain', 'Host linker policy', 'choice',
+    Option('WATER_LLVM_LINKER', 'LLVM toolchain', 'Host linker (macOS: system)', 'choice',
            'auto', ('auto', 'lld', 'system')),
     Option('WATER_LIBCXX', 'LLVM toolchain', 'PE libc++ provider', 'choice',
            'llvm', ('llvm', 'legacy')),
@@ -147,7 +147,10 @@ class ConfigState:
 
 
 def default_values() -> Dict[str, str]:
-    return {option.key: option.default for option in OPTIONS}
+    values = {option.key: option.default for option in OPTIONS}
+    if sys.platform == 'darwin':
+        values['WATER_LLVM_LINKER'] = 'system'
+    return values
 
 
 def validate_value(option: Option, value: str) -> None:
@@ -279,10 +282,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             sys.stdout.write(shell_assignments(state, dict(os.environ)))
             return 0
         if args.dump_menu:
+            defaults = default_values()
             for section, options in sections():
                 print(section)
                 for option in options:
-                    print(f'  {option.key}={option.default}')
+                    print(f'  {option.key}={defaults[option.key]}')
             return 0
     except (OSError, ValueError) as exc:
         print(f'error: {exc}', file=sys.stderr)

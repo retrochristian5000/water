@@ -104,7 +104,7 @@ Environment:
   WHP_BASH_CMD          Explicit Bash executable for bootstrap orchestration
   WHP_LLVM_LINK_JOBS    Concurrent LLVM link jobs (default: 2)
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
-  WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (default: auto)
+  WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (macOS default: system; others: auto)
   WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
   WATER_INSTALL         Post-build install: none, runtime, development, or all (default: none)
   WATER_PREFIX          Install prefix passed to configure (default: /usr/local)
@@ -222,7 +222,12 @@ validate_profile()
     WATER_LLVM_ASSERTIONS=${WATER_LLVM_ASSERTIONS:-n}
     WATER_LLVM_LEAN=${WATER_LLVM_LEAN:-y}
     WATER_LLVM_PCH=${WATER_LLVM_PCH:-n}
-    WATER_LLVM_LINKER=${WATER_LLVM_LINKER:-auto}
+    if [ -z "${WATER_LLVM_LINKER:-}" ]; then
+        case "$(uname -s 2>/dev/null || true)" in
+            Darwin) WATER_LLVM_LINKER=system ;;
+            *)      WATER_LLVM_LINKER=auto ;;
+        esac
+    fi
     WATER_LIBCXX=${WATER_LIBCXX:-llvm}
     WATER_INSTALL=${WATER_INSTALL:-none}
     WATER_PREFIX=${WATER_PREFIX:-/usr/local}

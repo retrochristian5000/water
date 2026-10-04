@@ -11,7 +11,7 @@ WATER_LLVM_BUILD_TYPE|LLVM toolchain|LLVM build type|choice|Release|Release,RelW
 WATER_LLVM_ASSERTIONS|LLVM toolchain|LLVM assertions|bool|n||
 WATER_LLVM_LEAN|LLVM toolchain|Lean Water-only LLVM graph|bool|y||
 WATER_LLVM_PCH|LLVM toolchain|LLVM precompiled headers|bool|n||
-WATER_LLVM_LINKER|LLVM toolchain|Host linker policy|choice|auto|auto,lld,system|
+WATER_LLVM_LINKER|LLVM toolchain|Host linker (macOS: system)|choice|auto|auto,lld,system|
 WATER_LIBCXX|LLVM toolchain|PE libc++ provider|choice|llvm|llvm,legacy|
 BOOTSTRAP_NINJA|Build behavior|Pinned WHP Ninja executor|choice|auto|auto,y,n|
 WATER_BASH_BOOTSTRAP|Build behavior|Pinned WHP Bash executor|choice|auto|auto,y,n|
