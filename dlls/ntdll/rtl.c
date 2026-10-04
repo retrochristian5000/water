@@ -1371,8 +1371,10 @@ NTSTATUS WINAPI RtlDecompressBuffer(USHORT format, PUCHAR uncompressed, ULONG un
  */
 HANDLE WINAPI RtlGetCurrentTransaction(void)
 {
-    FIXME("() :stub\n");
-    return NULL;
+    HANDLE transaction = NtCurrentTeb()->CurrentTransactionHandle;
+
+    TRACE("() -> %p\n", transaction);
+    return transaction;
 }
 
 /******************************************************************************
@@ -1380,8 +1382,9 @@ HANDLE WINAPI RtlGetCurrentTransaction(void)
  */
 BOOL WINAPI RtlSetCurrentTransaction(HANDLE new_transaction)
 {
-    FIXME("(%p) :stub\n", new_transaction);
-    return FALSE;
+    TRACE("(%p)\n", new_transaction);
+    NtCurrentTeb()->CurrentTransactionHandle = new_transaction;
+    return TRUE;
 }
 
 /**********************************************************************

@@ -5601,11 +5601,31 @@ static void test_RtlGetLocaleFileMappingAddress(void)
 }
 
 
+static void test_RtlCurrentTransaction(void)
+{
+    HANDLE original = RtlGetCurrentTransaction();
+    HANDLE transaction = ULongToHandle(0x1234);
+
+    ok(RtlSetCurrentTransaction(transaction), "RtlSetCurrentTransaction failed\n");
+    ok(RtlGetCurrentTransaction() == transaction, "got %p, expected %p\n",
+       RtlGetCurrentTransaction(), transaction);
+
+    ok(RtlSetCurrentTransaction(NULL), "RtlSetCurrentTransaction(NULL) failed\n");
+    ok(RtlGetCurrentTransaction() == NULL, "got %p, expected NULL\n",
+       RtlGetCurrentTransaction());
+
+    ok(RtlSetCurrentTransaction(original), "failed to restore current transaction\n");
+    ok(RtlGetCurrentTransaction() == original, "got %p, expected original %p\n",
+       RtlGetCurrentTransaction(), original);
+}
+
+
 START_TEST(rtl)
 {
     InitFunctionPtrs();
 
     test_nt3_compat_exports();
+    test_RtlCurrentTransaction();
     test_RtlGetLocaleFileMappingAddress();
     test_RtlQueryProcessDebugInformation();
     test_RtlCompareMemory();
