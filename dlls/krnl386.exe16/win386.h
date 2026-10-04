@@ -16,6 +16,8 @@ struct win386_session_info
     DWORD flags;
     WORD windows_version;
     WORD dos_version;
+    BYTE dos_family;
+    BYTE reserved;
     WORD current_vm;
     WORD system_vm;
 };

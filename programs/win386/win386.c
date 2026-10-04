@@ -21,6 +21,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(win386);
 C_ASSERT(sizeof(struct water_win386_session) == WATER_WIN386_SESSION_SIZE);
 C_ASSERT(FIELD_OFFSET(struct water_win386_session, windows_mux_version) == 16);
 C_ASSERT(FIELD_OFFSET(struct water_win386_session, dos_version) == 20);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, dos_family) == 22);
 C_ASSERT(FIELD_OFFSET(struct water_win386_session, next_vm) == 24);
 
 static char *append_quoted_arg(char *dst, const char *src)
@@ -101,6 +102,34 @@ static BOOL parse_dos_version(const char *str, WORD *version)
 
     *version = WATER_WIN386_DOS_VERSION(major, minor);
     return TRUE;
+}
+
+static BOOL parse_dos_family(const char *str, BYTE *family)
+{
+    if (!strcmp(str, "msdos"))
+    {
+        *family = WATER_WIN386_DOS_FAMILY_MSDOS;
+        return TRUE;
+    }
+    if (!strcmp(str, "pcdos"))
+    {
+        *family = WATER_WIN386_DOS_FAMILY_PCDOS;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static const char *dos_family_name(BYTE family)
+{
+    switch (family)
+    {
+    case WATER_WIN386_DOS_FAMILY_MSDOS:
+        return "MS-DOS";
+    case WATER_WIN386_DOS_FAMILY_PCDOS:
+        return "PC-DOS";
+    default:
+        return "unknown";
+    }
 }
 
 static BOOL parse_workgroups(const char *str, DWORD *flags)
@@ -293,6 +322,7 @@ static int show_status(void)
     printf("Owner PID: %lu\n", state.owner_pid);
     printf("Windows mux version: %u.%02u\n",
            LOBYTE(state.windows_mux_version), HIBYTE(state.windows_mux_version));
+    printf("DOS family: %s\n", dos_family_name(state.dos_family));
     printf("DOS version: %u.%02u\n",
            HIBYTE(state.dos_version), LOBYTE(state.dos_version));
     printf("System VM: %u\n", state.system_vm);
@@ -304,7 +334,8 @@ static int show_status(void)
     return 0;
 }
 
-static int run_system_vm(WORD version, WORD dos_version, DWORD product_flags, char **argv)
+static int run_system_vm(WORD version, WORD dos_version, BYTE dos_family,
+                         DWORD product_flags, char **argv)
 {
     struct water_win386_session *state;
     PROCESS_INFORMATION process;
@@ -342,6 +373,7 @@ static int run_system_vm(WORD version, WORD dos_version, DWORD product_flags, ch
     state->windows_mux_version = version;
     state->system_vm = WATER_WIN386_VM_SYSTEM;
     state->dos_version = dos_version;
+    state->dos_family = dos_family;
     state->next_vm = WATER_WIN386_VM_SYSTEM + 1;
     state->active_vms = 1;
 
@@ -356,9 +388,10 @@ static int run_system_vm(WORD version, WORD dos_version, DWORD product_flags, ch
     startup.cb = sizeof(startup);
     memset(&process, 0, sizeof(process));
 
-    TRACE("starting System VM %u, Windows %u.%02u, DOS %u.%02u: %s\n",
+    TRACE("starting System VM %u, Windows %u.%02u, %s %u.%02u: %s\n",
           state->system_vm, LOBYTE(version), HIBYTE(version),
-          HIBYTE(dos_version), LOBYTE(dos_version), debugstr_a(command));
+          dos_family_name(dos_family), HIBYTE(dos_version), LOBYTE(dos_version),
+          debugstr_a(command));
 
     if (CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process))
     {
@@ -391,7 +424,8 @@ static void usage(void)
 {
     printf("Water Windows/386 enhanced-mode host\n\n"
            "win386.exe --system-vm [--version 3.0|3.1] [--workgroups 3.1|3.11]\n"
-           "           [--dos-version x.y] command [args...]\n"
+           "           [--dos-family msdos|pcdos] [--dos-version x.y]\n"
+           "           command [args...]\n"
            "win386.exe --dos-vm command [args...]\n"
            "win386.exe --status\n");
 }
@@ -400,6 +434,7 @@ int main(int argc, char **argv)
 {
     WORD version = WATER_WIN386_VERSION_30;
     WORD dos_version = 0;
+    BYTE dos_family = WATER_WIN386_DOS_FAMILY_MSDOS;
     DWORD product_flags = 0;
     BOOL version_explicit = FALSE, dos_version_explicit = FALSE;
     int arg = 1;
@@ -449,6 +484,17 @@ int main(int argc, char **argv)
             continue;
         }
 
+        if (!strcmp(argv[arg], "--dos-family"))
+        {
+            if (arg + 1 >= argc || !parse_dos_family(argv[arg + 1], &dos_family))
+            {
+                fprintf(stderr, "win386: unsupported DOS family\n");
+                return 1;
+            }
+            arg += 2;
+            continue;
+        }
+
         if (!strcmp(argv[arg], "--dos-version"))
         {
             if (arg + 1 >= argc || !parse_dos_version(argv[arg + 1], &dos_version))
@@ -480,5 +526,5 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    return run_system_vm(version, dos_version, product_flags, argv + arg);
+    return run_system_vm(version, dos_version, dos_family, product_flags, argv + arg);
 }

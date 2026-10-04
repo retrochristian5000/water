@@ -63,6 +63,9 @@ static void INT21_LoadBootConfig(void);
 
 WINE_DEFAULT_DEBUG_CHANNEL(int21);
 
+#ifndef NTDOS_GET_DOS_OEM_NUMBER
+#define NTDOS_GET_DOS_OEM_NUMBER() 0xff
+#endif
 
 #pragma pack(push,1)
 
@@ -4535,7 +4538,7 @@ void WINAPI DOSVM_Int21Handler( I386_CONTEXT *context )
                (AL_reg(context) == 0x00) ? "OEM number" : "version flag" );
 
         if (AL_reg(context) == 0x00)
-            SET_BH( context, 0xff ); /* OEM number => undefined */
+            SET_BH( context, NTDOS_GET_DOS_OEM_NUMBER() );
         else
             SET_BH( context, 0x08 ); /* version flag => DOS is in ROM */
 

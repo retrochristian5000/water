@@ -19,6 +19,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(vxd);
 C_ASSERT(sizeof(struct water_win386_session) == WATER_WIN386_SESSION_SIZE);
 C_ASSERT(FIELD_OFFSET(struct water_win386_session, windows_mux_version) == 16);
 C_ASSERT(FIELD_OFFSET(struct water_win386_session, dos_version) == 20);
+C_ASSERT(FIELD_OFFSET(struct water_win386_session, dos_family) == 22);
 C_ASSERT(FIELD_OFFSET(struct water_win386_session, next_vm) == 24);
 
 BOOL WIN386_QuerySession(struct win386_session_info *info)
@@ -47,7 +48,9 @@ BOOL WIN386_QuerySession(struct win386_session_info *info)
         state->abi_version != WATER_WIN386_ABI_VERSION ||
         !(state->flags & WATER_WIN386_FLAG_ACTIVE) ||
         !(state->flags & WATER_WIN386_FLAG_VMM) ||
-        !state->system_vm || !state->dos_version)
+        !state->system_vm || !state->dos_version ||
+        (state->dos_family != WATER_WIN386_DOS_FAMILY_MSDOS &&
+         state->dos_family != WATER_WIN386_DOS_FAMILY_PCDOS))
         goto done;
 
     if (info)
@@ -55,6 +58,8 @@ BOOL WIN386_QuerySession(struct win386_session_info *info)
         info->flags = state->flags;
         info->windows_version = state->windows_mux_version;
         info->dos_version = state->dos_version;
+        info->dos_family = state->dos_family;
+        info->reserved = 0;
         info->system_vm = state->system_vm;
 
         len = GetEnvironmentVariableA(WATER_WIN386_VM_ENV, vm_text, ARRAY_SIZE(vm_text));
