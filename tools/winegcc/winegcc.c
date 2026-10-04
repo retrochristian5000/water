@@ -1886,6 +1886,17 @@ int main(int argc, char **argv)
                         unwind_tables = false;
 		    else if (!strcmp("-fms-hotpatch", args.str[i]))
                         raw_linker_arg = 1;
+                    else if (!strcmp("-flto", args.str[i]) ||
+                             !strncmp("-flto=", args.str[i], 6) ||
+                             !strcmp("-fno-lto", args.str[i]))
+                    {
+                        /*
+                         * LTO controls both object generation and the final
+                         * link.  Keep the option in compiler_args while also
+                         * forwarding it to the Clang/LLD link driver.
+                         */
+                        raw_linker_arg = 1;
+                    }
                     else if (!strcmp("-fPIC", args.str[i]) || !strcmp("-fpic", args.str[i]))
                         use_pic = true;
                     else if (!strcmp("-fno-PIC", args.str[i]) || !strcmp("-fno-pic", args.str[i]))
