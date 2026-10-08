@@ -33,7 +33,7 @@ Normal builds use the Water checkout and its recorded submodule pins without
 pulling new source revisions. Source and dependency updates are separate:
 
 ```
-./build.sh update                              # Fast-forward Water and restore pinned submodules
+./build.sh update                              # Fast-forward Water; build next to load new rules
 ./build.sh update-deps toolchains/llvm-project # Fetch the LLVM fork's configured branch tip
 ```
 
@@ -42,9 +42,11 @@ and stages updated gitlink revisions for inspection. It does **not** create
 commits or push them. Validate the updated toolchain before committing and
 pushing the new pins; otherwise the Water branch will continue to use its
 recorded revisions. `update` uses `git pull --ff-only` rather than rebasing
-local commits. Set `WHP_GIT_UPDATE=1` to opt into a source update before a
-normal build; if its revision changes, the script stops so the updated build
-rules can be loaded by a new invocation.
+local commits. A changed Water revision is not bootstrapped by the older
+running script; run `./build.sh` afterward to initialize its recorded
+submodules using the newly updated rules. Set `WHP_GIT_UPDATE=1` to opt into
+a source update before a normal build; if its revision changes, the script
+stops so those new build rules can be loaded by a new invocation.
 Use `./build.sh menuconfig` to edit the persistent ignored `.whpconfig`
 profile. The menu controls PE architectures, the WHP LLVM bootstrap and host
 linker policies, build behavior, installation, and optional Wine components. The LLVM menu
