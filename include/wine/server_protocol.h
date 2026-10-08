@@ -1485,6 +1485,32 @@ struct resume_thread_reply
 
 
 
+struct alert_thread_request
+{
+    struct request_header __header;
+    obj_handle_t handle;
+};
+struct alert_thread_reply
+{
+    struct reply_header __header;
+};
+
+
+
+struct alert_resume_thread_request
+{
+    struct request_header __header;
+    obj_handle_t handle;
+};
+struct alert_resume_thread_reply
+{
+    struct reply_header __header;
+    int          count;
+    char __pad_12[4];
+};
+
+
+
 struct queue_apc_request
 {
     struct request_header __header;
@@ -6264,6 +6290,8 @@ enum request
     REQ_set_thread_info,
     REQ_suspend_thread,
     REQ_resume_thread,
+    REQ_alert_thread,
+    REQ_alert_resume_thread,
     REQ_queue_apc,
     REQ_get_apc_result,
     REQ_close_handle,
@@ -6579,6 +6607,8 @@ union generic_request
     struct set_thread_info_request set_thread_info_request;
     struct suspend_thread_request suspend_thread_request;
     struct resume_thread_request resume_thread_request;
+    struct alert_thread_request alert_thread_request;
+    struct alert_resume_thread_request alert_resume_thread_request;
     struct queue_apc_request queue_apc_request;
     struct get_apc_result_request get_apc_result_request;
     struct close_handle_request close_handle_request;
@@ -6892,6 +6922,8 @@ union generic_reply
     struct set_thread_info_reply set_thread_info_reply;
     struct suspend_thread_reply suspend_thread_reply;
     struct resume_thread_reply resume_thread_reply;
+    struct alert_thread_reply alert_thread_reply;
+    struct alert_resume_thread_reply alert_resume_thread_reply;
     struct queue_apc_reply queue_apc_reply;
     struct get_apc_result_reply get_apc_result_reply;
     struct close_handle_reply close_handle_reply;
@@ -7183,6 +7215,6 @@ union generic_reply
     struct alpc_create_port_reply alpc_create_port_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 961
+#define SERVER_PROTOCOL_VERSION 962
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
