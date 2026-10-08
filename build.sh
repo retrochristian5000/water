@@ -15,7 +15,7 @@ BASH_BOOTSTRAP_DIR=${WHP_BASH_BUILD_DIR:-"$BUILD_DIR/bash-bootstrap"}
 LLVM_LINK_JOBS=${WHP_LLVM_LINK_JOBS:-2}
 WHP_GIT_UPDATE_EXPLICIT=${WHP_GIT_UPDATE+x}
 WHP_SUBMODULES_EXPLICIT=${WHP_SUBMODULES+x}
-WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-1}
+WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-0}
 WHP_SUBMODULES=${WHP_SUBMODULES:-1}
 WHP_RECONFIGURE=${WHP_RECONFIGURE:-0}
 
@@ -87,7 +87,7 @@ esac
 usage()
 {
     cat <<EOF
-Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|clean|distclean|install-lib|install-dev|install|test|TARGET...]
+Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|update|update-deps|clean|distclean|install-lib|install-dev|install|test|TARGET...]
 
 Environment:
   WHP_BUILD_DIR         Out-of-tree build directory (default: ./build)
@@ -124,7 +124,7 @@ Environment:
   CROSSLDFLAGS           Default PE link flags when per-arch LDFLAGS are unset
   LDFLAGS_FOR_BUILD      Host link flags for bootstrap/build tools
   LIBS_FOR_BUILD         Host libraries for bootstrap/build tools
-  WHP_GIT_UPDATE        Rebase Water onto its configured upstream: 1 or 0 (default: 1)
+  WHP_GIT_UPDATE        Fast-forward Water from its tracking branch: 1 or 0 (default: 0)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
   AUTOCONF              Autoconf program used to generate ./configure
@@ -132,8 +132,10 @@ Environment:
                          (auto prefers Water's selected LLVM clang)
 
 Build modes:
-  build                Build normally; WATER_INSTALL may run afterward
+  build                Build normally from pinned sources; WATER_INSTALL may run afterward
   incremental          Build only the current dependency graph; no automatic install
+  update               Fast-forward Water and initialize its recorded submodule pins
+  update-deps PATH...  Fetch selected submodule branch tips and stage new gitlink pins
 
 Install targets:
   install-lib          Install runtime files only (recommended for normal Water use)
@@ -442,13 +444,47 @@ generate_configure()
 update_repository()
 {
     [ "$WHP_GIT_UPDATE" = 1 ] || return 0
-    [ -d "$SOURCE_DIR/.git" ] || return 0
+    [ -d "$SOURCE_DIR/.git" ] || [ -f "$SOURCE_DIR/.git" ] || return 0
 
     command -v git >/dev/null 2>&1 ||
         die "git is required to update the Water source tree"
+    [ "$(git -C "$SOURCE_DIR" rev-parse --show-toplevel 2>/dev/null || true)" = "$SOURCE_DIR" ] ||
+        die "Water source directory is not the Git checkout root"
+    git -C "$SOURCE_DIR" rev-parse '@{upstream}' >/dev/null 2>&1 ||
+        die "Water checkout has no upstream tracking branch; configure one before updating"
 
-    printf 'WHP source update: git pull --rebase --recurse-submodules=no\n' >&2
-    git -C "$SOURCE_DIR" pull --rebase --recurse-submodules=no
+    whp_before_update=$(git -C "$SOURCE_DIR" rev-parse HEAD)
+    printf 'WHP source update: git pull --ff-only --recurse-submodules=no\n' >&2
+    git -C "$SOURCE_DIR" pull --ff-only --recurse-submodules=no
+    whp_after_update=$(git -C "$SOURCE_DIR" rev-parse HEAD)
+    if [ "$whp_before_update" != "$whp_after_update" ] && [ "${1:-}" != update ]; then
+        die "Water sources changed during this invocation; run ./build.sh again to use the updated build rules"
+    fi
+    unset whp_before_update whp_after_update
+}
+
+update_dependency_pins()
+{
+    [ "$#" -gt 0 ] || die "update-deps requires one or more submodule paths"
+    command -v git >/dev/null 2>&1 || die "git is required to update dependency pins"
+    [ "$(git -C "$SOURCE_DIR" rev-parse --show-toplevel 2>/dev/null || true)" = "$SOURCE_DIR" ] ||
+        die "update-deps requires a Water Git checkout"
+
+    for whp_dep in "$@"; do
+        case "$whp_dep" in
+            libs/fluidsynth|toolchains/llvm-project|toolchains/ninja-builder|toolchains/bash|toolchains/automake) ;;
+            *) die "unknown Water dependency submodule: $whp_dep" ;;
+        esac
+    done
+    unset whp_dep
+
+    [ -z "$(git -C "$SOURCE_DIR" status --porcelain --untracked-files=no --ignore-submodules=none)" ] ||
+        die "commit or restore existing tracked changes before updating dependency pins"
+    git -C "$SOURCE_DIR" submodule sync --recursive
+    git -C "$SOURCE_DIR" submodule update --init --remote --checkout -- "$@"
+    git -C "$SOURCE_DIR" add -- "$@"
+    git -C "$SOURCE_DIR" diff --cached --submodule=short -- "$@"
+    printf 'WHP dependency update: pins staged for review; test, then commit and push them explicitly\n' >&2
 }
 
 init_submodules()
@@ -3210,6 +3246,17 @@ case "${1:-build}" in
         ;;
     menuconfig)
         run_menuconfig "$@"
+        ;;
+    update)
+        WHP_GIT_UPDATE=1
+        update_repository update
+        init_submodules
+        exit 0
+        ;;
+    update-deps)
+        shift
+        update_dependency_pins "$@"
+        exit 0
         ;;
 esac
 
