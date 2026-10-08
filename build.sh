@@ -444,7 +444,10 @@ generate_configure()
 update_repository()
 {
     [ "$WHP_GIT_UPDATE" = 1 ] || return 0
-    [ -d "$SOURCE_DIR/.git" ] || [ -f "$SOURCE_DIR/.git" ] || return 0
+    if [ ! -d "$SOURCE_DIR/.git" ] && [ ! -f "$SOURCE_DIR/.git" ]; then
+        [ "${1:-}" != update ] || die "source updater requires a Git checkout, not a source archive"
+        return 0
+    fi
 
     command -v git >/dev/null 2>&1 ||
         die "git is required to update the Water source tree"
@@ -452,6 +455,8 @@ update_repository()
         die "Water source directory is not the Git checkout root"
     git -C "$SOURCE_DIR" rev-parse '@{upstream}' >/dev/null 2>&1 ||
         die "Water checkout has no upstream tracking branch; configure one before updating"
+    [ -z "$(git -C "$SOURCE_DIR" status --porcelain --untracked-files=no --ignore-submodules=dirty)" ] ||
+        die "commit or restore tracked Water changes before pulling source updates"
 
     whp_before_update=$(git -C "$SOURCE_DIR" rev-parse HEAD)
     printf 'WHP source update: git pull --ff-only --recurse-submodules=no\n' >&2
@@ -3249,8 +3254,14 @@ case "${1:-build}" in
         ;;
     update)
         WHP_GIT_UPDATE=1
+        whp_water_before=$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
         update_repository update
-        init_submodules
+        whp_water_after=$(git -C "$SOURCE_DIR" rev-parse HEAD)
+        if [ "$whp_water_before" != "$whp_water_after" ]; then
+            printf 'WHP source updated; run ./build.sh to initialize the new pinned submodules with current build rules\n' >&2
+        else
+            init_submodules
+        fi
         exit 0
         ;;
     update-deps)
