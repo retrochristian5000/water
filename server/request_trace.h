@@ -335,6 +335,21 @@ static void dump_resume_thread_reply( const struct resume_thread_reply *req )
     fprintf( stderr, " count=%d", req->count );
 }
 
+static void dump_alert_thread_request( const struct alert_thread_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_alert_resume_thread_request( const struct alert_resume_thread_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_alert_resume_thread_reply( const struct alert_resume_thread_reply *req )
+{
+    fprintf( stderr, " count=%d", req->count );
+}
+
 static void dump_queue_apc_request( const struct queue_apc_request *req )
 {
     fprintf( stderr, " handle=%04x", req->handle );
@@ -3559,6 +3574,8 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] =
     (dump_func)dump_set_thread_info_request,
     (dump_func)dump_suspend_thread_request,
     (dump_func)dump_resume_thread_request,
+    (dump_func)dump_alert_thread_request,
+    (dump_func)dump_alert_resume_thread_request,
     (dump_func)dump_queue_apc_request,
     (dump_func)dump_get_apc_result_request,
     (dump_func)dump_close_handle_request,
@@ -3871,6 +3888,8 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] =
     NULL,
     (dump_func)dump_suspend_thread_reply,
     (dump_func)dump_resume_thread_reply,
+    NULL,
+    (dump_func)dump_alert_resume_thread_reply,
     (dump_func)dump_queue_apc_reply,
     (dump_func)dump_get_apc_result_reply,
     NULL,
@@ -4183,6 +4202,8 @@ static const char * const req_names[REQ_NB_REQUESTS] =
     "set_thread_info",
     "suspend_thread",
     "resume_thread",
+    "alert_thread",
+    "alert_resume_thread",
     "queue_apc",
     "get_apc_result",
     "close_handle",
