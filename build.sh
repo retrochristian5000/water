@@ -40,7 +40,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=8
-LLVM_LIBCXX_RECIPE=14
+LLVM_LIBCXX_RECIPE=15
 BASH_BOOTSTRAP_RECIPE=4
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -2353,6 +2353,9 @@ prepare_one_llvm_libcxx()
         # #pragma GCC system_header when an internal header is a primary file.
         # libc++ Win32 sources may define these presence-only macros with
         # empty replacements. Match that spelling to avoid -Wmacro-redefined.
+        # -fno-rtlib-defaultlib controls profiling-runtime dependencies,
+        # not these uninstrumented compilation-only jobs. Keep
+        # -fms-omit-default-lib to suppress PE CRT default-library directives.
         set -- \
             -S "$LLVM_SOURCE_DIR/runtimes" \
             -B "$whp_libcxx_build" \
@@ -2369,8 +2372,8 @@ prepare_one_llvm_libcxx()
             -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
             -DCMAKE_C_COMPILER_WORKS=ON \
             -DCMAKE_CXX_COMPILER_WORKS=ON \
-            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN= -DNOMINMAX= -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
-            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN= -DNOMINMAX= -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_C_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN= -DNOMINMAX= -fshort-wchar -fms-omit-default-lib --no-default-config -idirafter$whp_libcxx_crt_headers" \
+            "-DCMAKE_CXX_FLAGS=-D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN= -DNOMINMAX= -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -fshort-wchar -fms-omit-default-lib --no-default-config -idirafter$whp_libcxx_crt_headers" \
             "-DCMAKE_MSVC_RUNTIME_LIBRARY=" \
             "-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$whp_libcxx_sdk_headers;$SOURCE_DIR/include" \
@@ -2494,7 +2497,7 @@ int whp_libcxx_probe(std::mutex& mutex) {
 }
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
-            -std=c++17 -fshort-wchar -fms-omit-default-lib -fno-rtlib-defaultlib \
+            -std=c++17 -fshort-wchar -fms-omit-default-lib \
             -Werror=ignored-attributes -Werror=unknown-attributes \
             -D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN= -DNOMINMAX= \
             -D_LIBCPP_NO_AUTO_LINK -nostdinc++ \
