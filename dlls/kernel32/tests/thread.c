@@ -2373,7 +2373,6 @@ static void test_thread_info(void)
             break;
 
         case ThreadIsIoPending:
-            todo_wine
             ok(status == STATUS_ACCESS_DENIED, "for info %lu expected STATUS_ACCESS_DENIED, got %08lx (ret_len %lu)\n", i, status, ret_len);
             break;
 
@@ -2384,6 +2383,21 @@ static void test_thread_info(void)
     }
 
     CloseHandle(thread);
+
+    thread = pOpenThread( THREAD_QUERY_INFORMATION, FALSE, GetCurrentThreadId() );
+    if (thread)
+    {
+        ULONG pending = 0xdeadbeef;
+
+        ret_len = 0;
+        status = pNtQueryInformationThread( thread, ThreadIsIoPending, &pending, sizeof(pending), &ret_len );
+        ok(status == STATUS_SUCCESS, "for ThreadIsIoPending expected STATUS_SUCCESS, got %08lx\n", status);
+        if (status == STATUS_SUCCESS)
+            ok(ret_len == sizeof(pending), "for ThreadIsIoPending expected %u bytes, got %lu\n",
+               (unsigned int)sizeof(pending), ret_len);
+        CloseHandle(thread);
+    }
+    else win_skip("Could not open current thread with THREAD_QUERY_INFORMATION\n");
 }
 
 typedef struct tagTHREADNAME_INFO
