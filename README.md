@@ -28,6 +28,23 @@ The pinned bootstrap graph is transitive: the Bash fork consumes
 so Water also pins the Automake fork that provides those macros. Water validates
 that provenance during the Bash bootstrap; it does not require a separate
 system-installed `automake` executable for the normal build.
+
+Normal builds use the Water checkout and its recorded submodule pins without
+pulling new source revisions. Source and dependency updates are separate:
+
+```
+./build.sh update                              # Fast-forward Water and restore pinned submodules
+./build.sh update-deps toolchains/llvm-project # Fetch the LLVM fork's configured branch tip
+```
+
+`update-deps` requires a clean checkout, accepts explicitly named submodules,
+and stages updated gitlink revisions for inspection. It does **not** create
+commits or push them. Validate the updated toolchain before committing and
+pushing the new pins; otherwise the Water branch will continue to use its
+recorded revisions. `update` uses `git pull --ff-only` rather than rebasing
+local commits. Set `WHP_GIT_UPDATE=1` to opt into a source update before a
+normal build; if its revision changes, the script stops so the updated build
+rules can be loaded by a new invocation.
 Use `./build.sh menuconfig` to edit the persistent ignored `.whpconfig`
 profile. The menu controls PE architectures, the WHP LLVM bootstrap and host
 linker policies, build behavior, installation, and optional Wine components. The LLVM menu
