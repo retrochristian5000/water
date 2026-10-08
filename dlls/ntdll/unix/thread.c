@@ -2346,12 +2346,24 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
     }
 
     case ThreadIsIoPending:
-        FIXME( "ThreadIsIoPending info class not supported yet\n" );
-        if (length != sizeof(BOOL)) return STATUS_INFO_LENGTH_MISMATCH;
+    {
+        if (length != sizeof(ULONG)) return STATUS_INFO_LENGTH_MISMATCH;
         if (!data) return STATUS_ACCESS_DENIED;
-        *(BOOL*)data = FALSE;
-        if (ret_len) *ret_len = sizeof(BOOL);
+
+        SERVER_START_REQ( get_thread_info )
+        {
+            req->handle = wine_server_obj_handle( handle );
+            req->access = THREAD_QUERY_INFORMATION;
+            status = wine_server_call( req );
+        }
+        SERVER_END_REQ;
+        if (status != STATUS_SUCCESS) return status;
+
+        FIXME( "ThreadIsIoPending: pending I/O tracking not implemented yet\n" );
+        *(ULONG *)data = FALSE;
+        if (ret_len) *ret_len = sizeof(ULONG);
         return STATUS_SUCCESS;
+    }
 
     case ThreadIsTerminated:
     {
