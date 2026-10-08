@@ -40,7 +40,7 @@ LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
 LLVM_BOOTSTRAP_RECIPE=8
-LLVM_LIBCXX_RECIPE=15
+LLVM_LIBCXX_RECIPE=16
 BASH_BOOTSTRAP_RECIPE=4
 WHP_CONFIGURE_ARCHS=
 WHP_CONFIGURE_ARCHS_SET=0
@@ -2382,23 +2382,23 @@ prepare_one_llvm_libcxx()
             -DLLVM_ENABLE_RUNTIMES:STRING=libcxx \
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_DOCS=OFF \
-            -DLLIBCXX_ENABLE_SHARED=OFF \
-            -DLLIBCXX_ENABLE_STATIC=ON \
-            -DLLIBCXX_INSTALL_STATIC_LIBRARY=OFF \
-            -DLLIBCXX_INSTALL_SHARED_LIBRARY=OFF \
-            -DLLIBCXX_INCLUDE_TESTS=OFF \
-            -DLLIBCXX_INCLUDE_BENCHMARKS=OFF \
-            -DLLIBCXX_INCLUDE_DOCS=OFF \
-            -DLLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
+            -DLIBCXX_ENABLE_SHARED=OFF \
+            -DLIBCXX_ENABLE_STATIC=ON \
+            -DLIBCXX_INSTALL_STATIC_LIBRARY=OFF \
+            -DLIBCXX_INSTALL_SHARED_LIBRARY=OFF \
+            -DLIBCXX_INCLUDE_TESTS=OFF \
+            -DLIBCXX_INCLUDE_BENCHMARKS=OFF \
+            -DLIBCXX_INCLUDE_DOCS=OFF \
+            -DLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
             -DLIBCXX_CXX_ABI:STRING=vcruntime \
-            -DLLIBCXX_ABI_FORCE_MICROSOFT=ON \
+            -DLIBCXX_ABI_FORCE_MICROSOFT=ON \
             "-DLIBCXX_EXTRA_SITE_DEFINES:STRING=_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS;_LIBCPP_NO_ABI_TAG" \
             -DLIBCXX_ENABLE_THREADS=ON \
             -DLIBCXX_HERMETIC_STATIC_LIBRARY=ON \
-            -DLLIBCXX_HAS_WIN32_THREAD_API=ON \
-            -DLLIBCXX_HAS_PTHREAD_API=OFF \
-            -DLLIBCXX_ENABLE_STATIC_ABI_LIBRARY=OFF \
-            -DLLIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY=OFF \
+            -DLIBCXX_HAS_WIN32_THREAD_API=ON \
+            -DLIBCXX_HAS_PTHREAD_API=OFF \
+            -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=OFF \
+            -DLIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY=OFF \
             -DLIBCXX_STATIC_OUTPUT_NAME=whp-libcxx
 
         whp_libcxx_ninja=$(find_existing_ninja)
@@ -2411,6 +2411,18 @@ prepare_one_llvm_libcxx()
         export PATH
         "$whp_libcxx_cmake" "$@"
 
+        # Reject silent CMake option misspellings before compiling libc++.
+        for whp_libcxx_option in \
+            'LIBCXX_ENABLE_STATIC:BOOL=ON' \
+            'LIBCXX_ENABLE_SHARED:BOOL=OFF' \
+            'LIBCXX_ABI_FORCE_MICROSOFT:BOOL=ON' \
+            'LIBCXX_HAS_WIN32_THREAD_API:BOOL=ON' \
+            'LIBCXX_HAS_PTHREAD_API:BOOL=OFF'
+        do
+            grep -Fx "$whp_libcxx_option" "$whp_libcxx_build/CMakeCache.txt" >/dev/null ||
+                die "LLVM libc++ missing requested CMake setting $whp_libcxx_option for $whp_libcxx_target"
+        done
+        unset whp_libcxx_option
         whp_libcxx_abi=$(sed -n 's/^LIBCXX_CXX_ABI:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
         [ "$whp_libcxx_abi" = vcruntime ] ||
             die "LLVM libc++ selected unexpected C++ ABI provider '${whp_libcxx_abi:-unknown}' for $whp_libcxx_target; expected vcruntime"
