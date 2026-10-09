@@ -1,0 +1,10 @@
+MODULE    = ssflwbox.scr
+IMPORTS   = user32 gdi32 advapi32
+
+EXTRADLLFLAGS = -mwindows
+
+VER_FILEDESCRIPTION_STR = "3D Flower Box (Water approximation)"
+
+SOURCES = \
+	flowerbox.c \
+	flowerbox.rc
