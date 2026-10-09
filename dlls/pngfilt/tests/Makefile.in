@@ -1,0 +1,5 @@
+TESTDLL = pngfilt.dll
+IMPORTS = uuid ole32
+
+SOURCES = \
+    main.c
