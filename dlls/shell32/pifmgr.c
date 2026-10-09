@@ -47,7 +47,10 @@ struct pifmgr_handle
 {
     DWORD magic;
     BYTE *data;
+    BYTE *original;
+    WCHAR *path;
     DWORD size;
+    BOOL dirty;
 };
 
 static BOOL load_pif_file(struct pifmgr_handle *pif, const WCHAR *path)
@@ -55,7 +58,9 @@ static BOOL load_pif_file(struct pifmgr_handle *pif, const WCHAR *path)
     LARGE_INTEGER size;
     DWORD file_size, read;
     HANDLE file;
-    BYTE *data;
+    BYTE *data, *original = NULL;
+    WCHAR *saved_path;
+    size_t name_chars;
 
     file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -86,10 +91,61 @@ static BOOL load_pif_file(struct pifmgr_handle *pif, const WCHAR *path)
     else data = NULL;
 
     CloseHandle(file);
+    name_chars = lstrlenW(path) + 1;
+    saved_path = malloc(name_chars * sizeof(*saved_path));
+    if (file_size) original = malloc(file_size);
+    if (!saved_path || (file_size && !original))
+    {
+        free(saved_path);
+        free(original);
+        free(data);
+        return FALSE;
+    }
+    memcpy(saved_path, path, name_chars * sizeof(*saved_path));
+    if (file_size) memcpy(original, data, file_size);
     free(pif->data);
+    free(pif->original);
+    free(pif->path);
     pif->data = data;
+    pif->original = original;
+    pif->path = saved_path;
     pif->size = file_size;
+    pif->dirty = FALSE;
     return TRUE;
+}
+
+/* Preserve the original bytes for conflict detection, and never truncate a
+ * file merely because its PIF extension data has not been fully decoded. */
+static BOOL save_pif_file(const struct pifmgr_handle *pif)
+{
+    HANDLE file;
+    LARGE_INTEGER length;
+    BYTE *disk;
+    DWORD read, written;
+    BOOL ok = FALSE;
+
+    if (!pif->path || !pif->original || !pif->size) return FALSE;
+    file = CreateFileW(pif->path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
+            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return FALSE;
+
+    if (!(disk = malloc(pif->size))) goto done;
+    if (!GetFileSizeEx(file, &length) || length.QuadPart != pif->size ||
+        !ReadFile(file, disk, pif->size, &read, NULL) || read != pif->size ||
+        memcmp(disk, pif->original, pif->size))
+        goto release;
+
+    if (SetFilePointer(file, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+        goto release;
+    if (!WriteFile(file, pif->data, pif->size, &written, NULL) || written != pif->size)
+        goto release;
+    ok = FlushFileBuffers(file);
+
+release:
+    free(disk);
+done:
+    CloseHandle(file);
+    return ok;
 }
 
 static BOOL try_load_app_pif(struct pifmgr_handle *pif, const WCHAR *app)
@@ -139,6 +195,12 @@ static BOOL get_record(const struct pifmgr_handle *pif, unsigned int index, cons
 {
     DWORD offset = PIF_BASE_SIZE;
     unsigned int current = 0;
+
+    /* Old 0x171-byte TopView PIFs have no Microsoft extension chain.
+     * Do not interpret an arbitrary file as a linked PIF structure. */
+    if (!pif->data || pif->size < PIF_BASE_SIZE + sizeof(*record) ||
+        memcmp(pif->data + PIF_BASE_SIZE, "MICROSOFT PIFEX", 16))
+        return FALSE;
 
     while (offset + sizeof(*record) <= pif->size)
     {
@@ -246,6 +308,33 @@ int WINAPI PifMgr_GetProperties(HANDLE handle, LPCSTR group, void *buffer, int s
 }
 
 /*************************************************************************
+ * PifMgr_SetProperties [SHELL32.11]
+ *
+ * Only existing fixed-size named blocks are writable. Do not change
+ * offsets or fabricate new extensions without a verified format writer.
+ */
+int WINAPI PifMgr_SetProperties(HANDLE handle, LPCSTR group, const void *buffer, int size, UINT flags)
+{
+    struct pifmgr_handle *pif = handle;
+    struct pif_record_header record;
+
+    TRACE("handle %p, group %s, buffer %p, size %d, flags %#x.\n",
+            handle, debugstr_a(group), buffer, size, flags);
+
+    if (!pif || pif->magic != PIFMGR_MAGIC || !pif->data || !pif->path ||
+        flags != SETPROPS_NONE || !group || !((ULONG_PTR)group >> 16) ||
+        !buffer || size <= 0 || size > 0xffff)
+        return 0;
+
+    if (!get_record(pif, 0, group, &record) || size != record.size)
+        return 0;
+
+    memmove(pif->data + record.data, buffer, size);
+    pif->dirty = TRUE;
+    return size;
+}
+
+/*************************************************************************
  * PifMgr_CloseProperties [SHELL32.13]
  */
 HANDLE WINAPI PifMgr_CloseProperties(HANDLE handle, UINT flags)
@@ -256,10 +345,21 @@ HANDLE WINAPI PifMgr_CloseProperties(HANDLE handle, UINT flags)
 
     if (!pif || pif->magic != PIFMGR_MAGIC) return handle;
     if (flags & ~CLOSEPROPS_DISCARD)
+    {
         FIXME("unsupported flags %#x.\n", flags);
+        return handle;
+    }
+    if (pif->dirty && !(flags & CLOSEPROPS_DISCARD) && !save_pif_file(pif))
+    {
+        WARN("could not save PIF %s; preserving open properties.\n",
+             debugstr_w(pif->path));
+        return handle;
+    }
 
     pif->magic = 0;
     free(pif->data);
+    free(pif->original);
+    free(pif->path);
     free(pif);
     return NULL;
 }

@@ -39,6 +39,7 @@ struct pif_record_header
 
 static HANDLE (WINAPI *pPifMgr_OpenProperties)(LPCWSTR, LPCWSTR, UINT, UINT);
 static int (WINAPI *pPifMgr_GetProperties)(HANDLE, LPCSTR, void *, int, UINT);
+static int (WINAPI *pPifMgr_SetProperties)(HANDLE, LPCSTR, const void *, int, UINT);
 static HANDLE (WINAPI *pPifMgr_CloseProperties)(HANDLE, UINT);
 
 static void write_record(BYTE *data, WORD offset, const char *name, WORD next, WORD data_offset, WORD size)
@@ -134,6 +135,39 @@ static void test_named_groups(void)
     ret = pPifMgr_GetProperties(pif, "MISSING GROUP", buffer, sizeof(buffer), 0);
     ok(!ret, "got %d bytes.\n", ret);
 
+    if (pPifMgr_SetProperties)
+    {
+        static const BYTE updated[] = {0x12, 0x34, 0x56, 0x78};
+        static const BYTE discarded[] = {0x99, 0x98, 0x97, 0x96};
+
+        ret = pPifMgr_SetProperties(pif, "WINDOWS VMM 4.0", updated, 3, 0);
+        ok(!ret, "size-changing PIF edit was accepted: %d.\n", ret);
+        ret = pPifMgr_SetProperties(pif, "MISSING GROUP", updated, 4, 0);
+        ok(!ret, "unknown PIF group was accepted: %d.\n", ret);
+        ret = pPifMgr_SetProperties(pif, "WINDOWS VMM 4.0", updated, 4, 0);
+        ok(ret == 4, "fixed-size PIF edit returned %d.\n", ret);
+        ret = pPifMgr_GetProperties(pif, "WINDOWS VMM 4.0", buffer, 4, 0);
+        ok(ret == 4 && !memcmp(buffer, updated, 4), "in-memory edit was not readable.\n");
+        ok(!pPifMgr_CloseProperties(pif, 0), "could not save PIF edit.\n");
+
+        pif = pPifMgr_OpenProperties(path, path, ~0u, 0);
+        ok(!!pif, "could not reopen modified PIF.\n");
+        if (!pif) goto done;
+        ret = pPifMgr_GetProperties(pif, "WINDOWS VMM 4.0", buffer, 4, 0);
+        ok(ret == 4 && !memcmp(buffer, updated, 4), "PIF edit not persisted.\n");
+        ret = pPifMgr_SetProperties(pif, "WINDOWS VMM 4.0", discarded, 4, 0);
+        ok(ret == 4, "discard test setup returned %d.\n", ret);
+        ok(!pPifMgr_CloseProperties(pif, 1), "could not discard PIF edit.\n");
+
+        pif = pPifMgr_OpenProperties(path, path, ~0u, 0);
+        ok(!!pif, "could not reopen discarded PIF.\n");
+        if (!pif) goto done;
+        ret = pPifMgr_GetProperties(pif, "WINDOWS VMM 4.0", buffer, 4, 0);
+        ok(ret == 4 && !memcmp(buffer, updated, 4), "discarded edit was unexpectedly saved.\n");
+        ret = pPifMgr_GetProperties(pif, "CONFIG SYS 4.0", buffer, 8, 0);
+        ok(ret == 8 && !memcmp(buffer, "DOS=HIGH", 8), "unrelated PIF block changed.\n");
+    }
+
     ok(!pPifMgr_CloseProperties(pif, 0), "failed to close PIF properties.\n");
 
 done:
@@ -146,6 +180,7 @@ START_TEST(pifmgr)
 
     pPifMgr_OpenProperties = (void *)GetProcAddress(shell32, (const char *)(ULONG_PTR)9);
     pPifMgr_GetProperties = (void *)GetProcAddress(shell32, (const char *)(ULONG_PTR)10);
+    pPifMgr_SetProperties = (void *)GetProcAddress(shell32, (const char *)(ULONG_PTR)11);
     pPifMgr_CloseProperties = (void *)GetProcAddress(shell32, (const char *)(ULONG_PTR)13);
 
     if (!pPifMgr_OpenProperties || !pPifMgr_GetProperties || !pPifMgr_CloseProperties)
