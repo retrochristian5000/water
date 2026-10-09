@@ -22,6 +22,7 @@ START_TEST(msconf)
 {
     static const char * const exports[] =
     {
+        "CallToProtocolHandler",
         "ConferenceCancelTransfer",
         "ConferenceConnectA",
         "ConferenceConnectW",
@@ -38,6 +39,8 @@ START_TEST(msconf)
         "ConferenceSetInfoW",
         "ConferenceSetNotify",
         "ConferenceShareWindow",
+        "NewMediaPhone",
+        "OpenConfLink",
     };
     HMODULE module;
     unsigned int i;

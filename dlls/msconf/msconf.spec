@@ -1,3 +1,4 @@
+@ stdcall CallToProtocolHandler(ptr ptr str long)
 @ stdcall ConferenceCancelTransfer(ptr long)
 @ stdcall ConferenceConnectA(ptr ptr ptr ptr)
 @ stdcall ConferenceConnectW(ptr ptr ptr ptr)
@@ -14,3 +15,5 @@
 @ stdcall ConferenceSetInfoW(ptr long ptr)
 @ stdcall ConferenceSetNotify(ptr ptr ptr)
 @ stdcall ConferenceShareWindow(ptr ptr long)
+@ stdcall NewMediaPhone(ptr ptr str long)
+@ stdcall OpenConfLink(ptr ptr str long)

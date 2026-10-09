@@ -197,3 +197,35 @@ DWORD WINAPI ConferenceShareWindow(HCONF hconf, HWND hwnd, DWORD code)
     }
     return unsupported("ConferenceShareWindow");
 }
+
+/*
+ * Historical NetMeeting shell and protocol handlers. These are called by
+ * rundll32 (HWND, HINSTANCE, command line, show command), not through the
+ * version-2 conferencing API. A missing export breaks older file and URL
+ * associations before the application can report that conferencing is absent.
+ *
+ * No NetMeeting process or protocol backend exists here, so do not report a
+ * successful launch or silently dispatch untrusted URLs/commands.
+ */
+static void unsupported_launcher(const char *name, HWND hwnd, HINSTANCE instance,
+        LPCSTR command, int show)
+{
+    FIXME("%s(%p, %p, %s, %d): NetMeeting launcher is not implemented\n",
+            name, hwnd, instance, debugstr_a(command), show);
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+}
+
+void CALLBACK CallToProtocolHandler(HWND hwnd, HINSTANCE instance, LPSTR command, int show)
+{
+    unsupported_launcher("CallToProtocolHandler", hwnd, instance, command, show);
+}
+
+void CALLBACK NewMediaPhone(HWND hwnd, HINSTANCE instance, LPSTR command, int show)
+{
+    unsupported_launcher("NewMediaPhone", hwnd, instance, command, show);
+}
+
+void CALLBACK OpenConfLink(HWND hwnd, HINSTANCE instance, LPSTR command, int show)
+{
+    unsupported_launcher("OpenConfLink", hwnd, instance, command, show);
+}
