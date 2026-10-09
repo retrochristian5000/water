@@ -926,16 +926,40 @@ static void *import_text_html( Atom type, const void *data, size_t size, size_t 
         data = text;
     }
 
-    len = strlen( header ) + 12;  /* 3 * 4 extra chars for %010lu */
+    /* %010lu expands to ten digits only when offsets are below 10^10.
+     * Reject larger payloads or wrapped allocation sizes rather than
+     * writing an incorrectly sized CF_HTML header. */
+    len = strlen( header ) + 12;
+    if (size > (SIZE_T)-1 - len - sizeof(trailer))
+    {
+        free( text );
+        return NULL;
+    }
     total = len + size + sizeof(trailer);
+    if (total - 1 > ULONG_MAX || total - 1 > 9999999999ULL)
+    {
+        free( text );
+        return NULL;
+    }
     if ((ret = malloc( total )))
     {
         char *p = ret;
-        p += sprintf( p, header, total - 1, len, len + size + 1 /* include the final \n in the data */ );
-        memcpy( p, data, size );
-        strcpy( p + size, trailer );
-        *ret_size = total;
-        TRACE( "returning %s\n", debugstr_a( ret ));
+        int written = snprintf( p, total, header, (unsigned long)(total - 1),
+                                (unsigned long)len, (unsigned long)(len + size + 1) );
+
+        if (written < 0 || (SIZE_T)written != len)
+        {
+            free( ret );
+            ret = NULL;
+        }
+        else
+        {
+            p += written;
+            memcpy( p, data, size );
+            strcpy( p + size, trailer );
+            *ret_size = total;
+            TRACE( "returning %s\n", debugstr_a( ret ) );
+        }
     }
     free( text );
     return ret;

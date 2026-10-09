@@ -347,13 +347,21 @@ HKEY open_hkcu_key( const char *name )
             return 0;
 
         sid = ((TOKEN_USER *)sid_data)->User.Sid;
-        len = sprintf( buffer, "\\Registry\\User\\S-%u-%u", sid->Revision,
-                       MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
-                                           sid->IdentifierAuthority.Value[4] ),
-                                 MAKEWORD( sid->IdentifierAuthority.Value[3],
-                                           sid->IdentifierAuthority.Value[2] )));
-        for (i = 0; i < sid->SubAuthorityCount; i++)
-            len += sprintf( buffer + len, "-%u", sid->SubAuthority[i] );
+        {
+            int written = snprintf( buffer, sizeof(buffer), "\\Registry\\User\\S-%u-%u", sid->Revision,
+                                    MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
+                                                        sid->IdentifierAuthority.Value[4] ),
+                                              MAKEWORD( sid->IdentifierAuthority.Value[3],
+                                                        sid->IdentifierAuthority.Value[2] )) );
+            if (written < 0 || (size_t)written >= sizeof(buffer)) return 0;
+            len = written;
+            for (i = 0; i < sid->SubAuthorityCount; i++)
+            {
+                written = snprintf( buffer + len, sizeof(buffer) - len, "-%u", sid->SubAuthority[i] );
+                if (written < 0 || (size_t)written >= sizeof(buffer) - len) return 0;
+                len += written;
+            }
+        }
 
         ascii_to_unicode( bufferW, buffer, len );
         hkcu = reg_open_key( NULL, bufferW, len * sizeof(WCHAR) );
