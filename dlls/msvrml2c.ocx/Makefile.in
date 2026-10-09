@@ -1,0 +1,5 @@
+MODULE = msvrml2c.ocx
+IMPORTS = uuid
+
+SOURCES = \
+    main.c
