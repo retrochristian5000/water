@@ -86,10 +86,10 @@ START_TEST(main)
 
         hr = IClassFactory_LockServer(factory, TRUE);
         ok(hr == S_OK, "LockServer(TRUE) returned %#lx\n", hr);
-        IClassFactory_Release(factory);
         ok(can_unload() == S_FALSE, "server lock does not prevent unload\n");
         hr = IClassFactory_LockServer(factory, FALSE);
         ok(hr == S_OK, "LockServer(FALSE) returned %#lx\n", hr);
+        IClassFactory_Release(factory);
         ok(can_unload() == S_OK, "server lock or factory leaked\n");
     }
 
