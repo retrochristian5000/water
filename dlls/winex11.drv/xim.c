@@ -51,22 +51,16 @@ static XIMStyle input_style_req = XIMPreeditCallbacks | XIMStatusCallbacks;
 
 static const char *debugstr_xim_style( XIMStyle style )
 {
-    char buffer[1024], *buf = buffer;
-
-    buf += sprintf( buf, "preedit" );
-    if (style & XIMPreeditArea) buf += sprintf( buf, " area" );
-    if (style & XIMPreeditCallbacks) buf += sprintf( buf, " callbacks" );
-    if (style & XIMPreeditPosition) buf += sprintf( buf, " position" );
-    if (style & XIMPreeditNothing) buf += sprintf( buf, " nothing" );
-    if (style & XIMPreeditNone) buf += sprintf( buf, " none" );
-
-    buf += sprintf( buf, ", status" );
-    if (style & XIMStatusArea) buf += sprintf( buf, " area" );
-    if (style & XIMStatusCallbacks) buf += sprintf( buf, " callbacks" );
-    if (style & XIMStatusNothing) buf += sprintf( buf, " nothing" );
-    if (style & XIMStatusNone) buf += sprintf( buf, " none" );
-
-    return wine_dbg_sprintf( "%s", buffer );
+    return wine_dbg_sprintf( "preedit%s%s%s%s%s, status%s%s%s%s",
+                             style & XIMPreeditArea ? " area" : "",
+                             style & XIMPreeditCallbacks ? " callbacks" : "",
+                             style & XIMPreeditPosition ? " position" : "",
+                             style & XIMPreeditNothing ? " nothing" : "",
+                             style & XIMPreeditNone ? " none" : "",
+                             style & XIMStatusArea ? " area" : "",
+                             style & XIMStatusCallbacks ? " callbacks" : "",
+                             style & XIMStatusNothing ? " nothing" : "",
+                             style & XIMStatusNone ? " none" : "" );
 }
 
 BOOL xim_in_compose_mode(void)

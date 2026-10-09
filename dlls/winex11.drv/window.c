@@ -110,35 +110,62 @@ static const char *debugstr_mwm_hints( const MwmHints *hints )
     return wine_dbg_sprintf( "%lx,%lx", hints->functions, hints->decorations );
 }
 
+/* Keep debug tracing bounded even if X11 supplies unexpectedly large
+ * hint values. snprintf returns the untruncated length, so clamp the
+ * position before the next append rather than advancing past the buffer. */
+static void append_debug_hint( char *buffer, size_t size, size_t *position, const char *format, ... )
+{
+    va_list args;
+    int written;
+
+    if (*position >= size) return;
+    va_start( args, format );
+    written = vsnprintf( buffer + *position, size - *position, format, args );
+    va_end( args );
+
+    if (written < 0)
+        buffer[*position] = 0;
+    else if ((size_t)written >= size - *position)
+        *position = size - 1;
+    else
+        *position += written;
+}
+
 static const char *debugstr_size_hints( const XSizeHints *hints )
 {
-    char buffer[1024], *buf = buffer;
-    buf += sprintf( buf, "{" );
-    if (hints->flags & PPosition) buf += sprintf( buf, " pos %d,%d", hints->x, hints->y );
-    if (hints->flags & PSize) buf += sprintf( buf, " size %d,%d", hints->width, hints->height );
-    if (hints->flags & PMinSize) buf += sprintf( buf, " min %d,%d", hints->min_width, hints->min_height );
-    if (hints->flags & PMaxSize) buf += sprintf( buf, " max %d,%d", hints->max_width, hints->max_height );
-    if (hints->flags & PResizeInc) buf += sprintf( buf, " inc %d,%d", hints->width_inc, hints->height_inc );
-    if (hints->flags & PAspect) buf += sprintf( buf, " a/r min %d:%d max %d:%d", hints->min_aspect.x, hints->min_aspect.y, hints->max_aspect.x, hints->max_aspect.y );
-    if (hints->flags & PBaseSize) buf += sprintf( buf, " base %d,%d", hints->base_width, hints->base_height );
-    if (hints->flags & PWinGravity) buf += sprintf( buf, " grav %d", hints->win_gravity );
-    buf += sprintf( buf, " }" );
+    char buffer[1024];
+    size_t pos = 0;
+
+    append_debug_hint( buffer, sizeof(buffer), &pos, "{" );
+    if (hints->flags & PPosition) append_debug_hint( buffer, sizeof(buffer), &pos, " pos %d,%d", hints->x, hints->y );
+    if (hints->flags & PSize) append_debug_hint( buffer, sizeof(buffer), &pos, " size %d,%d", hints->width, hints->height );
+    if (hints->flags & PMinSize) append_debug_hint( buffer, sizeof(buffer), &pos, " min %d,%d", hints->min_width, hints->min_height );
+    if (hints->flags & PMaxSize) append_debug_hint( buffer, sizeof(buffer), &pos, " max %d,%d", hints->max_width, hints->max_height );
+    if (hints->flags & PResizeInc) append_debug_hint( buffer, sizeof(buffer), &pos, " inc %d,%d", hints->width_inc, hints->height_inc );
+    if (hints->flags & PAspect) append_debug_hint( buffer, sizeof(buffer), &pos, " a/r min %d:%d max %d:%d",
+                                                    hints->min_aspect.x, hints->min_aspect.y,
+                                                    hints->max_aspect.x, hints->max_aspect.y );
+    if (hints->flags & PBaseSize) append_debug_hint( buffer, sizeof(buffer), &pos, " base %d,%d", hints->base_width, hints->base_height );
+    if (hints->flags & PWinGravity) append_debug_hint( buffer, sizeof(buffer), &pos, " grav %d", hints->win_gravity );
+    append_debug_hint( buffer, sizeof(buffer), &pos, " }" );
     return __wine_dbg_strdup( buffer );
 }
 
 static const char *debugstr_wm_hints( const XWMHints *hints )
 {
-    char buffer[1024], *buf = buffer;
-    buf += sprintf( buf, "{" );
-    if (hints->flags & InputHint) buf += sprintf( buf, " input %u", hints->input );
-    if (hints->flags & StateHint) buf += sprintf( buf, " state %u", hints->initial_state );
-    if (hints->flags & IconPixmapHint) buf += sprintf( buf, " icon pix %lx", hints->icon_pixmap );
-    if (hints->flags & IconWindowHint) buf += sprintf( buf, " icon win %lx", hints->icon_window );
-    if (hints->flags & IconPositionHint) buf += sprintf( buf, " icon pos %d,%d", hints->icon_x, hints->icon_y );
-    if (hints->flags & IconMaskHint) buf += sprintf( buf, " icon mask %lx", hints->icon_mask );
-    if (hints->flags & WindowGroupHint) buf += sprintf( buf, " group %lx", hints->window_group );
-    if (hints->flags & XUrgencyHint) buf += sprintf( buf, " urgent" );
-    buf += sprintf( buf, " }" );
+    char buffer[1024];
+    size_t pos = 0;
+
+    append_debug_hint( buffer, sizeof(buffer), &pos, "{" );
+    if (hints->flags & InputHint) append_debug_hint( buffer, sizeof(buffer), &pos, " input %u", hints->input );
+    if (hints->flags & StateHint) append_debug_hint( buffer, sizeof(buffer), &pos, " state %u", hints->initial_state );
+    if (hints->flags & IconPixmapHint) append_debug_hint( buffer, sizeof(buffer), &pos, " icon pix %lx", hints->icon_pixmap );
+    if (hints->flags & IconWindowHint) append_debug_hint( buffer, sizeof(buffer), &pos, " icon win %lx", hints->icon_window );
+    if (hints->flags & IconPositionHint) append_debug_hint( buffer, sizeof(buffer), &pos, " icon pos %d,%d", hints->icon_x, hints->icon_y );
+    if (hints->flags & IconMaskHint) append_debug_hint( buffer, sizeof(buffer), &pos, " icon mask %lx", hints->icon_mask );
+    if (hints->flags & WindowGroupHint) append_debug_hint( buffer, sizeof(buffer), &pos, " group %lx", hints->window_group );
+    if (hints->flags & XUrgencyHint) append_debug_hint( buffer, sizeof(buffer), &pos, " urgent" );
+    append_debug_hint( buffer, sizeof(buffer), &pos, " }" );
     return __wine_dbg_strdup( buffer );
 }
 
@@ -2889,7 +2916,7 @@ void X11DRV_SystrayDockInit( HWND hwnd )
     else
     {
         char systray_buffer[29]; /* strlen(_NET_SYSTEM_TRAY_S4294967295)+1 */
-        sprintf( systray_buffer, "_NET_SYSTEM_TRAY_S%u", DefaultScreen( display ) );
+        snprintf( systray_buffer, sizeof(systray_buffer), "_NET_SYSTEM_TRAY_S%u", DefaultScreen( display ) );
         systray_atom = XInternAtom( display, systray_buffer, False );
     }
     XSelectInput( display, root_window, StructureNotifyMask | PropertyChangeMask );

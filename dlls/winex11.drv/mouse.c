@@ -906,7 +906,7 @@ static Cursor create_xcursor_system_cursor( const ICONINFOEXW *info )
     else
     {
         char buf[16];
-        sprintf( buf, "%hu", info->wResID );
+        snprintf( buf, sizeof(buf), "%hu", info->wResID );
         asciiz_to_unicode( p, buf );
     }
     valueA[0] = 0;

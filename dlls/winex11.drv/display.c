@@ -417,7 +417,7 @@ UINT X11DRV_UpdateDisplayDevices( const struct gdi_device_manager *device_manage
             BOOL is_primary = adapters[adapter].state_flags & DISPLAY_DEVICE_PRIMARY_DEVICE;
             UINT dpi = NtUserGetSystemDpiForProcess( NULL );
 
-            sprintf( buffer, "%04lx", adapters[adapter].id );
+            snprintf( buffer, sizeof(buffer), "%04lx", adapters[adapter].id );
             device_manager->add_source( buffer, adapters[adapter].state_flags, dpi, param );
 
             if (!host_handler.get_monitors( adapters[adapter].id, &monitors, &monitor_count )) break;
