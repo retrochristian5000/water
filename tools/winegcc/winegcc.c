@@ -1803,7 +1803,27 @@ int main(int argc, char **argv)
 		    else next_is_arg = 1;
 		    break;
 		case 'i':
-		    next_is_arg = 1;
+                    /* Only exact -i file/path options consume another token.
+                     * Clang's -integrated-as takes no operand, and attached
+                     * spellings such as -isystem/path already have one. */
+                    {
+                        static const char * const path_options[] =
+                        {
+                            "-idirafter", "-iframework", "-iframeworkwithsysroot",
+                            "-imacros", "-imultilib", "-include", "-include-pch",
+                            "-include-pth", "-iprefix", "-iquote", "-isysroot",
+                            "-isystem", "-isystem-after", "-ivfsoverlay",
+                            "-iwithprefix", "-iwithprefixbefore", "-iwithsysroot"
+                        };
+                        unsigned int j;
+
+                        for (j = 0; j < ARRAY_SIZE(path_options); j++)
+                            if (!strcmp(args.str[i], path_options[j]))
+                            {
+                                next_is_arg = 1;
+                                break;
+                            }
+                    }
 		    break;
 		case 'a':
 		    if (strcmp("-aux-info", args.str[i]) == 0)
@@ -1903,7 +1923,10 @@ int main(int argc, char **argv)
                         use_pic = false;
 		    break;
                 case 'i':
-                    if (!strcmp( "-isysroot", args.str[i] )) isysroot = args.str[i + 1];
+                    if (!strcmp("-isysroot", args.str[i]))
+                        isysroot = option_arg;
+                    else if (!strncmp("-isysroot", args.str[i], 9) && args.str[i][9])
+                        isysroot = args.str[i] + 9;
                     break;
 		case 'l':
 		    strarray_add(&file_args, strmake("-l%s", option_arg));
