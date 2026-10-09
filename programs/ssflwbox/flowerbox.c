@@ -354,6 +354,37 @@ static LRESULT CALLBACK flower_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
     return DefWindowProcA(hwnd, message, wparam, lparam);
 }
 
+/*
+ * Preview handles are guest-pointer-sized. Parse them without strtoull,
+ * which is not exported by the legacy Windows 98 MSVCRT.
+ */
+static HWND parse_preview_handle(const char *text)
+{
+    ULONG_PTR value = 0, max_value = ~(ULONG_PTR)0;
+    unsigned int base = 10, digit;
+    BOOL found = FALSE;
+
+    if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
+    {
+        text += 2;
+        base = 16;
+    }
+
+    while (*text)
+    {
+        if (*text >= '0' && *text <= '9') digit = *text - '0';
+        else if (*text >= 'a' && *text <= 'f') digit = *text - 'a' + 10;
+        else if (*text >= 'A' && *text <= 'F') digit = *text - 'A' + 10;
+        else break;
+        if (digit >= base || value > (max_value - digit) / base) return NULL;
+        value = value * base + digit;
+        found = TRUE;
+        ++text;
+    }
+
+    return found ? (HWND)value : NULL;
+}
+
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int show)
 {
     WNDCLASSA cls;
@@ -384,10 +415,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
     }
     if (mode == 'p')
     {
-        unsigned long long id;
         while (*args == ':' || *args == ' ' || *args == '\t') ++args;
-        id = strtoull(args, NULL, 0);
-        parent = (HWND)(ULONG_PTR)id;
+        parent = parse_preview_handle(args);
         if (!parent || !IsWindow(parent)) return 1;
         preview_mode = TRUE;
     }
