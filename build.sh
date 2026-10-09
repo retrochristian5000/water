@@ -443,7 +443,10 @@ generate_configure()
 
 update_repository()
 {
-    [ "$WHP_GIT_UPDATE" = 1 ] || return 0
+    if [ "$WHP_GIT_UPDATE" != 1 ]; then
+        printf 'WHP source update: skipped (use ./build.sh update to refresh Water)\n' >&2
+        return 0
+    fi
     if [ ! -d "$SOURCE_DIR/.git" ] && [ ! -f "$SOURCE_DIR/.git" ]; then
         [ "${1:-}" != update ] || die "source updater requires a Git checkout, not a source archive"
         return 0
@@ -3258,10 +3261,16 @@ case "${1:-build}" in
         update_repository update
         whp_water_after=$(git -C "$SOURCE_DIR" rev-parse HEAD)
         if [ "$whp_water_before" != "$whp_water_after" ]; then
-            printf 'WHP source updated; run ./build.sh to initialize the new pinned submodules with current build rules\n' >&2
-        else
-            init_submodules
+            # The source revision changed: never initialize its dependencies
+            # with bootstrap rules from the previous Water revision.
+            [ "${WHP_UPDATE_RESTARTED:-0}" != 1 ] ||
+                die "Water advanced twice while refreshing updater; rerun ./build.sh update"
+            printf 'WHP source updated; restarting updater with refreshed build rules\n' >&2
+            WHP_UPDATE_RESTARTED=1
+            export WHP_UPDATE_RESTARTED
+            exec /bin/sh "$SOURCE_DIR/build.sh" update
         fi
+        init_submodules
         exit 0
         ;;
     update-deps)
