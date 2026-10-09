@@ -1,0 +1,5 @@
+MODULE    = w95inf32.dll
+IMPORTS   = setupapi kernel32
+
+SOURCES = \
+	w95inf32.c

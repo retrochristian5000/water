@@ -1,0 +1,5 @@
+TESTDLL   = w95inf32.dll
+IMPORTS   = kernel32
+
+SOURCES = \
+	w95inf32.c
