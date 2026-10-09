@@ -39,9 +39,10 @@ Recovered relevant Water commits:
   pass an explicit version (for example
   `-Wl,--subsystem,windows:4.0`) where warranted. Do **not**
   globally downgrade newer Windows build targets.
-- Default PE file alignment currently equals section alignment.
-  This is not necessarily invalid, but can inflate binaries.
-  Benchmark and inspect emitted PE headers before changing it.
+- The normal PE file alignment default is now 512 bytes, independent
+  of virtual SectionAlignment. Verify the actual emitted PE headers,
+  measure binary sizes, and test Windows 98 FE loading before attributing
+  any remaining problem to file alignment.
 - Keep macOS AArch64/arm64e *host* Mach-O concerns separate from
   Win98 i386 PE32, AMD64, ARM64 and ARM64EC *guest* ABIs.
 - Run regression against a built `winegcc`, then link an i386
