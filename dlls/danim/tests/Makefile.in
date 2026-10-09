@@ -1,0 +1,4 @@
+TESTDLL = danim.dll
+
+SOURCES = \
+    main.c

@@ -1,0 +1,4 @@
+MODULE = danim.dll
+
+SOURCES = \
+    main.c

@@ -23,12 +23,20 @@ modern Windows UI Animation, or the DirectX Transform core.
 
 ## Water ownership and outstanding gaps
 
-Water currently includes `dxtrans.dll`, `mshtml.dll`, and `d3drm.dll`,
-but does **not** yet provide `danim.dll`. The DirectAnimation ActiveX
-control's class factories, COM/IDispatch type information, and behavior
-engine therefore remain unimplemented. Do not register either documented
-DirectAnimation CLSID to `dxtrans.dll`: its existing class factory does
-not supply a DirectAnimation object.
+Water includes `dxtrans.dll`, `mshtml.dll`, and `d3drm.dll`, and now
+builds a separate `danim.dll` module. The new module recognizes the two
+historically documented viewer CLSIDs and implements COM `IClassFactory`
+identity, reference counting, server locks, and unload accounting.
+**Viewer instance creation is not implemented**: `CreateInstance` returns
+`E_NOTIMPL`, and the scripting `IDispatch`, `IOleObject`, animation
+behaviors, and rendering remain absent.
+
+`DllRegisterServer` deliberately returns `SELFREG_E_CLASS` until those
+features work; this avoids hijacking a functional native DirectAnimation
+registration with a non-rendering Water placeholder. `DllUnregisterServer`
+does not remove any native registration. Do not register either documented
+DirectAnimation CLSID to `dxtrans.dll`: its class factory does not supply
+a DirectAnimation object.
 
 The `dxtrans.dll` `DllGetClassObject` entry point now clears its
 output pointer when it rejects an unsupported CLSID, instead of leaving
@@ -44,3 +52,20 @@ instantiation, `PixelLibrary`/`MeterLibrary`, `Image` and `Sound`
 properties, `Start`, and ActiveX hosting in `mshtml` separately.
 A loadable placeholder without these behaviors does not reproduce the
 Windows 98 preview experience.
+
+## First-stage danim.dll implementation
+
+`dlls/danim` is a **buildable, intentionally incomplete** COM server
+foundation. Its four standard DLL exports and class-factory lifecycle are
+covered by `dlls/danim/tests/main.c`. The regression tests keep an
+expected-failure marker for constructing a viewer instance.
+
+The 1998 SDK's VBScript example names `PixelLibrary`, `MeterLibrary`,
+`Image`, `Sound`, and `Start` on the viewer control; these functions
+are **not** operational in the first stage:
+https://sistemas.afgcoahuila.gob.mx/software/Visual%20Basic%206.0%2032%20y%2064%20bits/Common/Tools/VB/Unsupprt/Danim/help/da/DA_E0003.htm
+
+Recover a Windows 98 FE-era DirectAnimation type library before assigning
+unverified DISPIDs, IIDs, registration values, or rendering behavior.
+Later Windows XP danim.dll inventories contain more interfaces and exports
+and are useful as cross-checks, not automatic Windows 98 specifications.
