@@ -1,0 +1,9 @@
+MODULE    = cchat.exe
+IMPORTS   = ws2_32 user32 gdi32
+
+EXTRADLLFLAGS = -mwindows
+
+VER_FILEDESCRIPTION_STR = "Comic Chat (Water approximation)"
+
+SOURCES = \
+	cchat.c
