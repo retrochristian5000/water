@@ -43,6 +43,17 @@ if "$checker" "$tmp/duplicate.a" aarch64-pc-windows-msvc "$ar" 2>/dev/null; then
     exit 1
 fi
 
+# Exercise the COFF BigObj header, whose Machine field is at byte 6.
+# A synthetic header is sufficient for this machine-format checker; the
+# main libc++ audit separately validates symbols and usable object content.
+printf '\000\000\377\377\002\000\144\252\000\000\000\000\000\000\000\000' > "$tmp/big.obj"
+"$ar" qc "$tmp/big.a" "$tmp/big.obj"
+"$checker" "$tmp/big.a" aarch64-pc-windows-msvc "$ar"
+if "$checker" "$tmp/big.a" x86_64-pc-windows-msvc "$ar" 2>/dev/null; then
+    echo 'accepted wrong-machine COFF BigObj archive' >&2
+    exit 1
+fi
+
 printf 'not an archive\n' > "$tmp/junk.a"
 if "$checker" "$tmp/junk.a" aarch64-pc-windows-msvc "$ar" 2>/dev/null; then
     echo 'accepted malformed archive' >&2

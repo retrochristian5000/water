@@ -30,10 +30,17 @@ duplicate=$(printf '%s\n' "$members" | LC_ALL=C sort | uniq -d | sed -n '1p')
 
 printf '%s\n' "$members" | while IFS= read -r member; do
     [ -n "$member" ] || continue
-    header=$("$ar" p "$archive" "$member" | od -An -tu1 -N2)
+    header=$("$ar" p "$archive" "$member" | od -An -tu1 -N8)
     set -- $header
-    if [ "$#" -ne 2 ] || [ "$1:$2" != "$expected" ]; then
-        echo "libc++ archive member '$member' has machine ${1:-?}:${2:-?}, expected $expected ($target)" >&2
+    if [ "$#" -ge 8 ] && [ "$1:$2:$3:$4" = 0:0:255:255 ] &&
+       [ "$5:$6" = 2:0 ]; then
+        # COFF BigObj: Machine is at offset 6 rather than offset 0.
+        machine=$7:$8
+    else
+        machine=${1:-?}:${2:-?}
+    fi
+    if [ "$machine" != "$expected" ]; then
+        echo "libc++ archive member '$member' has machine $machine, expected $expected ($target)" >&2
         exit 1
     fi
 done
