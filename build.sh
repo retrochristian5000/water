@@ -2551,6 +2551,10 @@ prepare_one_llvm_libcxx()
 #include <cstddef>
 #include <mutex>
 #include <string>
+#include <typeinfo>
+#ifndef __cpp_rtti
+# error WHP libc++ PE compiler disabled C++ RTTI
+#endif
 static_assert(__is_same(std::size_t, decltype(sizeof(0))), "WHP libc++ std::size_t ABI mismatch");
 float whp_libcxx_math_probe(float value) {
     return std::sinh(value) + std::cosh(value) + std::tanh(value);
@@ -2559,6 +2563,15 @@ int whp_libcxx_probe(std::mutex& mutex) {
     mutex.lock();
     mutex.unlock();
     return std::string("whp").size() == 3 ? 0 : 1;
+}
+/* Ensure the selected Microsoft-ABI headers and compiler emit real RTTI.
+ * A simple type_info include alone does not exercise runtime casts. */
+struct whp_libcxx_rtti_left { virtual ~whp_libcxx_rtti_left() = default; };
+struct whp_libcxx_rtti_right { virtual ~whp_libcxx_rtti_right() = default; };
+struct whp_libcxx_rtti_derived : whp_libcxx_rtti_left, whp_libcxx_rtti_right {};
+bool whp_libcxx_rtti_probe(whp_libcxx_rtti_left *object) {
+    return object && dynamic_cast<whp_libcxx_rtti_right *>(object) &&
+           typeid(*object) == typeid(whp_libcxx_rtti_derived);
 }
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
