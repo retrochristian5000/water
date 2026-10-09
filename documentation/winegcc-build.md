@@ -49,3 +49,36 @@ Recovered relevant Water commits:
   entry-point decoration, and subsystem header via `llvm-readobj`.
 - The observed GitHub Actions workflows are largely CodeQL jobs;
   they do not establish Win98 FE runtime or PE link success.
+
+## PE alignment policy (2026-10-09)
+
+The original wrapper set default `FileAlignment` equal to
+`SectionAlignment`. For i386/x64 PE output that produced a
+4096-byte on-disk file alignment; for ARM64/ARM64EC it used 65536.
+This is unnecessarily padded compared to the documented 512-byte
+PE default, although those older values are not inherently invalid.
+
+The wrapper now defaults normal PE images to **FileAlignment=0x200**
+(512 bytes), retaining the existing virtual **SectionAlignment=0x1000**
+for i386/x64 and **0x10000** for Water ARM64/ARM64EC. Explicit
+`-Wl,--file-alignment` overrides still win. Sub-page PE section
+alignment (<0x1000) still defaults file alignment to the same value,
+preserving the special matching file/RVA layout rule. Non-PE formats
+are unaffected. Do not assume arbitrary sub-512 layouts are supported
+by Windows 98 without separate tests.
+
+Both the MSVC-compatible COFF `-filealign:/-align:` and MinGW driver
+paths consume the corrected values. The mock-link regression at
+`tools/winegcc/tests/pe-alignment.sh` checks emitted linker options
+for each supported target and override, but does not validate a PE
+file or execute on Windows 98 FE.
+
+Microsoft PE specification:
+https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+
+**Testing gates:** build the host `winegcc` and run the test script,
+then generate real i386 PE32 samples with LLD and inspect
+`FileAlignment`, `SectionAlignment`, `SizeOfHeaders`, file offsets,
+machine type and subsystem version using `llvm-readobj`. Measure actual
+on-disk byte size. Earlier ARM64 LLD alignment guards remain intact;
+the separate subsystem-version-6.0 issue is not fixed here.

@@ -2247,7 +2247,25 @@ int main(int argc, char **argv)
     if (!section_align)
         section_align = (target.cpu == CPU_ARM64 || target.cpu == CPU_ARM64EC) ? "0x10000" : "0x1000";
 
-    if (!file_align) file_align = section_align;
+    if (!file_align)
+    {
+        char *end;
+        unsigned long align;
+
+        /*
+         * Keep PE file layout separate from its virtual section layout.
+         * FileAlignment normally defaults to 512 bytes, whereas the
+         * SectionAlignment follows the page size (or target policy).
+         * A sub-page PE SectionAlignment requires matching file offsets.
+         * Explicit -Wl,--file-alignment overrides take precedence.
+         */
+        errno = 0;
+        align = strtoul( section_align, &end, 0 );
+        if (!is_pe || (!errno && end != section_align && !*end && align < 0x1000))
+            file_align = section_align;
+        else
+            file_align = "0x200";
+    }
 
     if (!is_pe && target.cpu != CPU_i386 && target.cpu != CPU_x86_64)
     {
