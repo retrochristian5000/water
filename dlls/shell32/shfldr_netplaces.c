@@ -77,34 +77,35 @@ static const shvheader networkplaces_header[] =
 /**************************************************************************
 *	ISF_NetworkPlaces_Constructor
 */
-HRESULT WINAPI ISF_NetworkPlaces_Constructor (IUnknown * pUnkOuter, REFIID riid, LPVOID * ppv)
+HRESULT WINAPI ISF_NetworkPlaces_Constructor (IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv)
 {
     IGenericSFImpl *sf;
+    HRESULT hr;
 
-    TRACE ("unkOut=%p %s\n", pUnkOuter, shdebugstr_guid (riid));
-
+    TRACE ("unkOut=%p %s\n", pUnkOuter, shdebugstr_guid(riid));
     if (!ppv)
         return E_POINTER;
+    *ppv = NULL;
     if (pUnkOuter)
         return CLASS_E_NOAGGREGATION;
 
-    sf = calloc (1, sizeof (*sf));
-    if (!sf)
+    if (!(sf = calloc(1, sizeof(*sf))))
         return E_OUTOFMEMORY;
 
-    sf->ref = 0;
+    /* Hold a reference while QueryInterface runs. Failed IIDs must not
+     * decrement the count below zero and leak the shell folder. */
+    sf->ref = 1;
     sf->IShellFolder2_iface.lpVtbl = &vt_ShellFolder2;
     sf->IPersistFolder2_iface.lpVtbl = &vt_NP_PersistFolder2;
-    sf->pidlRoot = _ILCreateNetHood();	/* my qualified pidl */
-
-    if (FAILED (IShellFolder2_QueryInterface (&sf->IShellFolder2_iface, riid, ppv)))
+    if (!(sf->pidlRoot = _ILCreateNetHood()))
     {
-        IShellFolder2_Release (&sf->IShellFolder2_iface);
-        return E_NOINTERFACE;
+        free(sf);
+        return E_OUTOFMEMORY;
     }
 
-    TRACE ("--(%p)\n", sf);
-    return S_OK;
+    hr = IShellFolder2_QueryInterface(&sf->IShellFolder2_iface, riid, ppv);
+    IShellFolder2_Release(&sf->IShellFolder2_iface);
+    return hr;
 }
 
 /**************************************************************************
@@ -119,6 +120,8 @@ static HRESULT WINAPI ISF_NetworkPlaces_fnQueryInterface (IShellFolder2 *iface, 
 
     TRACE ("(%p)->(%s,%p)\n", This, shdebugstr_guid (riid), ppvObj);
 
+    if (!ppvObj)
+        return E_POINTER;
     *ppvObj = NULL;
 
     if (IsEqualIID (riid, &IID_IUnknown) ||
@@ -186,7 +189,11 @@ static HRESULT WINAPI ISF_NetworkPlaces_fnParseDisplayName (IShellFolder2 * ifac
             hwndOwner, pbcReserved, lpszDisplayName, debugstr_w (lpszDisplayName),
             pchEaten, ppidl, pdwAttributes);
 
+    if (!ppidl)
+        return E_INVALIDARG;
     *ppidl = NULL;
+    if (!lpszDisplayName)
+        return E_INVALIDARG;
 
     szNext = GetNextElementW (lpszDisplayName, szElement, MAX_PATH);
     if (!wcsicmp(szElement, L"EntireNetwork"))
@@ -236,6 +243,12 @@ static HRESULT WINAPI ISF_NetworkPlaces_fnEnumObjects (IShellFolder2 * iface,
     TRACE ("(%p)->(HWND=%p flags=0x%08lx pplist=%p)\n", This,
             hwndOwner, dwFlags, ppEnumIDList);
 
+    if (!ppEnumIDList)
+        return E_POINTER;
+    *ppEnumIDList = NULL;
+
+    /* Network-provider enumeration is not implemented yet. Do not invent
+     * computers or workgroups that WNetEnumResource has not returned. */
     if (!(list = IEnumIDList_Constructor()))
         return E_OUTOFMEMORY;
     *ppEnumIDList = &list->IEnumIDList_iface;
@@ -453,18 +466,28 @@ static HRESULT WINAPI ISF_NetworkPlaces_fnGetUIObjectOf (IShellFolder2 * iface,
 *	ISF_NetworkPlaces_fnGetDisplayNameOf
 *
 */
-static HRESULT WINAPI ISF_NetworkPlaces_fnGetDisplayNameOf (IShellFolder2 * iface,
-               LPCITEMIDLIST pidl, DWORD dwFlags, LPSTRRET strRet)
+static HRESULT WINAPI ISF_NetworkPlaces_fnGetDisplayNameOf(IShellFolder2 *iface,
+        LPCITEMIDLIST pidl, DWORD flags, LPSTRRET strret)
 {
-    IGenericSFImpl *This = impl_from_IShellFolder2(iface);
+    LPPIDLDATA data;
+    const char *name;
 
-    FIXME ("(%p)->(pidl=%p,0x%08lx,%p)\n", This, pidl, dwFlags, strRet);
-    pdump (pidl);
-
-    if (!strRet)
+    TRACE("(%p)->(%p,0x%08lx,%p)\n", iface, pidl, flags, strret);
+    if (!strret || !pidl)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    data = _ILGetDataPointer(pidl);
+    if (!data || data->type != PT_NETWORK || !_ILIsPidlSimple(pidl))
+        return E_NOTIMPL;
+    if (strcmp(data->u.network.szNames, "Entire Network"))
+        return E_NOTIMPL;
+
+    /* The display text is not the shell parsing alias. */
+    name = (flags & (SHGDN_FORPARSING | SHGDN_FORADDRESSBAR)) == SHGDN_FORPARSING
+        ? "EntireNetwork" : "Entire Network";
+    strret->uType = STRRET_CSTR;
+    lstrcpynA(strret->u.cStr, name, ARRAY_SIZE(strret->u.cStr));
+    return S_OK;
 }
 
 /**************************************************************************
@@ -671,7 +694,7 @@ static HRESULT WINAPI INPFldr_PersistFolder2_GetCurFolder (
 
     *pidl = ILClone (This->pidlRoot);
 
-    return S_OK;
+    return *pidl ? S_OK : E_OUTOFMEMORY;
 }
 
 static const IPersistFolder2Vtbl vt_NP_PersistFolder2 =

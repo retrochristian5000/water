@@ -159,6 +159,74 @@ static void test_parse_for_entire_network(void)
     ILFree(pidl);
 }
 
+
+/* Windows 98 called the namespace Network Neighborhood; Windows Me and
+ * later called it My Network Places. Its CLSID must remain shared. */
+static void test_network_places_folder(void)
+{
+    WCHAR parsing_name[] = L"EntireNetwork";
+    IShellFolder *folder;
+    IPersistFolder2 *persist;
+    LPITEMIDLIST pidl = NULL, root = NULL;
+    WCHAR name[MAX_PATH];
+    STRRET strret;
+    HRESULT hr;
+    GUID clsid;
+    static const GUID unsupported_iid = {0x12345678, 0x1234, 0x5678,
+        {0x90, 0xab, 0xcd, 0xef, 0, 0, 0, 1}};
+    void *out;
+
+    CoInitialize(NULL);
+    hr = CoCreateInstance(&CLSID_NetworkPlaces, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IShellFolder, (void **)&folder);
+    if (FAILED(hr))
+    {
+        win_skip("Network namespace unavailable: %#lx\n", hr);
+        CoUninitialize();
+        return;
+    }
+
+    out = (void *)0xdeadbeef;
+    hr = IShellFolder_QueryInterface(folder, &unsupported_iid, &out);
+    ok(hr == E_NOINTERFACE, "Unexpected IID result %#lx\n", hr);
+    ok(!out, "Unsupported IID returned %p\n", out);
+
+    hr = IShellFolder_QueryInterface(folder, &IID_IPersistFolder2, (void **)&persist);
+    ok(hr == S_OK, "No IPersistFolder2: %#lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        hr = IPersistFolder2_GetClassID(persist, &clsid);
+        ok(hr == S_OK && IsEqualGUID(&clsid, &CLSID_NetworkPlaces),
+                "Wrong network folder class: %#lx\n", hr);
+        hr = IPersistFolder2_GetCurFolder(persist, &root);
+        ok(hr == S_OK && root != NULL, "Missing network root: %#lx\n", hr);
+        ILFree(root);
+        IPersistFolder2_Release(persist);
+    }
+
+    hr = IShellFolder_ParseDisplayName(folder, NULL, NULL, parsing_name,
+            NULL, &pidl, NULL);
+    if (SUCCEEDED(hr))
+    {
+        hr = IShellFolder_GetDisplayNameOf(folder, pidl, SHGDN_INFOLDER, &strret);
+        ok(hr == S_OK, "Network display name failed: %#lx\n", hr);
+        if (SUCCEEDED(hr) && SUCCEEDED(StrRetToBufW(&strret, pidl, name, ARRAY_SIZE(name))))
+            ok(!lstrcmpW(name, L"Entire Network"),
+                    "Unexpected network name %s\n", wine_dbgstr_w(name));
+        hr = IShellFolder_GetDisplayNameOf(folder, pidl, SHGDN_INFOLDER | SHGDN_FORPARSING, &strret);
+        ok(hr == S_OK, "Network parsing name failed: %#lx\n", hr);
+        if (SUCCEEDED(hr) && SUCCEEDED(StrRetToBufW(&strret, pidl, name, ARRAY_SIZE(name))))
+            ok(!lstrcmpW(name, parsing_name),
+                    "Unexpected parsing name %s\n", wine_dbgstr_w(name));
+        ILFree(pidl);
+    }
+    else
+        win_skip("EntireNetwork parsing alias unsupported: %#lx\n", hr);
+
+    IShellFolder_Release(folder);
+    CoUninitialize();
+}
+
 /* Tests for Control Panel */
 static void test_parse_for_control_panel(void)
 {
@@ -354,6 +422,7 @@ START_TEST(shfldr_special)
 {
     test_parse_for_my_computer();
     test_parse_for_entire_network();
+    test_network_places_folder();
     test_parse_for_control_panel();
     test_printers_folder();
     test_desktop_folder();
