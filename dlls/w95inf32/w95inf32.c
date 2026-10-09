@@ -51,7 +51,7 @@ BOOL WINAPI CtlSetLddPath32(DWORD id, LPCSTR directory)
 
     /* Only user-assigned directory IDs have equivalent SetupAPI behavior.
      * SETUPX's system LDD table is independent; do not claim to update it. */
-    if (id < DIRID_USER)
+    if (id < DIRID_USER || id > 0xffff)
     {
         FIXME("SETUPX system LDD id %#lx is not supported by SetupAPI\n", id);
         SetLastError(ERROR_CALL_NOT_IMPLEMENTED);

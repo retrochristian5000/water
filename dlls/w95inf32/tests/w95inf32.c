@@ -61,6 +61,10 @@ START_TEST(w95inf32)
             ok(!ldd(0, "C:\\Windows"), "system LDD unexpectedly succeeded\n");
             ok(GetLastError() == ERROR_CALL_NOT_IMPLEMENTED,
                "system LDD returned error %lu\n", GetLastError());
+            SetLastError(0);
+            ok(!ldd(0x10000, "C:\\Windows"), "oversized Win16 LDD unexpectedly succeeded\n");
+            ok(GetLastError() == ERROR_CALL_NOT_IMPLEMENTED,
+               "oversized LDD returned error %lu\n", GetLastError());
         }
     }
 
