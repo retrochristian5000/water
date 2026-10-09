@@ -2234,6 +2234,15 @@ audit_llvm_libcxx_archive()
     whp_libcxx_audit_target=$2
     whp_libcxx_audit_nm=$3
 
+    # Symbol presence alone cannot distinguish AArch64 from an older x64
+    # archive. Reject missing, foreign-ABI, or mixed-architecture PE objects
+    # before accepting a cached libc++ provider.
+    if ! "$SOURCE_DIR/scripts/check-libcxx-archive.sh" \
+         "$whp_libcxx_audit_archive" "$whp_libcxx_audit_target" "$LLVM_BIN/llvm-ar"; then
+        unset whp_libcxx_audit_archive whp_libcxx_audit_target whp_libcxx_audit_nm
+        return 1
+    fi
+
     if ! "$whp_libcxx_audit_nm" --defined-only --demangle "$whp_libcxx_audit_archive" 2>/dev/null |
          grep -F 'std::__1::mutex::lock' >/dev/null; then
         printf 'WHP libc++ %s: archive is missing std::__1::mutex::lock\n' "$whp_libcxx_audit_target" >&2

@@ -29,6 +29,14 @@ so Water also pins the Automake fork that provides those macros. Water validates
 that provenance during the Bash bootstrap; it does not require a separate
 system-installed `automake` executable for the normal build.
 
+The LLVM libc++ PE runtime cache at `build/llvm-libcxx-pe/` is audited
+before reuse. Each archive member must have the expected COFF machine type
+for its target (including AArch64 and ARM64EC), so a stale x64 or mixed
+archive is rebuilt instead of entering Water's link. The legacy bundled
+libraries remain available for architectures that still require them.
+Run `sh scripts/tests/libcxx-archive-machine.sh` with Clang and llvm-ar
+installed to exercise the archive check independently.
+
 Normal builds use the Water checkout and its recorded submodule pins without
 pulling new source revisions. Source and dependency updates are separate:
 
