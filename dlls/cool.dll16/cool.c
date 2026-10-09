@@ -7,7 +7,9 @@
  * of the Windows 98 icon library.
  *
  * A Windows 95 Plus! compatibility workaround describes an ordinal-2
- * function returning 0x41524245 ("BEAR") as a DWORD (DX:AX on Win16).
+ * function returning 0x41524245 as a DWORD (DX:AX on Win16).
+ * Read as register pairs, AX=0x4245 ("BE") and DX=0x4152 ("AR"),
+ * the marker is "BEAR"; that is not its little-endian memory byte order.
  * Source: https://www.winfaq.de/faq_html/Content/tip0000/onlinefaq.php?h=tip0278.htm
  *
  * This verifies the workaround's ABI expectation, not the original
