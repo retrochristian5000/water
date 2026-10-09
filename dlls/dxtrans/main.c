@@ -24,12 +24,19 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "winerror.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dxtrans);
 
 HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
 {
+    if (!out)
+        return E_POINTER;
+
+    /* No DirectX Transform COM class is implemented here yet. Do not
+     * return a stale interface pointer on CLASS_E_CLASSNOTAVAILABLE. */
+    *out = NULL;
     FIXME("(%s, %s, %p) stub!\n", debugstr_guid(clsid), debugstr_guid(riid), out);
     return CLASS_E_CLASSNOTAVAILABLE;
 }

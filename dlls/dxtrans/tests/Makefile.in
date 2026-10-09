@@ -1,0 +1,4 @@
+TESTDLL = dxtrans.dll
+
+SOURCES = \
+    main.c
