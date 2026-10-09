@@ -1,0 +1,9 @@
+MODULE    = vtiform.exe
+IMPORTS   = comdlg32 user32 gdi32
+
+EXTRADLLFLAGS = -mwindows
+
+VER_FILEDESCRIPTION_STR = "FrontPage Form Wizard (Water approximation)"
+
+SOURCES = \
+	vtiform.c
