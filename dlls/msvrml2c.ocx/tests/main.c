@@ -11,7 +11,9 @@
 #define COBJMACROS
 #include "windef.h"
 #include "winbase.h"
+#include "winerror.h"
 #include "objbase.h"
+#include "oleauto.h"
 #include "wine/test.h"
 
 static const GUID browser = {0x90a7533d, 0x88fe, 0x11d0,
