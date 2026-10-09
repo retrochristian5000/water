@@ -24,11 +24,25 @@
 #include "initguid.h"
 #include "objidl.h"
 #include "objbase.h"
+#include "shobjidl.h"
 #include "shlwapi.h"
 #include "winternl.h"
 #include "appmodel.h"
 
 #include "wine/test.h"
+
+/* Compile-time ABI checks: these declarations are provided by the
+ * generated shobjidl.h (via shobjidl_core.idl), not private prototypes.
+ * Do not statically import Shell32's Win7 entry points: shcore tests can
+ * also run on Windows releases where those exports do not exist. */
+#ifdef __GNUC__
+C_ASSERT(__builtin_types_compatible_p(
+        __typeof__(&GetCurrentProcessExplicitAppUserModelID),
+        HRESULT (WINAPI *)(PWSTR *)));
+C_ASSERT(__builtin_types_compatible_p(
+        __typeof__(&SetCurrentProcessExplicitAppUserModelID),
+        HRESULT (WINAPI *)(PCWSTR)));
+#endif
 
 static HRESULT (WINAPI *pSetCurrentProcessExplicitAppUserModelID)(const WCHAR *);
 static HRESULT (WINAPI *pGetCurrentProcessExplicitAppUserModelID)(WCHAR **);

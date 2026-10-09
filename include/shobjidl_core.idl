@@ -17,6 +17,19 @@
  */
 import "objidl.idl";
 
+/* Shell32 has exported these AppUserModelID entry points since Windows 7.
+ * Keep the declarations in the core IDL so both generated Shell headers
+ * expose the ABI, rather than duplicating a private prototype in clients. */
+cpp_quote("#ifndef WINSHELLAPI")
+cpp_quote("# ifdef _SHELL32_")
+cpp_quote("#  define WINSHELLAPI")
+cpp_quote("# else")
+cpp_quote("#  define WINSHELLAPI DECLSPEC_IMPORT")
+cpp_quote("# endif")
+cpp_quote("#endif")
+cpp_quote("WINSHELLAPI HRESULT WINAPI GetCurrentProcessExplicitAppUserModelID(PWSTR *appid);")
+cpp_quote("WINSHELLAPI HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(PCWSTR appid);")
+
 cpp_quote("#define FOFX_NOSKIPJUNCTIONS 0x00010000")
 cpp_quote("#define FOFX_PREFERHARDLINK 0x00020000")
 cpp_quote("#define FOFX_SHOWELEVATIONPROMPT 0x00040000")
