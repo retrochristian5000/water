@@ -2549,16 +2549,22 @@ static struct strarray get_default_imports( const struct makefile *make, struct 
     struct strarray ret = empty_strarray;
     const char *crt_dll = get_default_crt( make );
 
+    /* An explicit winecrt0 import already appears in the module link list.
+     * Do not append a second, later copy through the default imports.  In
+     * particular keep compiler-rt when -nodefaultlibs is requested. */
+    bool has_winecrt0 = strarray_exists( imports, "winecrt0" ) ||
+                        strarray_exists( imports, "-lwinecrt0" );
+
     if (nodefaultlibs)
     {
-        if (!strarray_exists( ret, "winecrt0" )) strarray_add( &ret, "winecrt0" );
+        if (!has_winecrt0) strarray_add( &ret, "winecrt0" );
         if (archs.count > 1) strarray_add( &ret, "compiler-rt" );
         return ret;
     }
 
     STRARRAY_FOR_EACH( imp, &imports ) if (is_crt_module( imp )) crt_dll = imp;
 
-    strarray_add( &ret, "winecrt0" );
+    if (!has_winecrt0) strarray_add( &ret, "winecrt0" );
     if (archs.count > 1) strarray_add( &ret, "compiler-rt" );
     if (crt_dll) strarray_add( &ret, crt_dll );
 
