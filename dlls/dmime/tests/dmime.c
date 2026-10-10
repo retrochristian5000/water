@@ -2596,6 +2596,69 @@ static void test_parsedescriptor(void)
     }
 }
 
+static void test_performance_global_params(void)
+{
+    static const struct
+    {
+        const GUID *guid;
+        DWORD size;
+        union { BOOL boolean; char groove; float tempo; LONG volume; } value;
+    } params[] =
+    {
+        {&GUID_PerfAutoDownload, sizeof(BOOL), {.boolean = TRUE}},
+        {&GUID_PerfMasterGrooveLevel, sizeof(char), {.groove = 75}},
+        {&GUID_PerfMasterTempo, sizeof(float), {.tempo = 1.5f}},
+        {&GUID_PerfMasterVolume, sizeof(LONG), {.volume = -1000}},
+    };
+    IDirectMusicPerformance8 *performance;
+    BYTE storage[16];
+    HRESULT hr;
+    unsigned int i;
+
+    hr = CoCreateInstance(&CLSID_DirectMusicPerformance, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IDirectMusicPerformance8, (void **)&performance);
+    if (FAILED(hr))
+    {
+        skip("Unable to create DirectMusicPerformance8, hr %#lx\n", hr);
+        return;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(params); ++i)
+    {
+        memset(storage, 0xcc, sizeof(storage));
+        hr = IDirectMusicPerformance8_SetGlobalParam(performance, params[i].guid,
+                (void *)&params[i].value, params[i].size);
+        ok(hr == S_OK, "parameter %u: SetGlobalParam returned %#lx\n", i, hr);
+
+        hr = IDirectMusicPerformance8_GetGlobalParam(performance, params[i].guid,
+                storage, params[i].size);
+        ok(hr == S_OK, "parameter %u: GetGlobalParam returned %#lx\n", i, hr);
+        ok(!memcmp(storage, &params[i].value, params[i].size),
+                "parameter %u: global value was not round-tripped\n", i);
+        ok(storage[params[i].size] == 0xcc, "parameter %u: output buffer overrun\n", i);
+
+        hr = IDirectMusicPerformance8_GetGlobalParam(performance, params[i].guid,
+                storage, params[i].size - 1);
+        ok(hr == E_INVALIDARG, "parameter %u: short GetGlobalParam returned %#lx\n", i, hr);
+        hr = IDirectMusicPerformance8_SetGlobalParam(performance, params[i].guid,
+                (void *)&params[i].value, params[i].size + 1);
+        ok(hr == E_INVALIDARG, "parameter %u: long SetGlobalParam returned %#lx\n", i, hr);
+    }
+
+    hr = IDirectMusicPerformance8_GetGlobalParam(performance, &GUID_PerfMasterTempo,
+            NULL, sizeof(float));
+    ok(hr == E_POINTER, "NULL GetGlobalParam returned %#lx\n", hr);
+    hr = IDirectMusicPerformance8_SetGlobalParam(performance, &GUID_PerfMasterTempo,
+            NULL, sizeof(float));
+    ok(hr == E_POINTER, "NULL SetGlobalParam returned %#lx\n", hr);
+
+    hr = IDirectMusicPerformance8_SetParam(performance, &GUID_TempoParam,
+            0xffffffff, DMUS_SEG_ALLTRACKS, 0, storage);
+    ok(hr == DMUS_E_NOT_FOUND, "SetParam without a segment returned %#lx\n", hr);
+
+    IDirectMusicPerformance8_Release(performance);
+}
+
 static void test_performance_InitAudio(void)
 {
     DMUS_PORTPARAMS params =
@@ -5213,6 +5276,7 @@ START_TEST(dmime)
     test_segment_param();
     test_track();
     test_parsedescriptor();
+    test_performance_global_params();
     test_performance_InitAudio();
     test_performance_createport();
     test_performance_pchannel();

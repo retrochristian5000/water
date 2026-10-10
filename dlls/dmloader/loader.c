@@ -596,6 +596,9 @@ static HRESULT WINAPI loader_SetSearchDirectory(IDirectMusicLoader8 *iface,
     if (!path)
         return E_POINTER;
 
+    if (lstrlenW(path) >= MAX_PATH)
+        return DMUS_E_LOADER_BADPATH;
+
     if (path[0]) {
         attr = GetFileAttributesW(path);
         if (attr == INVALID_FILE_ATTRIBUTES || !(attr & FILE_ATTRIBUTE_DIRECTORY))
@@ -610,7 +613,11 @@ static HRESULT WINAPI loader_SetSearchDirectory(IDirectMusicLoader8 *iface,
         return S_OK;
 
     if (!This->search_paths[index])
-        This->search_paths[index] = malloc(MAX_PATH);
+    {
+        /* lstrcpynW counts WCHARs, not bytes. */
+        if (!(This->search_paths[index] = malloc(MAX_PATH * sizeof(WCHAR))))
+            return E_OUTOFMEMORY;
+    }
     else if (!wcsncmp(This->search_paths[index], path, MAX_PATH))
         return S_FALSE;
 

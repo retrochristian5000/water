@@ -48,10 +48,12 @@ static void test_directory(void)
 {
     IDirectMusicLoader8 *loader = NULL;
     HRESULT hr;
+    unsigned int i;
     WCHAR con[] = L"con";
     WCHAR empty[] = L"";
     WCHAR invalid_path[] = L"/invalid path";
     WCHAR path[MAX_PATH];
+    WCHAR overlong[MAX_PATH + 1];
 
     hr = CoCreateInstance(&CLSID_DirectMusicLoader, NULL, CLSCTX_INPROC, &IID_IDirectMusicLoader8,
             (void**)&loader);
@@ -66,6 +68,12 @@ static void test_directory(void)
     ok(hr == E_POINTER, "SetSearchDirectory failed with %#lx\n", hr);
     hr = IDirectMusicLoader_SetSearchDirectory(loader, &GUID_DirectMusicAllTypes, invalid_path, 0);
     ok(hr == DMUS_E_LOADER_BADPATH, "SetSearchDirectory failed with %#lx\n", hr);
+
+    /* MAX_PATH counts WCHAR characters, not allocation bytes. */
+    for (i = 0; i < MAX_PATH; ++i) overlong[i] = 'a';
+    overlong[MAX_PATH] = 0;
+    hr = IDirectMusicLoader_SetSearchDirectory(loader, &GUID_DirectMusicAllTypes, overlong, 0);
+    ok(hr == DMUS_E_LOADER_BADPATH, "oversized path returned %#lx\n", hr);
 
     /* SetSearchDirectory with the current directory */
     GetCurrentDirectoryW(ARRAY_SIZE(path), path);

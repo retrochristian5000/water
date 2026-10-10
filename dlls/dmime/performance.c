@@ -1347,66 +1347,99 @@ static HRESULT WINAPI performance_GetParam(IDirectMusicPerformance8 *iface, REFG
     return hr;
 }
 
-static HRESULT WINAPI performance_SetParam(IDirectMusicPerformance8 *iface, REFGUID rguidType,
-        DWORD dwGroupBits, DWORD dwIndex, MUSIC_TIME mtTime, void *pParam)
+static HRESULT WINAPI performance_SetParam(IDirectMusicPerformance8 *iface, REFGUID type,
+        DWORD group, DWORD index, MUSIC_TIME music_time, void *param)
 {
-        struct performance *This = impl_from_IDirectMusicPerformance8(iface);
+    struct performance *This = impl_from_IDirectMusicPerformance8(iface);
+    IDirectMusicSegment *segment;
+    HRESULT hr;
 
-	FIXME("(%p, %s, %ld, %ld, %ld, %p): stub\n", This, debugstr_dmguid(rguidType), dwGroupBits, dwIndex, mtTime, pParam);
-	return S_OK;
+    TRACE("(%p, %s, %#lx, %lu, %ld, %p)\n", This, debugstr_dmguid(type),
+            group, index, music_time, param);
+
+    if (!type || !param) return E_POINTER;
+
+    EnterCriticalSection(&This->safe);
+    segment = This->control_segment ? This->control_segment : This->primary_segment;
+    if (segment) IDirectMusicSegment_AddRef(segment);
+    LeaveCriticalSection(&This->safe);
+
+    if (!segment) return DMUS_E_NOT_FOUND;
+    hr = IDirectMusicSegment_SetParam(segment, type, group, index, music_time, param);
+    IDirectMusicSegment_Release(segment);
+    return hr;
 }
 
-static HRESULT WINAPI performance_GetGlobalParam(IDirectMusicPerformance8 *iface, REFGUID rguidType,
-        void *pParam, DWORD dwSize)
+/* The built-in DirectMusic performance GUIDs have fixed storage types.
+ * Check the requested size before copying in either direction. */
+static DWORD performance_global_param_size(REFGUID type)
 {
-        struct performance *This = impl_from_IDirectMusicPerformance8(iface);
-
-	TRACE("(%p, %s, %p, %ld): stub\n", This, debugstr_dmguid(rguidType), pParam, dwSize);
-
-	if (IsEqualGUID (rguidType, &GUID_PerfAutoDownload))
-		memcpy(pParam, &This->fAutoDownload, sizeof(This->fAutoDownload));
-	if (IsEqualGUID (rguidType, &GUID_PerfMasterGrooveLevel))
-		memcpy(pParam, &This->cMasterGrooveLevel, sizeof(This->cMasterGrooveLevel));
-	if (IsEqualGUID (rguidType, &GUID_PerfMasterTempo))
-		memcpy(pParam, &This->fMasterTempo, sizeof(This->fMasterTempo));
-	if (IsEqualGUID (rguidType, &GUID_PerfMasterVolume))
-		memcpy(pParam, &This->lMasterVolume, sizeof(This->lMasterVolume));
-
-	return S_OK;
+    if (!type) return 0;
+    if (IsEqualGUID(type, &GUID_PerfAutoDownload)) return sizeof(BOOL);
+    if (IsEqualGUID(type, &GUID_PerfMasterGrooveLevel)) return sizeof(char);
+    if (IsEqualGUID(type, &GUID_PerfMasterTempo)) return sizeof(float);
+    if (IsEqualGUID(type, &GUID_PerfMasterVolume)) return sizeof(long);
+    return 0;
 }
 
-static HRESULT WINAPI performance_SetGlobalParam(IDirectMusicPerformance8 *iface, REFGUID rguidType,
-        void *pParam, DWORD dwSize)
+static HRESULT WINAPI performance_GetGlobalParam(IDirectMusicPerformance8 *iface, REFGUID type,
+        void *param, DWORD size)
 {
-        struct performance *This = impl_from_IDirectMusicPerformance8(iface);
-        struct channel_block *block;
-        int i;
+    struct performance *This = impl_from_IDirectMusicPerformance8(iface);
+    DWORD expected_size = performance_global_param_size(type);
 
-	TRACE("(%p, %s, %p, %ld)\n", This, debugstr_dmguid(rguidType), pParam, dwSize);
+    TRACE("(%p, %s, %p, %lu)\n", This, debugstr_dmguid(type), param, size);
 
-	if (IsEqualGUID (rguidType, &GUID_PerfAutoDownload)) {
-		memcpy(&This->fAutoDownload, pParam, dwSize);
-		TRACE("=> AutoDownload set to %d\n", This->fAutoDownload);
-	}
-	if (IsEqualGUID (rguidType, &GUID_PerfMasterGrooveLevel)) {
-		memcpy(&This->cMasterGrooveLevel, pParam, dwSize);
-		TRACE("=> MasterGrooveLevel set to %i\n", This->cMasterGrooveLevel);
-	}
-	if (IsEqualGUID (rguidType, &GUID_PerfMasterTempo)) {
-		memcpy(&This->fMasterTempo, pParam, dwSize);
-		TRACE("=> MasterTempo set to %f\n", This->fMasterTempo);
-	}
-	if (IsEqualGUID (rguidType, &GUID_PerfMasterVolume)) {
-		memcpy(&This->lMasterVolume, pParam, dwSize);
-		RB_FOR_EACH_ENTRY(block, &This->channel_blocks, struct channel_block, entry)
-		{
-			for (i = 0; i < ARRAYSIZE(block->channels); ++i)
-				set_port_volume(block->channels[i].port, This->lMasterVolume);
-		}
-		TRACE("=> MasterVolume set to %li\n", This->lMasterVolume);
-	}
+    if (!type || !param) return E_POINTER;
+    if (!expected_size || size != expected_size) return E_INVALIDARG;
 
-	return S_OK;
+    EnterCriticalSection(&This->safe);
+    if (IsEqualGUID(type, &GUID_PerfAutoDownload))
+        memcpy(param, &This->fAutoDownload, expected_size);
+    else if (IsEqualGUID(type, &GUID_PerfMasterGrooveLevel))
+        memcpy(param, &This->cMasterGrooveLevel, expected_size);
+    else if (IsEqualGUID(type, &GUID_PerfMasterTempo))
+        memcpy(param, &This->fMasterTempo, expected_size);
+    else
+        memcpy(param, &This->lMasterVolume, expected_size);
+    LeaveCriticalSection(&This->safe);
+
+    return S_OK;
+}
+
+static HRESULT WINAPI performance_SetGlobalParam(IDirectMusicPerformance8 *iface, REFGUID type,
+        void *param, DWORD size)
+{
+    struct performance *This = impl_from_IDirectMusicPerformance8(iface);
+    struct channel_block *block;
+    DWORD expected_size = performance_global_param_size(type);
+    int i;
+
+    TRACE("(%p, %s, %p, %lu)\n", This, debugstr_dmguid(type), param, size);
+
+    if (!type || !param) return E_POINTER;
+    if (!expected_size || size != expected_size) return E_INVALIDARG;
+
+    EnterCriticalSection(&This->safe);
+    if (IsEqualGUID(type, &GUID_PerfAutoDownload))
+        memcpy(&This->fAutoDownload, param, expected_size);
+    else if (IsEqualGUID(type, &GUID_PerfMasterGrooveLevel))
+        memcpy(&This->cMasterGrooveLevel, param, expected_size);
+    else if (IsEqualGUID(type, &GUID_PerfMasterTempo))
+        memcpy(&This->fMasterTempo, param, expected_size);
+    else
+    {
+        memcpy(&This->lMasterVolume, param, expected_size);
+        RB_FOR_EACH_ENTRY(block, &This->channel_blocks, struct channel_block, entry)
+        {
+            for (i = 0; i < ARRAY_SIZE(block->channels); ++i)
+                if (block->channels[i].port)
+                    set_port_volume(block->channels[i].port, This->lMasterVolume);
+        }
+    }
+    LeaveCriticalSection(&This->safe);
+
+    return S_OK;
 }
 
 static HRESULT WINAPI performance_GetLatencyTime(IDirectMusicPerformance8 *iface, REFERENCE_TIME *ret_time)
