@@ -667,7 +667,8 @@ static BOOL INT21_FillDrivePB( BYTE drive )
     DWORD       free_clusters;
     DWORD       total_clusters;
     struct iosys_fat_bpb bpb;
-    BOOL         have_bpb;
+    struct iosys_fat32_bpb bpb32;
+    BOOL         have_bpb, have_fat32;
 
     if (drive >= MAX_DOS_DRIVES)
         return FALSE;
@@ -695,6 +696,7 @@ static BOOL INT21_FillDrivePB( BYTE drive )
      * retain the host-derived fallback for non-FAT and inaccessible volumes.
      */
     have_bpb = IOSYS_GetFat1216BPB( drive, &bpb );
+    have_fat32 = !have_bpb && IOSYS_GetFat32BPB( drive, &bpb32 );
     if (have_bpb)
     {
         DWORD root_sectors = ((DWORD)bpb.root_entries * 32 + bpb.bytes_per_sector - 1) /
@@ -717,6 +719,28 @@ static BOOL INT21_FillDrivePB( BYTE drive )
         dpb->first_cluster_sector = first_data;
         dpb->num_clusters2     = data_clusters + 1;
         dpb->fat_clusters      = bpb.sectors_per_fat;
+    }
+    else if (have_fat32)
+    {
+        /* DOS 7.1 extended DPB fields use real FAT32 BPB geometry.  Older
+         * WORD-sized FAT16 fields are not sufficient for FAT32 and are
+         * marked absent rather than populated with invented host values. */
+        sector_bytes = bpb32.bytes_per_sector;
+        cluster_sectors = bpb32.sectors_per_cluster;
+        dpb->num_reserved       = bpb32.reserved_sectors;
+        dpb->num_FAT            = bpb32.fat_count;
+        dpb->num_root_entries   = 0;
+        dpb->first_data_sector  = 0xffff;
+        dpb->num_clusters1      = 0xffff;
+        dpb->sectors_per_FAT    = 0;
+        dpb->first_dir_sector   = 0;
+        dpb->media_ID           = bpb32.media_descriptor;
+        dpb->first_cluster_sector = bpb32.first_data_sector;
+        dpb->num_clusters2      = bpb32.data_clusters + 1;
+        dpb->fat_clusters       = bpb32.sectors_per_fat;
+        /* Host-side free space may be quota-limited or otherwise distinct
+         * from the FAT FSInfo cache; report unknown until it is read. */
+        free_clusters           = 0xffffffff;
     }
     else
     {
@@ -753,10 +777,10 @@ static BOOL INT21_FillDrivePB( BYTE drive )
     dpb->search_cluster1      = 0;
     dpb->free_clusters_lo     = LOWORD(free_clusters);
     dpb->free_clusters_hi     = HIWORD(free_clusters);
-    dpb->mirroring_flags      = 0;
-    dpb->info_sector          = 0xffff;
-    dpb->spare_boot_sector    = 0xffff;
-    dpb->root_cluster         = 0;
+    dpb->mirroring_flags      = have_fat32 ? bpb32.mirroring_flags : 0;
+    dpb->info_sector          = have_fat32 ? bpb32.info_sector : 0xffff;
+    dpb->spare_boot_sector    = have_fat32 ? bpb32.backup_boot_sector : 0xffff;
+    dpb->root_cluster         = have_fat32 ? bpb32.root_cluster : 0;
     dpb->search_cluster2      = 0;
 
     return TRUE;

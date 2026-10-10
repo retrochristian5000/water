@@ -34,6 +34,30 @@ struct iosys_fat_bpb
 void IOSYS_InitConfig(void);
 BYTE IOSYS_GetBootDrive(void);
 BOOL IOSYS_GetFat1216BPB(BYTE drive, struct iosys_fat_bpb *bpb);
+
+/* Extended DOS 7.1 FAT32 BPB: unlike FAT12/16, its root is a cluster
+ * chain and FAT length occupies a 32-bit field.  This is read-only
+ * device metadata, not a host file-system emulation or Win32 ABI. */
+struct iosys_fat32_bpb
+{
+    WORD bytes_per_sector;
+    BYTE sectors_per_cluster;
+    WORD reserved_sectors;
+    BYTE fat_count;
+    DWORD total_sectors;
+    BYTE media_descriptor;
+    DWORD sectors_per_fat;
+    WORD mirroring_flags;
+    WORD fs_version;
+    DWORD root_cluster;
+    WORD info_sector;
+    WORD backup_boot_sector;
+    DWORD first_data_sector;
+    DWORD data_clusters;
+};
+
+BOOL IOSYS_ParseFat32BPB(const BYTE sector[512], struct iosys_fat32_bpb *bpb);
+BOOL IOSYS_GetFat32BPB(BYTE drive, struct iosys_fat32_bpb *bpb);
 void IOSYS_ReadConfigSys(struct iosys_config_sys *config);
 
 #endif /* __WATER_IO_SYS_H */

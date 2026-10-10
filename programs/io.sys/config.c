@@ -103,6 +103,101 @@ static DWORD iosys_get_dword( const BYTE *p )
     return iosys_get_word( p ) | ((DWORD)iosys_get_word( p + 2 ) << 16);
 }
 
+
+/*
+ * Read a physical volume boot sector only when the host grants access.
+ * Never write physical sectors, and never invent a synthetic FAT image
+ * for APFS/ext4/NTFS-backed Wine drive mappings.
+ */
+static BOOL iosys_read_boot_sector(BYTE drive, BYTE sector[512])
+{
+    WCHAR volume[] = {'\\','\\','.','\\','A',':',0};
+    DWORD read = 0;
+    HANDLE file;
+    BOOL ret;
+
+    if (drive >= 26) return FALSE;
+    volume[4] += drive;
+    file = CreateFileW( volume, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL );
+    if (file == INVALID_HANDLE_VALUE) return FALSE;
+    ret = ReadFile( file, sector, 512, &read, NULL ) && read == 512;
+    CloseHandle( file );
+    return ret;
+}
+
+/* Pure decoder for a 512-byte FAT32 boot-sector prefix.  Reject invalid
+ * layouts before allowing untrusted BPB values into guest-visible DOS DPBs.
+ * The FAT32 filesystem type is determined from BPB geometry, not the
+ * optional, untrusted "FAT32   " text field. */
+BOOL IOSYS_ParseFat32BPB(const BYTE sector[512], struct iosys_fat32_bpb *out)
+{
+    struct iosys_fat32_bpb bpb;
+    ULONGLONG data_start, fat_entries;
+    DWORD clusters;
+
+    if (!sector || !out || sector[510] != 0x55 || sector[511] != 0xaa)
+        return FALSE;
+    memset( &bpb, 0, sizeof(bpb) );
+    bpb.bytes_per_sector = iosys_get_word( sector + 0x0b );
+    bpb.sectors_per_cluster = sector[0x0d];
+    bpb.reserved_sectors = iosys_get_word( sector + 0x0e );
+    bpb.fat_count = sector[0x10];
+    bpb.total_sectors = iosys_get_dword( sector + 0x20 );
+    bpb.media_descriptor = sector[0x15];
+    bpb.sectors_per_fat = iosys_get_dword( sector + 0x24 );
+    bpb.mirroring_flags = iosys_get_word( sector + 0x28 );
+    bpb.fs_version = iosys_get_word( sector + 0x2a );
+    bpb.root_cluster = iosys_get_dword( sector + 0x2c );
+    bpb.info_sector = iosys_get_word( sector + 0x30 );
+    bpb.backup_boot_sector = iosys_get_word( sector + 0x32 );
+
+    if (bpb.bytes_per_sector < 512 || bpb.bytes_per_sector > 4096 ||
+        (bpb.bytes_per_sector & (bpb.bytes_per_sector - 1)) ||
+        !bpb.sectors_per_cluster || bpb.sectors_per_cluster > 128 ||
+        (bpb.sectors_per_cluster & (bpb.sectors_per_cluster - 1)) ||
+        (DWORD)bpb.bytes_per_sector * bpb.sectors_per_cluster > 65536 ||
+        !bpb.reserved_sectors || !bpb.fat_count || bpb.fat_count > 2 ||
+        !bpb.total_sectors || !bpb.sectors_per_fat ||
+        bpb.media_descriptor < 0xf0 ||
+        bpb.fs_version ||
+        iosys_get_word( sector + 0x11 ) || /* FAT32 has no fixed root dir */
+        iosys_get_word( sector + 0x13 ) || /* FAT32 uses TotSec32 */
+        iosys_get_word( sector + 0x16 ) || /* FAT32 uses FATSz32 */
+        (bpb.mirroring_flags & 0xff70) || /* reserved flags must be zero */
+        ((bpb.mirroring_flags & 0x80) &&
+         (bpb.mirroring_flags & 0x0f) >= bpb.fat_count) ||
+        (bpb.info_sector != 0xffff &&
+         bpb.info_sector >= bpb.reserved_sectors) ||
+        (bpb.backup_boot_sector != 0xffff &&
+         bpb.backup_boot_sector >= bpb.reserved_sectors))
+        return FALSE;
+
+    data_start = (ULONGLONG)bpb.reserved_sectors +
+                 (ULONGLONG)bpb.fat_count * bpb.sectors_per_fat;
+    if (data_start >= bpb.total_sectors) return FALSE;
+
+    clusters = (bpb.total_sectors - (DWORD)data_start) / bpb.sectors_per_cluster;
+    if (clusters < 65525 || clusters > 0x0ffffff5 ||
+        bpb.root_cluster < 2 || bpb.root_cluster > clusters + 1)
+        return FALSE;
+
+    fat_entries = (ULONGLONG)bpb.sectors_per_fat * bpb.bytes_per_sector / 4;
+    if (fat_entries < (ULONGLONG)clusters + 2) return FALSE;
+
+    bpb.first_data_sector = (DWORD)data_start;
+    bpb.data_clusters = clusters;
+    *out = bpb;
+    return TRUE;
+}
+
+BOOL IOSYS_GetFat32BPB(BYTE drive, struct iosys_fat32_bpb *bpb)
+{
+    BYTE sector[512];
+    if (!bpb || !iosys_read_boot_sector( drive, sector )) return FALSE;
+    return IOSYS_ParseFat32BPB( sector, bpb );
+}
+
 /***********************************************************************
  *           IOSYS_GetFat1216BPB
  *
@@ -116,26 +211,10 @@ static DWORD iosys_get_dword( const BYTE *p )
  */
 BOOL IOSYS_GetFat1216BPB(BYTE drive, struct iosys_fat_bpb *bpb)
 {
-    WCHAR volume[] = {'\\','\\','.','\\','A',':',0};
     BYTE sector[512];
-    DWORD read;
     DWORD total_sectors, root_sectors, first_data, data_sectors, clusters;
-    HANDLE file;
 
-    if (!bpb || drive >= 26) return FALSE;
-
-    volume[4] += drive;
-    file = CreateFileW( volume, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL );
-    if (file == INVALID_HANDLE_VALUE) return FALSE;
-
-    read = 0;
-    if (!ReadFile( file, sector, sizeof(sector), &read, NULL ) || read != sizeof(sector))
-    {
-        CloseHandle( file );
-        return FALSE;
-    }
-    CloseHandle( file );
+    if (!bpb || !iosys_read_boot_sector( drive, sector )) return FALSE;
 
     if (sector[510] != 0x55 || sector[511] != 0xaa) return FALSE;
 
