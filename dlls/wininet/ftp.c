@@ -64,6 +64,8 @@ typedef struct
     int nDataSocket;
     WCHAR *cache_file;
     HANDLE cache_file_handle;
+    ULONGLONG file_size;
+    BOOL file_size_valid;
 } ftp_file_t;
 
 struct _ftp_session_t
@@ -166,7 +168,8 @@ static BOOL FTP_SendStore(ftp_session_t*, LPCWSTR lpszRemoteFile, DWORD dwType);
 static BOOL FTP_GetDataSocket(ftp_session_t*, LPINT nDataSocket);
 static BOOL FTP_SendData(ftp_session_t*, INT nDataSocket, HANDLE hFile);
 static INT FTP_ReceiveResponse(ftp_session_t*, DWORD_PTR dwContext);
-static BOOL FTP_SendRetrieve(ftp_session_t*, LPCWSTR lpszRemoteFile, DWORD dwType);
+static BOOL FTP_SendRetrieve(ftp_session_t*, LPCWSTR lpszRemoteFile, DWORD dwType,
+                             ULONGLONG *file_size, BOOL *size_valid);
 static BOOL FTP_RetrieveFileData(ftp_session_t*, INT nDataSocket, HANDLE hFile);
 static BOOL FTP_InitListenSocket(ftp_session_t*);
 static BOOL FTP_ConnectToHost(ftp_session_t*);
@@ -1316,7 +1319,8 @@ static HINTERNET FTP_FtpOpenFileW(ftp_session_t *lpwfs,
 	DWORD_PTR dwContext)
 {
     INT nDataSocket;
-    BOOL bSuccess = FALSE;
+    BOOL bSuccess = FALSE, size_valid = FALSE;
+    ULONGLONG file_size = 0;
     ftp_file_t *lpwh = NULL;
     appinfo_t *hIC = NULL;
 
@@ -1328,7 +1332,8 @@ static HINTERNET FTP_FtpOpenFileW(ftp_session_t *lpwfs,
     if (GENERIC_READ == fdwAccess)
     {
         /* Set up socket to retrieve data */
-        bSuccess = FTP_SendRetrieve(lpwfs, lpszFileName, dwFlags);
+        bSuccess = FTP_SendRetrieve(lpwfs, lpszFileName, dwFlags,
+                                    &file_size, &size_valid);
     }
     else if (GENERIC_WRITE == fdwAccess)
     {
@@ -1346,6 +1351,8 @@ static HINTERNET FTP_FtpOpenFileW(ftp_session_t *lpwfs,
         lpwh->nDataSocket = nDataSocket;
         lpwh->cache_file = NULL;
         lpwh->cache_file_handle = INVALID_HANDLE_VALUE;
+        lpwh->file_size = file_size;
+        lpwh->file_size_valid = size_valid;
         lpwh->session_deleted = FALSE;
 
         WININET_AddRef( &lpwfs->hdr );
@@ -1701,7 +1708,7 @@ static BOOL FTP_FtpGetFileW(ftp_session_t *lpwfs, LPCWSTR lpszRemoteFile, LPCWST
         return FALSE;
 
     /* Set up socket to retrieve data */
-    if (FTP_SendRetrieve(lpwfs, lpszRemoteFile, dwInternetFlags))
+    if (FTP_SendRetrieve(lpwfs, lpszRemoteFile, dwInternetFlags, NULL, NULL))
     {
         INT nDataSocket;
 
@@ -1751,14 +1758,33 @@ static BOOL FTP_FtpGetFileW(ftp_session_t *lpwfs, LPCWSTR lpszRemoteFile, LPCWST
 /***********************************************************************
  *           FtpGetFileSize  (WININET.@)
  */
-DWORD WINAPI FtpGetFileSize( HINTERNET hFile, LPDWORD lpdwFileSizeHigh )
+DWORD WINAPI FtpGetFileSize(HINTERNET hFile, LPDWORD lpdwFileSizeHigh)
 {
-    FIXME("(%p, %p)\n", hFile, lpdwFileSizeHigh);
+    ftp_file_t *file = (ftp_file_t *)get_handle_object(hFile);
+    DWORD low = ~0u;
 
-    if (lpdwFileSizeHigh)
-        *lpdwFileSizeHigh = 0;
+    TRACE("(%p, %p)\n", hFile, lpdwFileSizeHigh);
 
-    return 0;
+    if (!file)
+    {
+        INTERNET_SetLastError(ERROR_INVALID_HANDLE);
+        return low;
+    }
+
+    if (file->hdr.htype != WH_HFILE)
+        INTERNET_SetLastError(ERROR_INTERNET_INCORRECT_HANDLE_TYPE);
+    else if (!file->file_size_valid)
+        INTERNET_SetLastError(ERROR_INTERNET_EXTENDED_ERROR);
+    else
+    {
+        low = (DWORD)file->file_size;
+        if (lpdwFileSizeHigh)
+            *lpdwFileSizeHigh = (DWORD)(file->file_size >> 32);
+        INTERNET_SetLastError(ERROR_SUCCESS);
+    }
+
+    WININET_Release(&file->hdr);
+    return low;
 }
 
 /***********************************************************************
@@ -2480,21 +2506,29 @@ HINTERNET FTP_Connect(appinfo_t *hIC, LPCWSTR lpszServerName,
     if (!lpszUserName || !lpszUserName[0]) {
         HKEY key;
         WCHAR szPassword[MAX_PATH];
-        DWORD len = sizeof(szPassword);
+        DWORD len = sizeof(szPassword), type = 0;
+        BOOL have_email = FALSE;
 
         lpwfs->lpszUserName = wcsdup(L"anonymous");
 
-        RegOpenKeyW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", &key);
-        if (RegQueryValueExW(key, L"EmailName", NULL, NULL, (LPBYTE)szPassword, &len)) {
-            /* Nothing in the registry, get the username and use that as the password */
-            if (!GetUserNameW(szPassword, &len)) {
-                /* Should never get here, but use an empty password as failsafe */
-                lstrcpyW(szPassword, L"");
-            }
+        if (RegOpenKeyW(HKEY_CURRENT_USER,
+                L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", &key) == ERROR_SUCCESS)
+        {
+            if (RegQueryValueExW(key, L"EmailName", NULL, &type, (LPBYTE)szPassword, &len) == ERROR_SUCCESS
+                    && type == REG_SZ && len >= sizeof(WCHAR) && !(len % sizeof(WCHAR))
+                    && len <= sizeof(szPassword) && !szPassword[len / sizeof(WCHAR) - 1])
+                have_email = TRUE;
+            RegCloseKey(key);
         }
-        RegCloseKey(key);
 
-        TRACE("Password used for anonymous ftp : (%s)\n", debugstr_w(szPassword));
+        if (!have_email)
+        {
+            /* The Internet Settings key may not exist in a fresh prefix. */
+            len = ARRAY_SIZE(szPassword);
+            if (!GetUserNameW(szPassword, &len))
+                szPassword[0] = 0;
+        }
+
         lpwfs->lpszPassword = wcsdup(szPassword);
     }
     else {
@@ -3006,49 +3040,41 @@ lend:
 }
 
 
-#if 0  /* FIXME: should probably be used for FtpGetFileSize */
-/***********************************************************************
- *           FTP_GetFileSize (internal)
- *
- * Retrieves from the server the size of the given file
- *
- * RETURNS
- *   TRUE on success
- *   FALSE on failure
- *
- */
-static BOOL FTP_GetFileSize(ftp_session_t *lpwfs, LPCWSTR lpszRemoteFile, DWORD *dwSize)
+/* RFC 3659 SIZE reports the octet count for the currently selected TYPE.
+ * A server may reject SIZE even when RETR works, so this optional metadata
+ * query must never prevent an otherwise valid download. */
+static BOOL FTP_GetFileSize(ftp_session_t *session, LPCWSTR filename, ULONGLONG *size)
 {
-    INT nResCode;
-    BOOL bSuccess = FALSE;
+    const char *reply, *p;
+    ULONGLONG value = 0;
+    unsigned int digit;
 
-    TRACE("\n");
+    if (!FTP_SendCommand(session->sndSocket, FTP_CMD_SIZE, filename, 0, 0, 0))
+        return FALSE;
+    if (FTP_ReceiveResponse(session, session->hdr.dwContext) != 213)
+        return FALSE;
 
-    if (!FTP_SendCommand(lpwfs->sndSocket, FTP_CMD_SIZE, lpszRemoteFile, 0, 0, 0))
-        goto lend;
+    reply = INTERNET_GetResponseBuffer();
+    if (strncmp(reply, "213 ", 4))
+        return FALSE;
+    p = reply + 4;
+    if (!*p)
+        return FALSE;
 
-    nResCode = FTP_ReceiveResponse(lpwfs, lpwfs->hdr.dwContext);
-    if (nResCode)
+    for (; *p; ++p)
     {
-        if (nResCode == 213) {
-	    /* Now parses the output to get the actual file size */
-	    int i;
-	    LPSTR lpszResponseBuffer = INTERNET_GetResponseBuffer();
-
-	    for (i = 0; (lpszResponseBuffer[i] != ' ') && (lpszResponseBuffer[i] != '\0'); i++) ;
-	    if (lpszResponseBuffer[i] == '\0') return FALSE;
-	    *dwSize = atol(&(lpszResponseBuffer[i + 1]));
-	    
-            bSuccess = TRUE;
-	} else {
-            FTP_SetResponseError(nResCode);
-	}
+        if (*p < '0' || *p > '9')
+            return FALSE;
+        digit = *p - '0';
+        if (value > (~(ULONGLONG)0 - digit) / 10)
+            return FALSE;
+        value = value * 10 + digit;
     }
 
-lend:
-    return bSuccess;
+    *size = value;
+    return TRUE;
 }
-#endif
+
 
 
 /***********************************************************************
@@ -3316,17 +3342,24 @@ static BOOL FTP_SendData(ftp_session_t *lpwfs, INT nDataSocket, HANDLE hFile)
  *   0 on failure
  *
  */
-static BOOL FTP_SendRetrieve(ftp_session_t *lpwfs, LPCWSTR lpszRemoteFile, DWORD dwType)
+static BOOL FTP_SendRetrieve(ftp_session_t *lpwfs, LPCWSTR lpszRemoteFile, DWORD dwType,
+                             ULONGLONG *file_size, BOOL *size_valid)
 {
     INT nResCode;
     BOOL ret;
 
     TRACE("\n");
+    if (size_valid) *size_valid = FALSE;
     if (!(ret = FTP_InitListenSocket(lpwfs)))
         goto lend;
 
     if (!(ret = FTP_SendType(lpwfs, dwType)))
         goto lend;
+
+    /* Query only when the caller will expose FtpGetFileSize(). Sending SIZE
+     * before TYPE would give the wrong size for ASCII-mode transfers. */
+    if (file_size && size_valid)
+        *size_valid = FTP_GetFileSize(lpwfs, lpszRemoteFile, file_size);
 
     if (!(ret = FTP_SendPortOrPasv(lpwfs)))
         goto lend;

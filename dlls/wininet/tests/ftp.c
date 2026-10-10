@@ -25,7 +25,6 @@
  * TODO:
  *     Add W-function tests.
  *     Add missing function tests:
- *         FtpGetFileSize
  *         FtpSetCurrentDirectory
  */
 
@@ -44,6 +43,18 @@
 static BOOL (WINAPI *pFtpCommandA)(HINTERNET,BOOL,DWORD,LPCSTR,DWORD_PTR,HINTERNET*);
 static INTERNET_STATUS_CALLBACK (WINAPI *pInternetSetStatusCallbackA)(HINTERNET,INTERNET_STATUS_CALLBACK);
 
+
+static void test_file_size_invalid_handle(void)
+{
+    DWORD high = 0xdeadbeef;
+    DWORD size;
+
+    SetLastError(0xdeadbeef);
+    size = FtpGetFileSize(NULL, &high);
+    ok(size == ~0u, "Expected failure for NULL FTP file handle, got %#lx\n", size);
+    ok(GetLastError() == ERROR_INVALID_HANDLE || broken(GetLastError() == ERROR_INTERNET_NOT_INITIALIZED),
+            "Expected invalid FTP file handle error, got %lu\n", GetLastError());
+}
 
 static void test_getfile_no_open(void)
 {
@@ -429,9 +440,18 @@ static void test_openfile(HINTERNET hFtp, HINTERNET hConnect)
     if (hOpenFile)
     {
         BOOL bRet;
-        DWORD error;
+        DWORD error, high = 0xdeadbeef, low;
         HINTERNET hOpenFile2;
         HANDLE    hFile;
+
+        low = FtpGetFileSize(hOpenFile, &high);
+        if (low == ~0u && GetLastError() != ERROR_SUCCESS)
+            trace("FTP server did not provide SIZE for welcome.msg (error %lu)\n", GetLastError());
+        else
+        {
+            ok(low > 0 || high > 0, "Expected a non-empty welcome.msg, got %#lx:%#lx\n", high, low);
+            ok(high == 0, "Unexpectedly large welcome.msg (%#lx:%#lx)\n", high, low);
+        }
 
         /* We have a handle so all ftp calls should fail (TODO: Put all ftp-calls in here) */
         SetLastError(0xdeadbeef);
@@ -1062,6 +1082,7 @@ START_TEST(ftp)
      * The following test will show that behaviour, where the tests inside
      * the other sub-tests will show the other situation.
      */
+    test_file_size_invalid_handle();
     test_getfile_no_open();
     test_connect(hInternet);
     test_createdir(hFtp, hHttp);
