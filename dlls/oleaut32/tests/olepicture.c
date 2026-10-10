@@ -1060,8 +1060,8 @@ static void test_jpeg_wallpaper_picture(void)
     IPicture *picture;
     HBITMAP bitmap;
     OLE_HANDLE handle;
-    BITMAP info;
-    short type;
+    BITMAP info = {0};
+    short type = 0;
     DWORD written;
     HRESULT hr;
     HANDLE file;
