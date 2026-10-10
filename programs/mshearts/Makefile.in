@@ -1,0 +1,10 @@
+MODULE = mshearts.exe
+IMPORTS = user32 gdi32
+
+EXTRADLLFLAGS = -mwindows
+
+VER_FILEDESCRIPTION_STR = "Hearts"
+
+SOURCES = \
+    hearts.c \
+    main.c
