@@ -524,7 +524,7 @@ update_dependency_pins()
 
     for whp_dep in "$@"; do
         case "$whp_dep" in
-            libs/fluidsynth|toolchains/llvm-project|toolchains/ninja-builder|toolchains/bash|toolchains/automake) ;;
+            libs/fluidsynth|libs/zlib/source|toolchains/llvm-project|toolchains/ninja-builder|toolchains/bash|toolchains/automake) ;;
             *) die "unknown Water dependency submodule: $whp_dep" ;;
         esac
     done
@@ -546,7 +546,7 @@ init_submodules()
 
     # Ninja initializes its own source lazily only when its bootstrap path
     # is selected. Keep unconditional submodule work to build-required modules.
-    whp_submodules="libs/fluidsynth toolchains/bash"
+    whp_submodules="libs/fluidsynth libs/zlib/source toolchains/bash"
     if [ "$AUTOMAKE_SOURCE_DIR" = "$SOURCE_DIR/toolchains/automake" ]; then
         whp_submodules="$whp_submodules toolchains/automake"
     fi

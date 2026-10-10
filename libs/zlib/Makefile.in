@@ -1,4 +1,6 @@
 STATICLIB = libz.a
+# Water owns this recipe; the source lives in the pinned ZLIB submodule.
+PARENTSRC = source
 EXTRAINCL = $(ZLIB_PE_CFLAGS)
 
 SOURCES = \
