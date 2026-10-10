@@ -22,10 +22,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#define COBJMACROS
 #include "windef.h"
 #include "winbase.h"
 #include "wingdi.h"
 #include "winnls.h"
+#include "olectl.h"
 #include "controls.h"
 
 static HBRUSH hbrushPattern;
@@ -35,23 +37,75 @@ static BOOL fTileWallPaper;
 
 
 /***********************************************************************
+ *           DESKTOP_LoadPicture
+ *
+ * LoadImageW supports BMP wallpaper, but not JPEG. Reuse OLE's picture
+ * decoder on demand instead of adding another decoder to user32 (which
+ * is itself a dependency of oleaut32).
+ */
+static HBITMAP DESKTOP_LoadPicture( const WCHAR *filename )
+{
+    HRESULT (WINAPI *load_picture)(LPOLESTR, LPUNKNOWN, DWORD, OLE_COLOR, REFIID, LPVOID *);
+    WCHAR full_path[MAX_PATH];
+    IPicture *picture = NULL;
+    HMODULE module;
+    HBITMAP bitmap = NULL;
+    OLE_HANDLE handle;
+    DWORD length;
+    short type;
+
+    /* Resolve relative paths before passing them to the picture loader,
+     * which otherwise treats such names as URL monikers. */
+    length = GetFullPathNameW( filename, ARRAY_SIZE(full_path), full_path, NULL );
+    if (!length || length >= ARRAY_SIZE(full_path)) return NULL;
+
+    module = LoadLibraryW( L"oleaut32.dll" );
+    if (!module) return NULL;
+
+    load_picture = (void *)GetProcAddress( module, "OleLoadPicturePath" );
+    if (load_picture &&
+        SUCCEEDED(load_picture( full_path, NULL, 0, 0, &IID_IPicture, (void **)&picture )) &&
+        picture)
+    {
+        if (SUCCEEDED(IPicture_get_Type( picture, &type )) && type == PICTYPE_BITMAP &&
+            SUCCEEDED(IPicture_get_Handle( picture, &handle )) && handle)
+            bitmap = CopyImage( UlongToHandle(handle), IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION );
+    }
+    if (picture) IPicture_Release( picture );
+    FreeLibrary( module );
+    return bitmap;
+}
+
+/***********************************************************************
  *           DESKTOP_LoadBitmap
  */
 static HBITMAP DESKTOP_LoadBitmap( const WCHAR *filename )
 {
-    HBITMAP hbitmap;
+    WCHAR buffer[MAX_PATH];
+    HBITMAP bitmap;
+    UINT length;
 
-    if (!filename[0]) return 0;
-    hbitmap = LoadImageW( 0, filename, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE );
-    if (!hbitmap)
+    if (!filename || !filename[0]) return NULL;
+
+    bitmap = LoadImageW( 0, filename, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE );
+    if (!bitmap) bitmap = DESKTOP_LoadPicture( filename );
+    if (bitmap) return bitmap;
+
+    /* Legacy wallpaper names can be relative to the Windows directory.
+     * Do not index before the buffer if GetWindowsDirectoryW() fails. */
+    length = GetWindowsDirectoryW( buffer, ARRAY_SIZE(buffer) );
+    if (!length || length >= ARRAY_SIZE(buffer)) return NULL;
+    if (buffer[length - 1] != '\\')
     {
-        WCHAR buffer[MAX_PATH];
-        UINT len = GetWindowsDirectoryW( buffer, MAX_PATH - 2 );
-        if (buffer[len - 1] != '\\') buffer[len++] = '\\';
-        lstrcpynW( buffer + len, filename, MAX_PATH - len );
-        hbitmap = LoadImageW( 0, buffer, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE );
+        if (length + 1 >= ARRAY_SIZE(buffer)) return NULL;
+        buffer[length++] = '\\';
     }
-    return hbitmap;
+    if (lstrlenW( filename ) >= ARRAY_SIZE(buffer) - length) return NULL;
+    lstrcpyW( buffer + length, filename );
+
+    bitmap = LoadImageW( 0, buffer, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE );
+    if (!bitmap) bitmap = DESKTOP_LoadPicture( buffer );
+    return bitmap;
 }
 
 /***********************************************************************
@@ -66,9 +120,15 @@ static void init_wallpaper( const WCHAR *wallpaper )
     if (hbitmap)
     {
 	BITMAP bmp;
-	GetObjectA( hbitmap, sizeof(bmp), &bmp );
-	bitmapSize.cx = (bmp.bmWidth != 0) ? bmp.bmWidth : 1;
-	bitmapSize.cy = (bmp.bmHeight != 0) ? bmp.bmHeight : 1;
+        if (!GetObjectW( hbitmap, sizeof(bmp), &bmp ))
+        {
+            DeleteObject( hbitmapWallPaper );
+            hbitmapWallPaper = NULL;
+            bitmapSize.cx = bitmapSize.cy = 0;
+            return;
+        }
+        bitmapSize.cx = bmp.bmWidth ? bmp.bmWidth : 1;
+        bitmapSize.cy = bmp.bmHeight ? bmp.bmHeight : 1;
         fTileWallPaper = GetProfileIntA( "desktop", "TileWallPaper", 0 );
     }
 }
