@@ -96,14 +96,21 @@ static HRESULT FtpProtocol_end_request(Protocol *prot)
 static HRESULT FtpProtocol_start_downloading(Protocol *prot)
 {
     FtpProtocol *This = impl_from_Protocol(prot);
-    DWORD size;
-    BOOL res;
+    DWORD size_high = 0, size_low;
+    DWORD error;
 
-    res = FtpGetFileSize(This->base.request, &size);
-    if(res)
-        This->base.content_length = size;
+    /* The low DWORD can legitimately be 0 (an empty file) or ~0u (a
+     * 4-GiB-minus-one-byte file). Distinguish failure through GetLastError,
+     * and never truncate a larger file into the 32-bit progress field. */
+    SetLastError(ERROR_SUCCESS);
+    size_low = FtpGetFileSize(This->base.request, &size_high);
+    error = GetLastError();
+    if (size_low == ~0u && error != ERROR_SUCCESS)
+        TRACE("FTP server did not provide a file size: %lu\n", error);
+    else if (size_high)
+        TRACE("FTP file size exceeds 32-bit progress reporting\n");
     else
-        WARN("FtpGetFileSize failed: %ld\n", GetLastError());
+        This->base.content_length = size_low;
 
     return S_OK;
 }
