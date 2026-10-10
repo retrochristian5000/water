@@ -2628,11 +2628,13 @@ bool whp_libcxx_rtti_probe(whp_libcxx_rtti_left *object) {
     return object && dynamic_cast<whp_libcxx_rtti_right *>(object) &&
            typeid(*object) == typeid(whp_libcxx_rtti_derived);
 }
+#if defined(__i386__)
 int whp_libcxx_exception_probe() {
     try { throw 7; }
     catch (int value) { return value; }
     return -1;
 }
+#endif
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
             -std=c++17 -fshort-wchar -fms-omit-default-lib \
