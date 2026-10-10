@@ -31,3 +31,9 @@
 	url = https://github.com/retrochristian5000/ZLIB.git
 	branch = master
 	shallow = true
+
+[submodule "libs/musl/upstream"]
+	path = libs/musl/upstream
+	url = https://github.com/retrochristian5000/musl-libc.git
+	branch = master
+	shallow = true
