@@ -1413,6 +1413,8 @@ static HRESULT WINAPI performance_SetGlobalParam(IDirectMusicPerformance8 *iface
     struct performance *This = impl_from_IDirectMusicPerformance8(iface);
     struct channel_block *block;
     DWORD expected_size = performance_global_param_size(type);
+    BOOL update_volume = FALSE;
+    LONG volume = 0;
     int i;
 
     TRACE("(%p, %s, %p, %lu)\n", This, debugstr_dmguid(type), param, size);
@@ -1430,14 +1432,22 @@ static HRESULT WINAPI performance_SetGlobalParam(IDirectMusicPerformance8 *iface
     else
     {
         memcpy(&This->lMasterVolume, param, expected_size);
+        volume = This->lMasterVolume;
+        update_volume = TRUE;
+    }
+    LeaveCriticalSection(&This->safe);
+
+    /* Don't invoke external port COM methods while holding the performance
+     * lock. The channel iteration retains its previous behavior. */
+    if (update_volume)
+    {
         RB_FOR_EACH_ENTRY(block, &This->channel_blocks, struct channel_block, entry)
         {
             for (i = 0; i < ARRAY_SIZE(block->channels); ++i)
                 if (block->channels[i].port)
-                    set_port_volume(block->channels[i].port, This->lMasterVolume);
+                    set_port_volume(block->channels[i].port, volume);
         }
     }
-    LeaveCriticalSection(&This->safe);
 
     return S_OK;
 }
