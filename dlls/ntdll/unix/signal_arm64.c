@@ -94,25 +94,42 @@ static inline struct arm64_thread_data *arm64_thread_data( struct thread_data *d
 
 static struct _aarch64_ctx *get_extended_sigcontext( const ucontext_t *sigcontext, unsigned int magic )
 {
-    struct _aarch64_ctx *ctx = (struct _aarch64_ctx *)sigcontext->uc_mcontext.__reserved;
-    while ((char *)ctx < (char *)(&sigcontext->uc_mcontext + 1) && ctx->magic && ctx->size)
+    const char *base = (const char *)sigcontext->uc_mcontext.__reserved;
+    const size_t limit = sizeof(sigcontext->uc_mcontext.__reserved);
+    size_t offset = 0;
+
+    /* Linux stores 16-byte-aligned extension records in __reserved[], ending
+     * with a null record. Validate the full header and record before
+     * advancing; a bad size must never move the walker outside the frame.
+     * Unknown but well-formed records are skipped for ABI compatibility. */
+    while (offset <= limit && limit - offset >= sizeof(struct _aarch64_ctx))
     {
+        struct _aarch64_ctx *ctx = (struct _aarch64_ctx *)(base + offset);
+
+        if (!ctx->magic) break;
+        if (ctx->size < sizeof(*ctx) || (ctx->size & 15) || ctx->size > limit - offset)
+            break;
         if (ctx->magic == magic) return ctx;
-        ctx = (struct _aarch64_ctx *)((char *)ctx + ctx->size);
+        offset += ctx->size;
     }
     return NULL;
 }
 
 static struct fpsimd_context *get_fpsimd_context( const ucontext_t *sigcontext )
 {
-    return (struct fpsimd_context *)get_extended_sigcontext( sigcontext, FPSIMD_MAGIC );
+    struct _aarch64_ctx *ctx = get_extended_sigcontext( sigcontext, FPSIMD_MAGIC );
+
+    if (!ctx || ctx->size < sizeof(struct fpsimd_context)) return NULL;
+    return (struct fpsimd_context *)ctx;
 }
 
 static DWORD64 get_fault_esr( ucontext_t *sigcontext )
 {
 #ifdef ESR_MAGIC
-    struct esr_context *esr = (struct esr_context *)get_extended_sigcontext( sigcontext, ESR_MAGIC );
-    if (esr) return esr->esr;
+    struct _aarch64_ctx *ctx = get_extended_sigcontext( sigcontext, ESR_MAGIC );
+
+    if (ctx && ctx->size >= sizeof(struct esr_context))
+        return ((struct esr_context *)ctx)->esr;
 #endif
     return 0;
 }
