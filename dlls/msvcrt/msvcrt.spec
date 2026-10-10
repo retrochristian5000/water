@@ -263,7 +263,7 @@
 @ stub -arch=i386 __p__fileinfo()
 @ cdecl -arch=i386 __p__fmode()
 @ cdecl -arch=i386 __p__iob() __iob_func
-@ stub -arch=i386 __p__mbcasemap()
+@ cdecl -arch=i386 __p__mbcasemap()
 @ cdecl -arch=i386 __p__mbctype()
 @ cdecl -arch=i386 __p__osver()
 @ cdecl -arch=i386 __p__pctype()
@@ -693,7 +693,7 @@
 @ cdecl _mbbtombc(long)
 @ cdecl _mbbtombc_l(long ptr)
 @ cdecl _mbbtype(long long)
-# extern _mbcasemap
+@ extern _mbcasemap MSVCRT_mbcasemap
 @ cdecl _mbccpy(ptr ptr)
 @ cdecl _mbccpy_l(ptr ptr ptr)
 @ cdecl _mbccpy_s(ptr long ptr ptr)

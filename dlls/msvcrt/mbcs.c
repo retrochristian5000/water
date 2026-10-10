@@ -36,6 +36,7 @@
 WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
 
 unsigned char MSVCRT_mbctype[257] = { 0 };
+unsigned char MSVCRT_mbcasemap[256] = { 0 };
 
 /* It seems that the data about valid trail bytes is not available from kernel32
  * so we have to store is here. The format is the same as for lead bytes in CPINFO */
@@ -173,6 +174,17 @@ static inline unsigned char *u__strset( unsigned char *s, unsigned char c )
 static inline unsigned char *u__strnset( unsigned char *s, unsigned char c, size_t len )
 {
   return (unsigned char*) _strnset( (char*)s, c, len );
+}
+
+/*********************************************************************
+ *              __p__mbcasemap (MSVCRT.@)
+ *
+ * MSVCRT exports the process case map as data and, on i386, an accessor
+ * for the active multibyte locale. Keep this parallel to __p__mbctype.
+ */
+unsigned char * CDECL __p__mbcasemap(void)
+{
+    return get_mbcinfo()->mbcasemap;
 }
 
 /*********************************************************************
@@ -421,6 +433,7 @@ int CDECL _setmbcp(int cp)
         free_mbcinfo(MSVCRT_locale->mbcinfo);
         MSVCRT_locale->mbcinfo = mbcinfo;
         memcpy(MSVCRT_mbctype, MSVCRT_locale->mbcinfo->mbctype, sizeof(MSVCRT_mbctype));
+        memcpy(MSVCRT_mbcasemap, MSVCRT_locale->mbcinfo->mbcasemap, sizeof(MSVCRT_mbcasemap));
         _unlock(_MB_CP_LOCK);
     }
     return 0;

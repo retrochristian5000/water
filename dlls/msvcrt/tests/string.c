@@ -258,6 +258,55 @@ static void test_cp_table(int cp, int *result)
 
 #endif
 
+/* The case map was exported as data in VC5 SP1 and remains part of the
+ * VC6-compatible MSVCRT interface. The accessor was exported on i386.
+ * Compare it with the global map only while using the process locale. */
+static void test_mbcasemap_exports(void)
+{
+    unsigned char *map = (void *)GetProcAddress(hMsvcrt, "_mbcasemap");
+    unsigned char *(__cdecl *get_map)(void) =
+        (void *)GetProcAddress(hMsvcrt, "__p__mbcasemap");
+    int original = _getmbcp();
+    unsigned char *local;
+    unsigned int i;
+
+    ok(map != NULL, "Missing legacy _mbcasemap data export.\n");
+    if (sizeof(void *) == 4)
+        ok(get_map != NULL, "Missing i386 __p__mbcasemap accessor.\n");
+    if (!map) return;
+
+    if (_setmbcp(1252))
+    {
+        win_skip("Windows codepage 1252 is not available.\n");
+        return;
+    }
+
+    ok(map['A'] == 'a', "Expected A -> a, got %#x.\n", map['A']);
+    ok(map['a'] == 'A', "Expected a -> A, got %#x.\n", map['a']);
+    if (get_map)
+    {
+        local = get_map();
+        ok(local != NULL, "The multibyte case-map accessor returned NULL.\n");
+        if (local)
+            for (i = 0; i < 256; ++i)
+                ok(map[i] == local[i], "Case map mismatch at byte %#x.\n", i);
+    }
+
+    if (!_setmbcp(932))
+    {
+        ok(map['A'] == 'a', "CP932 A -> a mismatch: %#x.\n", map['A']);
+        ok(map['a'] == 'A', "CP932 a -> A mismatch: %#x.\n", map['a']);
+        if (get_map)
+        {
+            local = get_map();
+            if (local)
+                ok(!memcmp(map, local, 256), "CP932 global and active case maps differ.\n");
+        }
+    }
+    if (_setmbcp(original))
+        win_skip("Could not restore original multibyte codepage %d.\n", original);
+}
+
 static void test_mbcp(void)
 {
     int mb_orig_max = *p__mb_cur_max;
@@ -5113,6 +5162,7 @@ START_TEST(string)
     test_swab();
     test_strcspn();
     test_mbcp();
+    test_mbcasemap_exports();
     test_mbsspn();
     test_mbsspnp();
     test_strdup();
