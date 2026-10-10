@@ -5,11 +5,19 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir=${WHP_LLVM_SOURCE_DIR:-"$root/toolchains/llvm-project"}
-llvm_bin=${WHP_COMPILER_RT_LLVM_BIN:-${WHP_LLVM_PREFIX:-}/bin}
+llvm_bin=${WHP_COMPILER_RT_LLVM_BIN:-}
+if [ -z "$llvm_bin" ]; then
+    if [ -n "${WHP_LLVM_PREFIX:-}" ]; then
+        llvm_bin="$WHP_LLVM_PREFIX/bin"
+    else
+        llvm_bin="${WHP_LLVM_BUILD_DIR:-"$root/build/llvm-bootstrap"}/bin"
+    fi
+fi
 build_root=${WHP_COMPILER_RT_BUILD_ROOT:-"$root/build/llvm-compiler-rt-aarch64"}
 target=${WHP_COMPILER_RT_AARCH64_TARGET:-aarch64-pc-windows-msvc}
 
 case "$target" in
+    aarch64-windows) target=aarch64-pc-windows-msvc ;;
     aarch64-pc-windows-msvc|aarch64-w64-windows-gnu) ;;
     *) echo "unsupported AArch64 Windows compiler-rt target: $target" >&2; exit 2 ;;
 esac
@@ -84,7 +92,10 @@ esac
 
 # Water currently depends on this Windows stack-probe symbol. The fork's
 # opt-in CMake setting supplies it without depending on a system MSVC CRT.
-"$llvm_bin/llvm-nm" --defined-only "$archives" | grep -E '(^|[[:space:]])__chkstk$' >/dev/null || {
+symbols=$("$llvm_bin/llvm-nm" --defined-only "$archives") || {
+    echo "llvm-nm failed to inspect compiler-rt builtins" >&2; exit 1;
+}
+printf '%s\n' "$symbols" | grep -E '(^|[[:space:]])__chkstk$' >/dev/null || {
     echo "compiler-rt AArch64 archive is missing __chkstk" >&2; exit 1;
 }
 
