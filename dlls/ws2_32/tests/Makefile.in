@@ -4,4 +4,5 @@ IMPORTS   = iphlpapi ws2_32 user32
 SOURCES = \
 	afd.c \
 	protocol.c \
+	header_abi.c \
 	sock.c
