@@ -1050,6 +1050,92 @@ static void test_get_Type(void)
     IPicture_Release(pic);
 }
 
+/* Desktop wallpaper uses this OLE picture path when LoadImageW cannot
+ * decode JPEG. Ensure that the returned bitmap can be copied, since the
+ * original image handle is owned by IPicture and must not survive Release. */
+static void test_jpeg_wallpaper_picture(void)
+{
+    static const WCHAR *suffixes[] = {L".jpg", L".jpeg"};
+    WCHAR directory[MAX_PATH], temp_file[MAX_PATH], path[MAX_PATH + 8];
+    IPicture *picture;
+    HBITMAP bitmap;
+    OLE_HANDLE handle;
+    BITMAP info;
+    short type;
+    DWORD written;
+    HRESULT hr;
+    HANDLE file;
+    UINT i;
+
+    if (!GetTempPathW(ARRAY_SIZE(directory), directory) ||
+        !GetTempFileNameW(directory, L"jpg", 0, temp_file))
+    {
+        win_skip("Could not create JPEG test filename.\n");
+        return;
+    }
+    DeleteFileW(temp_file);
+
+    if (lstrlenW(temp_file) >= MAX_PATH - 7)
+    {
+        win_skip("JPEG test filename is too long.\n");
+        return;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(suffixes); i++)
+    {
+        lstrcpyW(path, temp_file);
+        lstrcatW(path, suffixes[i]);
+
+        file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+        if (file == INVALID_HANDLE_VALUE)
+        {
+            win_skip("Could not create JPEG image file (error %lu).\n", GetLastError());
+            continue;
+        }
+        written = 0;
+        if (!WriteFile(file, jpgimage, sizeof(jpgimage), &written, NULL) ||
+            written != sizeof(jpgimage))
+        {
+            ok(0, "Could not write JPEG test image (wrote %lu bytes).\n", written);
+            CloseHandle(file);
+            DeleteFileW(path);
+            continue;
+        }
+        CloseHandle(file);
+
+        picture = NULL;
+        hr = OleLoadPicturePath(path, NULL, 0, 0, &IID_IPicture, (void **)&picture);
+        ok(hr == S_OK, "OleLoadPicturePath(%s) returned %#lx.\n",
+           wine_dbgstr_w(suffixes[i]), hr);
+        if (SUCCEEDED(hr) && picture)
+        {
+            hr = IPicture_get_Type(picture, &type);
+            ok(hr == S_OK && type == PICTYPE_BITMAP,
+               "Expected JPEG picture bitmap, got type %d, hr %#lx.\n", type, hr);
+
+            handle = 0;
+            hr = IPicture_get_Handle(picture, &handle);
+            ok(hr == S_OK && handle, "Could not get JPEG HBITMAP, hr %#lx.\n", hr);
+
+            bitmap = handle ? CopyImage(UlongToHandle(handle), IMAGE_BITMAP, 0, 0,
+                                        LR_CREATEDIBSECTION) : NULL;
+            IPicture_Release(picture);
+            ok(!!bitmap, "Failed to copy JPEG bitmap before IPicture release.\n");
+            if (bitmap)
+            {
+                ok(GetObjectW(bitmap, sizeof(info), &info) == sizeof(info),
+                   "Could not inspect copied JPEG bitmap.\n");
+                ok(info.bmWidth == 1 && info.bmHeight == 1,
+                   "Expected 1x1 JPEG, got %ldx%ld.\n", info.bmWidth, info.bmHeight);
+                DeleteObject(bitmap);
+            }
+        }
+        else if (picture) IPicture_Release(picture);
+        DeleteFileW(path);
+    }
+}
+
 static void test_OleLoadPicturePath(void)
 {
     static WCHAR emptyW[] = {0};
@@ -1835,6 +1921,7 @@ START_TEST(olepicture)
     test_get_Handle();
     test_get_Type();
     test_OleLoadPicturePath();
+    test_jpeg_wallpaper_picture();
     test_himetric();
     test_load_save_bmp();
     test_load_save_dib();
