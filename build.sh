@@ -87,7 +87,7 @@ esac
 usage()
 {
     cat <<EOF
-Usage: ./build.sh [build|incremental|configure|reconfigure|menuconfig|update|update-deps|clean|distclean|install-lib|install-dev|install|test|TARGET...]
+Usage: ./build.sh [build|incremental|configure|reconfigure|compiler-rt-aarch64|menuconfig|update|update-deps|clean|distclean|install-lib|install-dev|install|test|TARGET...]
 
 Environment:
   WHP_BUILD_DIR         Out-of-tree build directory (default: ./build)
@@ -108,6 +108,7 @@ Environment:
   WATER_PE_LTO          PE LTO mode: none, thin, or full (default: none; thin recommended for testing)
   WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
   WATER_LIBCXX_I386     i386 PE libc++: legacy or experimental llvm (default: legacy)
+  WHP_COMPILER_RT_AARCH64_TARGET  Standalone builtins target: aarch64-pc-windows-msvc or aarch64-w64-windows-gnu
   WATER_INSTALL         Post-build install: none, runtime, development, or all (default: none)
   WATER_PREFIX          Install prefix passed to configure (default: /usr/local)
   WHP_LLVM_BOOTSTRAP_CC Stage-0 C compiler (default: prefer clang)
@@ -3336,6 +3337,19 @@ run_profile_install()
 }
 
 case "${1:-build}" in
+    compiler-rt-aarch64)
+        [ "$#" -eq 1 ] || die "compiler-rt-aarch64 accepts no positional arguments"
+        load_whp_config
+        validate_profile
+        init_submodules
+        prepare_llvm_toolchain
+        setup_toolchain
+        WHP_COMPILER_RT_LLVM_BIN=$LLVM_BIN \
+          WHP_LLVM_SOURCE_DIR=$LLVM_SOURCE_DIR \
+          WHP_COMPILER_RT_BUILD_ROOT="$BUILD_DIR/llvm-compiler-rt-aarch64" \
+          /bin/sh "$SOURCE_DIR/scripts/build-compiler-rt-aarch64.sh"
+        exit 0
+        ;;
     __libcxx_one)
         [ "$#" -eq 2 ] || die "__libcxx_one requires exactly one architecture"
         load_whp_config
