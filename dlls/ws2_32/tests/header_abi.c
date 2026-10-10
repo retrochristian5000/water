@@ -27,5 +27,5 @@ C_ASSERT(__builtin_types_compatible_p(LPFN_WSAGETSERVICECLASSINFO, LPFN_WSAGETSE
 
 START_TEST(header_abi)
 {
-    ok(sizeof(SOCKET) == sizeof(UINT_PTR), "SOCKET must be pointer-sized\\n");
+    ok(sizeof(SOCKET) == sizeof(UINT_PTR), "SOCKET must be pointer-sized\n");
 }
