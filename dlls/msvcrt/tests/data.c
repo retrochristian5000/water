@@ -32,6 +32,8 @@
 #include <errno.h>
 #include <direct.h>
 
+static int (__cdecl *p_get_app_type)(void);
+static void (__cdecl *p_set_app_type)(int);
 static int* (__cdecl *p___p___argc)(void);
 static char*** (__cdecl *p___p___argv)(void);
 
@@ -226,6 +228,25 @@ static void test___getmainargs_parent(char *name)
     _rmdir(filepath);
 }
 
+static void test_app_type(void)
+{
+    int original;
+
+    if (!p_get_app_type || !p_set_app_type)
+    {
+        win_skip("CRT application type accessors are not available.\n");
+        return;
+    }
+
+    original = p_get_app_type();
+    p_set_app_type(1);
+    ok(p_get_app_type() == 1, "Console application type was not retained.\n");
+    p_set_app_type(2);
+    ok(p_get_app_type() == 2, "GUI application type was not retained.\n");
+    p_set_app_type(original);
+    ok(p_get_app_type() == original, "Original application type was not restored.\n");
+}
+
 START_TEST(data)
 {
     HMODULE hmsvcrt;
@@ -237,6 +258,8 @@ START_TEST(data)
         hmsvcrt = GetModuleHandleA("msvcrtd.dll");
     if (hmsvcrt)
     {
+        p_get_app_type=(void*)GetProcAddress(hmsvcrt, "__get_app_type");
+        p_set_app_type=(void*)GetProcAddress(hmsvcrt, "__set_app_type");
         p_initterm=(void*)GetProcAddress(hmsvcrt, "_initterm");
         p_get_pgmptr=(void*)GetProcAddress(hmsvcrt, "_get_pgmptr");
         p___p___argc=(void*)GetProcAddress(hmsvcrt, "__p___argc");
@@ -250,6 +273,7 @@ START_TEST(data)
     }
 
     test_initterm();
+    test_app_type();
     test_initvar(hmsvcrt);
     test_get_pgmptr();
     test___getmainargs_parent(arg_v[0]);

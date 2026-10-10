@@ -213,7 +213,7 @@
 @ cdecl __doserrno()
 @ cdecl __dstbias() __p__dstbias
 @ cdecl __fpecode()
-@ stub __get_app_type
+@ cdecl __get_app_type()
 @ cdecl __getmainargs(ptr ptr ptr long ptr)
 @ extern __initenv MSVCRT___initenv
 @ cdecl __iob_func()
@@ -538,7 +538,7 @@
 @ cdecl _getmaxstdio()
 @ cdecl _getmbcp()
 @ cdecl _getpid()
-@ stub _getsystime(ptr)
+@ cdecl _getsystime(ptr)
 @ cdecl _getw(ptr)
 @ cdecl _getwch()
 @ cdecl _getwche()

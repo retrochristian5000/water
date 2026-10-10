@@ -547,6 +547,37 @@ struct tm* CDECL _gmtime32(const __time32_t* secs)
 }
 
 /**********************************************************************
+ *              _getsystime (MSVCRT.@)
+ *
+ * Return the local clock's milliseconds and fill the Windows CRT tm
+ * fields. Normalize via the existing CRT time conversion so the
+ * day-of-year and daylight-saving fields are consistent with mktime.
+ */
+unsigned int CDECL _getsystime(struct tm *result)
+{
+    SYSTEMTIME st;
+
+    if (!result)
+    {
+        *_errno() = EINVAL;
+        return 0;
+    }
+
+    GetLocalTime(&st);
+    result->tm_sec = st.wSecond;
+    result->tm_min = st.wMinute;
+    result->tm_hour = st.wHour;
+    result->tm_mday = st.wDay;
+    result->tm_mon = st.wMonth - 1;
+    result->tm_year = st.wYear - 1900;
+    result->tm_wday = st.wDayOfWeek;
+    result->tm_yday = 0;
+    result->tm_isdst = -1;
+    _mktime64(result);
+    return st.wMilliseconds;
+}
+
+/**********************************************************************
  *		_strdate (MSVCRT.@)
  */
 char* CDECL _strdate(char* date)

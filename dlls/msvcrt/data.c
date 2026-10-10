@@ -582,6 +582,14 @@ int CDECL _initterm_e(_INITTERM_E_FN *table, _INITTERM_E_FN *end)
 }
 
 /*********************************************************************
+ *              __get_app_type (MSVCRT.@)
+ */
+int CDECL __get_app_type(void)
+{
+    return MSVCRT_app_type;
+}
+
+/*********************************************************************
  *		__set_app_type (MSVCRT.@)
  */
 void CDECL __set_app_type(int app_type)

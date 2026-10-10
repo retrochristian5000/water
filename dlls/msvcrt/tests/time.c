@@ -51,6 +51,7 @@ typedef struct {
     int refcount;
 } __lc_time_data;
 
+static unsigned int (__cdecl *p_getsystime)(struct tm*);
 static errno_t    (__cdecl *p_ctime32_s)(char*, size_t, __time32_t*);
 static errno_t    (__cdecl *p_ctime64_s)(char*, size_t, __time64_t*);
 static __time32_t (__cdecl *p_mkgmtime32)(struct tm*);
@@ -77,6 +78,7 @@ static void init(void)
 {
     HMODULE hmod = LoadLibraryA("msvcrt.dll");
 
+    p_getsystime = (void*)GetProcAddress(hmod, "_getsystime");
     p_gmtime32 = (void*)GetProcAddress(hmod, "_gmtime32");
     p_ctime32_s = (void*)GetProcAddress(hmod, "_ctime32_s");
     p_ctime64_s = (void*)GetProcAddress(hmod, "_ctime64_s");
@@ -1082,6 +1084,48 @@ static void test__tzset(void)
     _putenv(TZ_env);
 }
 
+static void test_getsystime(void)
+{
+    SYSTEMTIME before, after;
+    struct tm result = {0};
+    unsigned int millis;
+    BOOL matches_before, matches_after;
+
+    if (!p_getsystime)
+    {
+        win_skip("_getsystime is not exported by this CRT.\n");
+        return;
+    }
+
+    GetLocalTime(&before);
+    millis = p_getsystime(&result);
+    GetLocalTime(&after);
+
+    ok(millis < 1000, "_getsystime returned invalid milliseconds %u.\n", millis);
+    ok(result.tm_mon >= 0 && result.tm_mon <= 11, "Invalid month %d.\n", result.tm_mon);
+    ok(result.tm_mday >= 1 && result.tm_mday <= 31, "Invalid day %d.\n", result.tm_mday);
+    ok(result.tm_wday >= 0 && result.tm_wday <= 6, "Invalid weekday %d.\n", result.tm_wday);
+    ok(result.tm_yday >= 0 && result.tm_yday <= 365, "Invalid yearday %d.\n", result.tm_yday);
+    ok(result.tm_isdst == 0 || result.tm_isdst == 1,
+       "Daylight-saving status was not normalized: %d.\n", result.tm_isdst);
+
+    /* The clock can tick between snapshots, including at midnight. */
+    matches_before = result.tm_year == before.wYear - 1900 &&
+                     result.tm_mon == before.wMonth - 1 &&
+                     result.tm_mday == before.wDay &&
+                     result.tm_hour == before.wHour &&
+                     result.tm_min == before.wMinute &&
+                     result.tm_sec == before.wSecond;
+    matches_after = result.tm_year == after.wYear - 1900 &&
+                    result.tm_mon == after.wMonth - 1 &&
+                    result.tm_mday == after.wDay &&
+                    result.tm_hour == after.wHour &&
+                    result.tm_min == after.wMinute &&
+                    result.tm_sec == after.wSecond;
+    ok(matches_before || matches_after,
+       "Local CRT time disagrees with surrounding GetLocalTime snapshots.\n");
+}
+
 START_TEST(time)
 {
     init();
@@ -1094,6 +1138,7 @@ START_TEST(time)
     test_gmtime();
     test_gmtime64();
     test_mktime();
+    test_getsystime();
     test_localtime();
     test_strdate();
     test_strtime();
