@@ -107,6 +107,7 @@ Environment:
   WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (macOS default: system; others: auto)
   WATER_PE_LTO          PE LTO mode: none, thin, or full (default: none; thin recommended for testing)
   WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
+  WATER_LIBCXX_I386     i386 PE libc++: legacy or experimental llvm (default: legacy)
   WATER_INSTALL         Post-build install: none, runtime, development, or all (default: none)
   WATER_PREFIX          Install prefix passed to configure (default: /usr/local)
   WHP_LLVM_BOOTSTRAP_CC Stage-0 C compiler (default: prefer clang)
@@ -233,6 +234,7 @@ validate_profile()
     fi
     WATER_PE_LTO=${WATER_PE_LTO:-none}
     WATER_LIBCXX=${WATER_LIBCXX:-llvm}
+    WATER_LIBCXX_I386=${WATER_LIBCXX_I386:-legacy}
     WATER_INSTALL=${WATER_INSTALL:-none}
     WATER_PREFIX=${WATER_PREFIX:-/usr/local}
     WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}
@@ -275,6 +277,10 @@ validate_profile()
     case "$WATER_LIBCXX" in
         llvm|legacy) ;;
         *) die "WATER_LIBCXX must be llvm or legacy" ;;
+    esac
+    case "$WATER_LIBCXX_I386" in
+        legacy|llvm) ;;
+        *) die "WATER_LIBCXX_I386 must be legacy or llvm" ;;
     esac
     case "$WATER_INSTALL" in
         none|runtime|development|all) ;;
@@ -1739,7 +1745,11 @@ selected_llvm_libcxx_archs()
     for whp_libcxx_arch in $whp_libcxx_selected
     do
         case "$whp_libcxx_arch" in
-            x86_64|aarch64|arm64ec)
+            i386|x86_64|aarch64|arm64ec)
+                # i386 is experimental until its full PE runtime has passed validation.
+                if [ "$whp_libcxx_arch" = i386 ] && [ "$WATER_LIBCXX_I386" != llvm ]; then
+                    continue
+                fi
                 case " $whp_libcxx_prepare " in
                     *" $whp_libcxx_arch "*) ;;
                     *) whp_libcxx_prepare="$whp_libcxx_prepare $whp_libcxx_arch" ;;
@@ -2593,6 +2603,13 @@ prepare_one_llvm_libcxx()
 #ifndef __cpp_rtti
 # error WHP libc++ PE compiler disabled C++ RTTI
 #endif
+#if defined(__i386__)
+# if !defined(_LIBCPP_MSVCRT)
+#  error WHP i386 libc++ provider did not select MSVCRT math ABI
+# endif
+static_assert(sizeof(void *) == 4, "WHP i386 PE pointer width mismatch");
+static_assert(sizeof(wchar_t) == 2, "WHP i386 PE wchar_t width mismatch");
+#endif
 static_assert(__is_same(std::size_t, decltype(sizeof(0))), "WHP libc++ std::size_t ABI mismatch");
 float whp_libcxx_math_probe(float value) {
     return std::sinh(value) + std::cosh(value) + std::tanh(value);
@@ -2611,6 +2628,11 @@ bool whp_libcxx_rtti_probe(whp_libcxx_rtti_left *object) {
     return object && dynamic_cast<whp_libcxx_rtti_right *>(object) &&
            typeid(*object) == typeid(whp_libcxx_rtti_derived);
 }
+int whp_libcxx_exception_probe() {
+    try { throw 7; }
+    catch (int value) { return value; }
+    return -1;
+}
 EOF
         "$LLVM_BIN/clang++" -target "$whp_libcxx_target" --no-default-config \
             -std=c++17 -fshort-wchar -fms-omit-default-lib \
@@ -2621,10 +2643,20 @@ EOF
             -isystem "$whp_libcxx_sdk_headers" \
             -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
             -c "$whp_libcxx_probe" -o "$whp_libcxx_build/.whp-libcxx-probe.o"
-        if [ "$whp_libcxx_arch" = i386 ] &&
-           "$whp_libcxx_nm" --undefined-only "$whp_libcxx_build/.whp-libcxx-probe.o" 2>/dev/null |
-           grep -E '(^|[[:space:]])_(sinhf|coshf|tanhf)$' >/dev/null; then
-            die "LLVM libc++ i386 math wrappers still require unavailable float hyperbolic CRT exports"
+        if [ "$whp_libcxx_arch" = i386 ]; then
+            whp_libcxx_i386_symbols=$("$whp_libcxx_nm" --undefined-only "$whp_libcxx_build/.whp-libcxx-probe.o") ||
+                die "failed to inspect LLVM libc++ i386 ABI symbols"
+            if printf '%s\n' "$whp_libcxx_i386_symbols" |
+               grep -E '(^|[[:space:]])_(sinhf|coshf|tanhf)$' >/dev/null; then
+                die "LLVM libc++ i386 math wrappers still require unavailable float hyperbolic CRT exports"
+            fi
+            for whp_libcxx_i386_symbol in \
+                _sinh _cosh _tanh ___RTDynamicCast ___CxxFrameHandler3 '__CxxThrowException@8'
+            do
+                printf '%s\n' "$whp_libcxx_i386_symbols" | grep -F "$whp_libcxx_i386_symbol" >/dev/null ||
+                    die "LLVM libc++ i386 ABI probe missing $whp_libcxx_i386_symbol"
+            done
+            unset whp_libcxx_i386_symbols whp_libcxx_i386_symbol
         fi
         rm -f "$whp_libcxx_probe" "$whp_libcxx_build/.whp-libcxx-probe.o"
 
@@ -2676,8 +2708,10 @@ prepare_libcxx_provider()
     do
         case "$whp_libcxx_arch" in
             i386)
-                WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
-                printf 'WHP libc++ i386: legacy provider retained until the LLVM i386 CRT math ABI probe passes\n' >&2
+                if [ "$WATER_LIBCXX_I386" != llvm ]; then
+                    WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
+                    printf 'WHP libc++ i386: legacy provider retained (set WATER_LIBCXX_I386=llvm to test LLVM)\n' >&2
+                fi
                 ;;
             arm)
                 WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1

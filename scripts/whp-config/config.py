@@ -95,6 +95,8 @@ OPTIONS = (
            'none', ('none', 'thin', 'full')),
     Option('WATER_LIBCXX', 'LLVM toolchain', 'PE libc++ provider', 'choice',
            'llvm', ('llvm', 'legacy')),
+    Option('WATER_LIBCXX_I386', 'LLVM toolchain', 'i386 PE libc++ (experimental)',
+           'choice', 'legacy', ('legacy', 'llvm')),
 
     Option('BOOTSTRAP_NINJA', 'Build behavior', 'Pinned WHP Ninja executor', 'choice',
            'auto', ('auto', 'y', 'n')),
