@@ -1498,8 +1498,15 @@ static void test_briefcase_registration(void)
     size = sizeof(value);
     status = RegQueryValueExW(key, NULL, NULL, &type, (BYTE *)value, &size);
     ok(status == ERROR_SUCCESS, "Cannot read Briefcase CLSID, status %ld.\n", status);
-    if (!status && type == REG_SZ && size <= sizeof(value))
-        ok(!lstrcmpiW(value, briefcase_clsid), "Unexpected Briefcase CLSID %s.\n", wine_dbgstr_w(value));
+    if (!status)
+    {
+        ok(type == REG_SZ && size >= sizeof(WCHAR) && !(size % sizeof(WCHAR))
+                && size <= sizeof(value) && !value[size / sizeof(WCHAR) - 1],
+                "Invalid Briefcase CLSID registry value, type %lu, size %lu.\n", type, size);
+        if (type == REG_SZ && size >= sizeof(WCHAR) && !(size % sizeof(WCHAR))
+                && size <= sizeof(value) && !value[size / sizeof(WCHAR) - 1])
+            ok(!lstrcmpiW(value, briefcase_clsid), "Unexpected Briefcase CLSID %s.\n", wine_dbgstr_w(value));
+    }
     RegCloseKey(key);
 
     status = RegOpenKeyExW(HKEY_CLASSES_ROOT, L"Briefcase\\ShellNew", 0, KEY_READ, &key);
@@ -1510,7 +1517,8 @@ static void test_briefcase_registration(void)
     }
     size = sizeof(value);
     status = RegQueryValueExW(key, L"Handler", NULL, &type, (BYTE *)value, &size);
-    if (!status && type == REG_SZ && size <= sizeof(value))
+    if (!status && type == REG_SZ && size >= sizeof(WCHAR) && !(size % sizeof(WCHAR))
+            && size <= sizeof(value) && !value[size / sizeof(WCHAR) - 1])
         trace("Briefcase ShellNew handler CLSID: %s\n", wine_dbgstr_w(value));
     else
         trace("Briefcase ShellNew handler is not available (status %ld).\n", status);
