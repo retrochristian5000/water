@@ -1602,8 +1602,77 @@ static void test_registry_mapping(void)
     ok(ret, "got error %lu\n", GetLastError());
 }
 
+
+/* WIN.INI uses the ordinary profile parser. Exercise a separate temporary
+ * file so testing [windows]/[Compatibility] never touches the real WIN.INI. */
+static void test_winini_quoted_values(void)
+{
+    static const char filename[] = ".\\testwine_quotes.ini";
+    static const WCHAR filenameW[] = L".\\testwine_quotes.ini";
+    static const char content[] =
+        "[windows]\r\n"
+        "load=\"ABC\"\r\n"
+        "run=\"\"\r\n"
+        "[Compatibility]\r\n"
+        "legacy='xyz'\r\n";
+    WCHAR wide[8], guarded_wide[3];
+    char ansi[8], guarded_ansi[3];
+    DWORD ret;
+
+    create_test_file(filename, content, sizeof(content) - 1);
+
+    /* The output size includes the terminator. A quoted three-character
+     * value must fit in four WCHARs after the surrounding quotes are removed. */
+    memset(wide, 0xcc, sizeof(wide));
+    ret = GetPrivateProfileStringW(L"windows", L"load", L"missing",
+                                   wide, 4, filenameW);
+    ok(ret == 3 && !lstrcmpW(wide, L"ABC"),
+       "exact-fit quoted value lost data: %lu, %s\n", ret, wine_dbgstr_w(wide));
+
+    memset(ansi, 0xcc, sizeof(ansi));
+    ret = GetPrivateProfileStringA("windows", "load", "missing",
+                                   ansi, 4, filename);
+    ok(ret == 3 && !strcmp(ansi, "ABC"),
+       "ANSI exact-fit quoted value lost data: %lu, %s\n", ret, debugstr_a(ansi));
+
+    ret = GetPrivateProfileStringW(L"windows", L"load", L"missing",
+                                   wide, 2, filenameW);
+    ok(ret == 1 && !lstrcmpW(wide, L"A"),
+       "small quoted read returned %lu, %s\n", ret, wine_dbgstr_w(wide));
+
+    /* A one-character destination for an empty quoted value must not write
+     * immediately before the caller's destination buffer. */
+    guarded_wide[0] = 0xaaaa;
+    guarded_wide[1] = 0xbbbb;
+    guarded_wide[2] = 0xcccc;
+    ret = GetPrivateProfileStringW(L"windows", L"run", L"fallback",
+                                   guarded_wide + 1, 1, filenameW);
+    ok(ret == 0 && guarded_wide[0] == 0xaaaa &&
+       guarded_wide[1] == 0 && guarded_wide[2] == 0xcccc,
+       "empty quoted value corrupted output: len %lu, guards %#x, %#x\n",
+       ret, guarded_wide[0], guarded_wide[2]);
+
+    guarded_ansi[0] = 'X';
+    guarded_ansi[1] = 'Y';
+    guarded_ansi[2] = 'Z';
+    ret = GetPrivateProfileStringA("windows", "run", "fallback",
+                                   guarded_ansi + 1, 1, filename);
+    ok(ret == 0 && guarded_ansi[0] == 'X' &&
+       guarded_ansi[1] == 0 && guarded_ansi[2] == 'Z',
+       "ANSI empty quoted value corrupted output: len %lu\n", ret);
+
+    ret = GetPrivateProfileStringW(L"Compatibility", L"legacy", L"missing",
+                                   wide, ARRAY_SIZE(wide), filenameW);
+    ok(ret == 3 && !lstrcmpW(wide, L"xyz"),
+       "single quoted compatibility value returned %lu, %s\n",
+       ret, wine_dbgstr_w(wide));
+
+    DeleteFileA(filename);
+}
+
 START_TEST(profile)
 {
+    test_winini_quoted_values();
     test_profile_int();
     test_profile_string();
     test_profile_sections();

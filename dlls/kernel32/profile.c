@@ -97,17 +97,23 @@ static const char hex[16] = "0123456789ABCDEF";
  */
 static void PROFILE_CopyEntry( LPWSTR buffer, LPCWSTR value, int len )
 {
-    WCHAR quote = '\0';
+    UINT value_len;
 
-    if(!buffer) return;
+    if (!buffer || len <= 0) return;
 
-    if (*value == '\'' || *value == '\"')
+    value_len = lstrlenW( value );
+    if (value_len >= 2 && (*value == '\'' || *value == '"') &&
+        value[value_len - 1] == *value)
     {
-        if (value[1] && (value[lstrlenW(value)-1] == *value)) quote = *value++;
+        /* Remove matched surrounding quotes before applying the caller's
+         * output limit. Truncating first can hide the closing quote or
+         * accidentally remove a real character from an exact-fit buffer. */
+        value++;
+        value_len -= 2;
     }
-
-    lstrcpynW( buffer, value, len );
-    if (quote && (len >= lstrlenW(value))) buffer[lstrlenW(buffer)-1] = '\0';
+    if (value_len >= (UINT)len) value_len = len - 1;
+    memmove( buffer, value, value_len * sizeof(WCHAR) );
+    buffer[value_len] = 0;
 }
 
 /* byte-swaps shorts in-place in a buffer. len is in WCHARs */
