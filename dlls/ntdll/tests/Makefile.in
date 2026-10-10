@@ -14,6 +14,7 @@ SOURCES = \
 	info.c \
 	large_int.c \
 	om.c \
+	pack.c \
 	path.c \
 	pipe.c \
 	port.c \
