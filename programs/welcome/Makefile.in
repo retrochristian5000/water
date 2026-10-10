@@ -1,0 +1,10 @@
+MODULE = welcome.exe
+IMPORTS = advapi32 shell32 user32
+
+EXTRADLLFLAGS = -mwindows
+
+VER_FILEDESCRIPTION_STR = "Welcome to Windows 98 compatibility frontend"
+
+SOURCES = \
+	main.c \
+	welcome.rc

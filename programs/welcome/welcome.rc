@@ -1,0 +1,21 @@
+/*
+ * Windows 98 Welcome compatibility frontend.
+ * Layout uses Win32 controls, not Microsoft multimedia assets.
+ */
+#include <windef.h>
+#include <winuser.h>
+#include "resource.h"
+
+IDD_WELCOME DIALOG 0, 0, 402, 242
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER
+CAPTION "Welcome to Windows 98"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT "Contents", -1, 12, 12, 117, 12
+    LISTBOX IDC_TOPICS, 12, 30, 117, 171, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY
+    LTEXT "Welcome", IDC_TITLE, 147, 15, 236, 21
+    LTEXT "Welcome to Windows 98. Choose a topic from Contents to learn more or begin an activity.", IDC_DESCRIPTION, 147, 47, 237, 132, SS_LEFT | WS_CHILD | WS_VISIBLE
+    CONTROL "Show this screen when Windows starts", IDC_STARTUP, "BUTTON", BS_AUTOCHECKBOX | WS_TABSTOP | WS_CHILD | WS_VISIBLE, 12, 213, 228, 12
+    DEFPUSHBUTTON "&Begin", IDC_BEGIN, 273, 208, 54, 20, WS_TABSTOP
+    PUSHBUTTON "&Close", IDCANCEL, 334, 208, 54, 20, WS_TABSTOP
+END
