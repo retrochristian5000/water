@@ -1476,6 +1476,47 @@ if (0)
     IShellFolder_Release(desktop);
 }
 
+/* Windows 98 and XP expose Briefcase through a special ShellNew handler.
+ * Capture the native registration where available. This is deliberately a
+ * read-only probe: shell32 must not synthesize an unsynchronized Briefcase
+ * merely because its CLSID is known. */
+static void test_briefcase_registration(void)
+{
+    static const WCHAR briefcase_clsid[] = L"{85BBD920-42A0-1069-A2E4-08002B30309D}";
+    WCHAR value[80];
+    DWORD size, type;
+    HKEY key;
+    LSTATUS status;
+
+    status = RegOpenKeyExW(HKEY_CLASSES_ROOT, L"Briefcase\\CLSID", 0, KEY_READ, &key);
+    if (status)
+    {
+        win_skip("Briefcase class is not installed (registry status %ld).\n", status);
+        return;
+    }
+
+    size = sizeof(value);
+    status = RegQueryValueExW(key, NULL, NULL, &type, (BYTE *)value, &size);
+    ok(status == ERROR_SUCCESS, "Cannot read Briefcase CLSID, status %ld.\n", status);
+    if (!status && type == REG_SZ && size <= sizeof(value))
+        ok(!lstrcmpiW(value, briefcase_clsid), "Unexpected Briefcase CLSID %s.\n", wine_dbgstr_w(value));
+    RegCloseKey(key);
+
+    status = RegOpenKeyExW(HKEY_CLASSES_ROOT, L"Briefcase\\ShellNew", 0, KEY_READ, &key);
+    if (status)
+    {
+        trace("No Briefcase ShellNew handler registered (status %ld).\n", status);
+        return;
+    }
+    size = sizeof(value);
+    status = RegQueryValueExW(key, L"Handler", NULL, &type, (BYTE *)value, &size);
+    if (!status && type == REG_SZ && size <= sizeof(value))
+        trace("Briefcase ShellNew handler CLSID: %s\n", wine_dbgstr_w(value));
+    else
+        trace("Briefcase ShellNew handler is not available (status %ld).\n", status);
+    RegCloseKey(key);
+}
+
 static void test_newmenu(void)
 {
     CMINVOKECOMMANDINFO invoke_info = {.cbSize = sizeof(CMINVOKECOMMANDINFO)};
@@ -1650,6 +1691,7 @@ START_TEST(shlview)
     test_SHCreateShellFolderView();
     test_SHCreateShellFolderViewEx();
     test_newmenu();
+    test_briefcase_registration();
     test_folder_flags();
 
     OleUninitialize();

@@ -184,6 +184,18 @@ static void add_menu_item(struct new_menu *menu, HMENU hmenu, const WCHAR *ext, 
     }
     RegCloseKey(ext_key);
 
+    /* Briefcase's ShellNew\Handler creates its tracking database and
+     * initializes the synchronization shell extension. Until Water can
+     * invoke that handler, a bare CreateDirectoryW would produce an
+     * unusable pseudo-Briefcase. Do not advertise handler-created folders
+     * as ordinary folders. */
+    if (!RegQueryValueExW(shellnew_key, L"Handler", NULL, NULL, NULL, NULL))
+    {
+        FIXME("ShellNew handler for %s is not implemented.\n", debugstr_w(ext));
+        RegCloseKey(shellnew_key);
+        return;
+    }
+
     if (RegQueryValueExW(shellnew_key, L"Directory", NULL, NULL, NULL, NULL))
     {
         FIXME("Ignoring non-directory item for extension %s.\n", debugstr_w(ext));
@@ -248,13 +260,13 @@ static HRESULT WINAPI context_menu_QueryContextMenu(IContextMenu3 *iface,
     submenu = CreatePopupMenu();
     new_string = shell_get_resource_string(IDS_NEW_MENU);
 
-    /* Native apparently hardcodes "Folder" and "Briefcase".
-     * The remaining entries come from scanning all extension registry keys
-     * (not the file types). Then, for e.g. .txt, it looks up a ShellNew key in
-     * both .txt/txtfile [possibly an accident] and .txt itself.
+    /* Native Windows offers Folder and Briefcase. Briefcase is backed by a
+     * ShellNew handler (syncui.dll), not just a filesystem directory. Keep
+     * the item absent until a functional handler is available, rather than
+     * creating a folder which falsely appears able to synchronize files.
      *
-     * FIXME: For now only implement Folder. We don't currently have any other
-     * builtin verbs anyway. */
+     * FIXME: implement the Briefcase handler and the remaining ShellNew
+     * creation types; Folder is currently the only supported operation. */
 
     add_menu_item(menu, submenu, L"Folder", min_id + 1);
 
