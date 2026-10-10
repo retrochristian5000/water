@@ -7413,6 +7413,59 @@ static void test_file_map_large_size(void)
     DeleteFileA(source);
 }
 
+static void test_query_allocated_ranges(void)
+{
+    FILE_ALLOCATED_RANGE_BUFFER query, range;
+    IO_STATUS_BLOCK io;
+    HANDLE file;
+    DWORD written;
+    char data[128];
+    NTSTATUS status;
+
+    if (!pNtFsControlFile)
+    {
+        win_skip("NtFsControlFile is unavailable\n");
+        return;
+    }
+
+    file = create_temp_file(0);
+    if (!file) return;
+    memset(data, 0x51, sizeof(data));
+    ok(WriteFile(file, data, sizeof(data), &written, NULL), "failed to write test file\n");
+    ok(FlushFileBuffers(file), "failed to flush test file\n");
+
+    query.FileOffset.QuadPart = 0;
+    query.Length.QuadPart = sizeof(data);
+    memset(&range, 0xcc, sizeof(range));
+    memset(&io, 0, sizeof(io));
+    status = pNtFsControlFile(file, NULL, NULL, NULL, &io, FSCTL_QUERY_ALLOCATED_RANGES,
+                             &query, sizeof(query), &range, sizeof(range));
+    if (status == STATUS_INVALID_DEVICE_REQUEST || status == STATUS_NOT_SUPPORTED)
+    {
+        win_skip("allocated-range query unsupported on this volume\n");
+        CloseHandle(file);
+        return;
+    }
+    ok(status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#lx\n", status);
+    if (status == STATUS_SUCCESS)
+    {
+        ok(io.Information == sizeof(range), "unexpected return size %Iu\n", io.Information);
+        ok(range.FileOffset.QuadPart == 0, "unexpected offset %I64d\n", range.FileOffset.QuadPart);
+        ok(range.Length.QuadPart >= (LONGLONG)sizeof(data), "unexpected length %I64d\n", range.Length.QuadPart);
+    }
+
+    query.FileOffset.QuadPart = -1;
+    status = pNtFsControlFile(file, NULL, NULL, NULL, &io, FSCTL_QUERY_ALLOCATED_RANGES,
+                             &query, sizeof(query), &range, sizeof(range));
+    ok(status == STATUS_INVALID_PARAMETER, "negative offset returned %#lx\n", status);
+
+    query.FileOffset.QuadPart = 0;
+    status = pNtFsControlFile(file, NULL, NULL, NULL, &io, FSCTL_QUERY_ALLOCATED_RANGES,
+                             &query, sizeof(query) - 1, &range, sizeof(range));
+    ok(status == STATUS_INVALID_PARAMETER, "short input returned %#lx\n", status);
+    CloseHandle(file);
+}
+
 START_TEST(file)
 {
     HMODULE hkernel32 = GetModuleHandleA("kernel32.dll");
@@ -7487,6 +7540,7 @@ START_TEST(file)
     test_file_mode();
     test_file_readonly_access();
     test_query_volume_information_file();
+    test_query_allocated_ranges();
     test_query_attribute_information_file();
     test_ioctl();
     test_query_ea();

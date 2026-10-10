@@ -6764,24 +6764,58 @@ NTSTATUS WINAPI NtFsControlFile( HANDLE handle, HANDLE event, PIO_APC_ROUTINE ap
         break;
 
     case FSCTL_GET_RETRIEVAL_POINTERS:
+        /* A Unix fd does not expose Windows volume LCNs. Do not fabricate
+         * physical extents for a mapped host filesystem. */
+        FIXME("FSCTL_GET_RETRIEVAL_POINTERS: no physical cluster mapping\n");
+        status = STATUS_NOT_SUPPORTED;
+        break;
+
+    case FSCTL_QUERY_ALLOCATED_RANGES:
     {
-        RETRIEVAL_POINTERS_BUFFER *buffer = (RETRIEVAL_POINTERS_BUFFER *)out_buffer;
+        const FILE_ALLOCATED_RANGE_BUFFER *query = in_buffer;
+        FILE_ALLOCATED_RANGE_BUFFER *range = out_buffer;
+        struct stat st;
+        LONGLONG end;
 
-        FIXME("stub: FSCTL_GET_RETRIEVAL_POINTERS\n");
-
-        if (out_size >= sizeof(RETRIEVAL_POINTERS_BUFFER))
+        if (!query || in_size < sizeof(*query) || query->FileOffset.QuadPart < 0 ||
+            query->Length.QuadPart < 0 ||
+            query->Length.QuadPart > INT64_MAX - query->FileOffset.QuadPart)
         {
-            buffer->ExtentCount                 = 1;
-            buffer->StartingVcn.QuadPart        = 1;
-            buffer->Extents[0].NextVcn.QuadPart = 0;
-            buffer->Extents[0].Lcn.QuadPart     = 0;
-            size = sizeof(RETRIEVAL_POINTERS_BUFFER);
-            status = STATUS_SUCCESS;
+            status = STATUS_INVALID_PARAMETER;
+            break;
         }
-        else
+        if (((uintptr_t)query & 3) || (range && ((uintptr_t)range & 3)))
+        {
+            status = STATUS_INVALID_USER_BUFFER;
+            break;
+        }
+        if (!range || out_size < sizeof(*range))
         {
             status = STATUS_BUFFER_TOO_SMALL;
+            break;
         }
+
+        status = server_get_unix_fd( handle, 0, &fd, &needs_close, NULL, NULL );
+        if (status) break;
+        if (fstat( fd, &st ) == -1)
+            status = errno_to_status( errno );
+        else if (!S_ISREG(st.st_mode))
+            status = STATUS_INVALID_PARAMETER;
+        else
+        {
+            /* A conservative "possibly allocated" range works on ordinary
+             * host filesystems without inventing NTFS physical extents. */
+            end = query->FileOffset.QuadPart + query->Length.QuadPart;
+            if (end > st.st_size) end = st.st_size;
+            if (end > query->FileOffset.QuadPart)
+            {
+                range->FileOffset = query->FileOffset;
+                range->Length.QuadPart = end - query->FileOffset.QuadPart;
+                size = sizeof(*range);
+            }
+            status = STATUS_SUCCESS;
+        }
+        if (needs_close) close( fd );
         break;
     }
 
