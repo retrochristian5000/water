@@ -1291,19 +1291,42 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
     struct strarray args;
     int use_ar = 0, use_llvm_ar = 0;
 
-    if (!create || !is_llvm_pe_target( target ) || target.cpu == CPU_POWERPC)
+    /* Explicit COFF format and a symbol index let LLD select both native
+     * objects and bitcode archive members before ThinLTO runs.  Keep the
+     * special ARM64EC hybrid archive layout owned by lld-link /lib. */
+    if (create && is_llvm_pe_target( target ) &&
+        target.cpu != CPU_POWERPC && target.cpu != CPU_ARM64EC)
+    {
+        const char *ar_name;
+
+        args = find_optional_tool( "ar", ar_names );
+        if (args.count)
+        {
+            ar_name = get_basename( args.str[0] );
+            use_llvm_ar = !strncmp( ar_name, "llvm-ar", 7 ) || !!strstr( ar_name, "-llvm-ar" );
+            if (use_llvm_ar)
+            {
+                use_ar = 1;
+                strarray_add( &args, "--format=coff" );
+                strarray_add( &args, "rcs" );
+                strarray_add( &args, output_name );
+            }
+        }
+    }
+
+    if (!use_ar && (!create || !is_llvm_pe_target( target ) || target.cpu == CPU_POWERPC))
     {
         const char *ar_name;
 
         args = find_tool( "ar", ar_names );
         ar_name = get_basename( args.str[0] );
         use_ar = 1;
-        use_llvm_ar = !strncmp( ar_name, "llvm-ar", 7 ) || strstr( ar_name, "-llvm-ar" );
+        use_llvm_ar = !strncmp( ar_name, "llvm-ar", 7 ) || !!strstr( ar_name, "-llvm-ar" );
         strarray_add( &args, create ? (use_llvm_ar ? "rcs" : "rc")
                                     : (use_llvm_ar ? "rs" : "r") );
         strarray_add( &args, output_name );
     }
-    else
+    else if (!use_ar)
     {
         args = find_link_tool();
         strarray_add( &args, "/lib" );
