@@ -135,7 +135,7 @@ static void SYSTEM_StopTicks(void)
 DWORD WINAPI InquireSystem16( WORD code, WORD arg )
 {
     WORD drivetype;
-    WCHAR root[3];
+    WCHAR root[4];
 
     switch(code)
     {
@@ -143,9 +143,13 @@ DWORD WINAPI InquireSystem16( WORD code, WORD arg )
         return SYS_TIMER_RATE;
 
     case 1:  /* Get drive type */
+        /* Win16 passes a zero-based DOS drive index.  GetDriveTypeW
+         * requires a root such as C:\\, not the drive-relative C:. */
+        if (arg >= 26) return MAKELONG( DRIVE_UNKNOWN, DRIVE_UNKNOWN );
         root[0] = 'A' + arg;
         root[1] = ':';
-        root[2] = 0;
+        root[2] = '\\';
+        root[3] = 0;
         drivetype = GetDriveTypeW( root );
         if (drivetype == DRIVE_CDROM) drivetype = DRIVE_REMOTE;
         else if (drivetype == DRIVE_NO_ROOT_DIR) drivetype = DRIVE_UNKNOWN;
@@ -166,6 +170,12 @@ DWORD WINAPI InquireSystem16( WORD code, WORD arg )
 WORD WINAPI CreateSystemTimer16( WORD rate, FARPROC16 proc )
 {
     int i;
+
+    /* A null Win16 callback would occupy a timer count without occupying
+     * a slot (which is marked by callback16), making it impossible to
+     * unregister and eventually exhausting the timer pool. */
+    if (!proc) return 0;
+
     for (i = 0; i < NB_SYS_TIMERS; i++)
         if (!SYS_Timers[i].callback16)  /* Found one */
         {
