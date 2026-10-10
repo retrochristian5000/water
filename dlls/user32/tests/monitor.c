@@ -2650,6 +2650,34 @@ static void _check_display_dc(INT line, HDC hdc, const DEVMODEA *dm, BOOL allow_
     }
 }
 
+/* Packed RGB24 and XRGB32 modes have different dmBitsPerPel values.
+ * If a driver advertises RGB24, verify the exact mode is accepted without
+ * actually changing the user's display settings. */
+static void test_24bpp_display_mode(void)
+{
+    DEVMODEA mode = {.dmSize = sizeof(mode)};
+    DWORD index;
+    LONG result;
+    BOOL found = FALSE;
+
+    for (index = 0; EnumDisplaySettingsA(NULL, index, &mode); ++index)
+    {
+        if (mode.dmBitsPerPel != 24) continue;
+        found = TRUE;
+        ok(mode.dmFields & DM_BITSPERPEL, "24-bpp mode lacks DM_BITSPERPEL.\n");
+        ok(mode.dmPelsWidth && mode.dmPelsHeight,
+                "24-bpp mode has an invalid resolution.\n");
+
+        result = ChangeDisplaySettingsExA(NULL, &mode, NULL, CDS_TEST, NULL);
+        ok(result == DISP_CHANGE_SUCCESSFUL,
+                "Advertised 24-bpp mode %lux%lu failed CDS_TEST: %ld.\n",
+                mode.dmPelsWidth, mode.dmPelsHeight, result);
+        break;
+    }
+
+    if (!found) skip("No 24-bpp mode is advertised by this display driver.\n");
+}
+
 static void test_display_dc(void)
 {
     static const INT bpps[] = {1, 4, 8, 16, 24, 32};
@@ -4166,5 +4194,6 @@ START_TEST(monitor)
     test_work_area();
     test_display_config();
     test_handles();
+    test_24bpp_display_mode();
     test_display_dc();
 }

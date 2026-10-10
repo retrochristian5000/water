@@ -811,7 +811,7 @@ LONG macdrv_ChangeDisplaySettings(LPDEVMODEW displays, LPCWSTR primary_name, HWN
 static DEVMODEW *display_get_modes(CGDirectDisplayID display_id, int *modes_count)
 {
     int default_bpp = get_default_bpp(), synth_count = 0, count, i;
-    BOOL modes_has_8bpp = FALSE, modes_has_16bpp = FALSE;
+    BOOL modes_has_8bpp = FALSE, modes_has_16bpp = FALSE, modes_has_24bpp = FALSE;
     struct display_mode_descriptor *desc;
     DEVMODEW *devmodes;
     CFArrayRef modes;
@@ -821,7 +821,7 @@ static DEVMODEW *display_get_modes(CGDirectDisplayID display_id, int *modes_coun
         return NULL;
 
     count = CFArrayGetCount(modes);
-    for (i = 0; i < count && !(modes_has_8bpp && modes_has_16bpp); i++)
+    for (i = 0; i < count && !(modes_has_8bpp && modes_has_16bpp && modes_has_24bpp); i++)
     {
         CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(modes, i);
         int bpp = display_mode_bits_per_pixel(mode);
@@ -829,9 +829,12 @@ static DEVMODEW *display_get_modes(CGDirectDisplayID display_id, int *modes_coun
             modes_has_8bpp = TRUE;
         else if (bpp == 16)
             modes_has_16bpp = TRUE;
+        else if (bpp == 24)
+            modes_has_24bpp = TRUE;
     }
 
-    if (!(devmodes = calloc(count * 3, sizeof(DEVMODEW))))
+    /* Native CoreGraphics modes and up to three legacy-bpp aliases. */
+    if (!(devmodes = calloc(count * 4, sizeof(DEVMODEW))))
     {
         CFRelease(modes);
         return NULL;
@@ -854,6 +857,18 @@ static DEVMODEW *display_get_modes(CGDirectDisplayID display_id, int *modes_coun
         }
     }
     free_display_mode_descriptor(desc);
+
+    /* Some legacy Windows applications require dmBitsPerPel == 24.
+     * A 32-bpp CoreGraphics framebuffer can display the same RGB values,
+     * so expose a logical 24-bpp mode without claiming packed host pixels.
+     * Never synthesize 24 bpp on a lower-depth or HDR-only framebuffer. */
+    for (i = 0; default_bpp == 32 && !modes_has_24bpp && i < count; i++)
+    {
+        if (devmodes[i].dmBitsPerPel != default_bpp) continue;
+        devmodes[count + synth_count] = devmodes[i];
+        devmodes[count + synth_count].dmBitsPerPel = 24;
+        synth_count++;
+    }
 
     for (i = 0; !modes_has_16bpp && i < count; i++)
     {
