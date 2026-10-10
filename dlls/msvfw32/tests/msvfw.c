@@ -798,11 +798,97 @@ static void test_ICGetDisplayFormat(void)
     ok(ret, "ICRemove failed\n");
 }
 
+/*
+ * VDOWave 2.0 (VDOM) and 3.0 (VDOW) are separate VfW handlers.  Exercise
+ * codec dispatch with mock callbacks rather than claim that Water contains
+ * VDONet's proprietary wavelet decoder or install a fake system codec.
+ */
+static LRESULT CALLBACK vdowave_test_proc(DWORD_PTR id, HDRVR driver, UINT msg,
+                                          LPARAM lparam1, LPARAM lparam2)
+{
+    const DWORD vdom = mmioFOURCC('V','D','O','M');
+    const DWORD vdow = mmioFOURCC('V','D','O','W');
+
+    switch (msg)
+    {
+    case DRV_LOAD:
+    case DRV_ENABLE:
+    case DRV_DISABLE:
+    case DRV_FREE:
+    case DRV_CLOSE:
+        return 1;
+    case DRV_OPEN:
+    {
+        const ICOPEN *open = (const ICOPEN *)lparam2;
+        if (!open || open->fccType != ICTYPE_VIDEO) return 0;
+        if (open->fccHandler == vdom) return 1;
+        if (open->fccHandler == vdow) return 2;
+        return 0;
+    }
+    case ICM_GETINFO:
+    {
+        ICINFO *info = (ICINFO *)lparam1;
+        if (!info || lparam2 < sizeof(*info)) return 0;
+        memset(info, 0, sizeof(*info));
+        info->dwSize = sizeof(*info);
+        info->fccType = ICTYPE_VIDEO;
+        info->fccHandler = id == 1 ? vdom : id == 2 ? vdow : 0;
+        return sizeof(*info);
+    }
+    case ICM_DECOMPRESS_QUERY:
+        return ICERR_BADFORMAT;  /* deliberately no decoder in mock */
+    default:
+        return ICERR_UNSUPPORTED;
+    }
+}
+
+static void test_vdowave_fourcc_dispatch(void)
+{
+    const DWORD vdom = mmioFOURCC('V','D','O','M');
+    const DWORD vdow = mmioFOURCC('V','D','O','W');
+    const DWORD handlers[] = {vdom, vdow};
+    HIC h;
+    ICINFO info;
+    unsigned int i;
+    BOOL installed;
+
+    installed = ICInstall(ICTYPE_VIDEO, vdom, (LPARAM)vdowave_test_proc, NULL,
+                          ICINSTALL_FUNCTION);
+    ok(installed, "failed to install temporary VDOM function\n");
+    if (!installed) return;
+    installed = ICInstall(ICTYPE_VIDEO, vdow, (LPARAM)vdowave_test_proc, NULL,
+                          ICINSTALL_FUNCTION);
+    ok(installed, "failed to install temporary VDOW function\n");
+    if (!installed)
+    {
+        ICRemove(ICTYPE_VIDEO, vdom, 0);
+        return;
+    }
+    for (i = 0; i < ARRAY_SIZE(handlers); i++)
+    {
+        h = ICOpen(ICTYPE_VIDEO, handlers[i], ICMODE_DECOMPRESS);
+        ok(h != NULL, "could not open mock handler %08lx\n", handlers[i]);
+        if (!h) continue;
+        memset(&info, 0, sizeof(info));
+        ok(ICSendMessage(h, ICM_GETINFO, (DWORD_PTR)&info, sizeof(info)) == sizeof(info),
+           "ICM_GETINFO failed for handler %08lx\n", handlers[i]);
+        ok(info.fccType == ICTYPE_VIDEO && info.fccHandler == handlers[i],
+           "FOURCC dispatch mixed VDOWave variants: got %08lx, expected %08lx\n",
+           info.fccHandler, handlers[i]);
+        ok(ICSendMessage(h, ICM_DECOMPRESS_QUERY, 0, 0) == ICERR_BADFORMAT,
+           "mock unexpectedly advertised decompression\n");
+        ok(ICClose(h) == ICERR_OK, "ICClose failed\n");
+    }
+    ok(ICRemove(ICTYPE_VIDEO, vdow, 0), "failed to remove mock VDOW function\n");
+    ok(ICRemove(ICTYPE_VIDEO, vdom, 0), "failed to remove mock VDOM function\n");
+}
+
 START_TEST(msvfw)
 {
     test_OpenCase();
     test_Locate();
     test_ICSeqCompress();
     test_ICInfo();
+    test_vdowave_fourcc_dispatch();
     test_ICGetDisplayFormat();
 }
