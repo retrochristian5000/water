@@ -146,7 +146,11 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
 
 HRESULT WINAPI DllCanUnloadNow(void)
 {
-    return !live_factories && !server_locks ? S_OK : S_FALSE;
+    /* Both counts are maintained with Interlocked operations on other threads.
+     * Use atomic reads as well; unsynchronized loads race with factory/lock
+     * changes and can incorrectly report that the COM server is idle. */
+    return InterlockedCompareExchange(&live_factories, 0, 0) ||
+            InterlockedCompareExchange(&server_locks, 0, 0) ? S_FALSE : S_OK;
 }
 
 HRESULT WINAPI DllRegisterServer(void)
