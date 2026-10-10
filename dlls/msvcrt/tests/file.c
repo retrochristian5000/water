@@ -2572,6 +2572,99 @@ static void test_stat(void)
     ok(buf.st_rdev == 2, "st_rdev = %d\n", buf.st_rdev);
 }
 
+
+#ifdef _WIN64
+/* On Windows ARM64 and x86_64, legacy MSVCRT _stat/_fstat/_wstat
+ * exports use 64-bit time with 32-bit file size (_stat64i32).
+ * The corresponding -i64 entry points use the full _stat64 layout.
+ * Use explicit GetProcAddress rather than compiler macro aliases.
+ */
+static void test_stat_win64_export_abi(void)
+{
+    static const char path[] = "stat_abi.tst";
+    static const WCHAR wide_path[] = L"stat_abi.tst";
+    typedef int (__cdecl *fstat32_fn)(int, struct _stat64i32 *);
+    typedef int (__cdecl *fstat64_fn)(int, struct _stat64 *);
+    typedef int (__cdecl *stat32_fn)(const char *, struct _stat64i32 *);
+    typedef int (__cdecl *stat64_fn)(const char *, struct _stat64 *);
+    typedef int (__cdecl *wstat32_fn)(const WCHAR *, struct _stat64i32 *);
+    typedef int (__cdecl *wstat64_fn)(const WCHAR *, struct _stat64 *);
+    HMODULE crt = GetModuleHandleA("msvcrt.dll");
+    fstat32_fn p_fstat = (void *)GetProcAddress(crt, "_fstat");
+    fstat64_fn p_fstati64 = (void *)GetProcAddress(crt, "_fstati64");
+    stat32_fn p_stat = (void *)GetProcAddress(crt, "_stat");
+    stat64_fn p_stati64 = (void *)GetProcAddress(crt, "_stati64");
+    wstat32_fn p_wstat = (void *)GetProcAddress(crt, "_wstat");
+    wstat64_fn p_wstati64 = (void *)GetProcAddress(crt, "_wstati64");
+    fstat64_fn p_fstat64 = (void *)GetProcAddress(crt, "_fstat64");
+    struct { struct _stat64i32 stat; unsigned int guard; } narrow;
+    struct { struct _stat64 stat; unsigned int guard; } wide;
+    int fd, ret;
+
+    if (!p_fstat || !p_fstati64 || !p_stat || !p_stati64 ||
+        !p_wstat || !p_wstati64 || !p_fstat64)
+    {
+        skip("Win64 MSVCRT stat ABI exports not available\n");
+        return;
+    }
+
+    fd = open(path, O_CREAT | O_WRONLY | O_TRUNC | O_BINARY, _S_IREAD | _S_IWRITE);
+    if (fd < 0)
+    {
+        skip("could not create stat ABI test file\n");
+        return;
+    }
+    ret = write(fd, "hello", 5);
+    ok(ret == 5, "failed to populate stat ABI test file: %d\n", ret);
+
+    memset(&narrow, 0xcc, sizeof(narrow));
+    narrow.guard = 0xdeadbeef;
+    ret = p_fstat(fd, &narrow.stat);
+    ok(!ret && narrow.stat.st_size == 5 && narrow.guard == 0xdeadbeef,
+       "_fstat must write _stat64i32, ret %d, size %ld, guard %#x\n",
+       ret, narrow.stat.st_size, narrow.guard);
+
+    memset(&wide, 0xcc, sizeof(wide));
+    wide.guard = 0xdeadbeef;
+    ret = p_fstati64(fd, &wide.stat);
+    ok(!ret && wide.stat.st_size == 5 && wide.guard == 0xdeadbeef,
+       "_fstati64 must write _stat64, ret %d, guard %#x\n", ret, wide.guard);
+
+    memset(&wide, 0xcc, sizeof(wide));
+    wide.guard = 0xdeadbeef;
+    ret = p_fstat64(fd, &wide.stat);
+    ok(!ret && wide.stat.st_size == 5 && wide.guard == 0xdeadbeef,
+       "_fstat64 failed, ret %d, guard %#x\n", ret, wide.guard);
+    close(fd);
+
+    memset(&narrow, 0xcc, sizeof(narrow));
+    narrow.guard = 0xdeadbeef;
+    ret = p_stat(path, &narrow.stat);
+    ok(!ret && narrow.stat.st_size == 5 && narrow.guard == 0xdeadbeef,
+       "_stat must write _stat64i32, ret %d, guard %#x\n", ret, narrow.guard);
+
+    memset(&wide, 0xcc, sizeof(wide));
+    wide.guard = 0xdeadbeef;
+    ret = p_stati64(path, &wide.stat);
+    ok(!ret && wide.stat.st_size == 5 && wide.guard == 0xdeadbeef,
+       "_stati64 must write _stat64, ret %d, guard %#x\n", ret, wide.guard);
+
+    memset(&narrow, 0xcc, sizeof(narrow));
+    narrow.guard = 0xdeadbeef;
+    ret = p_wstat(wide_path, &narrow.stat);
+    ok(!ret && narrow.stat.st_size == 5 && narrow.guard == 0xdeadbeef,
+       "_wstat must write _stat64i32, ret %d, guard %#x\n", ret, narrow.guard);
+
+    memset(&wide, 0xcc, sizeof(wide));
+    wide.guard = 0xdeadbeef;
+    ret = p_wstati64(wide_path, &wide.stat);
+    ok(!ret && wide.stat.st_size == 5 && wide.guard == 0xdeadbeef,
+       "_wstati64 must write _stat64, ret %d, guard %#x\n", ret, wide.guard);
+
+    remove(path);
+}
+#endif
+
 static const char* pipe_string="Hello world";
 
 /* How many messages to transfer over the pipe */
@@ -3280,6 +3373,9 @@ START_TEST(file)
     test_file_write_read();
     test_chsize();
     test_stat();
+#ifdef _WIN64
+    test_stat_win64_export_abi();
+#endif
     test_unlink();
 
     /* testing stream I/O */
