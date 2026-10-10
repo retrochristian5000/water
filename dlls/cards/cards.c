@@ -252,12 +252,132 @@ BOOL WINAPI cdtDraw(HDC hdc, int x, int y, int card, int mode, DWORD color)
  * frame by one, until cdtAnimate returns FALSE (to indicate that we
  * have gone through all frames of animation).
  */
+/*
+ * The historical function paints a small frame onto an already drawn card
+ * back.  The original animated bitmap resources are not present in Water;
+ * these compact GDI drawings are deliberate substitute artwork, not a
+ * pixel-accurate reproduction of the Windows 98 sprites.
+ *
+ * Frame timing belongs to the caller.  Four finite, independently
+ * renderable frames keep the API useful without a background timer.
+ */
+static BOOL fill_animation_rect(HDC hdc, int left, int top, int right, int bottom, COLORREF color)
+{
+    RECT rect = {left, top, right, bottom};
+    HBRUSH brush = CreateSolidBrush(color);
+    BOOL ret;
+
+    if (!brush) return FALSE;
+    ret = FillRect(hdc, &rect, brush) != 0;
+    DeleteObject(brush);
+    return ret;
+}
+
 BOOL WINAPI cdtAnimate(HDC hdc, int cardback, int x, int y, int frame)
 {
-	TRACE("(%p, %d, %d, %d, %d)\n", hdc, cardback, x, y, frame);
-	FIXME("Implement me.\n");
+    int left, top, right, bottom, width, height, saved, offset;
+    BOOL ret = TRUE;
 
-	return FALSE;
+    TRACE("(%p, %d, %d, %d, %d)\n", hdc, cardback, x, y, frame);
+
+    if (!hdc || frame < 0 || frame >= 4 || cardWidth <= 0 || cardHeight <= 0)
+        return FALSE;
+
+    /* Only the four historically animated card backs have replacement
+     * frames.  A nonanimated back must not be modified by this export. */
+    if (cardback != CARD_BACK_ROBOT && cardback != CARD_BACK_CASTLE &&
+        cardback != CARD_BACK_ISLAND && cardback != CARD_BACK_CARDHAND)
+        return FALSE;
+    if (!cardBitmaps[cardback]) return FALSE;  /* cdtInit() is required. */
+
+    left = x + cardWidth / 4;
+    right = x + 3 * cardWidth / 4;
+    top = y + cardHeight / 4;
+    bottom = y + 3 * cardHeight / 4;
+    width = right - left;
+    height = bottom - top;
+    if (width < 12 || height < 12) return FALSE;
+
+    saved = SaveDC(hdc);
+    if (!saved) return FALSE;
+
+    switch (cardback)
+    {
+    case CARD_BACK_ROBOT:
+        /* Alternating indicator lights and a four-position gauge. */
+        ret = fill_animation_rect(hdc, left, top, right, bottom, RGB(42, 48, 78));
+        ret = fill_animation_rect(hdc, left + width / 6, top + height / 4,
+                                  left + width / 2 - 2, top + height / 2,
+                                  frame & 1 ? RGB(250, 57, 57) : RGB(105, 35, 35)) && ret;
+        ret = fill_animation_rect(hdc, left + width / 2 + 2, top + height / 4,
+                                  right - width / 6, top + height / 2,
+                                  frame & 1 ? RGB(105, 35, 35) : RGB(57, 246, 112)) && ret;
+        ret = fill_animation_rect(hdc, left + width / 6 + frame * width / 6,
+                                  top + 3 * height / 4, left + width / 6 + frame * width / 6 + 3,
+                                  bottom - height / 8, RGB(255, 215, 0)) && ret;
+        break;
+
+    case CARD_BACK_CASTLE:
+        /* Stylized bat travelling across a night sky. */
+        ret = fill_animation_rect(hdc, left, top, right, bottom, RGB(81, 87, 150));
+        offset = (width - 10) * frame / 3;
+        ret = fill_animation_rect(hdc, left + offset, top + height / 3,
+                                  left + offset + 10, top + height / 3 + 2, RGB(22, 21, 43)) && ret;
+        ret = fill_animation_rect(hdc, left + offset + 4, top + height / 3 + 2,
+                                  left + offset + 6, top + height / 3 + 5, RGB(22, 21, 43)) && ret;
+        break;
+
+    case CARD_BACK_ISLAND:
+        /* Sun and alternating sunglasses / tongue on the beach back. */
+        ret = fill_animation_rect(hdc, left, top, right, bottom, RGB(110, 205, 240));
+        {
+            HBRUSH sun = CreateSolidBrush(RGB(255, 221, 66));
+            if (!sun) ret = FALSE;
+            else
+            {
+                HGDIOBJ previous = SelectObject(hdc, sun);
+                if (!previous || previous == HGDI_ERROR) ret = FALSE;
+                else
+                {
+                    ret = Ellipse(hdc, left + width / 5, top + height / 6,
+                                  right - width / 5, top + height / 6 + width / 2) && ret;
+                    SelectObject(hdc, previous);
+                }
+                DeleteObject(sun);
+            }
+        }
+        if (frame == 1)
+            ret = fill_animation_rect(hdc, left + width / 3, top + height / 2,
+                                      right - width / 3, top + height / 2 + 2,
+                                      RGB(40, 40, 40)) && ret;
+        if (frame >= 2)
+        {
+            ret = fill_animation_rect(hdc, left + width / 3, top + height / 3,
+                                      left + width / 2, top + height / 3 + 3, RGB(12, 32, 49)) && ret;
+            ret = fill_animation_rect(hdc, left + width / 2 + 1, top + height / 3,
+                                      right - width / 3, top + height / 3 + 3, RGB(12, 32, 49)) && ret;
+        }
+        if (frame == 3)
+            ret = fill_animation_rect(hdc, left + width / 2 - 2, top + height / 2,
+                                      left + width / 2 + 2, top + height / 2 + 5,
+                                      RGB(235, 58, 95)) && ret;
+        break;
+
+    case CARD_BACK_CARDHAND:
+        /* A card is progressively drawn upward from a sleeve. */
+        ret = fill_animation_rect(hdc, left, top, right, bottom, RGB(45, 99, 86));
+        offset = (3 - frame) * height / 8;
+        ret = fill_animation_rect(hdc, left + width / 3, top + height / 8 + offset,
+                                  right - width / 3, bottom - height / 6,
+                                  RGB(244, 237, 217)) && ret;
+        ret = fill_animation_rect(hdc, left + width / 4, bottom - height / 3,
+                                  right - width / 4, bottom - height / 7,
+                                  RGB(108, 60, 47)) && ret;
+        break;
+    }
+
+    RestoreDC(hdc, saved);
+    return ret;
 }
 
 
