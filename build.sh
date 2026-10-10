@@ -397,12 +397,50 @@ validate_configure_rules()
     fi
 }
 
+# Diagnose malformed Wine Makefile.in SOURCES continuations before
+# config.status invokes makedep. A double trailing backslash becomes a
+# literal "\" input filename after makedep joins the next line.
+validate_makefile_source_continuations()
+{
+    set --
+    while IFS= read -r whp_makefile
+    do
+        [ -f "$SOURCE_DIR/$whp_makefile" ] || continue
+        set -- "$@" "$SOURCE_DIR/$whp_makefile"
+    done <<EOF
+$(sed -n 's/^WINE_CONFIG_MAKEFILE(\([^)]*\)).*/\1\/Makefile.in/p' "$SOURCE_DIR/configure.ac")
+EOF
+
+    [ "$#" -gt 0 ] || return 0
+    if ! awk '
+        /^[[:space:]]*SOURCES[[:space:]]*[+:?]?=/ { in_sources = 1 }
+        in_sources {
+            if (match($0, /\\+[[:blank:]]*$/)) {
+                suffix = substr($0, RSTART, RLENGTH)
+                slash_run = suffix
+                sub(/[[:blank:]]+$/, "", slash_run)
+                if (length(slash_run) != 1 || suffix != slash_run) {
+                    printf "%s:%d: malformed SOURCES continuation (expected one trailing backslash): %s\n", FILENAME, FNR, $0 > "/dev/stderr"
+                    failed = 1
+                }
+            } else {
+                in_sources = 0
+            }
+        }
+        END { exit failed ? 1 : 0 }
+    ' "$@"
+    then
+        die "fix malformed Makefile.in SOURCES continuation(s) before running config.status"
+    fi
+}
+
 generate_configure()
 {
     command -v "$AUTOCONF" >/dev/null 2>&1 ||
         die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
 
     validate_configure_rules
+    validate_makefile_source_continuations
 
     if [ -f "$SOURCE_DIR/configure" ] && [ -f "$AUTOCONF_STATE_FILE" ]; then
         current=$(autoconf_state_signature)
