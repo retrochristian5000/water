@@ -18,6 +18,7 @@
 
 #include <stdlib.h>
 #include "windef.h"
+#include "win87em_fpu.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);
@@ -55,7 +56,11 @@ static void WIN87_ClearCtrlWord( CONTEXT *context )
 {
     context->Eax &= ~0xffff;  /* set AX to 0 */
     if (Installed)
+    {
+#if defined(__i386__) || defined(__x86_64__)
         __asm__("fclex");
+#endif
+    }
     StatusWord_2 = 0;
 }
 
@@ -65,15 +70,18 @@ static void WIN87_SetCtrlWord( CONTEXT *context )
     context->Eax &= ~0x00c3;
     if (Installed) {
         CtrlWord_Internal = LOWORD(context->Eax);
+#if defined(__i386__) || defined(__x86_64__)
         __asm__("wait;fldcw %0" : : "m" (CtrlWord_Internal));
+#endif
     }
 }
 
 static void WIN87_Init( CONTEXT *context )
 {
     if (Installed) {
+#if defined(__i386__) || defined(__x86_64__)
         __asm__("fninit");
-        __asm__("fninit");
+#endif
     }
     context->Eax = (context->Eax & ~0xffff) | 0x1332;
     WIN87_SetCtrlWord(context);
@@ -130,42 +138,39 @@ void WINAPI __fpMath( CONTEXT *context )
         context->Eax = (context->Eax & ~0xffff) | CtrlWord_1;
         break;
 
-    case 6: /* round top of stack to integer using method AX & 0x0C00 */
-        /* returns current controlword */
+    case 6: /* Round ST0 without popping, using AX rounding bits. */
+        if (!win87em_round_st0(LOWORD(context->Eax)))
         {
-            WORD save,mask;
-            /* I don't know much about asm() programming. This could be
-             * wrong.
-             */
-           __asm__ __volatile__("fstcw %0;wait" : "=m" (save) : : "memory");
-           __asm__ __volatile__("fstcw %0;wait" : "=m" (mask) : : "memory");
-           __asm__ __volatile__("orw $0xC00,%0" : "=m" (mask) : : "memory");
-           __asm__ __volatile__("fldcw %0;wait" : : "m" (mask));
-           __asm__ __volatile__("frndint");
-           __asm__ __volatile__("fldcw %0" : : "m" (save));
+            WARN("x87 rounding requires an x86 host FPU context\n");
+            context->Eax = (context->Eax & ~0xffff) | 0xffff;
+            context->Edx = (context->Edx & ~0xffff) | 0xffff;
         }
         break;
 
-    case 7: /* POP top of stack as integer into DX:AX */
-        /* IN: AX&0x0C00 rounding protocol */
-        /* OUT: DX:AX variable popped */
+    case 7: /* Pop ST0 as signed 32-bit integer in DX:AX. */
         {
-            DWORD dw=0;
-            /* I don't know much about asm() programming. This could be
-             * wrong.
-             */
-/* FIXME: could someone who really understands asm() fix this please? --AJ */
-/*            __asm__("fistp %0;wait" : "=m" (dw) : : "memory"); */
-            TRACE("On top of stack was %ld\n",dw);
-            context->Eax = (context->Eax & ~0xffff) | LOWORD(dw);
-            context->Edx = (context->Edx & ~0xffff) | HIWORD(dw);
+            int32_t value;
+            if (win87em_pop_int32(LOWORD(context->Eax), &value))
+            {
+                DWORD bits = (DWORD)value;
+                context->Eax = (context->Eax & ~0xffff) | LOWORD(bits);
+                context->Edx = (context->Edx & ~0xffff) | HIWORD(bits);
+            }
+            else
+            {
+                WARN("x87 integer pop requires an x86 host FPU context\n");
+                context->Eax = (context->Eax & ~0xffff) | 0xffff;
+                context->Edx = (context->Edx & ~0xffff) | 0xffff;
+            }
         }
         break;
 
     case 8: /* restore internal status words from emulator status word */
         context->Eax &= ~0xffff;  /* set AX to 0 */
         if (Installed) {
+#if defined(__i386__) || defined(__x86_64__)
             __asm__("fstsw %0;wait" : "=m" (StatusWord_1));
+#endif
             context->Eax |= StatusWord_1 & 0x3f;
         }
         context->Eax = (context->Eax | StatusWord_2) & ~0xe000;
@@ -197,27 +202,33 @@ void WINAPI __fpMath( CONTEXT *context )
 }
 
 /***********************************************************************
- *		__WinEm87Info (WIN87EM.3)
+ *             __WinEm87Info (WIN87EM.3)
+ *
+ * The SDK describes a 16-bit integer status. Until the complete
+ * Win87EmSaveArea (94 x87 bytes plus emulator state) is implemented,
+ * explicitly refuse this call rather than advertise a fabricated
+ * SizeSaveArea or leave AX unspecified.
  */
-void WINAPI __WinEm87Info(struct Win87EmInfoStruct *pWIS, int cbWin87EmInfoStruct)
+WORD WINAPI __WinEm87Info(struct Win87EmInfoStruct *info, int size)
 {
-  FIXME("(%p,%d), stub !\n",pWIS,cbWin87EmInfoStruct);
+    WARN("(%p,%d): emulator information/save area is not implemented\n", info, size);
+    return 1;
 }
 
 /***********************************************************************
- *		__WinEm87Restore (WIN87EM.4)
+ *             __WinEm87Restore (WIN87EM.4)
  */
-void WINAPI __WinEm87Restore(void *pWin87EmSaveArea, int cbWin87EmSaveArea)
+WORD WINAPI __WinEm87Restore(void *area, int size)
 {
-  FIXME("(%p,%d), stub !\n",
-	pWin87EmSaveArea,cbWin87EmSaveArea);
+    WARN("(%p,%d): emulator state restoration is not implemented\n", area, size);
+    return 1;
 }
 
 /***********************************************************************
- *		__WinEm87Save (WIN87EM.5)
+ *             __WinEm87Save (WIN87EM.5)
  */
-void WINAPI __WinEm87Save(void *pWin87EmSaveArea, int cbWin87EmSaveArea)
+WORD WINAPI __WinEm87Save(void *area, int size)
 {
-  FIXME("(%p,%d), stub !\n",
-	pWin87EmSaveArea,cbWin87EmSaveArea);
+    WARN("(%p,%d): emulator state saving is not implemented\n", area, size);
+    return 1;
 }
