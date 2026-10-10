@@ -71,4 +71,32 @@ check_alignment i386-pc-mingw32 \
     '-Wl,-Xlink=-filealign:0x400,-Xlink=-align:0x1000,-Xlink=-driver' \
     -Wl,--file-alignment,0x400
 
-echo 'winegcc PE alignment arguments: pass'
+# ThinLTO should only keep referenced PE sections, including required
+# winecrt0 startup code.  Do not impose GC for non-LTO or full-LTO links.
+check_thin_gc()
+{
+    target=$1
+    gc_flag=$2
+    expected=$3
+    shift 3
+    WINEGCC_PE_LINK_ARGS="$tmp/link-args" "$winegcc" \
+        "--target=$target" --cc-cmd "$tmp/cc" \
+        --winebuild "$tmp/winebuild" -nodefaultlibs -nostdlib \
+        -shared -o "$tmp/output.dll" "$tmp/in.obj" "$@"
+    count=$(grep -Fxc -- "$gc_flag" "$tmp/link-args" || true)
+    if [ "$count" -ne "$expected" ]; then
+        echo "incorrect ThinLTO section GC for $target ($*); expected $expected, got $count" >&2
+        cat "$tmp/link-args" >&2
+        exit 1
+    fi
+}
+
+check_thin_gc i386-pc-mingw32 '-Wl,--gc-sections' 1 -flto=thin
+check_thin_gc i386-pc-mingw32 '-Wl,--gc-sections' 0 -flto=full
+check_thin_gc i386-pc-mingw32 '-Wl,--gc-sections' 0 -flto=thin -fno-lto
+check_thin_gc i386-pc-mingw32 '-Wl,--gc-sections' 0 -flto=thin -Wl,--no-gc-sections
+check_thin_gc x86_64-pc-windows '-Wl,-opt:ref' 1 -flto=thin
+check_thin_gc x86_64-pc-windows '-Wl,-opt:ref' 0
+check_thin_gc x86_64-pc-windows '-Wl,-opt:ref' 0 -flto=thin -Wl,-opt:noref
+
+echo 'winegcc PE alignment and ThinLTO GC arguments: pass'

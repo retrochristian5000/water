@@ -597,6 +597,27 @@ static void add_windows_crt_nodefaultlibs( struct strarray *args )
     }
 }
 
+/* LTO optimizes only archive members extracted by the linker.  With ThinLTO
+ * allow LLD to discard otherwise unreferenced sections from those members,
+ * including winecrt0, without removing the startup code that is still needed.
+ * Respect any explicit section-GC policy supplied by the caller. */
+static bool use_thinlto_gc(void)
+{
+    bool thin_lto = false;
+
+    STRARRAY_FOR_EACH( arg, &linker_args )
+    {
+        if (!strcmp( arg, "-flto=thin" )) thin_lto = true;
+        else if (!strcmp( arg, "-flto" ) || !strncmp( arg, "-flto=", 6 ) ||
+                 !strcmp( arg, "-fno-lto" )) thin_lto = false;
+
+        if (strstr( arg, "--gc-sections" ) || strstr( arg, "--no-gc-sections" ) ||
+            strstr( arg, "-opt:ref" ) || strstr( arg, "-opt:noref" ))
+            return false;
+    }
+    return thin_lto;
+}
+
 static struct strarray get_link_args( const char *output_name )
 {
     struct strarray link_args = get_translator();
@@ -652,6 +673,9 @@ static struct strarray get_link_args( const char *output_name )
         strarray_add( &flags, strmake( "-Wl,--subsystem,%s", subsystem ) );
 
         strarray_add( &flags, "-Wl,--exclude-all-symbols" );
+        /* GNU-style LLD leaves unused COFF sections live by default. */
+        if (is_pe && !is_win16_app && use_thinlto_gc())
+            strarray_add( &flags, "-Wl,--gc-sections" );
         strarray_add( &flags, "-Wl,--nxcompat" );
         strarray_add( &flags, "-Wl,--dynamicbase" );
         strarray_add( &flags, "-Wl,--disable-auto-image-base" );
@@ -699,6 +723,8 @@ static struct strarray get_link_args( const char *output_name )
          * graph by searching for host-style msvcrt.lib and friends.
          */
         add_windows_crt_nodefaultlibs( &link_args );
+        if (is_pe && !is_win16_app && use_thinlto_gc())
+            strarray_add( &flags, "-Wl,-opt:ref" );
 
         if (is_shared || is_win16_app)
         {
