@@ -6,6 +6,8 @@ Windows build. Recover prior evidence before adding further link-time rules.
 
 See also the [`/F` executable stack-reserve audit](llvm-msvc-f-stack-abi.md), including PE32 reserve/commit overflow guards.
 
+See also [MSVC `/vlen` and AVX10 target-feature continuity](llvm-msvc-vlen-abi.md): vector-width preferences must not change the enabled instruction-set features.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |
