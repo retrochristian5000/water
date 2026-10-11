@@ -32,3 +32,27 @@ from its reduced real-mode boot policy.
 The CONFIG.SYS parser was recovered from KRNL386's INT 21h implementation.
 IO.SYS owns that parse; INT 21h now consumes the resulting BUFFERS, LASTDRIVE,
 BREAK and UMB policy instead of opening CONFIG.SYS itself.
+
+## CONFIG.SYS SWITCHES= state
+
+The IO.SYS parser also records `SWITCHES=` (case-insensitive) with the
+classic `/F`, `/K`, `/N`, `/W` and Win98 `/E[:n]` options. `/E` alone
+records an EBIOS relocation suppression request (0 bytes); `/E:n`
+requires 48–1024 bytes and rounds up to a multiple of 16. Missing `/E`
+is distinguishable with `-1`. Invalid or unknown directives have no
+partial effect. Adjacent and whitespace-separated option tokens are
+accepted. DOS 6.x help documents `/W` for a moved WINA20.386; Windows 98
+CONFIG.TXT instead documents `/E` for the EBIOS behavior. Keep these
+historical variants separate when implementing actual boot behavior.
+
+These are **recorded startup settings**, not yet working boot overrides:
+Water still uses a KRNL386 compatibility bridge and cannot currently
+suppress an IO.SYS keyboard check, relocate EBIOS, or locate WINA20.386
+at real-mode boot. Windows Me's existing skip of DOS boot directives remains
+in effect; no Win9x option is silently projected into NT or Win3.x.
+
+Parser regression: `python3 -m unittest discover -s scripts/tests -p test_iosys_switches.py`.
+
+Sources: Microsoft Windows 98 CONFIG.TXT (KB Q232557; mirrored at
+https://helparchive.huntertur.net/document/106583) and MS-DOS 6.22 HELP
+(https://www.infania.net/misc/dos622help/switches.html).

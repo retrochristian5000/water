@@ -389,6 +389,67 @@ BYTE IOSYS_GetBootDrive(void)
 }
 
 
+/*
+ * Parse MS-DOS/Win9x CONFIG.SYS SWITCHES settings.  /W is documented
+ * for DOS 6.x and /E[:n] for Win98; retain their separate meanings in
+ * IO.SYS state until version-specific real-mode boot policy is implemented.
+ *
+ * These switches affect actions before WIN.COM and KRNL386 run, so merely
+ * caching them in the compatibility bridge does not simulate their effects.
+ * An invalid directive must not partially update the boot configuration.
+ */
+BOOL IOSYS_ParseSwitches(const char *value, struct iosys_config_sys *config)
+{
+    struct iosys_config_sys parsed;
+    const char *p;
+
+    if (!value || !config) return FALSE;
+    parsed = *config;
+    p = value;
+
+    while (*p)
+    {
+        char option;
+
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        if (*p++ != '/' || !*p) return FALSE;
+        option = *p++;
+        if (option >= 'a' && option <= 'z') option -= 'a' - 'A';
+        switch (option)
+        {
+        case 'F': parsed.switches_fast_boot = TRUE; break;
+        case 'K': parsed.switches_legacy_keyboard = TRUE; break;
+        case 'N': parsed.switches_disable_boot_keys = TRUE; break;
+        case 'W': parsed.switches_wina20_moved = TRUE; break;
+        case 'E':
+            if (*p == ':')
+            {
+                unsigned int size = 0;
+
+                p++;
+                if (*p < '0' || *p > '9') return FALSE;
+                while (*p >= '0' && *p <= '9')
+                {
+                    size = size * 10 + *p++ - '0';
+                    if (size > 1024) return FALSE;
+                }
+                if (size < 48) return FALSE;
+                parsed.switches_ebios_bytes = (size + 15) & ~15;
+            }
+            else parsed.switches_ebios_bytes = 0;
+            break;
+        default:
+            return FALSE;
+        }
+        if (*p && *p != '/' && *p != ' ' && *p != '\t') return FALSE;
+    }
+
+    *config = parsed;
+    return TRUE;
+}
+
+
 /***********************************************************************
  *           IOSYS_ReadConfigSys
  *
@@ -416,6 +477,11 @@ void IOSYS_ReadConfigSys(struct iosys_config_sys *config)
     config->last_drive = 0;
     config->umb_linked = -1;
     config->break_on = FALSE;
+    config->switches_fast_boot = FALSE;
+    config->switches_legacy_keyboard = FALSE;
+    config->switches_disable_boot_keys = FALSE;
+    config->switches_wina20_moved = FALSE;
+    config->switches_ebios_bytes = -1;
 
     /*
      * Normal Windows Me hard-disk startup does not execute the DOS boot
@@ -537,6 +603,11 @@ void IOSYS_ReadConfigSys(struct iosys_config_sys *config)
             if (!_stricmp( value, "ON" )) config->break_on = TRUE;
             else if (!_stricmp( value, "OFF" )) config->break_on = FALSE;
         }
+        else if (!_stricmp( name, "SWITCHES" ))
+        {
+            if (!IOSYS_ParseSwitches( value, config ))
+                WARN( "Ignoring invalid SWITCHES directive in %s: %s\n", path, debugstr_a(value) );
+        }
         else if (!_stricmp( name, "BUFFERS" ) || !_stricmp( name, "BUFFERSHIGH" ))
         {
             first = strtol( value, &end, 10 );
@@ -584,8 +655,12 @@ void IOSYS_ReadConfigSys(struct iosys_config_sys *config)
         line = next;
     }
 
-    TRACE( "CONFIG.SYS: BUFFERS=%u,%u LASTDRIVE=%u UMB=%d BREAK=%u\n",
+    TRACE( "CONFIG.SYS: BUFFERS=%u,%u LASTDRIVE=%u UMB=%d BREAK=%u "
+           "SWITCHES=/F:%u /K:%u /N:%u /W:%u /E:%d\n",
            config->buffers_count, config->buffers_lookahead,
-           config->last_drive, config->umb_linked, config->break_on );
+           config->last_drive, config->umb_linked, config->break_on,
+           config->switches_fast_boot, config->switches_legacy_keyboard,
+           config->switches_disable_boot_keys, config->switches_wina20_moved,
+           config->switches_ebios_bytes );
     HeapFree( GetProcessHeap(), 0, buffer );
 }

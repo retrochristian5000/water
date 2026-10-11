@@ -16,6 +16,13 @@ struct iosys_config_sys
     BYTE last_drive;
     INT umb_linked;       /* -1 when CONFIG.SYS did not specify UMB/NOUMB */
     BOOL break_on;
+
+    /* SWITCHES= is IO.SYS boot policy, not an INT 21h runtime service. */
+    BOOL switches_fast_boot;           /* /F: suppress startup F5/F8 delay */
+    BOOL switches_legacy_keyboard;     /* /K: conventional keyboard behavior */
+    BOOL switches_disable_boot_keys;   /* /N: disallow F5/F8 boot bypass */
+    BOOL switches_wina20_moved;        /* /W: historical Windows 3.x support */
+    INT switches_ebios_bytes;          /* /E: -1 absent, 0 disable, >0 relocation bytes */
 };
 
 /* Classic FAT12/FAT16 BIOS parameter block used by DOS/IO.SYS. */
@@ -58,6 +65,7 @@ struct iosys_fat32_bpb
 
 BOOL IOSYS_ParseFat32BPB(const BYTE sector[512], struct iosys_fat32_bpb *bpb);
 BOOL IOSYS_GetFat32BPB(BYTE drive, struct iosys_fat32_bpb *bpb);
+BOOL IOSYS_ParseSwitches(const char *value, struct iosys_config_sys *config);
 void IOSYS_ReadConfigSys(struct iosys_config_sys *config);
 
 #endif /* __WATER_IO_SYS_H */
