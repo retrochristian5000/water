@@ -7,6 +7,8 @@ Target candidates:
 - Jet Red 4.0: MSJET40.DLL / MSJETOLEDB40.DLL and DAO 3.6.
 - Jet Blue: ESENT.DLL (separate ESE API and database format).
 
+Separate [WaveTop Data Broadcasting, WebTV for Windows and Intel Intercast evidence](windows98-broadcast.md) before attributing WebTV databases or runtime DLL dependencies to any of the three features.
+
 Windows 98 WebTV's electronic program guide and Intel Intercast support are documented; direct Jet dependence has NOT yet been verified. Inspect original extracted Win98/WebTV installer binaries and registration records before implementing an engine. Win98 targets PE32 i386; modern PE32+ ARM64 evidence must not be substituted.
 
 Read-only import scan:
