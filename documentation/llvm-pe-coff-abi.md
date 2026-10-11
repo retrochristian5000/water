@@ -83,3 +83,59 @@ No repeat patch was added.
 
 Preserve native object and binary evidence, negative tests, and
 ABI-specific assumptions when extending this ledger.
+
+## Microsoft C++ native `__interface` — LLVM/Clang code-generation correction
+
+10 October 2026 source audit (updated 11 October): Microsoft documents
+`__interface` as a **native C++ COM-style extension**. With
+`-fms-extensions`, Clang already recognizes the keyword:
+`clang/include/clang/Basic/TokenKinds.def` contains
+`KEYWORD(__interface, KEYMS)`; `ParseDeclCXX.cpp` and
+`SemaDeclCXX.cpp` enforce interface rules; existing tests include
+`clang/test/SemaCXX/ms-interface.cpp` and
+`clang/test/CodeGenCXX/microsoft-interface.cpp`.
+Do **not** add a second lexer/parser keyword or mistake C++/CLI
+`interface class` or C++20 `/interface` modules for this construct.
+
+**Verified source gap:** Microsoft's native `__interface` implicitly
+requests `__declspec(novtable)`. In the pinned LLVM parent
+`066483da1f0a8026263d99ec019bb5161ef0faa1`, the Microsoft
+ABI's `doStructorsInitializeVPtrs` checked only an explicit
+`MSNoVTableAttr`; `__interface` alone was not excluded. A
+Windows-targeted Clang IR probe with a concrete derived object
+emitted an unnecessary `IContract` base-interface vftable and
+vfptr store, while an explicitly marked
+`struct __declspec(novtable) IExplicit` suppressed both.
+This is **code-generation behavior**, not a missing parser keyword.
+
+**Published fork fix:** LLVM
+[commit 5acacdbe342b10b701ed64f2cd1de4ae41e6271a](https://github.com/retrochristian5000/LLVM/commit/5acacdbe342b10b701ed64f2cd1de4ae41e6271a)
+makes MicrosoftCXXABI skip vfptr initialization for both explicit
+`novtable` and native `isInterface()` classes. The new
+`clang/test/CodeGenCXX/ms-interface-implicit-novtable.cpp`
+requires absence of the interface vftable while preserving concrete
+derived vftables, on Windows i386/x64/ARM64 for C++11 and C++26.
+Water's LLVM submodule advances **only** from the exact previously
+pinned fork head to this commit.
+
+Regression command after building the pinned LLVM toolchain:
+
+```sh
+llvm-lit -sv clang/test/CodeGenCXX/ms-interface-implicit-novtable.cpp
+```
+
+**Verification boundary:** system Clang 17 reproduced the
+unpatched vtable difference; source/branch linkage is verified.
+The modified fork was **not rebuilt here** and its six
+`llvm-lit` cases have not yet been executed. This fix applies
+to the Microsoft C++ ABI and does **not** change macOS arm64e
+vtable semantics. Clang documents `__is_interface_class`
+returning `false` for native `__interface`: Microsoft documents
+that intrinsic for platform `interface class`, so do not
+assume changing its result would fix the native COM ABI.
+
+Sources:
+- https://learn.microsoft.com/en-us/cpp/cpp/interface?view=msvc-170
+- https://learn.microsoft.com/en-us/cpp/cpp/novtable?view=msvc-170
+- https://clang.llvm.org/docs/LanguageExtensions.html
+- https://learn.microsoft.com/en-us/cpp/extensions/compiler-support-for-type-traits-cpp-component-extensions?view=msvc-170
