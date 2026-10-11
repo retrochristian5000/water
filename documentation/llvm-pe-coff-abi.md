@@ -4,6 +4,8 @@ State: **SOURCE-AUDITED + PATCH PUBLISHED; BUILD/LLD TESTS UNVERIFIED**.
 Updated: 2026-10-09. Do not treat this as evidence of a successful Water
 Windows build. Recover prior evidence before adding further link-time rules.
 
+See also the [`/F` executable stack-reserve audit](llvm-msvc-f-stack-abi.md), including PE32 reserve/commit overflow guards.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |

@@ -2,6 +2,8 @@
 
 Status (11 October 2026): **OPTION-TRANSLATION DEFECT FIXED AND PUSHED IN LLVM FORK; NEW LLVM BUILD/LIT TESTS NOT EXECUTED.** The available host Clang 17 was used for baseline target probes, not to assert that the updated fork passed. This topic builds on the [LLVM PE/COFF audit](llvm-pe-coff-abi.md) and [Microsoft event ABI audit](llvm-ms-events-abi.md).
 
+See also the [`/F` executable stack-reserve ledger](llvm-msvc-f-stack-abi.md); `/F` controls a PE header value, not a stack-probe threshold or security cookie.
+
 ## Do not conflate case or meaning
 
 | MSVC spelling | Behavior | ABI and runtime dependencies |
