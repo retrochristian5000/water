@@ -3633,6 +3633,77 @@ static BOOL FTP_ConvertFileProp(LPFILEPROPERTIESW lpafp, LPWIN32_FIND_DATAW lpFi
  *   TRUE on success
  *   FALSE on failure
  */
+/* Parse IIS-style MS-DOS FTP LIST entries before strtok() destroys
+ * whitespace inside names; do not mistake these for UNIX listings. */
+static BOOL FTP_ParseDOSListing(const char *line, LPFILEPROPERTIESW props)
+{
+    const char *p = line;
+    char *end;
+    unsigned int month, day, year = 0, hour, minute, year_digits = 0;
+    unsigned long long size = 0;
+    BOOL is_directory;
+    LPWSTR name;
+    SYSTEMTIME modified = {0};
+
+    while (*p == ' ' || *p == '\t') p++;
+    if (!isdigit((unsigned char)p[0]) || !isdigit((unsigned char)p[1]) || p[2] != '-' ||
+        !isdigit((unsigned char)p[3]) || !isdigit((unsigned char)p[4]) || p[5] != '-') return FALSE;
+    month = (p[0] - '0') * 10 + (p[1] - '0');
+    day = (p[3] - '0') * 10 + (p[4] - '0');
+    p += 6;
+    while (isdigit((unsigned char)*p) && year_digits < 4)
+    {
+        year = year * 10 + *p++ - '0';
+        year_digits++;
+    }
+    if ((year_digits != 2 && year_digits != 4) || isdigit((unsigned char)*p) ||
+        (month < 1 || month > 12) || (day < 1 || day > 31)) return FALSE;
+    if (year_digits == 2) year += year < 70 ? 2000 : 1900;
+    if (*p != ' ' && *p != '\t') return FALSE;
+    while (*p == ' ' || *p == '\t') p++;
+    if (!isdigit((unsigned char)p[0]) || !isdigit((unsigned char)p[1]) || p[2] != ':' ||
+        !isdigit((unsigned char)p[3]) || !isdigit((unsigned char)p[4])) return FALSE;
+    hour = (p[0] - '0') * 10 + (p[1] - '0');
+    minute = (p[3] - '0') * 10 + (p[4] - '0');
+    p += 5;
+    if (hour < 1 || hour > 12 || minute > 59 ||
+        (p[0] != 'A' && p[0] != 'a' && p[0] != 'P' && p[0] != 'p') ||
+        (p[1] != 'M' && p[1] != 'm')) return FALSE;
+    if (p[0] == 'P' || p[0] == 'p') hour = (hour % 12) + 12;
+    else hour %= 12;
+    p += 2;
+    if (*p != ' ' && *p != '\t') return FALSE;
+    while (*p == ' ' || *p == '\t') p++;
+    if (!strncmp(p, "<DIR>", 5) && (p[5] == ' ' || p[5] == '\t'))
+    {
+        is_directory = TRUE;
+        p += 5;
+    }
+    else
+    {
+        if (!isdigit((unsigned char)*p)) return FALSE;
+        size = strtoull(p, &end, 10);
+        if (end == p || size > 0xffffffffULL || (*end != ' ' && *end != '\t')) return FALSE;
+        is_directory = FALSE;
+        p = end;
+    }
+    while (*p == ' ' || *p == '\t') p++;
+    if (!*p) return FALSE;
+    if (!(name = strdupAtoW(p))) return FALSE;
+
+    modified.wMonth = month;
+    modified.wDay = day;
+    modified.wYear = year;
+    modified.wHour = hour;
+    modified.wMinute = minute;
+    props->bIsDirectory = is_directory;
+    props->nSize = is_directory ? 0 : (DWORD)size;
+    props->permissions = 0xffff;
+    props->tmLastModified = modified;
+    props->lpszName = name;
+    return TRUE;
+}
+
 static BOOL FTP_ParseNextFile(INT nSocket, LPCWSTR lpszSearchFile, LPFILEPROPERTIESW lpfp)
 {
     static const char szSpace[] = " \t";
@@ -3648,7 +3719,10 @@ static BOOL FTP_ParseNextFile(INT nSocket, LPCWSTR lpszSearchFile, LPFILEPROPERT
         if(!(pszLine = FTP_GetNextLine(nSocket, &nBufLen)))
             return FALSE;
     
-        pszToken = strtok(pszLine, szSpace);
+        if (!FTP_ParseDOSListing(pszLine, lpfp))
+        {
+            pszToken = strtok(pszLine, szSpace);
+            if (!pszToken) continue;
         /* ls format
          * <Permissions> <NoLinks> <owner>   <group> <size> <date>  <time or year> <filename>
          *
@@ -3716,60 +3790,12 @@ static BOOL FTP_ParseNextFile(INT nSocket, LPCWSTR lpszSearchFile, LPFILEPROPERT
             lpfp->lpszName = strdupAtoW(pszToken);
             TRACE("File: %s\n", debugstr_w(lpfp->lpszName));
         }
-        /* NT way of parsing ... :
-            
-                07-13-03  08:55PM       <DIR>          sakpatch
-                05-09-03  06:02PM             12656686 2003-04-21bgm_cmd_e.rgz
-        */
-        else if(isdigit(pszToken[0]) && 8 == strlen(pszToken)) {
-            int mon, mday, year, hour, min;
-            lpfp->permissions = 0xFFFF; /* No idea, put full permission :-) */
-            
-            sscanf(pszToken, "%d-%d-%d", &mon, &mday, &year);
-            lpfp->tmLastModified.wDay   = mday;
-            lpfp->tmLastModified.wMonth = mon;
-            lpfp->tmLastModified.wYear  = year;
-
-            /* Hacky and bad Y2K protection :-) */
-            if (lpfp->tmLastModified.wYear < 70) lpfp->tmLastModified.wYear += 2000;
-
-            pszToken = strtok(NULL, szSpace);
-            if(!pszToken) continue;
-            sscanf(pszToken, "%d:%d", &hour, &min);
-            lpfp->tmLastModified.wHour   = hour;
-            lpfp->tmLastModified.wMinute = min;
-            if((pszToken[5] == 'P') && (pszToken[6] == 'M')) {
-                lpfp->tmLastModified.wHour += 12;
-            }
-            lpfp->tmLastModified.wSecond = 0;
-
-            TRACE("Mod time: %02d:%02d:%02d  %04d/%02d/%02d\n",
-                  lpfp->tmLastModified.wHour, lpfp->tmLastModified.wMinute, lpfp->tmLastModified.wSecond,
-                  lpfp->tmLastModified.wYear, lpfp->tmLastModified.wMonth, lpfp->tmLastModified.wDay);
-
-            pszToken = strtok(NULL, szSpace);
-            if(!pszToken) continue;
-            if(!stricmp(pszToken, "<DIR>")) {
-                lpfp->bIsDirectory = TRUE;
-                lpfp->nSize = 0;
-                TRACE("Is directory\n");
-            }
-            else {
-                lpfp->bIsDirectory = FALSE;
-                lpfp->nSize = atol(pszToken);
-                TRACE("Size: %ld\n", lpfp->nSize);
-            }
-            
-            pszToken = strtok(NULL, szSpace);
-            if(!pszToken) continue;
-            lpfp->lpszName = strdupAtoW(pszToken);
-            TRACE("Name: %s\n", debugstr_w(lpfp->lpszName));
-        }
         /* EPLF format - http://cr.yp.to/ftp/list/eplf.html */
         else if(pszToken[0] == '+') {
             FIXME("EPLF Format not implemented\n");
         }
-        
+        }
+
         if(lpfp->lpszName) {
             if((lpszSearchFile == NULL) ||
 	       (PathMatchSpecW(lpfp->lpszName, lpszSearchFile))) {
