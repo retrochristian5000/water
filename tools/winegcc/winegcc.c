@@ -666,7 +666,7 @@ static struct strarray get_link_args( const char *output_name )
         if (is_shared || is_win16_app)
         {
             strarray_add( &flags, "-shared" );
-            strarray_add( &flags, "-Wl,--kill-at" );
+            if (target.cpu == CPU_i386) strarray_add( &flags, "-Wl,--kill-at" );
         }
 
         if (is_unicode_app) strarray_add( &flags, "-municode" );
@@ -699,11 +699,10 @@ static struct strarray get_link_args( const char *output_name )
 
         if (strip) strarray_add( &link_args, "-s" );
 
-        if (!try_link( link_args, "-Wl,-Xlink=-filealign:0x1000,-Xlink=-align:0x1000,-Xlink=-driver" ))
-            /* lld from llvm 10 does not support mingw style --file-alignment,
-             * but it's possible to use msvc syntax
-             * the -driver option is needed to silence a warning about using -align */
-            strarray_add( &link_args, strmake( "-Wl,-Xlink=-filealign:%s,-Xlink=-align:%s,-Xlink=-driver",
+        if (!try_link( link_args, "-Wl,-Xlink=-filealign:0x1000,-Xlink=-align:0x1000" ))
+            /* Older lld may require MSVC-style alignment options here.
+             * /driver selects a kernel driver, not an alignment policy. */
+            strarray_add( &link_args, strmake( "-Wl,-Xlink=-filealign:%s,-Xlink=-align:%s",
                                                file_align, section_align ));
         else if (!try_link( link_args, "-Wl,--file-alignment,0x1000,--section-alignment,0x1000" ))
             strarray_add( &link_args, strmake( "-Wl,--file-alignment,%s,--section-alignment,%s",
@@ -729,7 +728,7 @@ static struct strarray get_link_args( const char *output_name )
         if (is_shared || is_win16_app)
         {
             strarray_add( &flags, "-shared" );
-            strarray_add( &flags, "-Wl,-kill-at" );
+            if (target.cpu == CPU_i386) strarray_add( &flags, "-Wl,-kill-at" );
         }
         if (is_unicode_app) strarray_add( &flags, "-municode" );
         if (nostartfiles) strarray_add( &flags, "-nostartfiles" );
@@ -770,7 +769,7 @@ static struct strarray get_link_args( const char *output_name )
         else
             strarray_add(&link_args, strmake("-Wl,-implib:%s", make_temp_file( output_name, ".lib" )));
 
-        strarray_add( &link_args, strmake( "-Wl,-filealign:%s,-align:%s,-driver", file_align, section_align ));
+        strarray_add( &link_args, strmake( "-Wl,-filealign:%s,-align:%s", file_align, section_align ));
         strarray_add( &link_args, "-Wl,-merge:.CRT=.rdata" );
 
         strarray_addall( &link_args, flags );
