@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Cross-link PE DLLs and DLL consumers with Water's matching LLVM tools.
+"""Cross-link PE DLLs, DirectShow .ax filters and DLL consumers with Water's LLVM.
 
 Usage: python3 scripts/tests/llvm-pe-dll.py /path/to/llvm/bin [--arch x86] [--lto thin]
-This is a format/link regression, not a Windows runtime test.
+This is a format/link regression, not a Windows runtime or COM registration test.
 """
 
 import argparse
@@ -33,6 +33,27 @@ EXPORTS
     whp_ordinal @17 NONAME
 """
 
+
+AX_SOURCE = """\
+/* Exercise stdcall/x86 decoration while exporting the COM entry points undecorated. */
+int __stdcall DllGetClassObject(void *clsid, void *iid, void **out)
+{
+    if (out) *out = 0;
+    return 0;
+}
+int __stdcall DllCanUnloadNow(void) { return 0; }
+int __stdcall DllRegisterServer(void) { return 0; }
+int __stdcall DllUnregisterServer(void) { return 0; }
+"""
+AX_DEF_SOURCE = """\
+LIBRARY water_probe.ax
+EXPORTS
+    DllGetClassObject
+    DllCanUnloadNow
+    DllRegisterServer
+    DllUnregisterServer
+"""
+AX_EXPORTS = {"DllGetClassObject", "DllCanUnloadNow", "DllRegisterServer", "DllUnregisterServer"}
 
 def invoke(*args):
     try:
@@ -65,6 +86,54 @@ def check_pe(path, expected_machine, expected_magic, dll):
         raise AssertionError(f"{path}: EXE should import from DLL and have an entry point")
 
 
+def check_ax(path, machine, magic):
+    """Check that a .ax filter is a PE DLL with the intended module/export ABI."""
+    if path.suffix != ".ax":
+        raise AssertionError(f"{path}: DirectShow module must retain .ax suffix")
+    check_pe(path, machine, magic, dll=True)
+    data = path.read_bytes()
+    pe = struct.unpack_from("<I", data, 0x3c)[0]
+    opt = pe + 24
+    section_count = struct.unpack_from("<H", data, pe + 6)[0]
+    section_table = opt + struct.unpack_from("<H", data, pe + 20)[0]
+    export_rva, export_size = struct.unpack_from("<II", data, opt + (96 if magic == 0x10b else 112))
+    if export_size < 40:
+        raise AssertionError(f"{path}: missing PE export directory")
+
+    def mapped(rva, size):
+        for i in range(section_count):
+            off = section_table + i * 40
+            if off + 40 > len(data):
+                raise AssertionError(f"{path}: truncated section table")
+            virtual, raw_size, raw = (struct.unpack_from("<I", data, off + 12)[0],
+                                      struct.unpack_from("<I", data, off + 16)[0],
+                                      struct.unpack_from("<I", data, off + 20)[0])
+            if virtual <= rva and rva - virtual + size <= raw_size:
+                target = raw + rva - virtual
+                if target + size <= len(data):
+                    return target
+        raise AssertionError(f"{path}: invalid export RVA {rva:#x}")
+
+    def asciiz(rva):
+        offset = mapped(rva, 1)
+        end = data.find(b"\0", offset, min(len(data), offset + 256))
+        if end == -1:
+            raise AssertionError(f"{path}: unterminated export name")
+        return data[offset:end].decode("ascii")
+
+    directory = mapped(export_rva, 40)
+    if asciiz(struct.unpack_from("<I", data, directory + 12)[0]) != path.name:
+        raise AssertionError(f"{path}: PE export DLL name must match .ax output name")
+    count = struct.unpack_from("<I", data, directory + 24)[0]
+    if count != len(AX_EXPORTS):
+        raise AssertionError(f"{path}: expected {len(AX_EXPORTS)} named COM exports, got {count}")
+    names_rva = struct.unpack_from("<I", data, directory + 32)[0]
+    table = mapped(names_rva, count * 4)
+    names = {asciiz(struct.unpack_from("<I", data, table + i * 4)[0]) for i in range(count)}
+    if names != AX_EXPORTS:
+        raise AssertionError(f"{path}: wrong COM exports: {sorted(names)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("llvm_bin", type=Path, help="directory containing Water's clang and lld-link")
@@ -82,12 +151,14 @@ def main():
         (root / "dll.c").write_text(DLL_SOURCE, encoding="utf-8")
         (root / "client.c").write_text(CLIENT_SOURCE, encoding="utf-8")
         (root / "dll.def").write_text(DEF_SOURCE, encoding="utf-8")
+        (root / "ax.c").write_text(AX_SOURCE, encoding="utf-8")
+        (root / "ax.def").write_text(AX_DEF_SOURCE, encoding="utf-8")
         for arch in args.arch or TARGETS:
             triple, machine, magic = TARGETS[arch]
             path = root / arch
             path.mkdir()
             lto = [] if args.lto == "none" else [f"-flto={args.lto}"]
-            for src, obj in (("dll.c", "dll.obj"), ("client.c", "client.obj")):
+            for src, obj in (("dll.c", "dll.obj"), ("client.c", "client.obj"), ("ax.c", "ax.obj")):
                 invoke(str(clang), f"--target={triple}", "-ffreestanding",
                        "-fno-stack-protector", *lto, "-c", str(root / src), "-o", str(path / obj))
             invoke(*link_command, "/nologo", "/dll", "/noentry", "/nodefaultlib",
@@ -100,7 +171,13 @@ def main():
                    str(path / "client.obj"), str(path / "whp.lib"))
             check_pe(path / "whp.dll", machine, magic, dll=True)
             check_pe(path / "client.exe", machine, magic, dll=False)
-            print(f"PASS: {arch} {args.lto} LTO; DLL exports, ordinal import, EXE imports, PE headers")
+            invoke(*link_command, "/nologo", "/dll", "/noentry", "/nodefaultlib",
+                   f"/machine:{arch}", "/subsystem:windows", f"/out:{path / 'water_probe.ax'}",
+                   f"/implib:{path / 'water_probe_ax.lib'}", f"/def:{root / 'ax.def'}", str(path / "ax.obj"))
+            if not (path / "water_probe_ax.lib").read_bytes().startswith(b"!<arch>\n"):
+                raise AssertionError(f"{arch}: missing AX COFF import library")
+            check_ax(path / "water_probe.ax", machine, magic)
+            print(f"PASS: {arch} {args.lto} LTO; DLL, EXE, AX export names and stdcall COM ABI")
 
 
 if __name__ == "__main__":

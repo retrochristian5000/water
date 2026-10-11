@@ -7,7 +7,8 @@ separately. BDA means **Broadcast Driver Architecture**, but the historically
 named 1997 **Windows 98 Broadcast Architecture** and later **digital BDA**
 must not silently be treated as identical implementations.
 
-Related: [WebTV / WaveTop / Intercast](windows98-broadcast.md),
+Related: [AX filter build/export tests](ax-filter-build.md),
+[WebTV / WaveTop / Intercast](windows98-broadcast.md),
 [Gemstar program guide](webtv-gemstar-epg.md),
 [Closed Caption Decoder](closed-caption-decoder.md),
 [JET/ESENT](jet-compatibility.md).
