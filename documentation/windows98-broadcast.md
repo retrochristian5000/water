@@ -55,6 +55,8 @@ logic, content formats, or registration data.
 Do not merge the 1997 service *reach projection* with the 1998 reported
 operational coverage; they are distinct dated assertions.
 
+The [Closed Caption Decoder / Line 21 driver and filter audit](closed-caption-decoder.md) records another VBI consumer without conflating caption data, WaveTop broadcasts or WebTV application dependencies.
+
 ## Original-media inventory: leads only, not verified imports
 
 A secondary Windows 98 CAB directory listing names **wavetop.cab** and
