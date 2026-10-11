@@ -86,6 +86,14 @@ ABI-specific assumptions when extending this ledger.
 
 See also the [Microsoft C++ event extension ABI audit](llvm-ms-events-abi.md) for missing `__hook`/`__unhook`/`__event`/`__raise` semantics and fail-closed attributed-event diagnostics.
 
+## MSVC compiler flags: /GS is not /Gs
+
+See [Microsoft buffer-security and stack-probe ABI audit](llvm-msvc-gs-abi.md).
+These options differ by case and by purpose; verified LLVM fork fixes
+`/Gs` target-specific threshold handling,
+while `/GS` controls stack-security cookies. Do not infer successful
+Water CRT initialization from compiler emission of helper relocations.
+
 ## Microsoft C++ native `__interface` — LLVM/Clang code-generation correction
 
 10 October 2026 source audit (updated 11 October): Microsoft documents
