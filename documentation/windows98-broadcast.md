@@ -3,7 +3,7 @@
 Status: **source-confirmed feature distinction; binary/API attribution pending**.
 Platform: Windows 98 (1998), i386 Win9x PE32 with analog TV tuner.
 Scope: this ledger records component boundaries, *not* new APIs or working emulation.
-Related: [JET investigation](jet-compatibility.md).
+Related: [JET investigation](jet-compatibility.md); [Gemstar program guide evidence](webtv-gemstar-epg.md).
 
 ## Distinguish the three clients and the common infrastructure
 
@@ -11,6 +11,7 @@ Related: [JET investigation](jet-compatibility.md).
 | --- | --- | --- | --- |
 | WebTV for Windows | Microsoft Windows 98 component | TV viewing, interactive programming, electronic program guide | [Microsoft/Intel, 8 Apr 1998](#sources); [ATI TV tuner manual](#sources) |
 | WaveTop Data Broadcasting | WavePhore client/service bundled with Windows 98 | VBI-broadcast delivery of selected news, weather, stocks, entertainment, and software to a PC, then local display/cache | [Microsoft/WavePhore, 8 Oct 1997 and 25 Jun 1998](#sources) |
+| Gemstar EPG integration | Gemstar/StarSight licensed guide data and technology used in Microsoft EPG products | PC WebTV for Windows guide attributed to Gemstar by contemporary reviewer; original loader binary unverified | [1998 licensing exhibit](webtv-gemstar-epg.md); [2000 review](webtv-gemstar-epg.md) |
 | Intel Intercast | Intel interactive-TV enhancement, integrated with WebTV for Windows | HTML enhancements delivered alongside broadcast television | [Microsoft/Intel, 8 Apr 1998](#sources); [Microsoft KB Q238961](#sources) |
 | Windows 98 Broadcast Architecture | Shared OS/hardware layer | Tuner access and reception of television/data; platform used by WaveTop and WebTV | [Microsoft/WavePhore, 8 Oct 1997](#sources) |
 
@@ -105,6 +106,7 @@ filename as an intake lead until original-image validation.
 | WaveTop delivery via VBI with cache and browser interface? | **Confirmed** in Microsoft/WavePhore release |
 | Intercast enhancement integrated with WebTV? | **Confirmed** in Microsoft/Intel announcement |
 | WebTV binary directly imports WaveTop? | **Unknown** — no original PE/registration analysis |
+| Gemstar's connection to WebTV for Windows program-guide service? | **Confirmed** by 1998 agreement and Jan 2000 contemporary review; binaries still unverified ([evidence](webtv-gemstar-epg.md)) |
 | WaveTop uses Jet Red, or WebTV uses Jet Red? | **Unknown** — no original import/COM analysis |
 | Either component uses Jet Blue/ESENT? | **Unknown** |
 | Exact original setup files, DLL exports and service interfaces? | **Unknown** — inspect original media |

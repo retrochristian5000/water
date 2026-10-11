@@ -8,6 +8,7 @@ Target candidates:
 - Jet Blue: ESENT.DLL (separate ESE API and database format).
 
 Separate [WaveTop Data Broadcasting, WebTV for Windows and Intel Intercast evidence](windows98-broadcast.md) before attributing WebTV databases or runtime DLL dependencies to any of the three features.
+The [Gemstar/WebTV EPG evidence](webtv-gemstar-epg.md) confirms guide licensing/data-loader concepts but **not** any Jet Red or ESENT dependency.
 
 Windows 98 WebTV's electronic program guide and Intel Intercast support are documented; direct Jet dependence has NOT yet been verified. Inspect original extracted Win98/WebTV installer binaries and registration records before implementing an engine. Win98 targets PE32 i386; modern PE32+ ARM64 evidence must not be substituted.
 
