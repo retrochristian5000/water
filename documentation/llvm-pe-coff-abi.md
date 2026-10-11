@@ -84,6 +84,8 @@ No repeat patch was added.
 Preserve native object and binary evidence, negative tests, and
 ABI-specific assumptions when extending this ledger.
 
+See also the [Microsoft C++ event extension ABI audit](llvm-ms-events-abi.md) for missing `__hook`/`__unhook`/`__event`/`__raise` semantics and fail-closed attributed-event diagnostics.
+
 ## Microsoft C++ native `__interface` — LLVM/Clang code-generation correction
 
 10 October 2026 source audit (updated 11 October): Microsoft documents
