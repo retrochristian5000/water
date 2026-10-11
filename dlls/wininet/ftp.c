@@ -3723,78 +3723,77 @@ static BOOL FTP_ParseNextFile(INT nSocket, LPCWSTR lpszSearchFile, LPFILEPROPERT
         {
             pszToken = strtok(pszLine, szSpace);
             if (!pszToken) continue;
-        /* ls format
-         * <Permissions> <NoLinks> <owner>   <group> <size> <date>  <time or year> <filename>
-         *
-         * For instance:
-         * drwx--s---     2         pcarrier  ens     512    Sep 28  1995           pcarrier
-         */
-        if(!isdigit(pszToken[0]) && 10 == strlen(pszToken)) {
-            if(!FTP_ParsePermission(pszToken, lpfp))
-                lpfp->bIsDirectory = FALSE;
-            for(i=0; i<=3; i++) {
-              if(!(pszToken = strtok(NULL, szSpace)))
-                  break;
-            }
-            if(!pszToken) continue;
-            if(lpfp->bIsDirectory) {
-                TRACE("Is directory\n");
-                lpfp->nSize = 0;
-            }
-            else {
-                TRACE("Size: %s\n", pszToken);
-                lpfp->nSize = atol(pszToken);
-            }
+            /* ls format
+             * <Permissions> <NoLinks> <owner>   <group> <size> <date>  <time or year> <filename>
+             *
+             * For instance:
+             * drwx--s---     2         pcarrier  ens     512    Sep 28  1995           pcarrier
+             */
+            if(!isdigit(pszToken[0]) && 10 == strlen(pszToken)) {
+                if(!FTP_ParsePermission(pszToken, lpfp))
+                    lpfp->bIsDirectory = FALSE;
+                for(i=0; i<=3; i++) {
+                  if(!(pszToken = strtok(NULL, szSpace)))
+                      break;
+                }
+                if(!pszToken) continue;
+                if(lpfp->bIsDirectory) {
+                    TRACE("Is directory\n");
+                    lpfp->nSize = 0;
+                }
+                else {
+                    TRACE("Size: %s\n", pszToken);
+                    lpfp->nSize = atol(pszToken);
+                }
             
-            lpfp->tmLastModified.wSecond = 0;
-            lpfp->tmLastModified.wMinute = 0;
-            lpfp->tmLastModified.wHour   = 0;
-            lpfp->tmLastModified.wDay    = 0;
-            lpfp->tmLastModified.wMonth  = 0;
-            lpfp->tmLastModified.wYear   = 0;
+                lpfp->tmLastModified.wSecond = 0;
+                lpfp->tmLastModified.wMinute = 0;
+                lpfp->tmLastModified.wHour   = 0;
+                lpfp->tmLastModified.wDay    = 0;
+                lpfp->tmLastModified.wMonth  = 0;
+                lpfp->tmLastModified.wYear   = 0;
             
-            /* Determine month */
-            pszToken = strtok(NULL, szSpace);
-            if(!pszToken) continue;
-            if(strlen(pszToken) >= 3) {
-                pszToken[3] = 0;
-                if((pszTmp = StrStrIA(szMonths, pszToken)))
-                    lpfp->tmLastModified.wMonth = ((pszTmp - szMonths) / 3)+1;
-            }
-            /* Determine day */
-            pszToken = strtok(NULL, szSpace);
-            if(!pszToken) continue;
-            lpfp->tmLastModified.wDay = atoi(pszToken);
-            /* Determine time or year */
-            pszToken = strtok(NULL, szSpace);
-            if(!pszToken) continue;
-            if((pszTmp = strchr(pszToken, ':'))) {
-                SYSTEMTIME curr_time;
-                *pszTmp = 0;
-                pszTmp++;
-                lpfp->tmLastModified.wMinute = atoi(pszTmp);
-                lpfp->tmLastModified.wHour = atoi(pszToken);
-                GetLocalTime( &curr_time );
-                lpfp->tmLastModified.wYear = curr_time.wYear;
-            }
-            else {
-                lpfp->tmLastModified.wYear = atoi(pszToken);
-                lpfp->tmLastModified.wHour = 12;
-            }
-            TRACE("Mod time: %02d:%02d:%02d  %04d/%02d/%02d\n",
-                  lpfp->tmLastModified.wHour, lpfp->tmLastModified.wMinute, lpfp->tmLastModified.wSecond,
-                  lpfp->tmLastModified.wYear, lpfp->tmLastModified.wMonth, lpfp->tmLastModified.wDay);
+                /* Determine month */
+                pszToken = strtok(NULL, szSpace);
+                if(!pszToken) continue;
+                if(strlen(pszToken) >= 3) {
+                    pszToken[3] = 0;
+                    if((pszTmp = StrStrIA(szMonths, pszToken)))
+                        lpfp->tmLastModified.wMonth = ((pszTmp - szMonths) / 3)+1;
+                }
+                /* Determine day */
+                pszToken = strtok(NULL, szSpace);
+                if(!pszToken) continue;
+                lpfp->tmLastModified.wDay = atoi(pszToken);
+                /* Determine time or year */
+                pszToken = strtok(NULL, szSpace);
+                if(!pszToken) continue;
+                if((pszTmp = strchr(pszToken, ':'))) {
+                    SYSTEMTIME curr_time;
+                    *pszTmp = 0;
+                    pszTmp++;
+                    lpfp->tmLastModified.wMinute = atoi(pszTmp);
+                    lpfp->tmLastModified.wHour = atoi(pszToken);
+                    GetLocalTime( &curr_time );
+                    lpfp->tmLastModified.wYear = curr_time.wYear;
+                }
+                else {
+                    lpfp->tmLastModified.wYear = atoi(pszToken);
+                    lpfp->tmLastModified.wHour = 12;
+                }
+                TRACE("Mod time: %02d:%02d:%02d  %04d/%02d/%02d\n",
+                      lpfp->tmLastModified.wHour, lpfp->tmLastModified.wMinute, lpfp->tmLastModified.wSecond,
+                      lpfp->tmLastModified.wYear, lpfp->tmLastModified.wMonth, lpfp->tmLastModified.wDay);
 
-            pszToken = strtok(NULL, szSpace);
-            if(!pszToken) continue;
-            lpfp->lpszName = strdupAtoW(pszToken);
-            TRACE("File: %s\n", debugstr_w(lpfp->lpszName));
-        }
-        /* EPLF format - http://cr.yp.to/ftp/list/eplf.html */
-        else if(pszToken[0] == '+') {
-            FIXME("EPLF Format not implemented\n");
-        }
-        }
+                pszToken = strtok(NULL, szSpace);
+                if(!pszToken) continue;
+                lpfp->lpszName = strdupAtoW(pszToken);
+                TRACE("File: %s\n", debugstr_w(lpfp->lpszName));
+            }
+            /* EPLF format - http://cr.yp.to/ftp/list/eplf.html */
+            else if(pszToken[0] == '+') {
+                FIXME("EPLF Format not implemented\n");
+            }        }
 
         if(lpfp->lpszName) {
             if((lpszSearchFile == NULL) ||
