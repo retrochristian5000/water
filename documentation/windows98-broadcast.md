@@ -3,7 +3,7 @@
 Status: **source-confirmed feature distinction; binary/API attribution pending**.
 Platform: Windows 98 (1998), i386 Win9x PE32 with analog TV tuner.
 Scope: this ledger records component boundaries, *not* new APIs or working emulation.
-Related: [JET investigation](jet-compatibility.md); [Gemstar program guide evidence](webtv-gemstar-epg.md).
+Related: [JET investigation](jet-compatibility.md); [Gemstar program guide evidence](webtv-gemstar-epg.md); [Broadcast Driver Architecture / Windows 98 version boundary](broadcast-driver-architecture.md).
 
 ## Distinguish the three clients and the common infrastructure
 

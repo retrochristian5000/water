@@ -3,7 +3,8 @@
 Status: **historical driver/DirectShow interfaces confirmed; retail Windows 98
 CCDECODE.SYS presence and operational support not yet confirmed from original
 media**. Maintain this distinction until dated Windows 98 CAB/INF binaries are
-available for inspection. See [WaveTop/WebTV boundaries](windows98-broadcast.md).
+available for inspection. See [WaveTop/WebTV boundaries](windows98-broadcast.md)
+and [BDA / analog-versus-digital broadcast layers](broadcast-driver-architecture.md).
 
 ## Name and owner boundaries
 

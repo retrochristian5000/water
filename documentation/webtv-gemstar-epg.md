@@ -7,7 +7,8 @@ working Gemstar decoder exists in Water.
 
 Related: [WebTV / WaveTop / Intel Intercast boundaries](windows98-broadcast.md);
 [Closed Caption Decoder](closed-caption-decoder.md);
-[JET/ESENT audit](jet-compatibility.md).
+[JET/ESENT audit](jet-compatibility.md);
+[BDA chronology / guide-loader boundaries](broadcast-driver-architecture.md).
 
 ## Contemporaneous source recovery
 
