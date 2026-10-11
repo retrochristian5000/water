@@ -201,6 +201,7 @@ static void read_config(void)
         { L"TLS 1.0",  SP_PROT_TLS1_0_CLIENT,  SP_PROT_TLS1_0_SERVER,  TRUE, FALSE },
         { L"TLS 1.1",  SP_PROT_TLS1_1_CLIENT,  SP_PROT_TLS1_1_SERVER,  TRUE, FALSE /* NOTE: not enabled by default on Windows */ },
         { L"TLS 1.2",  SP_PROT_TLS1_2_CLIENT,  SP_PROT_TLS1_2_SERVER,  TRUE, FALSE /* NOTE: not enabled by default on Windows */ },
+        { L"TLS 1.3",  SP_PROT_TLS1_3_CLIENT,  SP_PROT_TLS1_3_SERVER,  TRUE, FALSE },
         { L"DTLS 1.0", SP_PROT_DTLS1_0_CLIENT, SP_PROT_DTLS1_0_SERVER, TRUE, TRUE },
         { L"DTLS 1.2", SP_PROT_DTLS1_2_CLIENT, SP_PROT_DTLS1_2_SERVER, TRUE, TRUE },
     };
@@ -251,6 +252,7 @@ static void read_config(void)
                 RegCloseKey(key);
             }
         }
+        RegCloseKey(protocols_key);
     }else {
         /* No config, enable all known protocols. */
         for(i = 0; i < ARRAY_SIZE(protocol_config_keys); i++) {
@@ -261,8 +263,6 @@ static void read_config(void)
                 default_disabled |= flag;
         }
     }
-
-    RegCloseKey(protocols_key);
 
     config_enabled_protocols = enabled & GNUTLS_CALL( get_enabled_protocols, NULL );
     config_default_disabled_protocols = default_disabled;

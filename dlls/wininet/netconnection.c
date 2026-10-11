@@ -209,8 +209,8 @@ static DWORD netconn_verify_cert(netconn_t *conn, PCCERT_CONTEXT cert, HCERTSTOR
     return ERROR_SUCCESS;
 }
 
-static SecHandle cred_handle, compat_cred_handle;
-static BOOL cred_handle_initialized, have_compat_cred_handle;
+static SecHandle cred_handle;
+static BOOL cred_handle_initialized;
 
 static CRITICAL_SECTION init_sechandle_cs;
 static CRITICAL_SECTION_DEBUG init_sechandle_cs_debug = {
@@ -229,20 +229,12 @@ static BOOL ensure_cred_handle(void)
 
     if(!cred_handle_initialized) {
         SCHANNEL_CRED cred = {SCHANNEL_CRED_VERSION};
-        SecPkgCred_SupportedProtocols prots;
 
+        /* Negotiate only the protocols Schannel's active policy allows.
+         * Retrying with weaker credentials after an arbitrary TLS failure
+         * could bypass that policy or mask the original handshake error. */
         res = AcquireCredentialsHandleW(NULL, (WCHAR*)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, NULL, &cred,
                 NULL, NULL, &cred_handle, NULL);
-        if(res == SEC_E_OK) {
-            res = QueryCredentialsAttributesA(&cred_handle, SECPKG_ATTR_SUPPORTED_PROTOCOLS, &prots);
-            if(res != SEC_E_OK || (prots.grbitProtocol & SP_PROT_TLS1_1PLUS_CLIENT)) {
-                cred.grbitEnabledProtocols = prots.grbitProtocol & ~SP_PROT_TLS1_1PLUS_CLIENT;
-                res = AcquireCredentialsHandleW(NULL, (WCHAR*)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, NULL, &cred,
-                       NULL, NULL, &compat_cred_handle, NULL);
-                have_compat_cred_handle = res == SEC_E_OK;
-            }
-        }
-
         cred_handle_initialized = res == SEC_E_OK;
     }
 
@@ -369,8 +361,6 @@ void NETCON_unload(void)
 {
     if(cred_handle_initialized)
         FreeCredentialsHandle(&cred_handle);
-    if(have_compat_cred_handle)
-        FreeCredentialsHandle(&compat_cred_handle);
     DeleteCriticalSection(&init_sechandle_cs);
     if(winsock_loaded)
         WSACleanup();
@@ -398,11 +388,10 @@ int sock_recv(int fd, void *msg, size_t len, int flags)
     return ret;
 }
 
-static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode)
+static DWORD netcon_secure_connect_setup(netconn_t *connection)
 {
     SecBuffer out_buf = {0, SECBUFFER_TOKEN, NULL}, in_bufs[2] = {{0, SECBUFFER_TOKEN}, {0, SECBUFFER_EMPTY}};
     SecBufferDesc out_desc = {SECBUFFER_VERSION, 1, &out_buf}, in_desc = {SECBUFFER_VERSION, 2, in_bufs};
-    SecHandle *cred = &cred_handle;
     BYTE *read_buf;
     SIZE_T read_buf_size = 2048;
     ULONG attrs = 0;
@@ -419,17 +408,11 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
     if(!ensure_cred_handle())
         return ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
 
-    if(compat_mode) {
-        if(!have_compat_cred_handle)
-            return ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
-        cred = &compat_cred_handle;
-    }
-
     read_buf = malloc(read_buf_size);
     if(!read_buf)
         return ERROR_OUTOFMEMORY;
 
-    status = InitializeSecurityContextW(cred, NULL, connection->server->name, isc_req_flags, 0, 0, NULL, 0,
+    status = InitializeSecurityContextW(&cred_handle, NULL, connection->server->name, isc_req_flags, 0, 0, NULL, 0,
             &ctx, &out_desc, &attrs, NULL);
 
     assert(status != SEC_E_OK);
@@ -490,7 +473,7 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
 
         in_bufs[0].cbBuffer += size;
         in_bufs[0].pvBuffer = read_buf;
-        status = InitializeSecurityContextW(cred, &ctx, connection->server->name,  isc_req_flags, 0, 0, &in_desc,
+        status = InitializeSecurityContextW(&cred_handle, &ctx, connection->server->name,  isc_req_flags, 0, 0, &in_desc,
                 0, NULL, &out_desc, &attrs, NULL);
         TRACE("InitializeSecurityContext ret %08lx\n", status);
 
@@ -562,8 +545,6 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
  */
 DWORD NETCON_secure_connect(netconn_t *connection, server_t *server)
 {
-    DWORD res;
-
     /* can't connect if we are already connected */
     if(connection->secure) {
         ERR("already connected\n");
@@ -576,22 +557,9 @@ DWORD NETCON_secure_connect(netconn_t *connection, server_t *server)
         connection->server = server;
     }
 
-    /* connect with given TLS options */
-    res = netcon_secure_connect_setup(connection, FALSE);
-    if (res == ERROR_SUCCESS)
-        return res;
-
-    /* FIXME: when got version alert and FIN from server */
-    /* fallback to connect without TLSv1.1/TLSv1.2        */
-    if (res == ERROR_INTERNET_SECURITY_CHANNEL_ERROR && have_compat_cred_handle)
-    {
-        closesocket(connection->socket);
-        res = create_netconn_socket(connection->server, NULL, 0, connection, 500);
-        if (res != ERROR_SUCCESS)
-            return res;
-        res = netcon_secure_connect_setup(connection, TRUE);
-    }
-    return res;
+    /* TLS version selection belongs to Schannel and its configured policy.
+     * An arbitrary handshake failure must not trigger a weaker retry. */
+    return netcon_secure_connect_setup(connection);
 }
 
 static BOOL send_ssl_chunk(netconn_t *conn, const void *msg, size_t size)
