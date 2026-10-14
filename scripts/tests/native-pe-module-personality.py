@@ -26,9 +26,16 @@ def fail(message):
     raise AssertionError(message)
 
 
-def default_for(module):
+def defaults_for(module):
     pattern = rf"^enable_{re.escape(module)}=\$\{{enable_{re.escape(module)}:-([^}}]+)\}}$"
     matches = re.findall(pattern, CONFIG, re.MULTILINE)
+    if not matches:
+        fail(f"missing configure default for {module}")
+    return matches
+
+
+def default_for(module):
+    matches = defaults_for(module)
     if len(matches) != 1:
         fail(f"expected one configure default for {module}, found {matches}")
     return matches[0]
@@ -66,9 +73,9 @@ for module, expected in (
     ("wow64cpu", "x86_64"),
     ("xtajit64", "arm64ec"),
 ):
-    setting = default_for(module)
-    if setting != expected:
-        fail(f"{module} changed architecture policy: {setting} != {expected}")
+    settings = defaults_for(module)
+    if settings != [expected, "no"]:
+        fail(f"{module} changed PE/no-PE policy: {settings} != {[expected, 'no']}")
 
 # The shared Win16 and VxD classes already use enable_win16=i386.
 if "enable_win16=${enable_win16:-i386}" not in CONFIG:
