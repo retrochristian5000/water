@@ -99,6 +99,78 @@ A Microsoft `LIB.EXE`-compatible import library built from a
 containing COFF objects; do not confuse `AR` with
 `winebuild` or the `wineld` import-library validator.
 
+## RC.EXE and llvm-rc resource ABI separation (14 October 2026)
+
+Microsoft `RC.EXE` and LLVM `llvm-rc` compile Windows
+resource-definition scripts (`.rc`) into **architecture-neutral** binary
+Win32 resources (`.res`). The COFF machine ID (`0xAA64` for ordinary
+ARM64) is set by the **linker**, not by encoding ARM64 machine metadata
+into the resource file. Therefore, keep the Windows resource binary
+format separate from the C/C++ target triple.
+
+Winemaker previously always emitted `RC = wrc` and a recipe forwarding
+`$(WINEMAKER_TARGET)` to `wrc`. This worked because Water's
+`tools/wrc/wrc.c` accepts `--target` but explicitly **ignores** it,
+and supports the `-fo` output switch. Simply replacing the generated
+`RC` variable with `llvm-rc` or Microsoft's `rc.exe` would instead
+leak the compiler's `--target=aarch64-windows` argument into a
+different command-line dialect. LLVM `llvm-rc` and Microsoft's
+`RC.EXE` use `/FO` for the binary output name; resource macros,
+include search paths, language and codepage settings are separate
+from the Windows ARM64 code-generation ABI.
+
+Winemaker now provides **opt-in** `--rc=wrc|llvm-rc|rc.exe`.
+Its legacy/default `wrc` command and output behavior are unchanged.
+For `llvm-rc` and `rc.exe`, the generated Makefile uses `RC_OUTPUT
+= /FO` and an empty `RC_TARGET`, **while retaining**
+`--target=aarch64-windows` on the `winegcc`/`wineg++` compiler
+and linker commands. For `wrc`, `RC_OUTPUT = -fo` and
+`RC_TARGET = $(WINEMAKER_TARGET)` preserve the pre-existing path.
+
+Example:
+
+```sh
+perl tools/winemaker/winemaker --nosource-fix --dll \
+    --single-target sample --target=aarch64-windows \
+    --rc=llvm-rc /path/to/source
+
+# Resource command from the generated Makefile:
+llvm-rc /FOsample.res sample.rc
+```
+
+To verify the command dialects and, when LLVM's resource compiler is
+installed, compile a real `.res` and link it with LLD as ARM64:
+
+```sh
+sh tools/winemaker/tests/rc-exe-compat.sh tools/winemaker/winemaker
+sh tools/winemaker/tests/pe-target.sh tools/winemaker/winemaker
+```
+
+A standalone test in the local Linux x86_64 compiler container
+constructed a conforming Win32 resource file with an `RCDATA`
+entry and linked it using `lld-link /machine:arm64 /dll /noentry`.
+The resulting PE32+ DLL used machine `0xAA64`, and preserved its
+resource payload. **Not performed:** direct execution of Microsoft's
+`RC.EXE` or LLVM's `llvm-rc`, neither of which was installed in
+that container. The new command-dialect regression and optional
+real-`llvm-rc` phase are present in the repository, but the full
+Winemaker script has not been executed from a local checkout here.
+
+Microsoft documents `RC_INVOKED`, `/FO`, `/D`, `/I`, `/L`
+and `/C`. Do not confuse the Microsoft C/C++ compiler's
+`_M_ARM64` / `_WIN64` macros with unconditional RC builtins.
+Differences in code page, preprocessing, LANGUAGE identifiers,
+VERSIONINFO serialization, MUI, and icon/dialog handling still
+require their own controlled comparisons with original SDK fixtures.
+No undocumented Win98-era behavior is assumed equivalent to modern
+MUI support.
+
+References:
+- https://learn.microsoft.com/en-us/windows/win32/menurc/using-rc-the-rc-command-line-
+- https://learn.microsoft.com/en-us/windows/win32/menurc/resource-file-formats
+- https://learn.microsoft.com/en-us/windows/win32/menurc/predefined-macros
+- https://reviews.llvm.org/D154545
+
 ## Regression and verification levels
 
 ```sh
