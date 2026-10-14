@@ -99,6 +99,24 @@ machine-private shares in a committed audit.
    it doesn't hang a login or steal provider registrations. Mark
    source-audited, build-passed and runtime-confirmed separately.
 
+## Confirmed MPR loader-lock risk
+
+`dlls/mpr/mpr_main.c` calls `wnetInit(hinstDLL)` from
+`DllMain(DLL_PROCESS_ATTACH)`. The call traverses
+`dlls/mpr/wnet.c` -> `_tryLoadProvider` -> `LoadLibraryW`, after
+registry lookups. This call chain is source-confirmed. Microsoft's DLL
+loader guidance prohibits `LoadLibrary[Ex]` from `DllMain` because of
+loader-lock reentrancy, and cautions against registry work there:
+https://learn.microsoft.com/en-us/windows/win32/Dlls/dynamic-link-library-best-practices
+
+**Hypothesis, not a reproduced defect:** a provider load can stall or
+reenter during a network-dependent login. Do not claim this caused any
+particular MPREXE hang. Safely deferring provider initialization would
+require auditing *all* consumers of `providerTable`, concurrency,
+initialization failure, and detach cleanup. Do not merely move
+`wnetInit` to the MPREXE executable or silently change MPR's API
+initialization semantics.
+
 ## Outstanding contradictions / hazards
 
 * The current Water MPR registry path is supported by modern/NT
