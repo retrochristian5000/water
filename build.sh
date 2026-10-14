@@ -2267,10 +2267,17 @@ prepare_llvm_msvcrt_headers()
         awk '{ printf "%s:%s", $1, $2 }'
     )
 
+    # A matching source checksum alone does not prove the staged include
+    # directory was not contaminated or partially deleted after caching.
+    # In particular, never let old libc++ extensionless headers return.
+    whp_msvcrt_unfiltered=$(find "$whp_msvcrt_overlay" -type f ! -name '*.h' ! -name '.whp-state' -print -quit 2>/dev/null || true)
     if [ -f "$whp_msvcrt_state_file" ] &&
+       [ -f "$whp_msvcrt_overlay/corecrt.h" ] &&
+       [ -f "$whp_msvcrt_overlay/vcruntime_exception.h" ] &&
+       [ -z "$whp_msvcrt_unfiltered" ] &&
        [ "$(cat "$whp_msvcrt_state_file")" = "$whp_msvcrt_state" ]; then
         printf '%s\n' "$whp_msvcrt_overlay"
-        unset whp_msvcrt_source whp_msvcrt_overlay whp_msvcrt_state_file whp_msvcrt_state whp_msvcrt_header
+        unset whp_msvcrt_source whp_msvcrt_overlay whp_msvcrt_state_file whp_msvcrt_state whp_msvcrt_header whp_msvcrt_unfiltered
         return
     fi
 
@@ -2291,12 +2298,13 @@ prepare_llvm_msvcrt_headers()
     rm -rf "$whp_msvcrt_overlay"
     mv "$whp_msvcrt_tmp" "$whp_msvcrt_overlay"
 
-    [ ! -e "$whp_msvcrt_overlay/__config" ] ||
-        die "filtered MSVCRT headers unexpectedly contain legacy libc++ __config"
+    whp_msvcrt_unfiltered=$(find "$whp_msvcrt_overlay" -type f ! -name '*.h' ! -name '.whp-state' -print -quit)
+    [ -z "$whp_msvcrt_unfiltered" ] ||
+        die "filtered MSVCRT headers contain a non-CRT/legacy C++ header: $whp_msvcrt_unfiltered"
 
     printf '%s\n' "$whp_msvcrt_overlay"
     unset whp_msvcrt_source whp_msvcrt_overlay whp_msvcrt_state_file whp_msvcrt_state \
-        whp_msvcrt_tmp whp_msvcrt_header whp_msvcrt_rel whp_msvcrt_dir
+        whp_msvcrt_tmp whp_msvcrt_header whp_msvcrt_rel whp_msvcrt_dir whp_msvcrt_unfiltered
 }
 
 audit_llvm_libcxx_archive()
@@ -2433,8 +2441,20 @@ prepare_one_llvm_libcxx()
     whp_libcxx_source=$(llvm_libcxx_source_id)
     whp_libcxx_compiler=$("$LLVM_BIN/clang++" --version 2>/dev/null | sed -n '1p')
     whp_libcxx_cmake_version=$("$whp_libcxx_cmake" --version 2>/dev/null | sed -n '1p')
+    # libc++'s bootstrap COM stubs include the live Windows SDK headers.
+    # Their revisions are not captured by the IDL-only overlay cache. A
+    # changed core Windows ABI header must invalidate any cached provider.
+    whp_libcxx_sdk_inputs=$(
+        for whp_libcxx_sdk_name in windef.h guiddef.h winnt.h windows.h winbase.h objbase.h
+        do
+            [ -f "$SOURCE_DIR/include/$whp_libcxx_sdk_name" ] ||
+                die "missing libc++ Windows ABI header: $whp_libcxx_sdk_name"
+            cksum "$SOURCE_DIR/include/$whp_libcxx_sdk_name"
+        done | cksum | awk '{ printf "%s:%s", $1, $2 }'
+    )
     whp_libcxx_signature=$(printf '%s\n' \
         "LLVM_LIBCXX_RECIPE=$LLVM_LIBCXX_RECIPE" \
+        "WATER_SDK_INPUTS=$whp_libcxx_sdk_inputs" \
         "LLVM_SOURCE=$whp_libcxx_source" \
         "TARGET=$whp_libcxx_target" \
         "CXX=$LLVM_BIN/clang++" \
@@ -2668,7 +2688,7 @@ EOF
             -D_LIBCPP_NO_AUTO_LINK -nostdinc++ \
             "-I$whp_libcxx_headers" \
             -isystem "$whp_libcxx_sdk_headers" \
-            -isystem "$SOURCE_DIR/include" -isystem "$SOURCE_DIR/include/msvcrt" \
+            -isystem "$SOURCE_DIR/include" -idirafter "$whp_libcxx_crt_headers" \
             -c "$whp_libcxx_probe" -o "$whp_libcxx_build/.whp-libcxx-probe.o"
         if [ "$whp_libcxx_arch" = i386 ]; then
             whp_libcxx_i386_symbols=$("$whp_libcxx_nm" --undefined-only "$whp_libcxx_build/.whp-libcxx-probe.o") ||
@@ -2709,7 +2729,7 @@ EOF
         whp_libcxx_source whp_libcxx_compiler whp_libcxx_signature whp_libcxx_cached \
         whp_libcxx_ninja whp_libcxx_saved_path whp_libcxx_archive whp_libcxx_probe \
         whp_libcxx_abi whp_libcxx_runtimes whp_libcxx_threads whp_libcxx_site_defines whp_libcxx_hermetic \
-        whp_libcxx_msvc_runtime whp_libcxx_jobs \
+        whp_libcxx_msvc_runtime whp_libcxx_jobs whp_libcxx_sdk_inputs whp_libcxx_sdk_name \
         whp_libcxx_cflags whp_libcxx_libs whp_libcxx_state_sum
 }
 
