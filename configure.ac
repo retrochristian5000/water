@@ -2764,6 +2764,21 @@ enable_wow32=${enable_wow32:-$enable_win16}
 enable_winevdm=${enable_winevdm:-$enable_win16}
 enable_twain_32=${enable_twain_32:-i386}
 
+dnl Avoid presenting Win9x-only compatibility DLLs as native NT ARM64 DLLs.
+dnl unicows is the Microsoft Layer for Unicode on Windows 95/98/Me, whose
+dnl helper DLL was loaded only on Win9x by its original import library.
+dnl w95inf32 implements Win95/98 SETUPX and preserves x86 stack ABI records.
+dnl Keep both in the i386 compatibility lane (including x86-on-ARM64 emulation),
+dnl not in aarch64/arm64ec/x86_64 native system DLL sets.  Do not classify
+dnl DLLs by digits alone: Microsoft also shipped x64 mf3216.dll.
+enable_unicows=${enable_unicows:-i386}
+enable_w95inf32=${enable_w95inf32:-i386}
+
+dnl NTVDM is an i386 NT personality, not a native 64-bit Windows executable.
+dnl DOSBox-backed emulation remains separate; don't fabricate ntvdm.exe as
+dnl an ARM64 Windows system component.
+enable_ntvdm=${enable_ntvdm:-i386}
+
 dnl Disable winetest too if tests are disabled
 enable_winetest=${enable_winetest:-$enable_tests}
 
