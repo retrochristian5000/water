@@ -187,6 +187,13 @@ This option does not make Windows-specific source code portable or
 guarantee compatible libraries; verify the generated PE machine type
 and imported symbols before deployment. Without this option the
 legacy Winelib Makefile output is unchanged.
+For explicit Windows PE targets Winemaker uses LLVM's `llvm-ar`
+with `--format=coff` when producing static archives, rather than
+the host's generic `ar`. For ordinary Winelib targets `llvm-ar`
+uses its default host archive format. The generated `AR` variable
+can still be overridden from make's command line. A native
+ARM64 archive's COFF members should be validated separately;
+ARM64EC hybrid import archives have different requirements.
 
 .SH EXAMPLES
 .PP
