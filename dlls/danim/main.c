@@ -18,17 +18,13 @@
 #include "winbase.h"
 #include "winerror.h"
 #include "objbase.h"
+#include "danim.h"
 #include "olectl.h" /* SELFREG_E_CLASS */
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(danim);
 
-/* Both were published for the early DirectAnimation ActiveX viewers.
- * Their dispatch interfaces are distinct and are not yet implemented. */
-static const GUID clsid_viewer = {0xb6ffc24c, 0x7e13, 0x11d0,
-    {0x9b, 0x47, 0x00, 0xc0, 0x4f, 0xc2, 0xf5, 0x1d}};
-static const GUID clsid_control = {0x69ad90ef, 0x1c20, 0x11d1,
-    {0x88, 0x01, 0x00, 0xc0, 0x4f, 0xc2, 0x9d, 0x46}};
+/* Their dispatch interfaces are distinct and are not yet implemented. */
 
 struct danim_factory
 {
@@ -131,7 +127,8 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
         return E_POINTER;
     *out = NULL;
 
-    if (!IsEqualGUID(clsid, &clsid_viewer) && !IsEqualGUID(clsid, &clsid_control))
+    if (!IsEqualGUID(clsid, &CLSID_DAViewerControl) &&
+        !IsEqualGUID(clsid, &CLSID_DAViewerControlWindowed))
         return CLASS_E_CLASSNOTAVAILABLE;
 
     if (!(factory = HeapAlloc(GetProcessHeap(), 0, sizeof(*factory))))
