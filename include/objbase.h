@@ -177,6 +177,8 @@
 #undef THIS
 #undef DECLARE_INTERFACE
 #undef DECLARE_INTERFACE_
+#undef DECLARE_INTERFACE_IID
+#undef DECLARE_INTERFACE_IID_
 
 #ifndef WINOLE32API
 #ifdef _OLE32_
@@ -208,6 +210,9 @@
 #define interface struct
 #define DECLARE_INTERFACE(iface)        interface DECLSPEC_NOVTABLE iface
 #define DECLARE_INTERFACE_(iface,ibase) interface DECLSPEC_NOVTABLE iface : public ibase
+/* Root COM interfaces need an IID attribute too; unlike the C spelling,
+ * this is used by __uuidof and IID_PPV_ARGS in MSVC-compatible C++. */
+#define DECLARE_INTERFACE_IID(iface, iid) interface DECLSPEC_UUID(iid) DECLSPEC_NOVTABLE iface
 #define DECLARE_INTERFACE_IID_(iface, ibase, iid) interface DECLSPEC_UUID(iid) DECLSPEC_NOVTABLE iface : public ibase
 
 #define IFACEMETHOD(method)         STDMETHOD(method)
@@ -253,6 +258,8 @@
          struct iface##Vtbl
 #endif
 #define DECLARE_INTERFACE_(iface,ibase) DECLARE_INTERFACE(iface)
+/* IID syntax is C++ metadata only; C keeps the identical vtable layout. */
+#define DECLARE_INTERFACE_IID(iface, iid) DECLARE_INTERFACE(iface)
 #define DECLARE_INTERFACE_IID_(iface, ibase, iid) DECLARE_INTERFACE_(iface, ibase)
 
 #define BEGIN_INTERFACE
