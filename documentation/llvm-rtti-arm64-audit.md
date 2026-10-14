@@ -72,6 +72,17 @@ i386 and x86_64 RUN lines only. A new separate regression,
 Regression is committed on LLVM `main`:
 https://github.com/retrochristian5000/LLVM/commit/fbb23cce1e131993ab88e8945cf8cce857bc1a6e
 
+A second change extends the existing `clang/test/SemaCXX/ms-no-rtti-data.cpp`
+diagnostic test from x64 to ARM64:
+https://github.com/retrochristian5000/LLVM/commit/fe0a459504811b7942f919a86d6ebe9edf64af59
+A local `clang -cc1` verification passed. With
+`-fno-rtti-data`, ARM64 compilation warns that polymorphic
+`dynamic_cast` and `typeid` will fail, and the IR contains
+no CompleteObjectLocator records. In the inspected Water
+`tools/winegcc/winegcc.c`, no automatic `-fno-rtti-data`
+or `-fno-rtti` flag was found. Still audit externally supplied
+`CXXFLAGS` and project settings before assuming RTTI is enabled.
+
 The local Clang 17 source fixture was compiled and its IR/object
 inspected, but the new fork `lit` regression has **not yet been
 executed with the rebuilt LLVM fork compiler**. This is a
@@ -83,10 +94,11 @@ failing test.
 
 As audited, Water's `toolchains/llvm-project` gitlink still
 references `3ca674b360059614fc3572fa81bdf25ea9b9f5d5`, while
-the LLVM fork `main` is
-`fbb23cce1e131993ab88e8945cf8cce857bc1a6e`.
-The pinned commit is **68 first-parent-ancestry commits behind**
-the fork branch in GitHub's compare view. An automatic pin
+the LLVM fork `main` subsequently reached
+`fe0a459504811b7942f919a86d6ebe9edf64af59`.
+The pinned commit was **68 commits behind**
+the fork branch in GitHub's compare view at the initial audit,
+prior to the follow-up diagnostic test. An automatic pin
 advance would silently include many unrelated compiler and
 linker changes. It was deliberately **not** advanced as part
 of this narrow RTTI investigation. Review or test that larger
