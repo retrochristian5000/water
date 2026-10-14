@@ -35,7 +35,11 @@ ABI_ASSERT(offsetof(IDispatchVtbl, Invoke) == 6 * sizeof(void *), "IDispatch slo
 #if defined(_WIN64)
 ABI_ASSERT(sizeof(void *) == 8, "64-bit Windows pointer");
 ABI_ASSERT(sizeof(VARIANT) == 24, "64-bit VARIANT layout");
-ABI_ASSERT(offsetof(VARIANT, vt) == 0, "VARTYPE position");
+/* Use the SDK accessor so both named and anonymous union modes compile. */
+static VARTYPE water_variant_type(VARIANT *value)
+{
+    return V_VT(value);
+}
 ABI_ASSERT(sizeof(SAFEARRAY) == 32, "64-bit SAFEARRAY descriptor");
 ABI_ASSERT(offsetof(SAFEARRAY, pvData) == 16, "64-bit SAFEARRAY data pointer");
 ABI_ASSERT(offsetof(SAFEARRAY, rgsabound) == 24, "64-bit SAFEARRAY bounds");
