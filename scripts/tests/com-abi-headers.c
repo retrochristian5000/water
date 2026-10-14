@@ -63,7 +63,7 @@ DECLARE_INTERFACE_IID(IWaterRoot, "b2b15f23-7cc1-4214-9257-50b3c0627071")
 };
 #undef INTERFACE
 #define INTERFACE IWaterChild
-DECLARE_INTERFACE_IID_(IWaterChild, IWaterRoot, "5752be63-ff8b-496c-9b4c-89e48abfd420")
+DECLARE_INTERFACE_IID_(IWaterChild, IUnknown, "5752be63-ff8b-496c-9b4c-89e48abfd420")
 {
     BEGIN_INTERFACE
 #if !defined(__cplusplus) || defined(CINTERFACE)
@@ -96,7 +96,7 @@ static const GUID *derived_iid()
 {
     return &__uuidof(IWaterChild);
 }
-static HRESULT create_root(IWaterRoot **result)
+static HRESULT create_child(IWaterChild **result)
 {
     return CoCreateInstance(CLSID_NULL, nullptr, CLSCTX_INPROC_SERVER,
                             IID_PPV_ARGS(result));
