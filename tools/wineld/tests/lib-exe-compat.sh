@@ -62,6 +62,17 @@ if ! grep -aF 'period.dll' "$tmp/consumer.dll" >/dev/null; then
     exit 1
 fi
 
+# Even if LLVM repairs bare .def naming, malformed short-import DLL names
+# must never slip through the archive validator as an apparently valid ABI.
+cp "$tmp/period.lib" "$tmp/corrupt.lib"
+perl -0777 -i -pe 's/exported\x00period\.dll\x00/exported\x00\x00eriod.dll\x00/ or die "cannot mutate short import DLL name\n"' "$tmp/corrupt.lib"
+if perl "$wineld" --target=aarch64-windows --dry-run -- \
+    /dll /noentry "/out:$tmp/scratch.dll" "$tmp/corrupt.lib" > "$tmp/log" 2>&1; then
+    echo 'wineld accepted a short-import record with an empty DLL name' >&2
+    exit 1
+fi
+grep -F 'missing symbol or DLL name' "$tmp/log" >/dev/null
+
 # Microsoft LIB.EXE infers bare.def -> bare.dll without LIBRARY.
 # Older llvm-lib versions instead emit an empty import DLL name and wrong
 # archive member names. Accept a corrected LLVM or require wineld to
