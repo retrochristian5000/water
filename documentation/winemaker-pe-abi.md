@@ -50,6 +50,55 @@ pointer-size option with an explicit target is rejected rather than
 allowing an i386 switch to contaminate the ARM64 selection.
 A non-Windows target triple is likewise rejected in this PE mode.
 
+## LLVM archiver parity (14 October 2026)
+
+Previously Winemaker emitted `AR = ar` for all generated Makefiles,
+even though `winebuild` already prefers LLVM COFF-aware archive
+generation for the Windows PE ABI. A host-dependent `ar` selection
+could silently choose an inappropriate archive mode when packaging
+`aarch64-windows` COFF objects.
+
+The generated default is now `AR = llvm-ar` for **both** Winelib and
+Windows PE projects, and callers may still override `AR` through
+their Make invocation. Only explicit Windows PE targets add
+`ARFORMAT = --format=coff`, yielding a command of the form:
+
+```sh
+llvm-ar --format=coff rcs probe.a probe.o
+```
+
+Legacy Winelib generation leaves `ARFORMAT` empty, allowing
+`llvm-ar` to choose the host archive representation. All recognized
+static-library target paths request `rcs`, including
+`--single-target --lib`, which previously omitted its archive flags.
+The `s` ensures a symbol index is built rather than relying on
+tool-specific defaults. The archive suffix `.a` is not by itself
+proof of GNU ELF content; the explicit format and the COFF machine
+fields in archive members are what determine Windows compatibility.
+
+**Locally reproduced tool behavior:** LLVM 17's
+`llvm-ar --format=coff rcs` accepted a Clang-generated ARM64 Windows
+object, wrote a `!<arch>\\n` archive with COFF linker members,
+and preserved the member's `IMAGE_FILE_MACHINE_ARM64=0xAA64`.
+Its archive was inspectable with `llvm-ar t` and
+`llvm-objdump -f`. This is an LLVM smoke test independent of the
+Winemaker-generated Makefile; the repository's new integration
+test additionally exercises generated archive rules:
+
+```sh
+sh tools/winemaker/tests/ar-coff.sh tools/winemaker/winemaker
+sh tools/winemaker/tests/pe-target.sh tools/winemaker/winemaker
+```
+
+**Boundary:** `ARM64EC` hybrid archives need separate
+`lld-link /lib` compatibility checks, as Water's
+`winebuild/import.c` already recognizes; setting
+`llvm-ar --format=coff` does *not* establish ARM64EC library parity.
+A Microsoft `LIB.EXE`-compatible import library built from a
+`.def` file is also not the same operation as a static archive
+containing COFF objects; do not confuse `AR` with
+`winebuild` or the `wineld` import-library validator.
+
 ## Regression and verification levels
 
 ```sh
@@ -87,9 +136,9 @@ compatibility from successful linkage alone.
   does not currently translate them to an ARM64 calling convention.
 * A `.def` or `.spec` file must be valid for the requested DLL.
   Explicit PE mode does not invent missing exports or COM layouts.
-* `AR` still selects the host archiver in generated Makefiles.
-  For ARM64 static libraries, verify it preserves COFF object members
-  or override it with an appropriate `llvm-ar` installation.
+* For ARM64 static libraries, inspect the archive's actual COFF
+  members even when the generating tool is `llvm-ar`. Keep
+  ARM64EC/ARM64X hybrid imports on separately verified code paths.
 * Linker defaults, CRT selection, and actual `wrc` resource output
   remain under their owning components; don't add Mach-O flags or
   `/DRIVER` to make a DLL look loadable.
