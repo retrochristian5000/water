@@ -31,15 +31,19 @@ cat > "$tmp/probe.cpp" <<'CPP'
 #if !defined(__powerpc__) && !defined(__ppc__) && !defined(_M_PPC)
 # error PowerPC compiler target required
 #endif
-#if !defined(_WIN32)
-# error Windows target triple required
-#endif
+/* Inspect the actual Windows macro separately. LLVM may accept this
+ * Windows-named triple without selecting the Windows C++ ABI at all. */
 static_assert(sizeof(void *) == 4, "32-bit PowerPC Windows pointer ABI");
 static_assert(sizeof(wchar_t) == 2, "Windows wchar_t ABI");
 struct base { virtual ~base(); };
 struct derived : base {};
 extern "C" int whp_ppc_probe(base *p) { return dynamic_cast<derived *>(p) != nullptr; }
 CPP
+
+if ! "$cxx" -target "$triple" -dM -E -x c++ /dev/null |
+    grep -Eq '^#define _WIN32[[:space:]]'; then
+    echo "BLOCKED: $triple does not even define _WIN32; Windows ABI unselected"
+fi
 
 if ! "$cxx" -target "$triple" -fshort-wchar -std=c++17 \
     -fexceptions -frtti -c "$tmp/probe.cpp" -o "$tmp/probe.o" 2>"$tmp/compile.err"; then
