@@ -1055,7 +1055,7 @@ sub source_scan_project_file($$$)
     } elsif ($prj_target_type==$TT_LIB) {
         $prj_name=lc("lib".$prj_name.".a");
         @$target[$T_TYPE]=$TT_LIB;
-        push @{@$target[$T_ARFLAGS]},("rc");
+        push @{@$target[$T_ARFLAGS]},("rcs");
     } else {
         $prj_name=lc($prj_name.".dll");
         @$target[$T_TYPE]=$TT_DLL;
@@ -1585,13 +1585,13 @@ sub source_scan_directory($$$$)
       @$target[$T_TYPE]=$TT_LIB;
       push @local_depends,"$target_name";
       push @local_libs,$target_name;
-      push @{@$target[$T_ARFLAGS]},("rc");
+      push @{@$target[$T_ARFLAGS]},("rcs");
     } elsif ($target_name =~ /\.a$/) {
       @$target[$T_NAME]=$target_name;
       @$target[$T_TYPE]=$TT_LIB;
       push @local_depends,"$target_name";
       push @local_libs,$target_name;
-      push @{@$target[$T_ARFLAGS]},("rc");
+      push @{@$target[$T_ARFLAGS]},("rcs");
     } else {
       @$target[$T_TYPE]=$opt_target_type;
       push @exe_list,$target;
@@ -1774,6 +1774,9 @@ sub source_scan()
     }
     @$main_target[$T_NAME]=$name;
     @$main_target[$T_TYPE]=$opt_target_type;
+    # The single-target scanner bypasses the normal static-library setup.
+    # Make sure it still writes an indexed archive.
+    push @{@$main_target[$T_ARFLAGS]}, "rcs" if $opt_target_type == $TT_LIB;
 
     # Add it to the list
     push @{$main_project[$P_TARGETS]},$main_target;
@@ -2556,7 +2559,11 @@ sub generate_project_files($)
   print FILEO "CC = winegcc\n";
   print FILEO "CXX = wineg++\n";
   print FILEO "RC = wrc\n";
-  print FILEO "AR = ar\n";
+  # LLVM's archiver is able to produce COFF archives for PE objects.
+  # Use its default archive format for legacy Winelib output instead.
+  print FILEO "AR = llvm-ar\n";
+  print FILEO "ARFORMAT = --format=coff\n" if defined $opt_pe_target;
+  print FILEO "ARFORMAT =\n" unless defined $opt_pe_target;
   print FILEO "\n\n";
 
   print FILEO "### Generic targets\n\n";
@@ -2624,7 +2631,7 @@ sub generate_project_files($)
       }
 
       if (@$target[$T_TYPE] == $TT_LIB) {
-        print FILEO "\t\$(AR) \$(${canon}_ARFLAGS) \$\@ \$(${canon}_OBJS)\n";
+        print FILEO "\t\$(AR) \$(ARFORMAT) \$(${canon}_ARFLAGS) \$\@ \$(${canon}_OBJS)\n";
       } else {
         if (@{@$target[$T_SOURCES_CXX]} > 0 or @{@$project_settings[$T_SOURCES_CXX]} > 0) {
           print FILEO "\t\$(CXX) \$(WINEMAKER_TARGET)";
