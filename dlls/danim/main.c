@@ -18,6 +18,7 @@
 #include "winbase.h"
 #include "winerror.h"
 #include "objbase.h"
+#include "olectl.h" /* SELFREG_E_CLASS */
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(danim);
