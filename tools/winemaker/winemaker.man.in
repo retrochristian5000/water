@@ -195,6 +195,16 @@ can still be overridden from make's command line. A native
 ARM64 archive's COFF members should be validated separately;
 ARM64EC hybrid import archives have different requirements.
 
+.TP
+.BI --rc= "wrc|llvm-rc|rc.exe"
+Select the generated Makefile resource compiler. `wrc` remains the default.
+For `llvm-rc` and Microsoft's `rc.exe`, use the RC.EXE-compatible
+`/FO` output syntax and do not forward `--target` to the resource
+compiler. The Windows target triple remains on the `winegcc` and
+`wineg++` compile/link commands. With `wrc`, the existing `-fo`
+output syntax and ignored target compatibility option are preserved.
+The `.res` file itself has no ARM64 machine type; linker machine
+selection is independent of resource compilation.
 .SH EXAMPLES
 .PP
 Here is a typical \fBwinemaker\fR use:
