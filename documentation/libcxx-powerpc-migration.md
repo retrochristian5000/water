@@ -78,7 +78,7 @@ in `build.sh` and `menuconfig`.
   prior legacy-enabled build.
 * `WATER_ARCHS_MODE=auto` enumerates all candidate PE lanes in the
   libc++ preflight. To test a modern-only set, select explicit
-  `WATER_CONFIGURE_ARCHS` / `WATER_ARCHS_MODE=custom` values
+  `WHP_CONFIGURE_ARCHS` / `WATER_ARCHS_MODE=custom` values
   rather than expecting an unsupported PPC lane to disappear
   silently. Existing i386, x64, ARM64, and ARM64EC C++ runtime
   tests and object-format audits still apply.
