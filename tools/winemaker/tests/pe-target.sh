@@ -47,8 +47,8 @@ perl "$winemaker" --nobanner --nobackup --nosource-fix --dll \
 makefile="$tmp/arm64/Makefile"
 assert_contains "$makefile" 'WINEMAKER_TARGET = --target=aarch64-windows'
 assert_contains "$makefile" '$(DLLS:%=%)'
-assert_contains "$makefile" '$(PROBE_DLL_MODULE):'
-assert_contains "$makefile" '$(PROBE_DLL_MODULE:.dll=.spec)'
+assert_contains "$makefile" '$(probe_dll_MODULE):'
+assert_contains "$makefile" '$(probe_dll_MODULE:.dll=.spec)'
 assert_contains "$makefile" '-shared'
 assert_contains "$makefile" '$(CC) $(WINEMAKER_TARGET) -c'
 assert_contains "$makefile" '$(CXX) $(WINEMAKER_TARGET) -c'
@@ -77,7 +77,7 @@ perl "$winemaker" --nobanner --nobackup --nosource-fix --dll \
     --single-target probe.dll "$tmp/winelib" > "$tmp/run.log"
 assert_contains "$tmp/winelib/Makefile" 'WINEMAKER_TARGET ='
 assert_contains "$tmp/winelib/Makefile" '$(DLLS:%=%.so)'
-assert_contains "$tmp/winelib/Makefile" '$(PROBE_DLL_MODULE).so:'
+assert_contains "$tmp/winelib/Makefile" '$(probe_dll_MODULE).so:'
 
 # Fail closed on cross-ABI contamination and unsupported host triples.
 if perl "$winemaker" --nobanner --wine32 --target=aarch64-windows \
