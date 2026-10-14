@@ -43,6 +43,60 @@ output pointer when it rejects an unsupported CLSID, instead of leaving
 the caller with an invalid interface pointer. Its other unimplemented
 exports have not thereby become DirectAnimation functionality.
 
+## Public header recovery (October 13, 2026)
+
+Water previously provided `dlls/danim` but no `include/danim.h`.
+A January 31, 1999 DirectMedia SDK header inventory explicitly names
+`danim.h` and inventories `CLSID_DAViewerControl`,
+`CLSID_DAViewerControlWindowed`, `CLSID_DAStatics` and numerous other
+DA class symbols. That inventory **does not publish their numeric GUIDs**
+or the COM interfaces' vtable layouts:
+https://groups.google.com/g/microsoft.public.multimedia.directx.dshow.programming/c/qTs0CFJCYG0
+
+The March 27, 1998 Microsoft DirectAnimation SDK provides the
+unwindowed viewer's CLSID
+`{B6FFC24C-7E13-11D0-9B47-00C04FC2F51D}`:
+https://sistemas.afgcoahuila.gob.mx/software/Visual%20Basic%206.0%2032%20y%2064%20bits/Common/Tools/VB/Unsupprt/Danim/help/da/DA_E0003.htm
+
+A March 2001 Microsoft magazine article identifies
+`{69AD90EF-1C20-11D1-8801-00C04FC29D46}` as a DirectAnimation
+control in `danim.dll`; independent ActiveX registration inventories
+label this the windowed variant:
+https://learn.microsoft.com/en-us/archive/msdn-magazine/2001/march/graphics-manipulate-digital-images-in-internet-explorer-with-the-directx-transform-sdk
+https://github.com/davestewart/maxscript/blob/master/3D/3ds2ae/03_3ds/dev/interface/ax%20property%20grids/axcontrols.ms
+
+A Microsoft 2006 security bulletin lists dozens of CLSIDs under
+`danim.dll`, and others separately under `daxctle.ocx` and
+`lmrt.dll`. **This is later provenance, not a Windows 98 FE SDK ABI
+manifest;** it must not be used to assign guessed 1998 names or
+interface IIDs:
+https://learn.microsoft.com/en-us/security-updates/securitybulletins/2006/ms06-067
+
+The new *partial* `include/danim.h` declares only the two numerically
+verified viewer class IDs:
+`CLSID_DAViewerControl` and `CLSID_DAViewerControlWindowed`.
+`libs/uuid/uuid.c` now defines them through the normal Wine
+`DEFINE_GUID` mechanism. Both `dlls/danim/main.c` and its tests use
+those public names instead of duplicate anonymous GUID constants.
+The test validates the literal values and that the two IDs are distinct.
+
+**Still missing:** original DirectAnimation IDL/TLB, `IID_IDAViewerControl`
+(and other verified interface IIDs), automation `IDispatch` DISPIDs,
+`IDAStatics` interface signatures, `DA_TIMER_SOURCE` enum values,
+C/C++ COM vtables, and the actual `PixelLibrary` / `MeterLibrary`
+implementations. The 1998 SDK readme mentions the
+`IDAViewerControl::TimerSource` property and `DA_TIMER_SOURCE`
+type, but doesn't establish the enum's numeric values:
+https://sistemas.afgcoahuila.gob.mx/software/Visual%20Basic%206.0%2032%20y%2064%20bits/Common/Tools/VB/Unsupprt/Danim/relnotda.htm
+
+Adding header declarations does **not** make the ActiveX viewer usable
+or justify registering it on a Windows installation. Before filling in
+vtable positions, GUIDs, or DISPIDs, capture versioned 1998-era
+type-library/IDL evidence and compare variants. In particular,
+do not silently merge the standard viewer with its windowed variant or
+with Direct3D Retained Mode, DirectX Transform, or modern Windows
+animation APIs.
+
 ## Future contract tests
 
 Before introducing `danim.dll` activation or animation behavior,
