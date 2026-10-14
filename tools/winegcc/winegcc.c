@@ -1085,6 +1085,9 @@ static void compile( struct strarray files, const char *output_name, int compile
         /* -isysroot selects the macOS SDK; Wine's installed headers stay outside it. */
         const char *root = sysroot ? sysroot : "";
 #else
+        /* Keep non-Apple system Wine header fallback alongside the configured prefix.
+         * -isysroot still roots these headers separately from the linker's --sysroot. */
+        const char *incl_dirs[] = { INCLUDEDIR, "/usr/include", "/usr/local/include" };
         const char *root = isysroot ? isysroot : sysroot ? sysroot : "";
 #endif
         const char *isystem = gcc_defs ? "-isystem" : "-I";
