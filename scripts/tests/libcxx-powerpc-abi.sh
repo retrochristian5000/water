@@ -4,9 +4,9 @@
 # migration, not evidence that a PowerPC PE libc++ archive is usable.
 set -eu
 
-root=\${WATER_SOURCE_DIR:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}
-cxx=\${TEST_CLANGXX:-clang++}
-triple=\${WATER_PPC_TEST_TRIPLE:-powerpcle-windows}
+root=${WATER_SOURCE_DIR:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}
+cxx=${TEST_CLANGXX:-clang++}
+triple=${WATER_PPC_TEST_TRIPLE:-powerpcle-windows}
 
 for f in "$root/build.sh" "$root/configure.ac" "$root/libs/c++/Makefile.in"; do
     [ -f "$f" ] || { echo "missing Water source: $f" >&2; exit 2; }
@@ -25,7 +25,7 @@ if ! command -v "$cxx" >/dev/null 2>&1; then
     exit 77
 fi
 
-tmp=$(mktemp -d "\${TMPDIR:-/tmp}/water-libcxx-ppc.XXXXXXXX")
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/water-libcxx-ppc.XXXXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 cat > "$tmp/probe.cpp" <<'CPP'
 #if !defined(__powerpc__) && !defined(__ppc__) && !defined(_M_PPC)
@@ -74,7 +74,7 @@ esac
 
 # Accepting a COFF object is only the first condition. Test that the
 # PowerPC final linker exists before attempting the libc++ migration.
-linker=\${WATER_PPC_TEST_LINKER:-lld-link}
+linker=${WATER_PPC_TEST_LINKER:-lld-link}
 if ! command -v "$linker" >/dev/null 2>&1; then
     echo "BLOCKED: no verified PowerPC Windows PE linker: $linker"
     exit 77
