@@ -1,3 +1,20 @@
+## -isysroot scope audit (October 13, 2026)
+
+The `isysroot` variable is **active**, not dead: `-isysroot PATH` and
+`-isysrootPATH` populate it, and the non-Apple compiler include search
+prefers it over Water's explicit `--sysroot`. The argument itself continues
+to pass to Clang/GCC. On macOS, the Apple SDK is used by the compiler but
+must **not** redirect Wine's installed include paths.
+
+A September 23 Darwin-prefix fix (`ac228053`) accidentally moved
+`incl_dirs` inside `#ifdef __APPLE__` without a matching non-Apple
+declaration. Commit `a1cbcf9` restores the previous non-Apple search
+list (`INCLUDEDIR`, `/usr/include`, `/usr/local/include`) while keeping
+macOS restricted to `INCLUDEDIR`. The argument forwarding test now checks
+non-Apple include rooting and `-isysroot` precedence over `--sysroot`.
+This is source-audited; an actual Water host build and mock-compiler
+regression run remain unverified.
+
 # WineGCC build path audit (October 9, 2026)
 
 ## Confirmed and repaired
