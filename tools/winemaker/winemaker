@@ -132,6 +132,9 @@ my $opt_flags;
 # Contains 32 for 32-Bit-Targets and 64 for 64-Bit-Targets
 my $opt_arch;
 
+# Explicit Windows PE target; undefined retains the original Winelib model.
+my $opt_pe_target;
+
 ##
 # If true then winemaker should ask questions to the user as it goes
 # along.
@@ -1078,7 +1081,7 @@ sub source_scan_project_file($$$)
         @$target[$T_LIBRARIES]=[];
     }
     if ((@$target[$T_FLAGS] & $TF_NOMSVCRT) == 0) {
-        push @{@$target[$T_LDFLAGS]},"-mno-cygwin";
+        push @{@$target[$T_LDFLAGS]},"-mno-cygwin" unless defined $opt_pe_target;
         if ($opt_arch != $OPT_ARCH_DEFAULT) {
             push @{@$target[$T_LDFLAGS]},"-m$opt_arch";
         }
@@ -1142,7 +1145,7 @@ sub source_scan_project_file($$$)
     }
 
     if ((@$project_settings[$T_FLAGS] & $TF_NOMSVCRT) == 0) {
-        push @{@$project_settings[$T_CEXTRA]},"-mno-cygwin";
+        push @{@$project_settings[$T_CEXTRA]},"-mno-cygwin" unless defined $opt_pe_target;
         if ($opt_arch != $OPT_ARCH_DEFAULT) {
             push @{@$project_settings[$T_CEXTRA]},"-m$opt_arch";
             push @{@$project_settings[$T_CXXEXTRA]},"-m$opt_arch";
@@ -1568,7 +1571,7 @@ sub source_scan_directory($$$$)
     @$target[$T_FLAGS]|=@$project_settings[$T_FLAGS];
     if ($target_name =~ /\.dll$/) {
       @$target[$T_TYPE]=$TT_DLL;
-      push @local_depends,"$target_name.so";
+      push @local_depends,$target_name . (defined $opt_pe_target ? "" : ".so");
       push @local_dlls,$target_name;
       my $canon=canonize($target_name);
       if (@$project_settings[$T_FLAGS] & $TF_HASDEF) {
@@ -1607,7 +1610,7 @@ sub source_scan_directory($$$$)
       @$target[$T_LIBRARIES]=[];
     }
     if ((@$target[$T_FLAGS] & $TF_NOMSVCRT) == 0) {
-      push @{@$target[$T_LDFLAGS]},"-mno-cygwin";
+      push @{@$target[$T_LDFLAGS]},"-mno-cygwin" unless defined $opt_pe_target;
       if ($opt_arch != $OPT_ARCH_DEFAULT) {
         push @{@$target[$T_LDFLAGS]},"-m$opt_arch";
       }
@@ -1701,7 +1704,7 @@ sub source_scan_directory($$$$)
   }
 
   if ((@$project_settings[$T_FLAGS] & $TF_NOMSVCRT) == 0) {
-    push @{@$project_settings[$T_CEXTRA]},"-mno-cygwin";
+    push @{@$project_settings[$T_CEXTRA]},"-mno-cygwin" unless defined $opt_pe_target;
       if ($opt_arch != $OPT_ARCH_DEFAULT) {
         push @{@$project_settings[$T_CEXTRA]},"-m$opt_arch";
         push @{@$project_settings[$T_CXXEXTRA]},"-m$opt_arch";
@@ -2386,6 +2389,7 @@ sub generate_project_files($)
   my @dll_list=();
   my @lib_list=();
   my @exe_list=();
+  my $dll_suffix = defined $opt_pe_target ? "" : ".so";
 
   # Then sort the targets and separate the libraries from the programs
   foreach my $target (sort { @$a[$T_NAME] cmp @$b[$T_NAME] } @{@$project[$P_TARGETS]}) {
@@ -2532,6 +2536,8 @@ sub generate_project_files($)
   }
   print FILEO "\n\n";
   print FILEO "### Tools\n\n";
+  print FILEO "WINEMAKER_TARGET = --target=$opt_pe_target\n" if defined $opt_pe_target;
+  print FILEO "WINEMAKER_TARGET =\n" unless defined $opt_pe_target;
   print FILEO "CC = winegcc\n";
   print FILEO "CXX = wineg++\n";
   print FILEO "RC = wrc\n";
@@ -2544,7 +2550,7 @@ sub generate_project_files($)
     print FILEO " \$(SUBDIRS)";
   }
   if (@{@$project[$P_TARGETS]} > 0) {
-    print FILEO " \$(DLLS:%=%.so) \$(LIBS) \$(EXES)";
+    print FILEO " \$(DLLS:%=%$dll_suffix) \$(LIBS) \$(EXES)";
   }
   print FILEO "\n\n";
   print FILEO "### Build rules\n";
@@ -2560,16 +2566,16 @@ sub generate_project_files($)
   print FILEO "DEFINCL = \$(INCLUDE_PATH) \$(DEFINES) \$(OPTIONS)\n";
   print FILEO "\n";
   print FILEO ".c.o:\n";
-  print FILEO "\t\$(CC) -c \$(CFLAGS) \$(CEXTRA) \$(DEFINCL) -o \$\@ \$<\n";
+  print FILEO "\t\$(CC) \$(WINEMAKER_TARGET) -c \$(CFLAGS) \$(CEXTRA) \$(DEFINCL) -o \$\@ \$<\n";
   print FILEO "\n";
   print FILEO ".cpp.o:\n";
-  print FILEO "\t\$(CXX) -c \$(CXXFLAGS) \$(CXXEXTRA) \$(DEFINCL) -o \$\@ \$<\n";
+  print FILEO "\t\$(CXX) \$(WINEMAKER_TARGET) -c \$(CXXFLAGS) \$(CXXEXTRA) \$(DEFINCL) -o \$\@ \$<\n";
   print FILEO "\n";
   print FILEO ".cxx.o:\n";
-  print FILEO "\t\$(CXX) -c \$(CXXFLAGS) \$(CXXEXTRA) \$(DEFINCL) -o \$\@ \$<\n";
+  print FILEO "\t\$(CXX) \$(WINEMAKER_TARGET) -c \$(CXXFLAGS) \$(CXXEXTRA) \$(DEFINCL) -o \$\@ \$<\n";
   print FILEO "\n";
   print FILEO ".rc.res:\n";
-  print FILEO "\t\$(RC) \$(RCFLAGS) \$(RCEXTRA) \$(DEFINCL) -fo\$@ \$<\n";
+  print FILEO "\t\$(RC) \$(WINEMAKER_TARGET) \$(RCFLAGS) \$(RCEXTRA) \$(DEFINCL) -fo\$@ \$<\n";
   print FILEO "\n";
   print FILEO "# Rules for cleaning\n";
   print FILEO "\n";
@@ -2578,7 +2584,7 @@ sub generate_project_files($)
   print FILEO "\n";
   print FILEO "clean:: \$(SUBDIRS:%=%/__clean__) \$(EXTRASUBDIRS:%=%/__clean__)\n";
   print FILEO "\t\$(RM) \$(CLEAN_FILES) \$(RC_SRCS:.rc=.res) \$(C_SRCS:.c=.o) \$(CXX_SRCS:$cpp_to_object)\n";
-  print FILEO "\t\$(RM) \$(DLLS:%=%.so) \$(LIBS) \$(EXES) \$(EXES:%=%.so)\n";
+  print FILEO "\t\$(RM) \$(DLLS:%=%$dll_suffix) \$(LIBS) \$(EXES) \$(EXES:%=%.so)\n";
   print FILEO "\n";
   print FILEO "\$(SUBDIRS:%=%/__clean__): dummy\n";
   print FILEO "\tcd `dirname \$\@` && \$(MAKE) clean\n";
@@ -2595,9 +2601,9 @@ sub generate_project_files($)
       $canon =~ s/_so$//;
 
       if (@$target[$T_TYPE] == $TT_DLL && (@$project_settings[$T_FLAGS] & $TF_HASDEF)) {
-        print FILEO "\$(${canon}_MODULE).so: \$(${canon}_OBJS) \$(${canon}_MODULE:.dll=.def)\n";
+        print FILEO "\$(${canon}_MODULE)$dll_suffix: \$(${canon}_OBJS) \$(${canon}_MODULE:.dll=.def)\n";
       } elsif (@$target[$T_TYPE] == $TT_DLL) {
-        print FILEO "\$(${canon}_MODULE).so: \$(${canon}_OBJS) \$(${canon}_MODULE:.dll=.spec)\n";
+        print FILEO "\$(${canon}_MODULE)$dll_suffix: \$(${canon}_OBJS) \$(${canon}_MODULE:.dll=.spec)\n";
       } else {
         print FILEO "\$(${canon}_MODULE): \$(${canon}_OBJS)\n";
       }
@@ -2606,9 +2612,9 @@ sub generate_project_files($)
         print FILEO "\t\$(AR) \$(${canon}_ARFLAGS) \$\@ \$(${canon}_OBJS)\n";
       } else {
         if (@{@$target[$T_SOURCES_CXX]} > 0 or @{@$project_settings[$T_SOURCES_CXX]} > 0) {
-          print FILEO "\t\$(CXX)";
+          print FILEO "\t\$(CXX) \$(WINEMAKER_TARGET)";
         } else {
-          print FILEO "\t\$(CC)";
+          print FILEO "\t\$(CC) \$(WINEMAKER_TARGET)";
         }
         print FILEO " \$(${canon}_LDFLAGS) -o \$\@ \$(${canon}_OBJS) \$(${canon}_LIBRARY_PATH) \$(${canon}_DLL_PATH) \$(DEFLIB) \$(${canon}_DLLS:%=-l%) \$(${canon}_LIBRARIES:%=-l%)\n";
       }
@@ -2656,6 +2662,7 @@ $opt_single_target=undef;
 $opt_target_type=$TT_GUIEXE;
 $opt_flags=0;
 $opt_arch=$OPT_ARCH_DEFAULT;
+$opt_pe_target=undef;
 $opt_is_interactive=$OPT_ASK_NO;
 $opt_ask_project_options=$OPT_ASK_NO;
 $opt_ask_target_options=$OPT_ASK_NO;
@@ -2689,7 +2696,7 @@ sub usage()
   print STDERR "                 [-Dmacro[=defn]] [-Idir] [-Pdir] [-idll] [-Ldir] [-llibrary]\n";
   print STDERR "                 [--nodlls] [--nomsvcrt] [--interactive] [--single-target name]\n";
   print STDERR "                 [--generated-files|--nogenerated-files]\n";
-  print STDERR "                 [--wine32]\n";
+  print STDERR "                 [--wine32] [--target=WINDOWS-PE-TRIPLE]\n";
   print STDERR "                 work_directory|project_file|workspace_file\n";
   print STDERR "\nWinemaker is designed to recursively convert all the Windows sources found in\n";
   print STDERR "the specified directory or project-file, so that they can be compiled with Winelib.\n";
@@ -2732,6 +2739,9 @@ while (@args>0) {
     $opt_no_generated_files=1;
   } elsif ($arg eq "--wine32") {
     $opt_arch=$OPT_ARCH_32;
+  } elsif ($arg eq "--target" || $arg =~ /^--target=(.*)$/) {
+    $opt_pe_target = $arg eq "--target" ? shift @args : $1;
+    die "winemaker: --target requires a value\n" unless defined $opt_pe_target && length $opt_pe_target;
   } elsif ($arg =~ /^-D/) {
     push @{$global_settings[$T_DEFINES]},$arg;
   } elsif ($arg =~ /^-I/) {
@@ -2785,6 +2795,18 @@ while (@args>0) {
     } else {
         usage();
     }
+  }
+}
+
+ # Windows PE target is explicit. Do not reinterpret a Winelib build or
+# use a pointer-size switch in place of a guest machine/ABI target.
+if (defined $opt_pe_target) {
+  if ($opt_pe_target !~ /\A[A-Za-z0-9_.-]+\z/ ||
+      $opt_pe_target !~ /-(?:windows(?:-gnu|-msvc)?|mingw32)\z/i) {
+    die "winemaker: --target requires a Windows PE target triple (e.g. aarch64-windows)\n";
+  }
+  if ($opt_arch != $OPT_ARCH_DEFAULT) {
+    die "winemaker: --wine32 cannot be combined with --target; select an i386 Windows triple instead\n";
   }
 }
 
