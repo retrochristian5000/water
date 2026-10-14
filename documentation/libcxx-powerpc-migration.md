@@ -77,8 +77,10 @@ in `build.sh` and `menuconfig`.
   signature, so changing it is not treated as identical to a
   prior legacy-enabled build.
 * `WATER_ARCHS_MODE=auto` enumerates all candidate PE lanes in the
-  libc++ preflight. To test a modern-only set, select explicit
-  `WHP_CONFIGURE_ARCHS` / `WATER_ARCHS_MODE=custom` values
+  libc++ preflight. To test a modern-only set, select
+  `WATER_ARCHS_MODE=custom` and the explicit `WATER_ARCH_*` toggles
+  (a raw `WHP_CONFIGURE_ARCHS` environment variable is reset by
+  `build.sh`)
   rather than expecting an unsupported PPC lane to disappear
   silently. Existing i386, x64, ARM64, and ARM64EC C++ runtime
   tests and object-format audits still apply.
@@ -88,8 +90,10 @@ Example modern-only scope *without the unsupported PowerPC lane*:
 ```sh
 WHP_GIT_UPDATE=0 \
 WATER_LIBCXX=llvm WATER_LIBCXX_LEGACY_POLICY=error \
-WATER_LIBCXX_I386=llvm WHP_CONFIGURE_ARCHS=i386,x86_64,aarch64,arm64ec \
-./build.sh build
+WATER_LIBCXX_I386=llvm WATER_ARCHS_MODE=custom \
+WATER_ARCH_I386=y WATER_ARCH_X86_64=y \
+WATER_ARCH_ARM=n WATER_ARCH_AARCH64=y WATER_ARCH_ARM64EC=y \
+WATER_ARCH_POWERPC=n ./build.sh build
 ```
 
 This is a **test configuration**, not a declaration that all
