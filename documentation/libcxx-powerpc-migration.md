@@ -99,18 +99,23 @@ four runtimes are production-ready; i386 is still experimental.
 
 ```sh
 sh scripts/tests/libcxx-powerpc-abi.sh
+python3 scripts/tests/libcxx-provider-policy.py
 ```
 
-The regression checks the legacy-selection guard in source,
+The PowerPC regression checks the legacy-selection guard in source,
 compiles a 32-bit PPC C++ dynamic-cast fixture, inspects the
 raw object signature, and emits `BLOCKED` for ELF or other
 non-Windows formats. It reports a missing `_WIN32` macro
 separately, so early preprocessor failure cannot conceal the
 ELF problem. If a future toolchain emits genuine PPC COFF, it
 also probes minimal PowerPC DLL linking before declaring that
-format ready for further auditing. A `BLOCKED` result must
-**not** be treated as a successful PPC libc++ migration.
-The default regression does not build libc++ 24 itself.
+format ready for further auditing. A `BLOCKED` result exits **77** (skipped/unavailable), not zero,
+and must **not** be treated as a successful PPC libc++ migration.
+The separate source-function test executes Water's real
+`selected_libcxx_archs` and `prepare_libcxx_provider` shell functions
+with the actual C++ build stubbed out. It checks every legacy
+fallback, strict rejection, modern-only architecture selection and
+profile-state separation. Neither test builds libc++ 24 itself.
 
 ## Remaining gates before deleting libc++ 8
 
