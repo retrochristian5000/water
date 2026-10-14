@@ -710,6 +710,33 @@ do
     WINE_NO_PE_ERROR([test -z "$target"],[$wine_arch PE compiler not found.
 Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
 
+    dnl PowerPC is not PE merely because Clang accepts *-windows as a
+    dnl target triple. LLVM 17, for example, emits ELF objects for
+    dnl powerpcle-windows and powerpcle-w64-mingw32. Never allow those
+    dnl objects to enter libc++ or Windows import archives.
+    AS_VAR_IF([wine_arch],[powerpc],
+        [AC_MSG_CHECKING([whether the PowerPC C++ target emits PE/COFF])
+         ppc_cxx_coff=no
+         cat >conftest-ppc-cxx.cpp <<_WHP_PPC_CXX
+extern "C" int whp_ppc_cxx_abi(void) { return sizeof(void *); }
+_WHP_PPC_CXX
+         if $CXX $CXXFLAGS -c conftest-ppc-cxx.cpp -o conftest-ppc-cxx.o >/dev/null 2>&1
+         then
+             ppc_cxx_machine=`od -An -tu1 -N2 conftest-ppc-cxx.o 2>/dev/null`
+             set x $ppc_cxx_machine
+             shift
+             case "${1:-?}:${2:-?}" in
+                 240:1|241:1) ppc_cxx_coff=yes ;; dnl IMAGE_FILE_MACHINE_POWERPC/POWERPCFP
+             esac
+         fi
+         rm -f conftest-ppc-cxx.cpp conftest-ppc-cxx.o
+         AC_MSG_RESULT([$ppc_cxx_coff])
+         WINE_NO_PE_ERROR([test "x$ppc_cxx_coff" != xyes],
+                          [The PowerPC C++ compiler produced no Windows PowerPC COFF object.
+A Windows-named target triple that generates ELF cannot build Water PE libc++.
+Fix LLVM PowerPC COFF object/relocation/linker support before retiring
+the i386-era libc++ fallback for PowerPC.])])
+
     AS_VAR_IF([wine_arch],[powerpc],
         [AC_MSG_CHECKING([for a PowerPC-capable dlltool])
          ppc_dlltool=
