@@ -49,6 +49,17 @@ check_alignment()
         cat "$tmp/link-args" >&2
         exit 1
     fi
+    case "$expected" in
+        *-align:*) ;;
+        *)
+            if grep -F -- ',-align:' "$tmp/link-args" >/dev/null ||
+               grep -F -- '-Wl,-align:' "$tmp/link-args" >/dev/null; then
+                echo "redundant /ALIGN flag in default-layout PE for $target" >&2
+                cat "$tmp/link-args" >&2
+                exit 1
+            fi
+            ;;
+    esac
 }
 
 # Standard MSVC user-mode PE layouts must not emit a redundant /ALIGN.
