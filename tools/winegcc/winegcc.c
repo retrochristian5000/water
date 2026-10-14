@@ -578,6 +578,10 @@ static struct strarray get_cxx_provider_flags( const char *suffix )
     strarray_add( &ret, "-D_LIBCPP_NO_ABI_TAG" );
     strarray_add( &ret, "-nostdinc++" );
     strarray_add( &ret, strmake( "-I%s", headers ));
+    /* The modern installed runtime owns a filtered CRT-only include lane.
+     * Without it an SDK or legacy libc++ 8 header can be chosen instead. */
+    strarray_add( &ret, "-idirafter" );
+    strarray_add( &ret, get_installed_libcxx_crt_headers() );
     return ret;
 }
 
