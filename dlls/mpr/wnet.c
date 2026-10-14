@@ -140,23 +140,34 @@ static void _tryLoadProvider(PCWSTR provider)
         DWORD type, size = sizeof(providerPath);
 
         if (RegQueryValueExW(hKey, L"ProviderPath", NULL, &type, (BYTE *)providerPath, &size) == ERROR_SUCCESS
-            && (type == REG_SZ || type == REG_EXPAND_SZ))
+            && (type == REG_SZ || type == REG_EXPAND_SZ)
+            && size >= sizeof(WCHAR) && !(size % sizeof(WCHAR))
+            && !providerPath[size / sizeof(WCHAR) - 1])
         {
             PWSTR name = NULL;
 
             if (type == REG_EXPAND_SZ)
             {
                 WCHAR path[MAX_PATH];
-                if (ExpandEnvironmentStringsW(providerPath, path, MAX_PATH)) lstrcpyW( providerPath, path );
+                DWORD length = ExpandEnvironmentStringsW(providerPath, path, ARRAY_SIZE(path));
+
+                if (!length || length > ARRAY_SIZE(path))
+                {
+                    WARN("Expanded network provider path is invalid or too long: %s\n",
+                         debugstr_w(providerPath));
+                    RegCloseKey(hKey);
+                    return;
+                }
+                lstrcpyW(providerPath, path);
             }
 
             size = 0;
             RegQueryValueExW(hKey, L"Name", NULL, NULL, NULL, &size);
-            if (size)
+            if (size >= sizeof(WCHAR) && !(size % sizeof(WCHAR)) && (name = malloc(size)))
             {
-                name = malloc(size);
                 if (RegQueryValueExW(hKey, L"Name", NULL, &type, (BYTE *)name, &size) != ERROR_SUCCESS
-                    || type != REG_SZ)
+                    || type != REG_SZ || size < sizeof(WCHAR) || size % sizeof(WCHAR)
+                    || name[size / sizeof(WCHAR) - 1])
                 {
                     free(name);
                     name = NULL;
@@ -272,7 +283,8 @@ void wnetInit(HINSTANCE hInstDll)
                 DWORD type;
 
                 if (RegQueryValueExW(hKey, L"ProviderOrder", NULL, &type, (BYTE *)providers, &size)
-                    == ERROR_SUCCESS && type == REG_SZ)
+                    == ERROR_SUCCESS && type == REG_SZ && size >= sizeof(WCHAR)
+                    && !(size % sizeof(WCHAR)) && !providers[size / sizeof(WCHAR) - 1])
                 {
                     PWSTR ptr;
                     DWORD numToAllocate;
