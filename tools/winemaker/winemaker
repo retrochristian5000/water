@@ -1767,7 +1767,12 @@ sub source_scan()
     # Create the main target
     my $main_target=[];
     target_init($main_target);
-    @$main_target[$T_NAME]=$opt_single_target;
+    my $name = $opt_single_target;
+    if (defined $opt_pe_target && $name !~ /\.(?:dll|exe|a)$/i) {
+      $name .= $opt_target_type == $TT_DLL ? ".dll" :
+               $opt_target_type == $TT_LIB ? ".a" : ".exe";
+    }
+    @$main_target[$T_NAME]=$name;
     @$main_target[$T_TYPE]=$opt_target_type;
 
     # Add it to the list
@@ -2798,7 +2803,7 @@ while (@args>0) {
   }
 }
 
- # Windows PE target is explicit. Do not reinterpret a Winelib build or
+# Windows PE target is explicit. Do not reinterpret a Winelib build or
 # use a pointer-size switch in place of a guest machine/ABI target.
 if (defined $opt_pe_target) {
   if ($opt_pe_target !~ /\A[A-Za-z0-9_.-]+\z/ ||
