@@ -57,7 +57,8 @@ case "$action" in
                 { echo "error: LLVM libc++ headers are missing for $arch: $src_headers" >&2; exit 1; }
             [ -f "$src_archive" ] ||
                 { echo "error: LLVM libc++ archive is missing for $arch: $src_archive" >&2; exit 1; }
-            [ -f "$src_crt/corecrt.h" ] && [ -f "$src_crt/vcruntime_exception.h" ] ||
+            [ -f "$src_crt/corecrt.h" ] && [ -f "$src_crt/vcruntime_exception.h" ] &&
+            [ -f "$src_crt/vcruntime_typeinfo.h" ] && [ -f "$src_crt/new.h" ] ||
                 { echo "error: filtered LLVM libc++ CRT staging is missing: $src_crt" >&2; exit 1; }
             # Modern consumers must never fall through to legacy __config,
             # <string>, <vector>, etc. Install a CRT-only tree per PE ABI.
