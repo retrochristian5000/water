@@ -61,7 +61,7 @@ case "$action" in
                 { echo "error: filtered LLVM libc++ CRT staging is missing: $src_crt" >&2; exit 1; }
             # Modern consumers must never fall through to legacy __config,
             # <string>, <vector>, etc. Install a CRT-only tree per PE ABI.
-            if [ -n "$(find "$src_crt" -type f ! -name '*.h' ! -name '.whp-state' -print -quit)" ]; then
+            if [ -n "$(find "$src_crt" -type f ! -name '*.h' ! -name '.whp-state' -print | sed -n '1p')" ]; then
                 echo "error: filtered CRT staging has non-header/legacy C++ files: $src_crt" >&2
                 exit 1
             fi
