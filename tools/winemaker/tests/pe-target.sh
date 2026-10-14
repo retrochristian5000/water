@@ -19,7 +19,7 @@ make_source()
 {
     mkdir "$1"
     printf '%s\n' 'int probe(void) { return 1; }' > "$1/probe.c"
-    printf '%s\n' 'int cpp_probe() { return 2; }' > "$1/probe.cpp"
+    printf '%s\n' 'int cpp_probe() { return 2; }' > "$1/helper.cpp"
     printf '%s\n' '1 stdcall probe()' > "$1/probe.spec"
 }
 
