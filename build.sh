@@ -2352,6 +2352,48 @@ audit_llvm_libcxx_archive()
 }
 
 
+audit_llvm_libcxx_arm64ec_symbols()
+{
+    whp_ec_archive=$1
+    whp_ec_target=$2
+    whp_ec_build=$3
+    whp_ec_headers=$4
+    whp_ec_sdk=$5
+    whp_ec_crt=$6
+    whp_ec_nm=$7
+    whp_ec_object="$whp_ec_build/.whp-arm64ec-libcxx-exports.obj"
+
+    command -v python3 >/dev/null 2>&1 ||
+        die "ARM64EC libc++ symbol audit requires python3"
+    [ -f "$SOURCE_DIR/scripts/check-libcxx-symbols.py" ] &&
+    [ -f "$SOURCE_DIR/scripts/tests/libcxx-arm64ec-exports.cpp" ] ||
+        die "ARM64EC libc++ export-audit sources are missing"
+
+    # Test the same Microsoft ABI, headers, CRT overlay, and compiler used
+    # by this libc++ provider, including when reusing a cached archive.
+    "$LLVM_BIN/clang++" -target "$whp_ec_target" --no-default-config \
+        -std=c++17 -fshort-wchar -fms-omit-default-lib \
+        -D__WINE_PE_BUILD -DWIN32_LEAN_AND_MEAN= -DNOMINMAX= \
+        -D_LIBCPP_NO_AUTO_LINK -nostdinc++ \
+        "-I$whp_ec_headers" -isystem "$whp_ec_sdk" \
+        -isystem "$SOURCE_DIR/include" -idirafter "$whp_ec_crt" \
+        -c "$SOURCE_DIR/scripts/tests/libcxx-arm64ec-exports.cpp" \
+        -o "$whp_ec_object" || {
+            rm -f "$whp_ec_object"
+            return 1
+        }
+
+    python3 "$SOURCE_DIR/scripts/check-libcxx-symbols.py" \
+        "$whp_ec_archive" "$whp_ec_target" "$whp_ec_object" \
+        --nm "$whp_ec_nm" \
+        --manifest "$whp_ec_build/.whp-arm64ec-libcxx-symbols.json"
+    whp_ec_status=$?
+    rm -f "$whp_ec_object"
+    unset whp_ec_archive whp_ec_target whp_ec_build whp_ec_headers \
+        whp_ec_sdk whp_ec_crt whp_ec_nm whp_ec_object
+    return "$whp_ec_status"
+}
+
 register_llvm_libcxx_install_arch()
 {
     whp_libcxx_install_arch=$1
@@ -2486,7 +2528,11 @@ prepare_one_llvm_libcxx()
        [ -f "$whp_libcxx_headers/__config_site" ] &&
        [ "$(cat "$whp_libcxx_state_file")" = "$whp_libcxx_signature" ]; then
         if audit_llvm_libcxx_archive "$whp_libcxx_provider/libwhp-libcxx.a" \
-             "$whp_libcxx_target" "$whp_libcxx_nm"; then
+             "$whp_libcxx_target" "$whp_libcxx_nm" &&
+           { [ "$whp_libcxx_arch" != arm64ec ] ||
+             audit_llvm_libcxx_arm64ec_symbols "$whp_libcxx_provider/libwhp-libcxx.a" \
+               "$whp_libcxx_target" "$whp_libcxx_build" "$whp_libcxx_headers" \
+               "$whp_libcxx_sdk_headers" "$whp_libcxx_crt_headers" "$whp_libcxx_nm"; }; then
             whp_libcxx_cached=1
         else
             printf 'WHP libc++ %s: cached runtime failed ABI/archive audit; rebuilding\n' "$whp_libcxx_arch" >&2
@@ -2618,6 +2664,12 @@ prepare_one_llvm_libcxx()
         audit_llvm_libcxx_archive "$whp_libcxx_provider/libwhp-libcxx.a" \
             "$whp_libcxx_target" "$whp_libcxx_nm" ||
             die "LLVM libc++ archive failed Water's Microsoft-ABI static-provider audit for $whp_libcxx_target"
+        if [ "$whp_libcxx_arch" = arm64ec ]; then
+            audit_llvm_libcxx_arm64ec_symbols "$whp_libcxx_provider/libwhp-libcxx.a" \
+                "$whp_libcxx_target" "$whp_libcxx_build" "$whp_libcxx_headers" \
+                "$whp_libcxx_sdk_headers" "$whp_libcxx_crt_headers" "$whp_libcxx_nm" ||
+                die "LLVM libc++ ARM64EC archive lacks required public ABI symbols"
+        fi
 
         whp_libcxx_probe="$whp_libcxx_build/.whp-libcxx-probe.cpp"
         cat > "$whp_libcxx_probe" <<'EOF'
