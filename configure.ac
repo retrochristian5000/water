@@ -722,10 +722,9 @@ extern "C" int whp_ppc_cxx_abi(void) { return sizeof(void *); }
 _WHP_PPC_CXX
          if $CXX $CXXFLAGS -c conftest-ppc-cxx.cpp -o conftest-ppc-cxx.o >/dev/null 2>&1
          then
-             ppc_cxx_machine=`od -An -tu1 -N2 conftest-ppc-cxx.o 2>/dev/null`
-             set x $ppc_cxx_machine
-             shift
-             case "${1:-?}:${2:-?}" in
+             ppc_cxx_machine=`od -An -tu1 -N2 conftest-ppc-cxx.o 2>/dev/null |
+                 tr -s '[:space:]' ':' | sed 's/^://;s/:$//'`
+             case "$ppc_cxx_machine" in
                  240:1|241:1) ppc_cxx_coff=yes ;; dnl IMAGE_FILE_MACHINE_POWERPC/POWERPCFP
              esac
          fi
