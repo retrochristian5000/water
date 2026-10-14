@@ -64,6 +64,7 @@ def audit(archive_defined, archive_undefined, consumer_undefined, target):
         "target": target,
         "archive_external_definitions": len(defined),
         "archive_libcxx_definitions": sum(libcxx_name(s) for s in defined),
+        "provided_libcxx_symbols": sorted(s for s in defined if libcxx_name(s)),
         "required_libcxx_symbols": required,
         "missing_required_libcxx_symbols": missing,
         "weak_libcxx_references_diagnostic": weak,
