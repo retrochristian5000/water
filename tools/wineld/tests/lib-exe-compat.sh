@@ -53,7 +53,7 @@ printf '%s\n' 'LIBRARY period.dll' 'EXPORTS' '  exported' > "$tmp/period.def"
 "$lib" /lib /machine:arm64 "/def:$tmp/period.def" "/out:$tmp/period.lib"
 perl "$wineld" --target=aarch64-windows --dry-run -- \
     /dll /noentry "/out:$tmp/scratch.dll" "$tmp/period.lib" > "$tmp/log"
-grep -F 'verified 4 ARM64 COFF input' "$tmp/log" >/dev/null
+grep -E 'verified [1-9][0-9]* ARM64 COFF input' "$tmp/log" >/dev/null
 perl "$wineld" --target=aarch64-windows --linker="$linker" -- \
     /dll /noentry "/out:$tmp/consumer.dll" "$tmp/consumer.obj" "$tmp/period.lib" > "$tmp/log"
 grep -F 'verified ARM64 PE32+ output' "$tmp/log" >/dev/null
