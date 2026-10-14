@@ -80,8 +80,8 @@ class SymbolAuditTests(unittest.TestCase):
             obj = Path(tmp) / "probe.obj"
             source.write_text(
                 "namespace std { inline namespace __1 {"
-                "struct mutex { void lock(); }; } }\\n"
-                "void use(std::__1::mutex &m) { m.lock(); }\\n",
+                "struct mutex { void lock(); }; } }\n"
+                "void use(std::__1::mutex &m) { m.lock(); }\n",
                 encoding="utf-8")
             result = subprocess.run(
                 [shutil.which("clang++"), "--target=arm64ec-pc-windows-msvc",
