@@ -21,6 +21,7 @@ make_source()
     printf '%s\n' 'int probe(void) { return 1; }' > "$1/probe.c"
     printf '%s\n' 'int cpp_probe() { return 2; }' > "$1/helper.cpp"
     printf '%s\n' '1 stdcall probe()' > "$1/probe.spec"
+    printf '%s\n' 'STRINGTABLE BEGIN 1 "probe" END' > "$1/probe.rc"
 }
 
 assert_contains()
@@ -61,6 +62,7 @@ assert_absent "$makefile" '-mno-cygwin'
 )
 assert_contains "$tmp/commands" 'winegcc --target=aarch64-windows -c'
 assert_contains "$tmp/commands" 'wineg++ --target=aarch64-windows -c'
+assert_contains "$tmp/commands" 'wrc --target=aarch64-windows'
 assert_contains "$tmp/commands" 'wineg++ --target=aarch64-windows -shared'
 assert_contains "$tmp/commands" '-o probe.dll'
 
@@ -70,6 +72,23 @@ perl "$winemaker" --nobanner --nobackup --nosource-fix --dll \
     --single-target probe --target aarch64-w64-mingw32 "$tmp/mingw" > "$tmp/run.log"
 assert_contains "$tmp/mingw/Makefile" 'WINEMAKER_TARGET = --target=aarch64-w64-mingw32'
 assert_contains "$tmp/mingw/Makefile" '$(DLLS:%=%)'
+
+# ARM64EC must keep its distinct target and must not become plain ARM64.
+make_source "$tmp/arm64ec"
+perl "$winemaker" --nobanner --nobackup --nosource-fix --dll \
+    --single-target probe --target=arm64ec-pc-windows "$tmp/arm64ec" > "$tmp/run.log"
+assert_contains "$tmp/arm64ec/Makefile" 'WINEMAKER_TARGET = --target=arm64ec-pc-windows'
+assert_contains "$tmp/arm64ec/Makefile" '$(DLLS:%=%)'
+
+# A period Windows DLL definition file must be retained as DLL metadata.
+make_source "$tmp/def"
+rm "$tmp/def/probe.spec"
+printf '%s\n' 'EXPORTS' 'probe' > "$tmp/def/probe.def"
+perl "$winemaker" --nobanner --nobackup --nosource-fix --dll \
+    --single-target probe --target=aarch64-windows "$tmp/def" > "$tmp/run.log"
+assert_contains "$tmp/def/Makefile" '$(probe_dll_MODULE:.dll=.def)'
+assert_contains "$tmp/def/Makefile" '-shared'
+assert_absent "$tmp/def/Makefile" '$(probe_dll_MODULE:.dll=.spec)'
 
 # Winelib (without --target) must still produce .dll.so rules.
 make_source "$tmp/winelib"
