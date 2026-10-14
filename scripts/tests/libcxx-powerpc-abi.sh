@@ -49,7 +49,7 @@ if ! "$cxx" -target "$triple" -fshort-wchar -std=c++17 \
     -fexceptions -frtti -c "$tmp/probe.cpp" -o "$tmp/probe.o" 2>"$tmp/compile.err"; then
     echo "BLOCKED: $triple could not compile the PowerPC Windows C++ ABI probe" >&2
     cat "$tmp/compile.err" >&2
-    exit 0
+    exit 77
 fi
 
 # A Windows PE/COFF PowerPC object must start with little-endian machine
@@ -64,11 +64,11 @@ case "$bytes" in
     127:69:76:70)
         echo "BLOCKED: $triple emitted ELF despite a Windows target triple"
         echo 'Retain the older PowerPC libc++ until LLVM emits and links genuine PPC PE/COFF.'
-        exit 0
+        exit 77
         ;;
     *)
         echo "BLOCKED: $triple emitted an unsupported object header: $bytes" >&2
-        exit 0
+        exit 77
         ;;
 esac
 
@@ -77,7 +77,7 @@ esac
 linker=\${WATER_PPC_TEST_LINKER:-lld-link}
 if ! command -v "$linker" >/dev/null 2>&1; then
     echo "BLOCKED: no verified PowerPC Windows PE linker: $linker"
-    exit 0
+    exit 77
 fi
 cat > "$tmp/link.cpp" <<'CPP'
 extern "C" __declspec(dllexport) int whp_ppc_link() { return 1; }
@@ -85,17 +85,17 @@ CPP
 if ! "$cxx" -target "$triple" -fshort-wchar -c "$tmp/link.cpp" \
     -o "$tmp/link.o" 2>"$tmp/link-compile.err"; then
     echo 'BLOCKED: compiler failed minimal PowerPC PE export compilation'
-    exit 0
+    exit 77
 fi
 if ! "$linker" /machine:powerpc /dll /noentry "/out:$tmp/probe.dll" \
     "$tmp/link.o" >"$tmp/link.log" 2>&1; then
     echo 'BLOCKED: COFF target exists, but PowerPC Windows DLL linking is not ready'
     sed -n '1,8p' "$tmp/link.log"
-    exit 0
+    exit 77
 fi
 if [ ! -f "$tmp/probe.dll" ]; then
     echo 'BLOCKED: linker did not produce a PowerPC Windows DLL'
-    exit 0
+    exit 77
 fi
 echo 'READY FOR FURTHER AUDIT: PowerPC object and linker format passed.'
 echo 'C++ runtime, exception unwinding, import libraries and modern libc++ are NOT yet validated.'
