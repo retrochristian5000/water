@@ -132,6 +132,9 @@ my $opt_flags;
 # Contains 32 for 32-Bit-Targets and 64 for 64-Bit-Targets
 my $opt_arch;
 
+# Resource compiler dialect: wrc is legacy default; rc.exe/llvm-rc use /FO.
+my $opt_rc;
+
 # Explicit Windows PE target; undefined retains the original Winelib model.
 my $opt_pe_target;
 
@@ -2558,7 +2561,14 @@ sub generate_project_files($)
   print FILEO "WINEMAKER_TARGET =\n" unless defined $opt_pe_target;
   print FILEO "CC = winegcc\n";
   print FILEO "CXX = wineg++\n";
-  print FILEO "RC = wrc\n";
+  print FILEO "RC = $opt_rc\n";
+  # Resource files have no CPU machine type; MS RC and LLVM llvm-rc
+  # must not receive winegcc's --target. wrc accepts that switch only
+  # as a compatibility no-op, so keep the legacy invocation unchanged.
+  print FILEO "RC_TARGET = \$(WINEMAKER_TARGET)\n" if $opt_rc eq "wrc";
+  print FILEO "RC_TARGET =\n" unless $opt_rc eq "wrc";
+  print FILEO "RC_OUTPUT = -fo\n" if $opt_rc eq "wrc";
+  print FILEO "RC_OUTPUT = /FO\n" unless $opt_rc eq "wrc";
   # LLVM's archiver is able to produce COFF archives for PE objects.
   # Use its default archive format for legacy Winelib output instead.
   print FILEO "AR = llvm-ar\n";
@@ -2597,7 +2607,7 @@ sub generate_project_files($)
   print FILEO "\t\$(CXX) \$(WINEMAKER_TARGET) -c \$(CXXFLAGS) \$(CXXEXTRA) \$(DEFINCL) -o \$\@ \$<\n";
   print FILEO "\n";
   print FILEO ".rc.res:\n";
-  print FILEO "\t\$(RC) \$(WINEMAKER_TARGET) \$(RCFLAGS) \$(RCEXTRA) \$(DEFINCL) -fo\$@ \$<\n";
+  print FILEO "\t\$(RC) \$(RC_TARGET) \$(RCFLAGS) \$(RCEXTRA) \$(DEFINCL) \$(RC_OUTPUT)\$@ \$<\n";
   print FILEO "\n";
   print FILEO "# Rules for cleaning\n";
   print FILEO "\n";
@@ -2684,6 +2694,7 @@ $opt_single_target=undef;
 $opt_target_type=$TT_GUIEXE;
 $opt_flags=0;
 $opt_arch=$OPT_ARCH_DEFAULT;
+$opt_rc="wrc";
 $opt_pe_target=undef;
 $opt_is_interactive=$OPT_ASK_NO;
 $opt_ask_project_options=$OPT_ASK_NO;
@@ -2719,6 +2730,7 @@ sub usage()
   print STDERR "                 [--nodlls] [--nomsvcrt] [--interactive] [--single-target name]\n";
   print STDERR "                 [--generated-files|--nogenerated-files]\n";
   print STDERR "                 [--wine32] [--target=WINDOWS-PE-TRIPLE]\n";
+  print STDERR "                 [--rc=wrc|llvm-rc|rc.exe]\n";
   print STDERR "                 work_directory|project_file|workspace_file\n";
   print STDERR "\nWinemaker is designed to recursively convert all the Windows sources found in\n";
   print STDERR "the specified directory or project-file, so that they can be compiled with Winelib.\n";
@@ -2764,6 +2776,10 @@ while (@args>0) {
   } elsif ($arg eq "--target" || $arg =~ /^--target=(.*)$/) {
     $opt_pe_target = $arg eq "--target" ? shift @args : $1;
     die "winemaker: --target requires a value\n" unless defined $opt_pe_target && length $opt_pe_target;
+  } elsif ($arg eq "--rc" || $arg =~ /^--rc=(.*)$/) {
+    $opt_rc = $arg eq "--rc" ? shift @args : $1;
+    die "winemaker: --rc requires wrc, llvm-rc or rc.exe\n"
+        unless defined($opt_rc) && $opt_rc =~ /\A(?:wrc|llvm-rc|rc\.exe)\z/;
   } elsif ($arg =~ /^-D/) {
     push @{$global_settings[$T_DEFINES]},$arg;
   } elsif ($arg =~ /^-I/) {
