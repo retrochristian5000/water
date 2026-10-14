@@ -46,17 +46,38 @@ case "$action" in
         remove_legacy_headers
         for arch in $archs
         do
+            src_crt="$runtime_root/msvcrt-headers"
             src_headers="$runtime_root/$arch/include/c++/v1"
             src_archive="$runtime_root/$arch/provider/libwhp-libcxx.a"
             dst_headers="$destdir$includedir/wine/c++/$arch/v1"
+            dst_crt="$destdir$includedir/wine/c++/$arch/crt"
             dst_lib="$destdir$libdir/wine/$arch-windows"
 
             [ -f "$src_headers/__config_site" ] ||
                 { echo "error: LLVM libc++ headers are missing for $arch: $src_headers" >&2; exit 1; }
             [ -f "$src_archive" ] ||
                 { echo "error: LLVM libc++ archive is missing for $arch: $src_archive" >&2; exit 1; }
+            [ -f "$src_crt/corecrt.h" ] && [ -f "$src_crt/vcruntime_exception.h" ] ||
+                { echo "error: filtered LLVM libc++ CRT staging is missing: $src_crt" >&2; exit 1; }
+            # Modern consumers must never fall through to legacy __config,
+            # <string>, <vector>, etc. Install a CRT-only tree per PE ABI.
+            if [ -n "$(find "$src_crt" -type f ! -name '*.h' ! -name '.whp-state' -print -quit)" ]; then
+                echo "error: filtered CRT staging has non-header/legacy C++ files: $src_crt" >&2
+                exit 1
+            fi
 
             mkdir -p "$dst_headers" "$dst_lib"
+            rm -rf "$dst_crt"
+            mkdir -p "$dst_crt"
+            find "$src_crt" -type f -name '*.h' -print |
+            while IFS= read -r file
+            do
+                rel=${file#"$src_crt"/}
+                dir=${rel%/*}
+                if [ "$dir" != "$rel" ]; then mkdir -p "$dst_crt/$dir"; fi
+                cp -f "$file" "$dst_crt/$rel"
+                chmod 644 "$dst_crt/$rel"
+            done
             find "$src_headers" -type f -print |
             while IFS= read -r file
             do
