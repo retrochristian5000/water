@@ -8362,7 +8362,10 @@ DWORD64 _umul128(DWORD64,DWORD64,DWORD64*);
 #if (defined(__x86_64__) && !defined(_MSC_VER)) || defined(__aarch64__) || defined(__arm64ec__)
 static FORCEINLINE DWORD64 ShiftRight128( DWORD64 lo, DWORD64 hi, BYTE shift )
 {
-    return ((unsigned __int128)hi << 64 | lo) >> shift;
+    /* MSVC's x64 __shiftright128 masks the count to 6 bits.  ARM64EC
+     * uses this compatibility helper instead of the x64 intrinsic.
+     * An unmasked shift of 64 gives the wrong half; >= 128 is undefined. */
+    return ((unsigned __int128)hi << 64 | lo) >> (shift & 63);
 }
 
 static FORCEINLINE DWORD64 UnsignedMultiply128( DWORD64 a, DWORD64 b, DWORD64 *hi )
