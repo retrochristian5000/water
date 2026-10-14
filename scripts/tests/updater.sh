@@ -1,14 +1,21 @@
 #!/bin/sh
-# Exercise a Water fast-forward followed by pinned-submodule initialization
-# in a disposable local Git fixture; never touch the real checkout.
+# Safe Git-only Water updater regression; never build or alter the real tree.
 set -eu
 
-source_script=${WATER_TEST_SOURCE:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)/build.sh}
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/water-updater-test.XXXXXX")
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+source_script=${WATER_TEST_SOURCE:-"$root/build.sh"}
+source_helper=${WATER_TEST_HELPER:-"$root/scripts/update-source.sh"}
+[ -f "$source_script" ] && [ -f "$source_helper" ] || {
+    printf 'Water updater test requires build.sh and scripts/update-source.sh\n' >&2
+    exit 2
+}
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/water-updater-test.XXXXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 export GIT_ALLOW_PROTOCOL=file
+export GIT_TERMINAL_PROMPT=0
 
-for module in fluidsynth bash; do
+for module in fluidsynth bash zlib; do
     git init -q -b master "$tmp/$module"
     git -C "$tmp/$module" config user.name 'Water updater test'
     git -C "$tmp/$module" config user.email 'test@example.invalid'
@@ -20,9 +27,12 @@ done
 git init -q -b master "$tmp/source"
 git -C "$tmp/source" config user.name 'Water updater test'
 git -C "$tmp/source" config user.email 'test@example.invalid'
+mkdir -p "$tmp/source/scripts"
 cp "$source_script" "$tmp/source/build.sh"
+cp "$source_helper" "$tmp/source/scripts/update-source.sh"
 git -C "$tmp/source" submodule add -q "$tmp/fluidsynth" libs/fluidsynth
 git -C "$tmp/source" submodule add -q "$tmp/bash" toolchains/bash
+git -C "$tmp/source" submodule add -q "$tmp/zlib" libs/zlib/source
 git -C "$tmp/source" add -A
 git -C "$tmp/source" commit -qm initial
 
@@ -31,22 +41,33 @@ git -C "$tmp/remote.git" symbolic-ref HEAD refs/heads/master
 git -C "$tmp/source" remote add origin "$tmp/remote.git"
 git -C "$tmp/source" push -q -u origin master
 git clone -q "$tmp/remote.git" "$tmp/work"
+git clone -q "$tmp/remote.git" "$tmp/auto"
 
-# Advance Water after cloning so the updater must pull its parent repository.
+# Make the remote's build script newer than both worktrees.
 printf '\n# new Water build rules\n' >> "$tmp/source/build.sh"
 git -C "$tmp/source" add build.sh
 git -C "$tmp/source" commit -qm 'new Water revision'
 git -C "$tmp/source" push -q
 
+# Normal source refresh re-enters the revised script in the same invocation,
+# even for a cheap probe that doesn't proceed into toolchain bootstrap.
+WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/auto.log" 2>&1 || {
+    cat "$tmp/auto.log" >&2
+    exit 1
+}
+grep -Fq 'WHP source update: re-entering refreshed build.sh' "$tmp/auto.log"
+[ "$(git -C "$tmp/auto" rev-parse HEAD)" = "$(git -C "$tmp/source" rev-parse HEAD)" ]
+[ "$(grep -Fc 're-entering refreshed build.sh' "$tmp/auto.log")" -eq 1 ]
+
+# Explicit update retains the original pinned-submodule semantics.
 WHP_AUTOMAKE_SOURCE_DIR="$tmp/no-automake" WHP_LLVM_SOURCE_DIR="$tmp/no-llvm" \
     sh "$tmp/work/build.sh" update > "$tmp/update.log" 2>&1 || {
     cat "$tmp/update.log" >&2
     exit 1
 }
-
-grep -Fq 'WHP source updated; restarting updater' "$tmp/update.log"
+grep -Fq 'WHP source update: re-entering refreshed build.sh' "$tmp/update.log"
 [ "$(git -C "$tmp/work" rev-parse HEAD)" = "$(git -C "$tmp/source" rev-parse HEAD)" ]
-for path in libs/fluidsynth toolchains/bash; do
+for path in libs/fluidsynth libs/zlib/source toolchains/bash; do
     expected=$(git -C "$tmp/work" ls-tree HEAD -- "$path" | awk '{print $3}')
     [ "$expected" = "$(git -C "$tmp/work/$path" rev-parse HEAD)" ]
 done
@@ -56,5 +77,37 @@ WHP_AUTOMAKE_SOURCE_DIR="$tmp/no-automake" WHP_LLVM_SOURCE_DIR="$tmp/no-llvm" \
     cat "$tmp/current.log" >&2
     exit 1
 }
-[ "$(grep -Fc 'WHP source update: git pull' "$tmp/current.log")" -eq 1 ]
-printf 'PASS: Water fast-forward and pinned-submodule initialization\n'
+grep -Fq 'upstream unchanged; fetch skipped' "$tmp/current.log"
+[ "$(grep -Fc 'WHP source update: master <- ' "$tmp/current.log")" -eq 1 ]
+
+# A dirty tracked checkout is left intact in automatic mode and rejected in
+# strict mode. Neither path may discard or modify the user's source changes.
+printf '\n# local uncommitted work\n' >> "$tmp/auto/build.sh"
+WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/dirty.log" 2>&1
+grep -Fq 'tracked Water changes prevent a safe fast-forward' "$tmp/dirty.log"
+if WHP_GIT_UPDATE=1 sh "$tmp/auto/build.sh" --help > "$tmp/strict.log" 2>&1; then
+    printf 'strict source update unexpectedly accepted tracked changes\n' >&2
+    exit 1
+fi
+grep -Fq 'tracked Water changes prevent a safe fast-forward' "$tmp/strict.log"
+
+git -C "$tmp/auto" checkout -q -- build.sh
+# CI and deliberately disabled source updates must skip even a reachable
+# upstream. Auto offline mode warns, rather than preventing local builds.
+CI=1 WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/ci.log" 2>&1
+grep -Fq 'skipped in CI' "$tmp/ci.log"
+WHP_GIT_UPDATE=0 sh "$tmp/auto/build.sh" --help > "$tmp/disabled.log" 2>&1
+if grep -F 'WHP source update:' "$tmp/disabled.log" >/dev/null; then
+    printf 'disabled source updater performed work\n' >&2
+    exit 1
+fi
+git -C "$tmp/auto" remote set-url origin "$tmp/unavailable.git"
+WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/offline.log" 2>&1
+grep -Fq 'cannot reach configured Water upstream' "$tmp/offline.log"
+if WHP_GIT_UPDATE=1 sh "$tmp/auto/build.sh" --help > "$tmp/offline-strict.log" 2>&1; then
+    printf 'strict update unexpectedly accepted an unreachable remote\n' >&2
+    exit 1
+fi
+grep -Fq 'cannot reach configured Water upstream' "$tmp/offline-strict.log"
+
+printf 'PASS: Water auto-refresh, one-shot reentry, pins, offline and dirty guards\n'
