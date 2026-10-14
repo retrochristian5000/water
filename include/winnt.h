@@ -745,6 +745,11 @@ typedef struct _MEMORY_BASIC_INFORMATION
     LPVOID   BaseAddress;
     LPVOID   AllocationBase;
     DWORD    AllocationProtect;
+#ifdef _WIN64
+    /* Windows SDK exposes this member in the existing 64-bit padding.
+     * Keep the original Win32 layout for older 32-bit personalities. */
+    WORD     PartitionId;
+#endif
     SIZE_T   RegionSize;
     DWORD    State;
     DWORD    Protect;
