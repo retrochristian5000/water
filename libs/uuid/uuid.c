@@ -48,6 +48,7 @@ DEFINE_GUID(GUID_NULL,0,0,0,0,0,0,0,0,0,0,0);
 #include "oleidl.h"
 #include "objidl.h"
 #include "olectl.h"
+#include "danim.h"
 
 #include "ocidl.h"
 #include "ctxtcall.h"
