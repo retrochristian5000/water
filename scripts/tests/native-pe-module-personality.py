@@ -27,7 +27,7 @@ def fail(message):
 
 
 def defaults_for(module):
-    pattern = rf"^enable_{re.escape(module)}=\$\{{enable_{re.escape(module)}:-([^}}]+)\}}$"
+    pattern = rf"^[ \t]*enable_{re.escape(module)}=\$\{{enable_{re.escape(module)}:-([^}}]+)\}}$"
     matches = re.findall(pattern, CONFIG, re.MULTILINE)
     if not matches:
         fail(f"missing configure default for {module}")
