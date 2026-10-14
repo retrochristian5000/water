@@ -15,14 +15,22 @@ BASH_BOOTSTRAP_DIR=${WHP_BASH_BUILD_DIR:-"$BUILD_DIR/bash-bootstrap"}
 LLVM_LINK_JOBS=${WHP_LLVM_LINK_JOBS:-2}
 WHP_GIT_UPDATE_EXPLICIT=${WHP_GIT_UPDATE+x}
 WHP_SUBMODULES_EXPLICIT=${WHP_SUBMODULES+x}
-WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-0}
+WHP_GIT_UPDATE=${WHP_GIT_UPDATE:-auto}
 WHP_SUBMODULES=${WHP_SUBMODULES:-1}
 WHP_RECONFIGURE=${WHP_RECONFIGURE:-0}
 
-if [ "${1:-build}" = incremental ]; then
-    [ -n "$WHP_GIT_UPDATE_EXPLICIT" ] || WHP_GIT_UPDATE=0
-    [ -n "$WHP_SUBMODULES_EXPLICIT" ] || WHP_SUBMODULES=0
-fi
+case "${1:-build}" in
+    incremental)
+        [ -n "$WHP_GIT_UPDATE_EXPLICIT" ] || WHP_GIT_UPDATE=0
+        [ -n "$WHP_SUBMODULES_EXPLICIT" ] || WHP_SUBMODULES=0
+        ;;
+    menuconfig|clean|distclean|update-deps|-h|--help|help|__libcxx_one)
+        [ -n "$WHP_GIT_UPDATE_EXPLICIT" ] || WHP_GIT_UPDATE=0
+        ;;
+    update)
+        WHP_GIT_UPDATE=1
+        ;;
+esac
 unset WHP_GIT_UPDATE_EXPLICIT WHP_SUBMODULES_EXPLICIT
 AUTOCONF=${AUTOCONF:-autoconf}
 WHP_USER_CONFIG="$SOURCE_DIR/.whpconfig"
@@ -70,8 +78,8 @@ die()
 }
 
 case "$WHP_GIT_UPDATE" in
-    0|1) ;;
-    *) die "WHP_GIT_UPDATE must be 0 or 1" ;;
+    auto|0|1) ;;
+    *) die "WHP_GIT_UPDATE must be auto, 0, or 1" ;;
 esac
 
 case "$WHP_SUBMODULES" in
@@ -83,6 +91,25 @@ case "$WHP_RECONFIGURE" in
     0|1) ;;
     *) die "WHP_RECONFIGURE must be 0 or 1" ;;
 esac
+
+# Refresh the tracked Water branch *before* discovering build tools or
+# interpreting configuration from the old revision. The one-time reentry
+# guard prevents a second network check when the updated script starts.
+if [ "${WHP_GIT_UPDATE_DONE:-0}" != 1 ] && [ "$WHP_GIT_UPDATE" != 0 ]; then
+    whp_before=$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+    WHP_GIT_UPDATE="$WHP_GIT_UPDATE" /bin/sh "$SOURCE_DIR/scripts/update-source.sh" ||
+        die 'Water source updater failed'
+    whp_after=$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+    WHP_GIT_UPDATE_DONE=1
+    export WHP_GIT_UPDATE_DONE
+    if [ -n "$whp_before" ] && [ -n "$whp_after" ] &&
+       [ "$whp_before" != "$whp_after" ]; then
+        printf 'WHP source update: re-entering refreshed build.sh (%s -> %s)\n' \
+            "$whp_before" "$whp_after" >&2
+        exec /bin/sh "$SOURCE_DIR/build.sh" "$@"
+    fi
+    unset whp_before whp_after
+fi
 
 usage()
 {
@@ -126,7 +153,7 @@ Environment:
   CROSSLDFLAGS           Default PE link flags when per-arch LDFLAGS are unset
   LDFLAGS_FOR_BUILD      Host link flags for bootstrap/build tools
   LIBS_FOR_BUILD         Host libraries for bootstrap/build tools
-  WHP_GIT_UPDATE        Fast-forward Water from its tracking branch: 1 or 0 (default: 0)
+  WHP_GIT_UPDATE        Source refresh: auto (default), 1 (strict), or 0 (offline)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
   AUTOCONF              Autoconf program used to generate ./configure
@@ -134,7 +161,7 @@ Environment:
                          (auto prefers Water's selected LLVM clang)
 
 Build modes:
-  build                Build normally from pinned sources; WATER_INSTALL may run afterward
+  build                Refresh Water, then build from pinned dependencies; WATER_INSTALL may run afterward
   incremental          Build only the current dependency graph; no automatic install
   update               Fast-forward Water and initialize its recorded submodule pins
   update-deps PATH...  Fetch selected submodule branch tips and stage new gitlink pins
@@ -484,36 +511,6 @@ generate_configure()
         printf 'WHP configure script: regenerated from configure.ac\n' >&2
     fi
     record_autoconf_state
-}
-
-update_repository()
-{
-    if [ "$WHP_GIT_UPDATE" != 1 ]; then
-        printf 'WHP source update: skipped (use ./build.sh update to refresh Water)\n' >&2
-        return 0
-    fi
-    if [ ! -d "$SOURCE_DIR/.git" ] && [ ! -f "$SOURCE_DIR/.git" ]; then
-        [ "${1:-}" != update ] || die "source updater requires a Git checkout, not a source archive"
-        return 0
-    fi
-
-    command -v git >/dev/null 2>&1 ||
-        die "git is required to update the Water source tree"
-    [ "$(git -C "$SOURCE_DIR" rev-parse --show-toplevel 2>/dev/null || true)" = "$SOURCE_DIR" ] ||
-        die "Water source directory is not the Git checkout root"
-    git -C "$SOURCE_DIR" rev-parse '@{upstream}' >/dev/null 2>&1 ||
-        die "Water checkout has no upstream tracking branch; configure one before updating"
-    [ -z "$(git -C "$SOURCE_DIR" status --porcelain --untracked-files=no --ignore-submodules=dirty)" ] ||
-        die "commit or restore tracked Water changes before pulling source updates"
-
-    whp_before_update=$(git -C "$SOURCE_DIR" rev-parse HEAD)
-    printf 'WHP source update: git pull --ff-only --recurse-submodules=no\n' >&2
-    git -C "$SOURCE_DIR" pull --ff-only --recurse-submodules=no
-    whp_after_update=$(git -C "$SOURCE_DIR" rev-parse HEAD)
-    if [ "$whp_before_update" != "$whp_after_update" ] && [ "${1:-}" != update ]; then
-        die "Water sources changed during this invocation; run ./build.sh again to use the updated build rules"
-    fi
-    unset whp_before_update whp_after_update
 }
 
 update_dependency_pins()
@@ -3366,20 +3363,8 @@ case "${1:-build}" in
         run_menuconfig "$@"
         ;;
     update)
-        WHP_GIT_UPDATE=1
-        whp_water_before=$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
-        update_repository update
-        whp_water_after=$(git -C "$SOURCE_DIR" rev-parse HEAD)
-        if [ "$whp_water_before" != "$whp_water_after" ]; then
-            # The source revision changed: never initialize its dependencies
-            # with bootstrap rules from the previous Water revision.
-            [ "${WHP_UPDATE_RESTARTED:-0}" != 1 ] ||
-                die "Water advanced twice while refreshing updater; rerun ./build.sh update"
-            printf 'WHP source updated; restarting updater with refreshed build rules\n' >&2
-            WHP_UPDATE_RESTARTED=1
-            export WHP_UPDATE_RESTARTED
-            exec /bin/sh "$SOURCE_DIR/build.sh" update
-        fi
+        # The early updater already refreshed and (if needed) re-entered
+        # the current build script. 'update' also initializes pinned deps.
         init_submodules
         exit 0
         ;;
@@ -3407,7 +3392,6 @@ case "${1:-build}" in
         ;;
 esac
 
-update_repository
 generate_configure
 init_submodules
 prepare_ninja
