@@ -1,3 +1,43 @@
+## Windows ARM64 linker flag repair (October 13, 2026)
+
+Water's `PLATFORM_WINDOWS` link command emitted
+`-Wl,-filealign:0x200,-align:0x10000` for ordinary AArch64 DLLs.
+Independent Clang 17 + LLD 17 probes on Linux x86_64 confirmed that
+any explicit `/ALIGN`, even `/ALIGN:0x1000`, produces:
+`lld-link: warning: /align specified without /driver; image may not run`.
+The PE32+ ARM64 output was otherwise generated successfully.
+**This warning alone does not prove loader failure or ABI corruption.**
+
+The source-level repair now uses the standard `0x1000` PE section
+alignment for an ordinary `aarch64-*-windows` MSVC-ABI image and omits
+`/ALIGN` entirely when the selected alignment is `0x1000`.
+The separate `FileAlignment=0x200` stays explicit. A repeat direct
+Clang/LLD smoke test without `/ALIGN` produced PE32+ ARM64 machine
+`0xAA64`, section alignment `0x1000`, file alignment `0x200`
+and an exported C function, without the `/ALIGN` warning.
+
+**Deliberately unchanged:** ARM64EC, explicitly requested ARM64X
+(`-marm64x`), and the GNU/MinGW ARM64 path retain their separate
+previous `0x10000` default section-alignment policy. A user override
+such as `-Wl,--section-alignment,0x10000` continues to request
+`/ALIGN:0x10000` for ordinary ARM64 Windows images. Do not add
+`/DRIVER` to a user-mode DLL to suppress the warning.
+
+The mock-link regressions in
+`tools/winegcc/tests/pe-alignment.sh` distinguish ordinary ARM64
+from ARM64EC/ARM64X and explicit alignment overrides. These
+assertions and source changes are published; the *Water binary*
+itself has not been rebuilt in this session and Windows ARM64 loading
+has not been tested. File alignment, section alignment, image machine,
+DLL imports, entry point and export table must still be checked
+together before any ABI-compliance claim.
+
+References:
+- https://learn.microsoft.com/en-us/cpp/build/reference/align-section-alignment
+- https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+- https://lld.llvm.org/windows_support.html
+- https://sources.debian.org/src/llvm-toolchain-22/1%3A22.1.8-1/lld/test/COFF/align.s
+
 ## ARM64 Windows Clang command audit (October 13, 2026)
 
 **Resolved at source level:** `tools/winegcc/winegcc.c` previously added
@@ -24,11 +64,10 @@ did **not** invoke Water's `winegcc` executable, `winebuild`, import
 archives, or Windows loader; no complete Water DLL build is verified.
 
 Do **not** use `/driver` just to silence the warning on a user-mode
-DLL. Keep the existing explicit ARM64 64 KB alignment policy while
-investigating Wine compatibility with 16 KB host pages. Windows ARM64
-itself normally uses 4 KB pages, and Microsoft's conventional
-`/ALIGN` linker default is 4 KB; the 64 KB setting is a separate
-compatibility policy, not a Windows ARM64 ABI mandate. Distinguish
+DLL. Use the normal 4 KB section alignment for ordinary Windows ARM64
+images; the prior 64 KB default is retained only for separate
+ARM64EC/ARM64X and GNU paths pending their own loader checks. Do not
+conflate PE section alignment with host page size. Distinguish
 `aarch64-windows` (MSVC ABI) from `aarch64-w64-mingw32` (GNU ABI).
 
 Evidence:
@@ -122,8 +161,10 @@ This is unnecessarily padded compared to the documented 512-byte
 PE default, although those older values are not inherently invalid.
 
 The wrapper now defaults normal PE images to **FileAlignment=0x200**
-(512 bytes), retaining the existing virtual **SectionAlignment=0x1000**
-for i386/x64 and **0x10000** for Water ARM64/ARM64EC. Explicit
+(512 bytes), with virtual **SectionAlignment=0x1000** for ordinary
+Windows i386/x64/ARM64 and **0x10000** for the still-separate
+ARM64EC/ARM64X or GNU ARM64 policies. Ordinary MSVC-style PE links
+omit a redundant `/ALIGN` when using the 4 KB default. Explicit
 `-Wl,--file-alignment` overrides still win. Sub-page PE section
 alignment (<0x1000) still defaults file alignment to the same value,
 preserving the special matching file/RVA layout rule. Non-PE formats
