@@ -174,6 +174,19 @@ Do not generate the \fIMakefile\fR.
 .B --wine32
 Generate a 32-bit target. This is useful on wow64 systems.
 Without that option the default architecture is used.
+Do not combine this option with an explicit `--target`.
+.TP
+.BI --target= "Windows-PE-triple"
+Generate native Windows PE build rules instead of Winelib `.dll.so`
+rules. The target triple is passed to `winegcc`, `wineg++` and `wrc`
+for compilation, resource processing and linking. For example,
+`--target=aarch64-windows` selects the Windows ARM64 ABI;
+`--target=aarch64-w64-mingw32` selects the GNU Windows ARM64 ABI.
+The generated DLL target is a `.dll`, not a `.dll.so`.
+This option does not make Windows-specific source code portable or
+guarantee compatible libraries; verify the generated PE machine type
+and imported symbols before deployment. Without this option the
+legacy Winelib Makefile output is unchanged.
 
 .SH EXAMPLES
 .PP
