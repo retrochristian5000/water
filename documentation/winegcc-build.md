@@ -1,3 +1,48 @@
+## ARM64 Windows Clang command audit (October 13, 2026)
+
+**Resolved at source level:** `tools/winegcc/winegcc.c` previously added
+Clang-only `-target` and `-fuse-ld=lld` to *any* explicit
+`--cc-cmd` on a PE target, even if the user selected a GCC-compatible
+compiler. That could stop `aarch64-windows` compilation before it
+generated DLL objects. The helper now recognizes Clang commands (including
+common `ccache`/`sccache`/`distcc`/`env` wrappers) and does not
+force Clang options on explicit GCC commands. The
+`tools/winegcc/tests/arguments.sh` regression checks ARM64 Windows
+Clang, an explicit cross-GCC override, and a cached Clang invocation.
+This is not a claim that all cross-GCC drivers accept MSVC ABI link flags.
+
+**Actual compiler/linker probe (separate from Water):** Clang 17 on a
+Linux x86_64 host accepted `-target aarch64-windows` with LLD and
+emitted a PE32+ `IMAGE_FILE_MACHINE_ARM64` (`0xaa64`) DLL from a
+standalone C export. Its PE header had `FileAlignment=0x200` and,
+when explicitly supplied Water's `/ALIGN:0x10000`, had
+`SectionAlignment=0x10000`. LLD emitted its documented warning
+`/align specified without /driver; image may not run` but returned
+success. An otherwise equivalent default LLD link emitted
+`SectionAlignment=0x1000` and no alignment warning. The minimal probe
+did **not** invoke Water's `winegcc` executable, `winebuild`, import
+archives, or Windows loader; no complete Water DLL build is verified.
+
+Do **not** use `/driver` just to silence the warning on a user-mode
+DLL. Keep the existing explicit ARM64 64 KB alignment policy while
+investigating Wine compatibility with 16 KB host pages. Windows ARM64
+itself normally uses 4 KB pages, and Microsoft's conventional
+`/ALIGN` linker default is 4 KB; the 64 KB setting is a separate
+compatibility policy, not a Windows ARM64 ABI mandate. Distinguish
+`aarch64-windows` (MSVC ABI) from `aarch64-w64-mingw32` (GNU ABI).
+
+Evidence:
+- https://learn.microsoft.com/en-us/cpp/build/reference/align-section-alignment
+- https://devblogs.microsoft.com/oldnewthing/20210510-00/?p=105200
+- https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+
+**Remaining gates:** Run the ARM64-target `winegcc` argument regression
+with an actual built Water wrapper; inspect the compiler command,
+`winebuild`-generated `.spec.o`, startup library selection, LLD
+command, COFF import archives and final PE exports with LLVM tools.
+Do not conflate the host aarch64/arm64e Mach-O ABI with the guest
+aarch64-windows or ARM64EC COFF ABI.
+
 ## -isysroot scope audit (October 13, 2026)
 
 The `isysroot` variable is **active**, not dead: `-isysroot PATH` and
