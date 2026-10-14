@@ -756,6 +756,32 @@ typedef struct _MEMORY_BASIC_INFORMATION
     DWORD    Type;
 } MEMORY_BASIC_INFORMATION, *PMEMORY_BASIC_INFORMATION;
 
+/* Explicit cross-architecture layouts for memory queries and debuggers.
+ * Their field widths must never depend on the host or caller's pointers. */
+typedef struct _MEMORY_BASIC_INFORMATION32
+{
+    DWORD BaseAddress;
+    DWORD AllocationBase;
+    DWORD AllocationProtect;
+    DWORD RegionSize;
+    DWORD State;
+    DWORD Protect;
+    DWORD Type;
+} MEMORY_BASIC_INFORMATION32, *PMEMORY_BASIC_INFORMATION32;
+
+typedef struct DECLSPEC_ALIGN(16) _MEMORY_BASIC_INFORMATION64
+{
+    DWORD64 BaseAddress;
+    DWORD64 AllocationBase;
+    DWORD AllocationProtect;
+    DWORD __alignment1;
+    DWORD64 RegionSize;
+    DWORD State;
+    DWORD Protect;
+    DWORD Type;
+    DWORD __alignment2;
+} MEMORY_BASIC_INFORMATION64, *PMEMORY_BASIC_INFORMATION64;
+
 typedef struct _MEM_ADDRESS_REQUIREMENTS
 {
   void      *LowestStartingAddress;
