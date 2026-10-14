@@ -28,12 +28,12 @@ fixture="$root/scripts/tests/com-abi-headers.c"
 for triple in aarch64-pc-windows-msvc x86_64-pc-windows-msvc i686-pc-windows-msvc; do
     printf 'COM C ABI: %s\n' "$triple" >&2
     "$cc" --target="$triple" -std=c11 -fms-extensions -fsyntax-only \
-        -I"$generated" -I"$root/include" -x c "$fixture"
+        -I"$generated" -I"$root/include" -I"$root/include/msvcrt" -x c "$fixture"
     printf 'COM C++ ABI: %s\n' "$triple" >&2
     "$cxx" --target="$triple" -std=c++17 -fms-extensions -fsyntax-only \
-        -I"$generated" -I"$root/include" -x c++ "$fixture"
+        -I"$generated" -I"$root/include" -I"$root/include/msvcrt" -x c++ "$fixture"
     printf 'COM CINTERFACE ABI: %s\n' "$triple" >&2
     "$cxx" --target="$triple" -std=c++17 -fms-extensions -DCINTERFACE -fsyntax-only \
-        -I"$generated" -I"$root/include" -x c++ "$fixture"
+        -I"$generated" -I"$root/include" -I"$root/include/msvcrt" -x c++ "$fixture"
 done
 printf '%s\n' 'PASS: Water COM root IID, IUnknown/IDispatch, VARIANT and SAFEARRAY contracts'
