@@ -50,6 +50,10 @@ crt="$tmp/runtime/msvcrt-headers"
 printf 'legacy poison\n' > "$crt/__config"
 sh "$tmp/run-stage" "$tmp/source" "$tmp/runtime" > "$tmp/overlay"
 [ ! -e "$crt/__config" ] || { echo 'stale cache permitted libc++ 8 header' >&2; exit 1; }
+# Symlinks can smuggle a legacy name through a *.h-only content filter.
+ln -s corecrt.h "$crt/string"
+sh "$tmp/run-stage" "$tmp/source" "$tmp/runtime" > "$tmp/overlay"
+[ ! -L "$crt/string" ] || { echo 'stale cache allowed symlinked legacy header' >&2; exit 1; }
 # Modifying a real CRT header invalidates and refreshes the stage as well.
 printf '/* changed */\n' >> "$tmp/source/include/msvcrt/corecrt.h"
 sh "$tmp/run-stage" "$tmp/source" "$tmp/runtime" > "$tmp/overlay"
