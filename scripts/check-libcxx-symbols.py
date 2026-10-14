@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Audit a Water libc++ static COFF provider using exact target ABI symbols.
+
+An .a/.lib archive has public defined symbols, not a DLL export directory.
+Compare an ARM64EC consumer .obj to the *same target* provider archive.
+Microsoft COFF manglings (including $$h names) must not be demangled or
+normalized before comparison. Dependencies belonging to vcruntime/CRT/OS
+and weak aliases are informational rather than falsely called libc++ gaps.
+"""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+
+def parse_posix(output):
+    symbols = {}
+    for line in output.splitlines():
+        parts = line.split()
+        # llvm-nm -P: SYMBOL TYPE [VALUE [SIZE]]. Archive/member headings
+        # have no TYPE and must not be confused with symbol definitions.
+        if (len(parts) < 2 or len(parts[1]) != 1
+                or parts[1] not in "aAbBcCdDiInNrRsStTuUvVwW?"):
+            continue
+        symbols.setdefault(parts[0], set()).add(parts[1])
+    return symbols
+
+
+def libcxx_name(symbol):
+    # Water's private libc++ uses std::__1; unversioned std symbols may
+    # instead be owned by Microsoft's vcruntime and must not be guessed.
+    return "@__1@std@@" in symbol or "std::__1::" in symbol
+
+
+def nm_symbols(nm, flag, path):
+    cmd = [nm, "--format=posix", "--extern-only", flag, path]
+    try:
+        return parse_posix(subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE))
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError("cannot audit symbols: " + " ".join(cmd) + ": " + str(exc)) from exc
+
+
+def audit(archive_defined, archive_undefined, consumer_undefined, target):
+    defined = set(archive_defined)
+
+    def strong(types):
+        return "U" in types or "u" in types
+
+    required = sorted(s for s, types in consumer_undefined.items()
+                      if libcxx_name(s) and strong(types))
+    missing = sorted(set(required) - defined)
+    weak = sorted(s for s, types in consumer_undefined.items()
+                  if libcxx_name(s) and not strong(types)
+                  and ("w" in types or "v" in types))
+    # An archive has members not pulled by any particular consumer, so
+    # unresolved refs within those members are evidence to inspect, not
+    # automatic proof that the final link is broken.
+    internal = sorted(s for s in archive_undefined
+                      if libcxx_name(s) and s not in defined)
+    other = sorted(s for s, types in consumer_undefined.items()
+                   if not libcxx_name(s) and strong(types))
+    return {
+        "target": target,
+        "archive_external_definitions": len(defined),
+        "archive_libcxx_definitions": sum(libcxx_name(s) for s in defined),
+        "required_libcxx_symbols": required,
+        "missing_required_libcxx_symbols": missing,
+        "weak_libcxx_references_diagnostic": weak,
+        "archive_unresolved_libcxx_references_diagnostic": internal,
+        "other_provider_references_diagnostic": other,
+    }
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("archive", help="libwhp-libcxx.a")
+    p.add_argument("target", help="target triple of archive and probe")
+    p.add_argument("probe", help="consumer object compiled for target")
+    p.add_argument("--nm", default="llvm-nm")
+    p.add_argument("--manifest", help="path to JSON report")
+    args = p.parse_args()
+    for path in (args.archive, args.probe):
+        if not Path(path).is_file():
+            p.error("missing ABI audit input: " + path)
+    try:
+        defined = nm_symbols(args.nm, "--defined-only", args.archive)
+        archive_undef = nm_symbols(args.nm, "--undefined-only", args.archive)
+        consumer_undef = nm_symbols(args.nm, "--undefined-only", args.probe)
+    except RuntimeError as exc:
+        print("FAIL:", exc, file=sys.stderr)
+        return 2
+    if not defined or not consumer_undef:
+        print("FAIL: empty archive definitions or consumer references", file=sys.stderr)
+        return 2
+    report = audit(defined, archive_undef, consumer_undef, args.target)
+    if not report["required_libcxx_symbols"]:
+        print("FAIL: probe has no strong std::__1 references; cannot validate provider", file=sys.stderr)
+        return 2
+    if args.manifest:
+        Path(args.manifest).write_text(json.dumps(report, sort_keys=True, indent=2) + "\n",
+                                       encoding="utf-8")
+    print("WHP libc++ %s: %d public symbols, %d std::__1 symbols, %d required, %d missing" %
+          (args.target, report["archive_external_definitions"],
+           report["archive_libcxx_definitions"], len(report["required_libcxx_symbols"]),
+           len(report["missing_required_libcxx_symbols"])))
+    for name in report["missing_required_libcxx_symbols"]:
+        print("MISSING libc++ provider symbol:", name, file=sys.stderr)
+    print("Diagnostics: %d weak std::__1 refs, %d unresolved archive std::__1 refs, %d external-provider refs" %
+          (len(report["weak_libcxx_references_diagnostic"]),
+           len(report["archive_unresolved_libcxx_references_diagnostic"]),
+           len(report["other_provider_references_diagnostic"])))
+    return 1 if report["missing_required_libcxx_symbols"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
