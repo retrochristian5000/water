@@ -2270,7 +2270,7 @@ prepare_llvm_msvcrt_headers()
     # A matching source checksum alone does not prove the staged include
     # directory was not contaminated or partially deleted after caching.
     # In particular, never let old libc++ extensionless headers return.
-    whp_msvcrt_unfiltered=$(find "$whp_msvcrt_overlay" -type f ! -name '*.h' ! -name '.whp-state' -print -quit 2>/dev/null || true)
+    whp_msvcrt_unfiltered=$(find "$whp_msvcrt_overlay" -type f ! -name '*.h' ! -name '.whp-state' -print | sed -n '1p' 2>/dev/null || true)
     if [ -f "$whp_msvcrt_state_file" ] &&
        [ -f "$whp_msvcrt_overlay/corecrt.h" ] &&
        [ -f "$whp_msvcrt_overlay/vcruntime_exception.h" ] &&
@@ -2298,7 +2298,7 @@ prepare_llvm_msvcrt_headers()
     rm -rf "$whp_msvcrt_overlay"
     mv "$whp_msvcrt_tmp" "$whp_msvcrt_overlay"
 
-    whp_msvcrt_unfiltered=$(find "$whp_msvcrt_overlay" -type f ! -name '*.h' ! -name '.whp-state' -print -quit)
+    whp_msvcrt_unfiltered=$(find "$whp_msvcrt_overlay" -type f ! -name '*.h' ! -name '.whp-state' -print | sed -n '1p')
     [ -z "$whp_msvcrt_unfiltered" ] ||
         die "filtered MSVCRT headers contain a non-CRT/legacy C++ header: $whp_msvcrt_unfiltered"
 
