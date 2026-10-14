@@ -310,6 +310,18 @@ unsigned __int64 __shiftright128(unsigned __int64, unsigned __int64, unsigned ch
 unsigned __int64 _umul128(unsigned __int64, unsigned __int64, unsigned __int64*);
 #endif
 
+/* ARM64EC follows the x64 intrinsic API, but must not emit an
+ * unresolved x64-only _umul128 call on AArch64 hardware. */
+#if defined(__arm64ec__)
+static __inline__ unsigned __int64
+_umul128(unsigned __int64 a, unsigned __int64 b, unsigned __int64 *high)
+{
+    unsigned __int128 product = (unsigned __int128)a * b;
+    *high = (unsigned __int64)(product >> 64);
+    return (unsigned __int64)product;
+}
+#endif
+
 #endif  /* _MSC_VER */
 
 #ifdef __cplusplus
