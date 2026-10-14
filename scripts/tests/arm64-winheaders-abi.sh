@@ -25,4 +25,35 @@ compile aarch64-pc-windows-msvc
 compile x86_64-pc-windows-msvc
 compile i686-pc-windows-msvc
 
+
+# _umul128 is a native x64 intrinsic; ARM64EC must inline it in both
+# Water CRT and Clang headers rather than call an x64-only symbol.
+mul_source="$repo/scripts/tests/arm64ec-mul-intrin.c"
+[ -f "$mul_source" ] || { echo "missing wide-multiply test" >&2; exit 2; }
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/water-arm64ec-umul128.XXXXXXXX")
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+for provider in water llvm
+do
+    case "$provider" in
+        water) inc="$repo/include/msvcrt" ;;
+        llvm) inc="$repo/toolchains/llvm-project/clang/lib/Headers"
+              if [ ! -f "$inc/intrin0.h" ]; then
+                  echo "SKIP: pinned LLVM headers not checked out" >&2
+                  continue
+              fi ;;
+    esac
+    "$cc" --target=x86_64-pc-windows-msvc -ffreestanding -fms-extensions \
+        -fsyntax-only -I"$inc" "$mul_source"
+    "$cc" --target=arm64ec-pc-windows-msvc -ffreestanding -fms-extensions \
+        -O2 -S -I"$inc" "$mul_source" -o "$tmp/$provider.s"
+    grep -Eq '[[:space:]]umulh[[:space:]]' "$tmp/$provider.s" ||
+        { echo "$provider: ARM64EC high product is not lowered" >&2; exit 1; }
+    if grep -Eq '^[[:space:]]*bl[[:space:]]+.*_umul128' "$tmp/$provider.s"; then
+        echo "$provider: ARM64EC still calls external _umul128" >&2
+        exit 1
+    fi
+    printf 'PASS: %s ARM64EC inline _umul128 with native UMULH\n' "$provider"
+done
+
 printf 'PASS: Water Windows ARM64, x64 and Win32 header ABI layouts\n'
