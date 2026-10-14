@@ -59,8 +59,11 @@ its commit changes, and merge using `--ff-only` (never rebase or force-push).
 `WHP_GIT_UPDATE=auto` is the normal default: CI, source archives, detached
 checkouts, uncommitted tracked changes, and temporarily unreachable remotes
 retain the current source rather than silently discarding work or blocking an
-offline build. Set `WHP_GIT_UPDATE=1` for strict failure on those conditions,
-or `WHP_GIT_UPDATE=0` for a deliberate offline build. `incremental`,
+offline build when its pinned dependencies are already present.
+Set `WHP_GIT_UPDATE=1` for strict failure on those conditions, or
+`WHP_GIT_UPDATE=0` to disable source checks. To disable dependency
+initialization as well for a fully offline build with existing toolchains,
+use `WHP_GIT_UPDATE=0 WHP_SUBMODULES=0 ./build.sh`. `incremental`,
 `clean`, `distclean`, `menuconfig`, and `update-deps` skip the network
 check by default; an explicit `WHP_GIT_UPDATE` can override the default.
 An advanced Water revision always re-enters the new `build.sh` at most once.
