@@ -59,6 +59,20 @@ llvm-objdump -f "$tmp/arm64/probe.a" > "$tmp/architecture.log"
 check "$tmp/architecture.log" 'file format coff-arm64'
 check "$tmp/architecture.log" 'architecture: aarch64'
 
+# Ensure that LLD really consumes the generated COFF library and resolves
+# the provider symbol. Reading an archive's members alone is not sufficient.
+if command -v lld-link >/dev/null 2>&1; then
+    printf '%s\n' \
+        'extern int probe(void);' \
+        '__declspec(dllexport) int use_probe(void) { return probe(); }' \
+        > "$tmp/consumer.c"
+    clang --target=aarch64-windows -c "$tmp/consumer.c" -o "$tmp/consumer.obj"
+    lld-link /dll /noentry "/out:$tmp/consumer.dll" \
+        "$tmp/consumer.obj" "$tmp/arm64/probe.a"
+    llvm-objdump -f "$tmp/consumer.dll" > "$tmp/linked-image.log"
+    check "$tmp/linked-image.log" 'file format coff-arm64'
+fi
+
 # Do not force PE/COFF archive format on Winelib or Unix host outputs.
 source_tree "$tmp/winelib"
 perl "$winemaker" --nobanner --nobackup --nosource-fix \
