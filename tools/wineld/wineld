@@ -79,6 +79,21 @@ sub assert_machine
     fail("$label is not a recognizable COFF object") unless defined $actual;
     fail(sprintf('%s has COFF machine 0x%04x, expected ARM64 0xaa64', $label, $actual))
         unless $actual == $machine_expected;
+
+    # Microsoft short-import members store their symbol and DLL name after
+    # a 20-byte header.  Older llvm-lib /def: releases can emit a blank DLL
+    # name if the .def omits LIBRARY, producing an unusable import library.
+    my ($signature, $version) = unpack('vv', substr($data, 0, 4));
+    if (!$signature && $version == 0xffff)
+    {
+        my $size = unpack('V', substr($data, 12, 4));
+        fail("$label has an inconsistent short-import member size")
+            unless $size == length($data) - 20;
+        my ($symbol, $dll) = split(/\0/, substr($data, 20), 3);
+        fail("$label has a missing symbol or DLL name in its short-import record; " .
+             "check llvm-lib /def: and the DEF LIBRARY declaration")
+            unless defined($symbol) && length($symbol) && defined($dll) && length($dll);
+    }
 }
 
 sub read_file
@@ -100,6 +115,7 @@ sub check_archive
         unless substr($data, 0, 8) eq "!<arch>\n";
     my $offset = 8;
     my $checked = 0;
+    my $symbol_tables = 0;
     while ($offset < length($data))
     {
         fail("$path has a truncated archive member header")
@@ -116,7 +132,16 @@ sub check_archive
         fail("$path has a truncated archive member")
             if $offset + $size > length($data);
         my $member = substr($data, $offset, $size);
-        # / and // hold the archive symbol and long-name tables.
+        # A COFF archive has at most two '/' linker-member indexes.
+        # LLVM 17's broken /def: output without LIBRARY can emit all its
+        # *actual* import members with '/' as their name.  Do not skip them
+        # as indexes; fail instead of accepting an incomplete ABI audit.
+        if ($name eq '/' && ++$symbol_tables > 2)
+        {
+            fail("$path contains unnamed archive members after its COFF indexes; " .
+                 "check llvm-lib /def: and specify LIBRARY in the DEF file");
+        }
+        # / and // hold archive linker indexes and long-name tables.
         if ($name ne '/' && $name ne '//' && $name ne '/SYM64/' &&
             $name ne '/<ECSYMBOLS>/' && $name !~ /^__.SYMDEF/)
         {
@@ -132,6 +157,7 @@ sub check_archive
         }
         $offset += $size + ($size % 2);
     }
+    fail("$path contains no verified COFF archive members") unless $checked;
     return $checked;
 }
 
