@@ -114,7 +114,7 @@ int main(void)
         run(CLANG, "-std=c11", "-O2", "-Wall", "-Wextra",
             str(host_source), "-o", str(host_binary))
         run(str(host_binary))
-        print("PASS: exact Water helper matches MSVC modulo-64 semantics (6250 cases)")
+        print("PASS: exact Water helper matches MSVC modulo-64 semantics (6400 cases)")
 
         cross_source = tmpdir / "shift-windows.c"
         cross_source.write_text(cross, encoding="utf-8")
