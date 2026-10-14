@@ -2444,13 +2444,16 @@ prepare_one_llvm_libcxx()
     # libc++'s bootstrap COM stubs include the live Windows SDK headers.
     # Their revisions are not captured by the IDL-only overlay cache. A
     # changed core Windows ABI header must invalidate any cached provider.
+    for whp_libcxx_sdk_name in windef.h guiddef.h winnt.h windows.h winbase.h objbase.h
+    do
+        [ -f "$SOURCE_DIR/include/$whp_libcxx_sdk_name" ] ||
+            die "missing libc++ Windows ABI header: $whp_libcxx_sdk_name"
+    done
     whp_libcxx_sdk_inputs=$(
-        for whp_libcxx_sdk_name in windef.h guiddef.h winnt.h windows.h winbase.h objbase.h
-        do
-            [ -f "$SOURCE_DIR/include/$whp_libcxx_sdk_name" ] ||
-                die "missing libc++ Windows ABI header: $whp_libcxx_sdk_name"
-            cksum "$SOURCE_DIR/include/$whp_libcxx_sdk_name"
-        done | cksum | awk '{ printf "%s:%s", $1, $2 }'
+        cksum "$SOURCE_DIR/include/windef.h" "$SOURCE_DIR/include/guiddef.h" \
+              "$SOURCE_DIR/include/winnt.h" "$SOURCE_DIR/include/windows.h" \
+              "$SOURCE_DIR/include/winbase.h" "$SOURCE_DIR/include/objbase.h" |
+        cksum | awk '{ printf "%s:%s", $1, $2 }'
     )
     whp_libcxx_signature=$(printf '%s\n' \
         "LLVM_LIBCXX_RECIPE=$LLVM_LIBCXX_RECIPE" \
