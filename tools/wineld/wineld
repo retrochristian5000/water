@@ -1,0 +1,179 @@
+#!/usr/bin/perl
+# Optional LLD PE/COFF link front end for ordinary Windows ARM64 images.
+# This does not replace winegcc's import/startup handling or winebuild.
+use strict;
+use warnings;
+use File::Spec;
+
+sub fail { die "wineld: $_[0]\n" }
+
+my ($target, $linker, $dry_run);
+$linker = $ENV{WINELD_LINKER} || 'lld-link';
+my @args;
+while (@ARGV)
+{
+    my $arg = shift @ARGV;
+    if ($arg eq '--') { @args = @ARGV; last; }
+    if ($arg =~ /^--target=(.+)$/) { $target = $1; next; }
+    if ($arg eq '--target') { $target = shift @ARGV; next; }
+    if ($arg =~ /^--linker=(.+)$/) { $linker = $1; next; }
+    if ($arg eq '--linker') { $linker = shift @ARGV; next; }
+    if ($arg eq '--dry-run') { $dry_run = 1; next; }
+    fail("unknown option '$arg' (linker options must follow --)");
+}
+fail('requires --target=aarch64-windows and -- linker arguments')
+    unless defined($target) && @args;
+fail("unsupported target '$target': only the ordinary Windows ARM64 MSVC PE ABI is audited")
+    unless $target =~ /\A(?:aarch64|arm64)(?:-[a-z0-9_.]+)*-windows(?:-msvc)?\z/i;
+fail('missing linker command') unless defined($linker) && length($linker);
+
+my $machine_expected = 0xaa64;  # IMAGE_FILE_MACHINE_ARM64
+my ($output, $dll, $machine_option);
+for my $arg (@args)
+{
+    $output = $1 if $arg =~ m{^[-/]out:(.+)$}i;
+    $dll = 1 if $arg =~ m{^[-/]dll$}i;
+    $machine_option = uc($1) if $arg =~ m{^[-/]machine:(.+)$}i;
+}
+fail('an explicit /out:<file> is required for PE output validation') unless defined $output;
+fail("/machine:$machine_option contradicts $target")
+    if defined($machine_option) && $machine_option ne 'ARM64';
+fail('a DLL output requires /dll; a .dll filename alone is not an image type')
+    if $output =~ /\.dll\z/i && !$dll;
+push @args, '/machine:arm64' unless defined $machine_option;
+# lld-link creates an import library beside a DLL with exports.  Never let
+# its default .lib path overwrite a .lib archive used as an input.
+if ($dll)
+{
+    my $implib;
+    for my $arg (@args) { $implib = $1 if $arg =~ m{^[-/]implib:(.+)$}i; }
+    if (!defined $implib)
+    {
+        $implib = $output;
+        $implib =~ s/\.[^\.\\\/]+\z/.lib/;
+    }
+    my $dest = File::Spec->rel2abs($implib);
+    for my $arg (@args)
+    {
+        next unless $arg =~ /\.(?:lib|a)\z/i && -f $arg;
+        fail("input archive $arg conflicts with import-library output $implib")
+            if File::Spec->rel2abs($arg) eq $dest;
+    }
+}
+
+sub machine_from_data
+{
+    my ($data) = @_;
+    return undef unless length($data) >= 20;
+    # Both the COFF bigobj header and the short-import header use these
+    # signatures, with a Machine field at byte offset 6.
+    my ($first, $second) = unpack('vv', substr($data, 0, 4));
+    return unpack('v', substr($data, 6, 2)) if !$first && $second == 0xffff;
+    return $first;
+}
+
+sub assert_machine
+{
+    my ($label, $data) = @_;
+    my $actual = machine_from_data($data);
+    fail("$label is not a recognizable COFF object") unless defined $actual;
+    fail(sprintf('%s has COFF machine 0x%04x, expected ARM64 0xaa64', $label, $actual))
+        unless $actual == $machine_expected;
+}
+
+sub read_file
+{
+    my ($path) = @_;
+    open(my $fh, '<:raw', $path) or fail("cannot read $path: $!");
+    local $/;
+    my $bytes = <$fh>;
+    close($fh);
+    return $bytes;
+}
+
+sub check_archive
+{
+    my ($path, $data) = @_;
+    fail("$path is a thin archive; expand it before ABI validation")
+        if substr($data, 0, 8) eq "!<thin>\n";
+    fail("$path has an invalid archive header")
+        unless substr($data, 0, 8) eq "!<arch>\n";
+    my $offset = 8;
+    my $checked = 0;
+    while ($offset < length($data))
+    {
+        fail("$path has a truncated archive member header")
+            if $offset + 60 > length($data);
+        my $header = substr($data, $offset, 60);
+        fail("$path has an invalid archive member terminator")
+            unless substr($header, 58, 2) eq chr(96) . "\n";
+        my $size = substr($header, 48, 10);
+        $size =~ s/^\s+|\s+$//g;
+        fail("$path has an invalid archive member size") unless $size =~ /^\d+$/;
+        my $name = substr($header, 0, 16);
+        $name =~ s/\s+$//;
+        $offset += 60;
+        fail("$path has a truncated archive member")
+            if $offset + $size > length($data);
+        my $member = substr($data, $offset, $size);
+        # / and // hold the archive symbol and long-name tables.
+        if ($name ne '/' && $name ne '//' && $name ne '/SYM64/' &&
+            $name ne '/<ECSYMBOLS>/' && $name !~ /^__.SYMDEF/)
+        {
+            if ($name =~ /^#1\/(\d+)/)
+            {
+                my $length = $1;
+                fail("$path has an invalid extended member name") if $length > length($member);
+                $name = substr($member, 0, $length);
+                $member = substr($member, $length);
+            }
+            assert_machine("$path($name)", $member);
+            $checked++;
+        }
+        $offset += $size + ($size % 2);
+    }
+    return $checked;
+}
+
+my $checked = 0;
+for my $arg (@args)
+{
+    next unless $arg =~ /\.(?:obj|o|a|lib)\z/i && -f $arg;
+    my $data = read_file($arg);
+    if ($arg =~ /\.(?:a|lib)\z/i)
+    {
+        $checked += check_archive($arg, $data);
+    }
+    else
+    {
+        assert_machine($arg, $data);
+        $checked++;
+    }
+}
+fail('no COFF objects were checked; provide explicit .o/.obj/.a/.lib input paths')
+    unless $checked;
+
+if ($dry_run)
+{
+    print "wineld: verified $checked ARM64 COFF input(s); dry-run only\n";
+    exit 0;
+}
+my $status = system { $linker } $linker, @args;
+fail("could not start '$linker': $!") if $status == -1;
+if ($status & 127) { fail(sprintf("linker terminated by signal %d", $status & 127)); }
+exit($status >> 8) if $status;
+
+my $pe = read_file($output);
+fail("$output lacks an MZ header") unless length($pe) >= 0x40 && substr($pe, 0, 2) eq 'MZ';
+my $offset = unpack('V', substr($pe, 0x3c, 4));
+fail("$output has an invalid PE header offset") if $offset > length($pe) - 26;
+fail("$output lacks a PE signature") unless substr($pe, $offset, 4) eq "PE\0\0";
+my $actual_machine = unpack('v', substr($pe, $offset + 4, 2));
+fail(sprintf('%s has PE machine 0x%04x, expected ARM64 0xaa64', $output, $actual_machine))
+    unless $actual_machine == $machine_expected;
+my $magic = unpack('v', substr($pe, $offset + 24, 2));
+fail(sprintf('%s has optional-header magic 0x%04x, expected PE32+ 0x020b', $output, $magic))
+    unless $magic == 0x020b;
+my $characteristics = unpack('v', substr($pe, $offset + 22, 2));
+fail("$output is not marked as a DLL") if $dll && !($characteristics & 0x2000);
+print "wineld: verified ARM64 PE32+ output $output ($checked COFF inputs)\n";
