@@ -42,7 +42,9 @@ fall through to the old libc++ instead of failing clearly.
 2. Cached CRT header overlays are refused and reconstructed if
    `corecrt.h` or `vcruntime_exception.h` is missing, or if an
    unexpected non-`*.h` file such as `__config` or `string` has
-   entered the filtered directory. Paths remain portable to macOS/BSD
+   entered the filtered directory. Symlinks are rejected as well, so
+   a legacy C++ file cannot be exposed under a harmless-looking name.
+   Paths remain portable to macOS/BSD
    `find`; the cache still keys on all source `*.h` checksums.
 3. The libc++ provider cache signature also includes checksums of
    `windef.h`, `guiddef.h`, `winnt.h`, `windows.h`,
@@ -84,7 +86,8 @@ sh scripts/tests/libcxx-sdk-cache.sh
 
 extracts Water's actual `prepare_llvm_msvcrt_headers()` shell function,
 stages synthetic modern CRT/legacy C++ inputs, poisons a supposedly
-valid cache with `__config`, then confirms the helper rebuilds it.
+valid cache with `__config` and a symlinked old C++ header, then confirms
+the helper rebuilds it.
 It mutates a CRT `*.h` source to check invalidation; executes the
 real installer into a temporary root; checks the architecture-specific
 CRT tree excludes old C++ names; verifies the old headers remain
