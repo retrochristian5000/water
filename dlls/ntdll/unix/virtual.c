@@ -5701,8 +5701,11 @@ static unsigned int fill_basic_memory_info( const void *addr, MEMORY_BASIC_INFOR
     server_enter_uninterrupted_section( &virtual_mutex, &sigset );
     view = get_memory_region_size( base, &alloc_base, &alloc_end, &fake_reserved );
 
-    /* Fill the info structure */
-
+    /* Fill the info structure. Windows' 64-bit SDK exposes PartitionId
+     * in the former padding; the default partition is zero here. */
+#ifdef _WIN64
+    info->PartitionId = 0;
+#endif
     info->BaseAddress = base;
     info->RegionSize  = alloc_end - base;
 
@@ -5767,6 +5770,9 @@ static unsigned int get_basic_memory_info( HANDLE process, LPCVOID addr,
 
         if (result.virtual_query.status == STATUS_SUCCESS)
         {
+#ifdef _WIN64
+            info->PartitionId = 0;
+#endif
             info->BaseAddress       = wine_server_get_ptr( result.virtual_query.base );
             info->AllocationBase    = wine_server_get_ptr( result.virtual_query.alloc_base );
             info->RegionSize        = result.virtual_query.size;
