@@ -66,6 +66,36 @@ if [ "$(uname -s)" != Darwin ]; then
         exit 1
     fi
 fi
+# --cc-cmd is a compiler override, not a request to make every driver
+# behave like Clang. Test the Windows ARM64 MSVC-ABI compiler command.
+cp "$tmp/cc" "$tmp/clang"
+cp "$tmp/cc" "$tmp/aarch64-windows-gcc"
+cat > "$tmp/ccache" <<'EOF'
+#!/bin/sh
+exec "$@"
+EOF
+chmod +x "$tmp/clang" "$tmp/aarch64-windows-gcc" "$tmp/ccache"
+run_arm64_compiler()
+{
+    WINEGCC_ARG_LOG="$tmp/args" "$winegcc" --target=aarch64-windows \
+        --cc-cmd "$1" -c -o "$tmp/arm64.obj" "$tmp/source.c"
+    assert_arg "$tmp/source.c"
+}
+run_arm64_compiler "$tmp/aarch64-windows-gcc"
+if grep -Fx -- '-target' "$tmp/args" >/dev/null ||
+   grep -Fx -- '-fuse-ld=lld' "$tmp/args" >/dev/null; then
+    echo 'non-Clang ARM64 compiler received Clang-only arguments' >&2
+    cat "$tmp/args" >&2
+    exit 1
+fi
+run_arm64_compiler "$tmp/clang"
+assert_arg '-target'
+assert_arg 'aarch64-windows'
+assert_arg '-fuse-ld=lld'
+run_arm64_compiler "$tmp/ccache $tmp/clang"
+assert_arg '-target'
+assert_arg 'aarch64-windows'
+assert_arg '-fuse-ld=lld'
 if WINEGCC_ARG_LOG="$tmp/args" "$winegcc" --target=i686-w64-mingw32 \
     --cc-cmd "$tmp/cc" -isystem > "$tmp/error" 2>&1; then
     echo 'missing -isystem path incorrectly accepted' >&2
