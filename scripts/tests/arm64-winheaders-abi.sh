@@ -80,4 +80,16 @@ do
     printf 'PASS: %s ARM64EC inline 128-bit shifts (C/C++ and IR)\n' "$provider"
 done
 
+# The codegen checks above prevent external x64 calls; additionally verify
+# all 256 count values against independent 64-bit reference formulas.
+if [ -f "$repo/toolchains/llvm-project/clang/lib/Headers/intrin0.h" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        python3 "$repo/scripts/tests/arm64ec-shift-semantics.py"
+    else
+        echo "SKIP: Python 3 unavailable for ARM64EC shift semantics" >&2
+    fi
+else
+    echo "SKIP: LLVM checkout unavailable for cross-provider shift semantics" >&2
+fi
+
 printf 'PASS: Water Windows ARM64, x64 and Win32 header ABI layouts\n'
