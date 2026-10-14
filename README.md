@@ -37,8 +37,11 @@ libraries remain available for architectures that still require them.
 Run `sh scripts/tests/libcxx-archive-machine.sh` with Clang and llvm-ar
 installed to exercise the archive check independently.
 
-Normal builds use the Water checkout and its recorded submodule pins without
-pulling new source revisions. Source and dependency updates are separate:
+Normal builds now check Water's configured tracking branch before any build
+bootstrap. If a newer Water revision can fast-forward safely, `./build.sh`
+updates it and immediately restarts the refreshed build script in the same
+invocation. On an unchanged upstream, the updater avoids fetching objects.
+The recorded dependency submodule pins remain authoritative:
 
 ```
 ./build.sh update                              # Fast-forward Water, then initialize pinned submodules
@@ -49,14 +52,18 @@ pulling new source revisions. Source and dependency updates are separate:
 and stages updated gitlink revisions for inspection. It does **not** create
 commits or push them. Validate the updated toolchain before committing and
 pushing the new pins; otherwise the Water branch will continue to use its
-recorded revisions. `update` uses `git pull --ff-only` rather than rebasing
-local commits. If the Water revision changes, `update` re-executes the
-freshly updated build script before initializing its recorded submodule pins.
-This avoids using old build rules against new dependencies and completes
-the source/pin refresh in one invocation. Normal builds still do not fetch
-Water revisions automatically. Set `WHP_GIT_UPDATE=1` to opt into a source
-update before a normal build; if its revision changes, the script stops so
-the updated build rules can be loaded by a new invocation.
+recorded revisions. `update` forces a strict source refresh and initializes the pinned
+submodules. Source updates use the configured branch/upstream, fetch only when
+its commit changes, and merge using `--ff-only` (never rebase or force-push).
+`update-deps` is still the only operation that stages newer submodule pins.
+`WHP_GIT_UPDATE=auto` is the normal default: CI, source archives, detached
+checkouts, uncommitted tracked changes, and temporarily unreachable remotes
+retain the current source rather than silently discarding work or blocking an
+offline build. Set `WHP_GIT_UPDATE=1` for strict failure on those conditions,
+or `WHP_GIT_UPDATE=0` for a deliberate offline build. `incremental`,
+`clean`, `distclean`, `menuconfig`, and `update-deps` skip the network
+check by default; an explicit `WHP_GIT_UPDATE` can override the default.
+An advanced Water revision always re-enters the new `build.sh` at most once.
 Use `./build.sh menuconfig` to edit the persistent ignored `.whpconfig`
 profile. The menu controls PE architectures, the WHP LLVM bootstrap and host
 linker policies, build behavior, installation, and optional Wine components. The LLVM menu
