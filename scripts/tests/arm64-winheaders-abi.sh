@@ -46,6 +46,8 @@ do
     "$cc" --target=x86_64-pc-windows-msvc -ffreestanding -fms-extensions \
         -fsyntax-only -I"$inc" "$mul_source"
     "$cc" --target=arm64ec-pc-windows-msvc -ffreestanding -fms-extensions \
+        -fsyntax-only -x c++ -std=c++17 -I"$inc" "$mul_source"
+    "$cc" --target=arm64ec-pc-windows-msvc -ffreestanding -fms-extensions \
         -fsyntax-only -DWHP_EXISTING_MUL_ALIAS -I"$inc" "$mul_source"
     "$cc" --target=arm64ec-pc-windows-msvc -ffreestanding -fms-extensions \
         -O2 -S -I"$inc" "$mul_source" -o "$tmp/$provider.s"
