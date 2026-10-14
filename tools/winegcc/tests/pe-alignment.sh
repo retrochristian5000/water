@@ -51,16 +51,23 @@ check_alignment()
     fi
 }
 
-# MSVC-compatible COFF linker driver, three architecture families.
-check_alignment i386-pc-windows '-Wl,-filealign:0x200,-align:0x1000'
-check_alignment x86_64-pc-windows '-Wl,-filealign:0x200,-align:0x1000'
-check_alignment aarch64-pc-windows '-Wl,-filealign:0x200,-align:0x10000'
+# Standard MSVC user-mode PE layouts must not emit a redundant /ALIGN.
+# LLD warns about any explicit /ALIGN without /DRIVER, even 0x1000.
+check_alignment i386-pc-windows '-Wl,-filealign:0x200'
+check_alignment x86_64-pc-windows '-Wl,-filealign:0x200'
+check_alignment aarch64-pc-windows '-Wl,-filealign:0x200'
+# Preserve the separate ARM64EC/ARM64X layout policy.
 check_alignment arm64ec-pc-windows '-Wl,-filealign:0x200,-align:0x10000'
+check_alignment aarch64-pc-windows '-Wl,-filealign:0x200,-align:0x10000' -marm64x
 
 # File and memory alignments are separately overridable.
 check_alignment i386-pc-windows '-Wl,-filealign:0x200,-align:0x2000' \
     -Wl,--section-alignment,0x2000
-check_alignment i386-pc-windows '-Wl,-filealign:0x400,-align:0x1000' \
+check_alignment i386-pc-windows '-Wl,-filealign:0x400' \
+    -Wl,--file-alignment,0x400
+check_alignment aarch64-pc-windows '-Wl,-filealign:0x200,-align:0x10000' \
+    -Wl,--section-alignment,0x10000
+check_alignment aarch64-pc-windows '-Wl,-filealign:0x400' \
     -Wl,--file-alignment,0x400
 
 # Special sub-page section alignments require matching on-disk layout.
