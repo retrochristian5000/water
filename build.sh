@@ -135,6 +135,7 @@ Environment:
   WATER_PE_LTO          PE LTO mode: none, thin, or full (default: none; thin recommended for testing)
   WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
   WATER_LIBCXX_I386     i386 PE libc++: legacy or experimental llvm (default: legacy)
+  WATER_LIBCXX_LEGACY_POLICY  Old libc++ fallback: allow (default) or error (strict retirement audit)
   WHP_COMPILER_RT_AARCH64_TARGET  Standalone builtins target: aarch64-pc-windows-msvc or aarch64-w64-windows-gnu
   WATER_INSTALL         Post-build install: none, runtime, development, or all (default: none)
   WATER_PREFIX          Install prefix passed to configure (default: /usr/local)
@@ -263,6 +264,7 @@ validate_profile()
     WATER_PE_LTO=${WATER_PE_LTO:-none}
     WATER_LIBCXX=${WATER_LIBCXX:-llvm}
     WATER_LIBCXX_I386=${WATER_LIBCXX_I386:-legacy}
+    WATER_LIBCXX_LEGACY_POLICY=${WATER_LIBCXX_LEGACY_POLICY:-allow}
     WATER_INSTALL=${WATER_INSTALL:-none}
     WATER_PREFIX=${WATER_PREFIX:-/usr/local}
     WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}
@@ -309,6 +311,10 @@ validate_profile()
     case "$WATER_LIBCXX_I386" in
         legacy|llvm) ;;
         *) die "WATER_LIBCXX_I386 must be legacy or llvm" ;;
+    esac
+    case "$WATER_LIBCXX_LEGACY_POLICY" in
+        allow|error) ;;
+        *) die "WATER_LIBCXX_LEGACY_POLICY must be allow or error" ;;
     esac
     case "$WATER_INSTALL" in
         none|runtime|development|all) ;;
@@ -2350,6 +2356,8 @@ prepare_one_llvm_libcxx()
     eval "whp_libcxx_user_cflags=\${${whp_libcxx_arch}_CXX_PE_CFLAGS:-}"
     eval "whp_libcxx_user_libs=\${${whp_libcxx_arch}_CXX_PE_LIBS:-}"
     if [ -n "$whp_libcxx_user_cflags" ] || [ -n "$whp_libcxx_user_libs" ]; then
+        [ "$WATER_LIBCXX_LEGACY_POLICY" != error ] ||
+            die "strict modern libc++ policy rejects unverified $whp_libcxx_arch C++ provider overrides"
         [ -n "$whp_libcxx_user_cflags" ] && [ -n "$whp_libcxx_user_libs" ] ||
             die "$whp_libcxx_arch C++ provider override must set both ${whp_libcxx_arch}_CXX_PE_CFLAGS and ${whp_libcxx_arch}_CXX_PE_LIBS"
         printf 'WHP libc++ %s: explicit provider override\n' "$whp_libcxx_arch" >&2
@@ -2688,7 +2696,7 @@ EOF
 
 prepare_libcxx_provider()
 {
-    WHP_LIBCXX_STATE=$WATER_LIBCXX
+    WHP_LIBCXX_STATE="$WATER_LIBCXX;legacy-policy:$WATER_LIBCXX_LEGACY_POLICY"
     WHP_LIBCXX_INSTALL_MODE=$WATER_LIBCXX
     WHP_LIBCXX_INSTALL_ROOT=$LLVM_LIBCXX_RUNTIME_DIR
     WHP_LIBCXX_INSTALL_ARCHS=
@@ -2697,6 +2705,8 @@ prepare_libcxx_provider()
         WHP_LIBCXX_INSTALL_ARCHS WHP_LIBCXX_INSTALL_LEGACY_HEADERS
 
     if [ "$WATER_LIBCXX" = legacy ]; then
+        [ "$WATER_LIBCXX_LEGACY_POLICY" != error ] ||
+            die "strict modern libc++ policy rejects WATER_LIBCXX=legacy"
         WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
         export WHP_LIBCXX_INSTALL_LEGACY_HEADERS
         printf 'WHP libc++ provider: legacy Water libc++ (_LIBCPP_VERSION 8000)\n' >&2
@@ -2709,15 +2719,21 @@ prepare_libcxx_provider()
         case "$whp_libcxx_arch" in
             i386)
                 if [ "$WATER_LIBCXX_I386" != llvm ]; then
+                    [ "$WATER_LIBCXX_LEGACY_POLICY" != error ] ||
+                        die "strict modern libc++ policy: i386 requires WATER_LIBCXX_I386=llvm"
                     WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
                     printf 'WHP libc++ i386: legacy provider retained (set WATER_LIBCXX_I386=llvm to test LLVM)\n' >&2
                 fi
                 ;;
             arm)
+                [ "$WATER_LIBCXX_LEGACY_POLICY" != error ] ||
+                    die "strict modern libc++ policy: ARM32 PE lacks a validated LLVM provider"
                 WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
                 printf 'WHP libc++ arm: legacy provider retained for armv7-windows-gnu ABI\n' >&2
                 ;;
             powerpc)
+                [ "$WATER_LIBCXX_LEGACY_POLICY" != error ] ||
+                    die "strict modern libc++ policy: PowerPC Windows PE/COFF C++ runtime is not ready; see scripts/tests/libcxx-powerpc-abi.sh"
                 WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
                 printf 'WHP libc++ powerpc: legacy provider retained pending PowerPC COFF runtime support\n' >&2
                 ;;
@@ -2838,6 +2854,7 @@ cxx_profile_signature()
 {
     printf '%s\n' \
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
+        "WATER_LIBCXX_LEGACY_POLICY=${WATER_LIBCXX_LEGACY_POLICY:-allow}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
         "WATER_WITH_MINGW=${WATER_WITH_MINGW:-auto}" \
         "LLVM_BIN=${LLVM_BIN:-}" \
