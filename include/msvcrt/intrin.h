@@ -322,6 +322,26 @@ _umul128(unsigned __int64 a, unsigned __int64 b, unsigned __int64 *high)
 }
 #endif
 
+/* ARM64EC must preserve the x64 128-bit shift semantics without calling
+ * unavailable x64 intrinsics.  Counts are reduced modulo 64. */
+#if defined(__arm64ec__) && !defined(__shiftright128)
+static __inline__ unsigned __int64
+__shiftright128(unsigned __int64 low, unsigned __int64 high, unsigned char count)
+{
+    unsigned __int128 bits = ((unsigned __int128)high << 64) | low;
+    return (unsigned __int64)(bits >> (count & 63));
+}
+#endif
+
+#if defined(__arm64ec__) && !defined(__shiftleft128)
+static __inline__ unsigned __int64
+__shiftleft128(unsigned __int64 low, unsigned __int64 high, unsigned char count)
+{
+    unsigned __int128 bits = ((unsigned __int128)high << 64) | low;
+    return (unsigned __int64)((bits << (count & 63)) >> 64);
+}
+#endif
+
 #endif  /* _MSC_VER */
 
 #ifdef __cplusplus
