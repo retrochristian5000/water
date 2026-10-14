@@ -108,7 +108,7 @@ size, hdr = struct.unpack_from("<II", res, off)
 assert hdr >= 32 and hdr % 4 == 0
 typ, typ_id, name, name_id = struct.unpack_from("<HHHH", res, off + 8)
 assert (typ, typ_id, name, name_id) == (0xffff, 10, 0xffff, 42)
-lang = struct.unpack_from("<H", res, off + hdr - 14)[0]
+lang = struct.unpack_from("<H", res, off + 22)[0]
 assert lang == 0x0409, hex(lang)
 assert res[off + hdr:off + hdr + size] == bytes.fromhex("3412")
 pe = Path(sys.argv[2]).read_bytes()
