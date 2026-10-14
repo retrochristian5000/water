@@ -47,6 +47,8 @@ perl "$winemaker" --nobanner --nobackup --nosource-fix --dll \
     --single-target probe --target=aarch64-windows "$tmp/arm64" > "$tmp/run.log"
 makefile="$tmp/arm64/Makefile"
 assert_contains "$makefile" 'WINEMAKER_TARGET = --target=aarch64-windows'
+assert_contains "$makefile" 'AR = llvm-ar'
+assert_contains "$makefile" 'ARFORMAT = --format=coff'
 assert_contains "$makefile" '$(DLLS:%=%)'
 assert_contains "$makefile" '$(probe_dll_MODULE):'
 assert_contains "$makefile" '$(probe_dll_MODULE:.dll=.spec)'
@@ -95,6 +97,11 @@ make_source "$tmp/winelib"
 perl "$winemaker" --nobanner --nobackup --nosource-fix --dll \
     --single-target probe.dll "$tmp/winelib" > "$tmp/run.log"
 assert_contains "$tmp/winelib/Makefile" 'WINEMAKER_TARGET ='
+assert_contains "$tmp/winelib/Makefile" 'AR = llvm-ar'
+if grep -F 'ARFORMAT = --format=coff' "$tmp/winelib/Makefile" >/dev/null; then
+    echo 'Winelib archives unexpectedly selected COFF format' >&2
+    exit 1
+fi
 assert_contains "$tmp/winelib/Makefile" '$(DLLS:%=%.so)'
 assert_contains "$tmp/winelib/Makefile" '$(probe_dll_MODULE).so:'
 
