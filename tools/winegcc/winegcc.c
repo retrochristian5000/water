@@ -560,6 +560,18 @@ static const char *get_installed_libcxx_crt_headers(void)
     if (stat( crt, &st ) || !S_ISDIR( st.st_mode ))
         error( "Installed LLVM libc++ CRT headers are missing for %s: %s; reinstall Water development headers\n",
                get_cpu_name( target.cpu ), crt );
+    /* An installed directory may exist after a partial copy or accidental
+     * cleanup. Do not silently fall back to old or host CRT declarations. */
+    if (stat( strmake( "%s/corecrt.h", crt ), &st ) ||
+        stat( strmake( "%s/vcruntime_exception.h", crt ), &st ) ||
+        stat( strmake( "%s/vcruntime_typeinfo.h", crt ), &st ) ||
+        stat( strmake( "%s/new.h", crt ), &st ))
+        error( "Installed LLVM libc++ CRT staging is incomplete for %s: %s; reinstall Water development headers\n",
+               get_cpu_name( target.cpu ), crt );
+    if (!stat( strmake( "%s/__config", crt ), &st ) ||
+        !stat( strmake( "%s/string", crt ), &st ))
+        error( "Installed LLVM libc++ CRT staging is contaminated with legacy C++ headers for %s: %s\n",
+               get_cpu_name( target.cpu ), crt );
     return crt;
 }
 
