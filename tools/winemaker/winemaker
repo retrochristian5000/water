@@ -1794,6 +1794,16 @@ sub source_scan()
             source_scan_workspace_file($opt_work_file);
         }
     }
+
+  # In single-target mode the scanner doesn't construct a DLL link command.
+  # A PE DLL still needs -shared and its .def/.spec metadata to be linked as
+  # a DLL, not as an executable bearing a .dll filename.
+  if (defined $opt_pe_target && defined $opt_single_target && $opt_target_type == $TT_DLL) {
+    my $target = $main_project[$P_TARGETS][0];
+    my $canon = canonize(@$target[$T_NAME]);
+    my $spec_ext = ($main_project[$P_SETTINGS][$T_FLAGS] & $TF_HASDEF) ? "def" : "spec";
+    push @{@$target[$T_LDFLAGS]}, "-shared", "\$(${canon}_MODULE:.dll=.$spec_ext)";
+  }
 }
 
 #####
