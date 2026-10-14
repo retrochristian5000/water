@@ -16,6 +16,8 @@ mkdir -p "$tmp/source/include/msvcrt" "$tmp/runtime/aarch64/include/c++/v1" \
     "$tmp/runtime/aarch64/provider" "$tmp/stage/include/wine/msvcrt"
 printf '/* CRT header */\n' > "$tmp/source/include/msvcrt/corecrt.h"
 printf '/* exception header */\n' > "$tmp/source/include/msvcrt/vcruntime_exception.h"
+printf '/* typeinfo header */\n' > "$tmp/source/include/msvcrt/vcruntime_typeinfo.h"
+printf '/* new declarations */\n' > "$tmp/source/include/msvcrt/new.h"
 printf '#define _LIBCPP_VERSION 8000\n' > "$tmp/source/include/msvcrt/__config"
 printf 'legacy C++ header\n' > "$tmp/source/include/msvcrt/string"
 printf '#define _LIBCPP_VERSION 240000\n' > "$tmp/runtime/aarch64/include/c++/v1/__config_site"
@@ -43,7 +45,8 @@ sh -n "$tmp/run-stage"
 
 sh "$tmp/run-stage" "$tmp/source" "$tmp/runtime" > "$tmp/overlay"
 crt="$tmp/runtime/msvcrt-headers"
-[ -f "$crt/corecrt.h" ] && [ -f "$crt/vcruntime_exception.h" ]
+[ -f "$crt/corecrt.h" ] && [ -f "$crt/vcruntime_exception.h" ] &&
+[ -f "$crt/vcruntime_typeinfo.h" ] && [ -f "$crt/new.h" ]
 [ ! -e "$crt/__config" ] && [ ! -e "$crt/string" ]
 
 # A matching cache signature cannot legitimize an injected libc++ 8 header.
@@ -66,6 +69,8 @@ sh "$installer" install llvm "$tmp/runtime" 'aarch64' 1 \
 [ -f "$tmp/stage/include/wine/c++/aarch64/v1/__config_site" ]
 [ -f "$tmp/stage/include/wine/c++/aarch64/crt/corecrt.h" ]
 [ -f "$tmp/stage/include/wine/c++/aarch64/crt/vcruntime_exception.h" ]
+[ -f "$tmp/stage/include/wine/c++/aarch64/crt/vcruntime_typeinfo.h" ]
+[ -f "$tmp/stage/include/wine/c++/aarch64/crt/new.h" ]
 [ ! -e "$tmp/stage/include/wine/c++/aarch64/crt/__config" ]
 [ ! -e "$tmp/stage/include/wine/c++/aarch64/crt/string" ]
 # PowerPC / ARM32 / i386 may still need these historical headers.
