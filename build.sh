@@ -2136,11 +2136,30 @@ prepare_llvm_windows_sdk_headers()
     grep -F 'virtual ULONG STDMETHODCALLTYPE Release(void) = 0;' "$whp_win_sdk_idl" >/dev/null ||
         die "Water IUnknown IDL is missing Release"
 
+    # The projected COM headers include Water's live Windows SDK headers.
+    # Changing one of those declarations must invalidate the libc++ provider
+    # cache too, not just changes to the three authoritative IDL files.
+    # Deliberately scope this to ABI-bearing bootstrap dependencies rather
+    # than rehashing every installed SDK header on each build.
+    whp_win_sdk_public_headers="windef.h guiddef.h winnt.h basetsd.h windows.h winbase.h objbase.h combaseapi.h"
+    for whp_win_sdk_header in $whp_win_sdk_public_headers
+    do
+        [ -f "$SOURCE_DIR/include/$whp_win_sdk_header" ] ||
+            die "Water libc++ SDK dependency is missing: $whp_win_sdk_header"
+    done
+    whp_win_sdk_public_state=$(
+        for whp_win_sdk_header in $whp_win_sdk_public_headers
+        do
+            cksum "$SOURCE_DIR/include/$whp_win_sdk_header"
+        done | cksum | awk '{ printf "%s:%s", $1, $2 }'
+    )
+
     whp_win_sdk_state=$(printf '%s\n' \
         "RECIPE=$LLVM_LIBCXX_RECIPE" \
         "WTYPESBASE_IDL=$(cksum "$whp_win_sdk_wtypesbase_idl" | awk '{ printf "%s:%s", $1, $2 }')" \
         "WTYPES_IDL=$(cksum "$whp_win_sdk_wtypes_idl" | awk '{ printf "%s:%s", $1, $2 }')" \
-        "UNKNWN_IDL=$(cksum "$whp_win_sdk_idl" | awk '{ printf "%s:%s", $1, $2 }')" |
+        "UNKNWN_IDL=$(cksum "$whp_win_sdk_idl" | awk '{ printf "%s:%s", $1, $2 }')" \
+        "WINDOWS_SDK_HEADERS=$whp_win_sdk_public_state" |
         cksum | awk '{ printf "%s:%s", $1, $2 }')
 
     if [ -f "$whp_win_sdk_state_file" ] &&
