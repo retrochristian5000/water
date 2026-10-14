@@ -16,11 +16,14 @@
 #include "windef.h"
 #include "winbase.h"
 #include "objbase.h"
+#include "danim.h"
 #include "wine/test.h"
 
-static const GUID clsid_viewer = {0xb6ffc24c, 0x7e13, 0x11d0,
+/* Independently specified by the period DirectAnimation SDK (1998)
+ * and the documented windowed viewer control. */
+static const GUID expected_viewer = {0xb6ffc24c, 0x7e13, 0x11d0,
     {0x9b, 0x47, 0x00, 0xc0, 0x4f, 0xc2, 0xf5, 0x1d}};
-static const GUID clsid_control = {0x69ad90ef, 0x1c20, 0x11d1,
+static const GUID expected_windowed = {0x69ad90ef, 0x1c20, 0x11d1,
     {0x88, 0x01, 0x00, 0xc0, 0x4f, 0xc2, 0x9d, 0x46}};
 static const GUID unknown_class = {0x12345678, 0, 0, {0, 0, 0, 0, 0, 0, 0, 1}};
 static const GUID unsupported_iid = {0x87654321, 0, 0, {0, 0, 0, 0, 0, 0, 0, 1}};
@@ -80,6 +83,13 @@ START_TEST(main)
     HRESULT hr;
     void *out;
 
+    ok(IsEqualGUID(&CLSID_DAViewerControl, &expected_viewer),
+            "DAViewerControl CLSID differs from the 1998 SDK\n");
+    ok(IsEqualGUID(&CLSID_DAViewerControlWindowed, &expected_windowed),
+            "DAViewerControlWindowed CLSID differs from the documented control\n");
+    ok(!IsEqualGUID(&CLSID_DAViewerControl, &CLSID_DAViewerControlWindowed),
+            "DirectAnimation viewer CLSIDs must remain distinct\n");
+
     module = LoadLibraryA("danim.dll");
     if (!module)
     {
@@ -108,15 +118,15 @@ START_TEST(main)
     ok(!out, "unknown CLSID left stale pointer %p\n", out);
 
     out = (void *)0xdeadbeef;
-    hr = get_class_object(&clsid_control, &unsupported_iid, &out);
+    hr = get_class_object(&CLSID_DAViewerControlWindowed, &unsupported_iid, &out);
     ok(hr == E_NOINTERFACE, "unsupported class factory IID returned %#lx\n", hr);
     ok(!out, "unsupported class factory IID left stale pointer %p\n", out);
 
     if (can_unload)
         ok(can_unload() == S_OK, "rejected DllGetClassObject leaked a factory\n");
 
-    test_factory(get_class_object, can_unload, &clsid_viewer);
-    test_factory(get_class_object, can_unload, &clsid_control);
+    test_factory(get_class_object, can_unload, &CLSID_DAViewerControl);
+    test_factory(get_class_object, can_unload, &CLSID_DAViewerControlWindowed);
 
     if (can_unload)
         ok(can_unload() == S_OK, "factory or server lock leaked\n");
