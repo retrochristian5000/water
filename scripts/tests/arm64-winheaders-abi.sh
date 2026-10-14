@@ -16,7 +16,7 @@ compile()
     triple=$1
     printf 'Windows header ABI: %s\n' "$triple" >&2
     "$cc" --target="$triple" -std=c11 -fms-extensions -fsyntax-only \
-        -I"$repo/include" -I"$repo/include/msvcrt" "$source"
+        -DWIN32_LEAN_AND_MEAN -I"$repo/include" -I"$repo/include/msvcrt" "$source"
 }
 
 # MSVC ARM64 is the target under investigation; x64 provides another LLP64
