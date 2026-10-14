@@ -443,6 +443,27 @@ static void add_clang_options( const char *target_name, struct strarray *ret )
     if (no_default_config) strarray_add( ret, "--no-default-config" );
 }
 
+/* Only append Clang driver options to Clang.  --cc-cmd can explicitly
+ * select an architecture-prefixed GCC; passing -target to it breaks PE
+ * builds before an object or DLL can be generated.  Account for common
+ * compiler-cache wrappers without assuming arbitrary wrappers use Clang. */
+static bool command_uses_clang( struct strarray cmd )
+{
+    unsigned int i;
+
+    for (i = 0; i < cmd.count; i++)
+    {
+        const char *name = get_basename( cmd.str[i] );
+
+        if (strstr( name, "clang" )) return true;
+        if (!strcmp( name, "ccache" ) || !strcmp( name, "sccache" ) ||
+            !strcmp( name, "distcc" ) || !strcmp( name, "env" ))
+            continue;
+        return false;
+    }
+    return false;
+}
+
 static struct strarray build_tool_name( enum target_cpu cpu, struct tool_names tool )
 {
     const char *target_name = get_target_name( cpu );
@@ -452,7 +473,8 @@ static struct strarray build_tool_name( enum target_cpu cpu, struct tool_names t
     if (cc_cmd && !strncmp( tool.llvm_base, "clang", 5 ))
     {
         ret = strarray_fromstring( cc_cmd, " " );
-        if (is_llvm_pe_target( target ) || cpu != target.cpu) add_clang_options( target_name, &ret );
+        if (command_uses_clang( ret ) && (is_llvm_pe_target( target ) || cpu != target.cpu))
+            add_clang_options( target_name, &ret );
         return ret;
     }
 
