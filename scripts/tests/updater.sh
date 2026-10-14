@@ -51,7 +51,7 @@ git -C "$tmp/source" push -q
 
 # Normal source refresh re-enters the revised script in the same invocation,
 # even for a cheap probe that doesn't proceed into toolchain bootstrap.
-WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/auto.log" 2>&1 || {
+CI= WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/auto.log" 2>&1 || {
     cat "$tmp/auto.log" >&2
     exit 1
 }
@@ -83,7 +83,7 @@ grep -Fq 'upstream unchanged; fetch skipped' "$tmp/current.log"
 # A dirty tracked checkout is left intact in automatic mode and rejected in
 # strict mode. Neither path may discard or modify the user's source changes.
 printf '\n# local uncommitted work\n' >> "$tmp/auto/build.sh"
-WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/dirty.log" 2>&1
+CI= WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/dirty.log" 2>&1
 grep -Fq 'tracked Water changes prevent a safe fast-forward' "$tmp/dirty.log"
 if WHP_GIT_UPDATE=1 sh "$tmp/auto/build.sh" --help > "$tmp/strict.log" 2>&1; then
     printf 'strict source update unexpectedly accepted tracked changes\n' >&2
@@ -102,7 +102,7 @@ if grep -F 'WHP source update:' "$tmp/disabled.log" >/dev/null; then
     exit 1
 fi
 git -C "$tmp/auto" remote set-url origin "$tmp/unavailable.git"
-WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/offline.log" 2>&1
+CI= WHP_GIT_UPDATE=auto sh "$tmp/auto/build.sh" --help > "$tmp/offline.log" 2>&1
 grep -Fq 'cannot reach configured Water upstream' "$tmp/offline.log"
 if WHP_GIT_UPDATE=1 sh "$tmp/auto/build.sh" --help > "$tmp/offline-strict.log" 2>&1; then
     printf 'strict update unexpectedly accepted an unreachable remote\n' >&2
