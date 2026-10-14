@@ -791,7 +791,14 @@ static struct strarray get_link_args( const char *output_name )
         else
             strarray_add(&link_args, strmake("-Wl,-implib:%s", make_temp_file( output_name, ".lib" )));
 
-        strarray_add( &link_args, strmake( "-Wl,-filealign:%s,-align:%s", file_align, section_align ));
+        /* A user-mode PE32+ image with the default 4K section alignment
+         * does not need /ALIGN. LLD warns even for /ALIGN:0x1000 without
+         * /DRIVER; /DRIVER would incorrectly mark an ordinary DLL as a
+         * kernel-mode image. Keep nondefault section alignment explicit. */
+        if (!strcmp( section_align, "0x1000" ))
+            strarray_add( &link_args, strmake( "-Wl,-filealign:%s", file_align ));
+        else
+            strarray_add( &link_args, strmake( "-Wl,-filealign:%s,-align:%s", file_align, section_align ));
         strarray_add( &link_args, "-Wl,-merge:.CRT=.rdata" );
 
         strarray_addall( &link_args, flags );
@@ -2295,7 +2302,14 @@ int main(int argc, char **argv)
         error( "--raw-win16-module cannot be combined with --data-only\n" );
 
     if (!section_align)
-        section_align = (target.cpu == CPU_ARM64 || target.cpu == CPU_ARM64EC) ? "0x10000" : "0x1000";
+    {
+        /* Ordinary Windows ARM64 DLLs use the normal 4K PE section layout.
+         * Preserve the existing 64K policy for ARM64EC/ARM64X hybrid images
+         * and the GNU PE linker path until separately verified. */
+        section_align = (target.cpu == CPU_ARM64EC ||
+                         (target.cpu == CPU_ARM64 &&
+                          (target.platform != PLATFORM_WINDOWS || is_arm64x))) ? "0x10000" : "0x1000";
+    }
 
     if (!file_align)
     {
