@@ -28,12 +28,25 @@ class SymbolAuditTests(unittest.TestCase):
         self.assertEqual(result["other_provider_references_diagnostic"],
                          ["__CxxFrameHandler4"])
 
-    def test_weak_alias_is_not_strong_export_requirement(self):
+    def test_weak_arm64ec_entry_requires_target_provider(self):
         result = audit_module.audit({self.x64: {"T"}}, {},
-                                    {self.ec: {"w"}, self.x64: {"U"}},
+                                    {self.ec: {"w"}, self.x64: {"w"}},
                                     "arm64ec-pc-windows-msvc")
+        self.assertEqual(result["missing_arm64ec_weak_entry_symbols"], [self.ec])
         self.assertFalse(result["missing_required_libcxx_symbols"])
-        self.assertEqual(result["weak_libcxx_references_diagnostic"], [self.ec])
+
+    def test_weak_arm64ec_entry_is_present(self):
+        result = audit_module.audit({self.ec: {"T"}}, {},
+                                    {self.ec: {"w"}, self.x64: {"w"}},
+                                    "arm64ec-pc-windows-msvc")
+        self.assertFalse(result["missing_arm64ec_weak_entry_symbols"])
+
+    def test_locally_defined_arm64ec_weak_symbol_is_not_required(self):
+        result = audit_module.audit({self.x64: {"T"}}, {},
+                                    {self.ec: {"w"}},
+                                    "arm64ec-pc-windows-msvc",
+                                    {self.ec: {"T"}})
+        self.assertFalse(result["missing_arm64ec_weak_entry_symbols"])
 
     def test_archive_unused_member_is_only_diagnostic(self):
         other = "?extra@__1@std@@YAXXZ"
