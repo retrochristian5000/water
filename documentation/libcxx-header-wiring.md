@@ -75,10 +75,11 @@ real generated `unknwn.h`/`oaidl.h` COM contracts.
 
 ## Checks
 
-The new no-network regression:
+The two no-network regressions:
 
 ```sh
 sh scripts/tests/libcxx-header-isolation.sh
+sh scripts/tests/libcxx-sdk-cache.sh
 ```
 
 extracts Water's actual `prepare_llvm_msvcrt_headers()` shell function,
@@ -89,6 +90,15 @@ real installer into a temporary root; checks the architecture-specific
 CRT tree excludes old C++ names; verifies the old headers remain
 available under mixed-provider mode and are removed under modern-only
 mode; and checks the build/winegcc source-level routing contracts.
+
+The separate SDK-cache test executes the real
+`prepare_llvm_windows_sdk_headers()` function on an isolated miniature
+Windows/COM header graph. It checks no-op cache reuse, invalidation
+after changing `winnt.h`, `objbase.h`, and `unknwn.idl`, restoration
+of a deleted generated `unknwn.h`, and rejection of a missing
+`guiddef.h`. This guards against recent ARM64/COM header fixes
+being hidden by a stale libc++ provider cache; it does not assert
+PowerPC Windows C++ ABI readiness.
 
 **Verification levels:** the GitHub sources, scripts and installed CRT
 routing were reviewed and committed. The regression is provided for a
