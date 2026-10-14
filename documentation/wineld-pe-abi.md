@@ -1,5 +1,71 @@
 # Wineld: optional ARM64 Windows link guard
 
+## LLVM llvm-lib versus Microsoft LIB.EXE: ARM64 comparison (14 October 2026)
+
+**Scope:** Microsoft `LIB.EXE` is the reference for COFF static archives
+and import libraries. LLVM's `llvm-lib` imitates that interface, and
+`lld-link /lib` dispatches to that library-manager mode. On this host
+`lld-link 17` was available but Microsoft's `LIB.EXE` executable was
+**not** installed; this is an LLVM behavior test against Microsoft
+documentation and the LLVM project's own compatibility analysis,
+**not** a direct test run against a Microsoft executable.
+
+Actual Linux x86_64 host probes with Clang 17 / LLD 17:
+- A `/machine:arm64` static `.lib` built from a Clang-generated
+  `aarch64-windows` COFF object contained machine `0xAA64`.
+- Mixing ARM64 and x64 COFF objects under `/machine:arm64` was
+  rejected with a machine conflict.
+- `/def:period.def` with `LIBRARY period.dll` and
+  `EXPORTS exported` generated an import library with the correct
+  DLL name and ARM64 member objects. A real ARM64 PE32+ consumer DLL
+  linked successfully and contained `period.dll` in its import data.
+- `/def:bare.def` with only `EXPORTS exported` generated **bad
+  output in LLVM 17**: the short-import record contained an *empty DLL
+  name* and the archive's actual members appeared as `/` indexes.
+  An archive file existing on disk did not mean a usable import DLL.
+
+LLVM developers documented this same Microsoft `LIB.EXE` parity
+defect on **10 July 2026** and submitted a fix to infer the DLL name
+from the `.def` filename when `LIBRARY` is missing, including the
+ARM64-native hybrid option. The fix must be checked in any locally
+bootstrapped LLVM fork rather than assumed present merely because
+the upstream patch exists:
+
+https://lists.llvm.org/pipermail/llvm-commits/Week-of-Mon-20260706/1973989.html
+
+Microsoft `LIB.EXE` modes and `/DEF` reference:
+- https://learn.microsoft.com/en-us/cpp/build/reference/overview-of-lib
+- https://learn.microsoft.com/en-us/cpp/build/reference/building-an-import-library-and-export-file
+- https://learn.microsoft.com/en-us/cpp/build/exporting-from-a-dll-using-def-files
+
+**Water fix:** `wineld`'s COFF archive audit now refuses more
+than two `/` symbol-table indexes (detecting malformed unnamed import
+members), refuses archives without any verified COFF members, and
+validates the nonempty imported symbol and DLL name in every short
+import record. Previously the audit skipped arbitrary `/` members,
+which could conceal the LLVM 17 regression. For portability, a
+project's DEF file should explicitly specify its intended
+`LIBRARY period.dll` until the LLVM fallback is verified.
+
+```sh
+sh tools/wineld/tests/lib-exe-compat.sh tools/wineld/wineld
+```
+
+This separate regression creates genuine ARM64 and x64 objects,
+runs `lld-link /lib` in static-archive and `/def:` import modes,
+tests the mixed-machine rejection, links a consumer PE32+ DLL through
+the valid named import library, and checks the bare-`EXPORTS`
+fallback. It passes on both newer LLVM with a **correct** inferred
+name and older LLVM **only if `wineld` rejects** the malformed
+library with a specific diagnostic. The separate existing
+`arm64-link.sh` smoke test also passed locally after the change.
+
+**Limits:** This tests ordinary `aarch64-windows` COFF objects,
+not ARM64EC/ARM64X library symbol-index hybrid rules. It does not
+exercise Microsoft's actual `LIB.EXE`, Windows' loader, Water's
+full `winegcc`+ `winebuild` link, ThinLTO bitcode members, or
+response-file resolution. Do not claim full parity from these cases.
+
 ## Recovery and scope (14 October 2026)
 
 Water previously shipped no `wineld` tool. The existing pipeline already
