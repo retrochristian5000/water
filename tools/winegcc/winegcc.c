@@ -545,6 +545,24 @@ static const char *get_installed_libcxx_headers(void)
     return NULL;
 }
 
+/* Modern installed C++ must read only CRT *.h from its own ABI lane.
+ * Falling through to wine/msvcrt exposes the bundled libc++ 8 extensionless
+ * headers (<__config>, <string>, etc.) when an LLVM 24 include is missing.
+ * A missing filtered CRT tree is an incomplete development installation. */
+static const char *get_installed_libcxx_crt_headers(void)
+{
+    const char *headers = get_installed_libcxx_headers();
+    const char *crt;
+    struct stat st;
+
+    if (!headers) return NULL;
+    crt = strmake( "%s/wine/c++/%s/crt", includedir, get_cpu_name( target.cpu ) );
+    if (stat( crt, &st ) || !S_ISDIR( st.st_mode ))
+        error( "Installed LLVM libc++ CRT headers are missing for %s: %s; reinstall Water development headers\n",
+               get_cpu_name( target.cpu ), crt );
+    return crt;
+}
+
 static struct strarray get_cxx_provider_flags( const char *suffix )
 {
     struct strarray ret = empty_strarray;
@@ -1124,11 +1142,22 @@ static void compile( struct strarray files, const char *output_name, int compile
 
         if (use_msvcrt)
         {
-            if (includedir) strarray_add( &comp_args, strmake( "%s%s/wine/msvcrt", isystem, includedir ));
-            for (j = 0; j < ARRAY_SIZE(incl_dirs); j++)
+            const char *modern_crt = processor == proc_cxx && is_pe ?
+                                     get_installed_libcxx_crt_headers() : NULL;
+            if (modern_crt)
             {
-                if (j && !strcmp( incl_dirs[0], incl_dirs[j] )) continue;
-                strarray_add(&comp_args, strmake( "%s%s%s/wine/msvcrt", isystem, root, incl_dirs[j] ));
+                /* No implicit legacy libc++ search directory on a modern PE
+                 * C++ build. Native C and older architectures remain intact. */
+                strarray_add( &comp_args, strmake( "%s%s", isystem, modern_crt ) );
+            }
+            else
+            {
+                if (includedir) strarray_add( &comp_args, strmake( "%s%s/wine/msvcrt", isystem, includedir ));
+                for (j = 0; j < ARRAY_SIZE(incl_dirs); j++)
+                {
+                    if (j && !strcmp( incl_dirs[0], incl_dirs[j] )) continue;
+                    strarray_add( &comp_args, strmake( "%s%s%s/wine/msvcrt", isystem, root, incl_dirs[j] ));
+                }
             }
             strarray_add(&comp_args, "-D__MSVCRT__");
         }
