@@ -1,3 +1,67 @@
+## LIB /MACHINE architecture and Win16 gate audit (October 15, 2026)
+
+**Source:** Microsoft documents `LIB /MACHINE` as a COFF target-machine
+selection/verification option (often inferred from COFF .obj inputs). It
+does **not** select a processor execution mode or specify an Intel
+80286 protected-mode selector/descriptor model. Modern Microsoft LIB
+can ingest standalone **32-bit OMF** objects by converting them to
+COFF, but it cannot directly consume 32-bit OMF members still held in
+an archive created by the older 16-bit librarian. Do not infer from
+that historical conversion rule that a 286/Win16 OMF library is an
+ARM64EC-compatible COFF archive.
+
+**ARM64EC source and direct LLD 17 evidence:** The existing
+`tools/winebuild/import.c` maps CPU_ARM64EC to
+`/lib /machine:arm64ec` for both import and static archive operations;
+this is the correct instruction to the COFF librarian, not a PE image
+machine code. In direct tests, `/machine:arm64ec` and
+`/machine:arm64x` both accepted ARM64EC (COFF machine 0xA641),
+x64 (0x8664), and native ARM64 (0xAA64) object members in a single
+archive, and both generated an additional `/<ECSYMBOLS>/` index.
+This **is expected**: LLVM's ARM64EC librarian has separate symbol
+maps for native ARM64 and emulation-compatible code. Do **not** add
+an indiscriminate `0xA641`-only check to archive validation.
+The separate `/machine:arm64` rejected x64 and ARM64EC objects,
+while `/machine:x64` rejected ARM64EC and native ARM64.
+Both rejected an i386 COFF object when inappropriate. An ARM64EC
+object with **no** explicit `/machine` was rejected by LLD 17
+instead of inferring the hybrid archive type.
+
+**Actual Water hole and repair:** `winebuild` checked
+`check_target()` for DLL and import-library modes, but skipped it
+in `MODE_STATICLIB`. Thus `-m16 --target=arm64ec-pc-windows
+--staticlib` could bypass the Win16/i386 architecture guard and
+reach the ARM64EC COFF librarian. Static-library mode now performs
+the same guard before invoking the librarian. It also rejects
+`-marm64x` static-library mode on non-ARM64EC targets; the
+`--implib` route now rejects `-marm64x` on non-ARM64EC targets.
+These are **input-profile guards**, not new Intel instruction or
+segmented-memory support. Existing legitimate plain-i386 Win16
+handling and non-hybrid COFF archive generation remain unchanged.
+
+**Regression:** `sh scripts/tests/lib-machine-abi.sh` compiles four
+COFF targets and checks compatible/incompatible `LIB /MACHINE`
+combinations and the actual hybrid archive symbol index. Its
+Clang 17 / LLD 17 operations passed in this round. To run the
+Water-specific Win16 and invalid ARM64X target checks, supply a
+freshly built `winebuild`:
+
+```sh
+sh scripts/tests/lib-machine-abi.sh /path/to/winebuild
+```
+
+The Water source edits are published, but no newly built
+`winebuild` was run in this round. No Windows/ARM64EC runtime,
+Win16 loader, 80286 protected-mode, or Microsoft LIB binary was
+executed in these tests. Do not treat the presence of an x86 COFF
+header as proof of 80286 protected-mode compatibility.
+
+References:
+- https://learn.microsoft.com/en-us/cpp/build/reference/running-lib
+- https://learn.microsoft.com/en-us/cpp/build/reference/managing-a-library
+- https://learn.microsoft.com/en-us/windows/arm/arm64ec
+- https://reviews.llvm.org/D143541
+
 ## ARM64EC import-library ABI audit (15 October 2026)
 
 **Outcome: repair the library producer; retain separate runtime/thunk work.**
