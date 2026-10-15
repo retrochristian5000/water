@@ -287,7 +287,7 @@ case "$host_cpu" in
   x86_64)          HOST_ARCH=x86_64 ;;
 esac
 m4_set_add_all([_AC_SUBST_VARS],[HOST_ARCH]m4_foreach([cpu],[aarch64,arm,arm64ec,i386,powerpc,x86_64],
-                                [m4_foreach([var],[CC,CXX,CFLAGS,CXXFLAGS,CXX_PE_CFLAGS,CXX_PE_LIBS,EXTRACFLAGS,EXTRACXXFLAGS,LDFLAGS,DEBUG,TARGET,STRIP,DELAYLOADFLAG,DISABLED_SUBDIRS],[,cpu[_]var])]))
+                                [m4_foreach([var],[CC,CXX,CFLAGS,CXXFLAGS,CXX_PE_CFLAGS,CXX_PE_LIBS,CXXABI_PE_CFLAGS,CXXABI_PE_LIBS,UNWIND_PE_CFLAGS,UNWIND_PE_LIBS,EXTRACFLAGS,EXTRACXXFLAGS,LDFLAGS,DEBUG,TARGET,STRIP,DELAYLOADFLAG,DISABLED_SUBDIRS],[,cpu[_]var])]))
 
 dnl Some special cases for the Windows platform
 
@@ -1544,6 +1544,24 @@ WINE_EXTLIB_FLAGS(SQLITE3, sqlite3, sqlite3)
 WINE_EXTLIB_FLAGS(SYMCRYPT, symcrypt, symcrypt, "-I\$(top_srcdir)/libs/symcrypt/inc")
 WINE_EXTLIB_FLAGS(TIFF, tiff, "tiff \$(ZLIB_PE_LIBS)", "-I\$(top_srcdir)/libs/tiff/libtiff")
 WINE_EXTLIB_FLAGS(UNWIND, unwind, unwind, "-I\$(top_srcdir)/libs/unwind/include")
+dnl The bundled GNU/Itanium C++ ABI and LLVM-8-era libunwind cannot provide
+dnl ARM64EC's Microsoft SEH/vcruntime exception ABI. Empty *arch-specific*
+dnl overrides must survive makedep's nested variable expansion, otherwise
+dnl $(CXX_PE_LIBS) -> $(CXXABI_PE_LIBS) -> $(UNWIND_PE_LIBS) pulls in
+dnl the wrong exception personality even when the libraries were disabled.
+dnl Other architectures, including GNU PE consumers, retain their providers.
+case " $PE_ARCHS " in
+  *" arm64ec "*)
+    if test -n "$arm64ec_CXXABI_PE_LIBS" -o -n "$arm64ec_UNWIND_PE_LIBS"
+    then
+      AC_MSG_ERROR([ARM64EC uses the Microsoft C++ exception ABI; do not link CXXABI_PE_LIBS or UNWIND_PE_LIBS into its objects. Use ARM64EC_CXX_PE_LIBS with a Microsoft-compatible runtime provider instead.])
+    fi
+    arm64ec_CXXABI_PE_LIBS=
+    arm64ec_CXXABI_PE_CFLAGS=
+    arm64ec_UNWIND_PE_LIBS=
+    arm64ec_UNWIND_PE_CFLAGS=
+    ;;
+esac
 WINE_EXTLIB_FLAGS(VKD3D, vkd3d, vkd3d, "-I\$(top_srcdir)/libs/vkd3d/include")
 WINE_EXTLIB_FLAGS(XML2, xml2, xml2, "-I\$(top_srcdir)/libs/xml2/include -DLIBXML_STATIC")
 WINE_EXTLIB_FLAGS(XSLT, xslt, xslt, "-I\$(top_srcdir)/libs/xslt/libxslt -I\$(top_srcdir)/libs/xslt -DLIBXSLT_STATIC")
@@ -3949,6 +3967,11 @@ WINE_CONFIG_MAKEFILE(libs/strsafe)
 WINE_CONFIG_MAKEFILE(libs/symcrypt)
 WINE_CONFIG_MAKEFILE(libs/tiff)
 WINE_CONFIG_MAKEFILE(libs/unwind)
+dnl Never build the bundled GNU exception libraries for ARM64EC. The generic
+dnl enable_cppabi/enable_unwind knobs remain available for other PE ABIs.
+case " $PE_ARCHS " in
+  *" arm64ec "*) AS_VAR_APPEND([arm64ec_DISABLED_SUBDIRS],[" libs/c++abi libs/unwind"]) ;;
+esac
 WINE_CONFIG_MAKEFILE(libs/uuid)
 WINE_CONFIG_MAKEFILE(libs/vkd3d)
 WINE_CONFIG_MAKEFILE(libs/wbemuuid)
