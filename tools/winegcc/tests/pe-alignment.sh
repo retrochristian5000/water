@@ -16,6 +16,9 @@ exit 0
 EOF
 cat > "$tmp/winebuild" <<'EOF'
 #!/bin/sh
+if [ -n "${WINEGCC_PE_SPEC_ARGS:-}" ]; then
+    printf '%s\n' "$@" > "$WINEGCC_PE_SPEC_ARGS"
+fi
 out=
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -203,4 +206,61 @@ if check_pe_map aarch64-pc-windows unsupported >"$tmp/map-invalid.log" 2>&1; the
 fi
 grep -F 'WATER_PE_MAP must be 0, 1, or exports' "$tmp/map-invalid.log" >/dev/null
 
-echo 'winegcc PE alignment, DLL exports, ThinLTO GC, and linker-map arguments: pass'
+# /DLL is a link switch, but winebuild must see DLL image semantics too.
+# Raw /DLL must not make winebuild emit EXE metadata while LLD emits a DLL.
+check_explicit_dll()
+{
+    target=$1
+    shift
+    WINEGCC_PE_LINK_ARGS="$tmp/link-args" WINEGCC_PE_SPEC_ARGS="$tmp/spec-args" \
+        "$winegcc" "--target=$target" --cc-cmd "$tmp/cc" \
+        --winebuild "$tmp/winebuild" -nodefaultlibs -nostdlib \
+        -o "$tmp/explicit.dll" "$tmp/in.obj" "$@"
+    grep -Fx -- '--dll' "$tmp/spec-args" >/dev/null || {
+        echo "winebuild did not receive --dll for $target ($*)" >&2
+        exit 1
+    }
+    if grep -Fx -- '--exe' "$tmp/spec-args" >/dev/null; then
+        echo "winebuild received --exe for a /DLL link: $target" >&2
+        exit 1
+    fi
+    grep -Fx -- '-shared' "$tmp/link-args" >/dev/null || {
+        echo "PE /DLL did not propagate the shared-link mode: $target" >&2
+        exit 1
+    }
+}
+
+check_explicit_dll i386-pc-windows -Wl,/DLL
+grep -Fx -- '-Wl,/DLL' "$tmp/link-args" >/dev/null
+check_explicit_dll arm64ec-pc-windows -Xlinker /DLL
+grep -Fx -- '/DLL' "$tmp/link-args" >/dev/null
+check_explicit_dll aarch64-pc-windows -Wl,-dll
+check_explicit_dll x86_64-pc-windows -shared
+
+# A modern PE /DLL must never cause the i386 Win16 -m16 personality
+# to be linked as an ARM64EC image, nor cross into the GNU link driver.
+expect_dll_error()
+{
+    expected=$1
+    shift
+    if WINEGCC_PE_LINK_ARGS="$tmp/link-args" "$winegcc" \
+        --cc-cmd "$tmp/cc" --winebuild "$tmp/winebuild" \
+        -nodefaultlibs -nostdlib -o "$tmp/invalid.dll" "$tmp/in.obj" "$@" \
+        >"$tmp/dll-error.log" 2>&1; then
+        echo "invalid /DLL combination was accepted: $*" >&2
+        exit 1
+    fi
+    grep -F -- "$expected" "$tmp/dll-error.log" >/dev/null || {
+        cat "$tmp/dll-error.log" >&2
+        exit 1
+    }
+}
+
+expect_dll_error 'Win16 modules require a plain i386 target' \
+    --target=arm64ec-pc-windows -m16 -Wl,/DLL
+expect_dll_error 'MSVC /DLL requires a non-Win16 Windows PE target' \
+    --target=i386-pc-windows -m16 -Wl,/DLL
+expect_dll_error 'MSVC /DLL requires a non-Win16 Windows PE target' \
+    --target=i386-pc-mingw32 -Wl,/DLL
+
+echo 'winegcc PE alignment, export, ThinLTO, /MAP, and /DLL arguments: pass'
