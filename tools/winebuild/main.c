@@ -125,10 +125,12 @@ static void init_dll_name( DLLSPEC *spec )
     if (spec->dll_name) spec->c_name = make_c_identifier( spec->dll_name );
 }
 
-/* set the dll subsystem */
+/* PE Subsystem IDs belong to the image header; Win16's segmented
+ * MZ/NE loader remains a separate ABI and does not consume these IDs. */
 static void set_subsystem( const char *subsystem, DLLSPEC *spec )
 {
-    char *major, *minor, *str = xstrdup( subsystem );
+    char *major, *minor, *end, *str = xstrdup( subsystem );
+    unsigned long value;
 
     if ((major = strchr( str, ':' ))) *major++ = 0;
     if (!strcmp( str, "native" )) spec->subsystem = IMAGE_SUBSYSTEM_NATIVE;
@@ -136,17 +138,36 @@ static void set_subsystem( const char *subsystem, DLLSPEC *spec )
     else if (!strcmp( str, "console" )) spec->subsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
     else if (!strcmp( str, "os2" ))     spec->subsystem = IMAGE_SUBSYSTEM_OS2_CUI;
     else if (!strcmp( str, "posix" ))   spec->subsystem = IMAGE_SUBSYSTEM_POSIX_CUI;
-    else if (!strcmp( str, "wince" ))   spec->subsystem = IMAGE_SUBSYSTEM_WINDOWS_CE_GUI;
+    else if (!strcmp( str, "wince" ) || !strcmp( str, "windowsce" ))
+        spec->subsystem = IMAGE_SUBSYSTEM_WINDOWS_CE_GUI;
+    else if (!strcmp( str, "efi_application" ))
+        spec->subsystem = IMAGE_SUBSYSTEM_EFI_APPLICATION;
+    else if (!strcmp( str, "efi_boot_service_driver" ))
+        spec->subsystem = IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER;
+    else if (!strcmp( str, "efi_runtime_driver" ))
+        spec->subsystem = IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER;
+    else if (!strcmp( str, "efi_rom" ))
+        spec->subsystem = IMAGE_SUBSYSTEM_EFI_ROM;
+    else if (!strcmp( str, "boot_application" ))
+        spec->subsystem = IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION;
     else if (!strcmp( str, "win16" )) spec->type = SPEC_WIN16;
     else fatal_error( "Invalid subsystem name '%s'\n", subsystem );
     if (major)
     {
-        if ((minor = strchr( major, '.' )))
+        errno = 0;
+        value = strtoul( major, &end, 10 );
+        if (errno || end == major || value > 65535 || (*end && *end != '.'))
+            fatal_error( "Invalid subsystem version '%s'\n", subsystem );
+        spec->subsystem_major = value;
+        if (*end == '.')
         {
-            *minor++ = 0;
-            spec->subsystem_minor = atoi( minor );
+            minor = end + 1;
+            errno = 0;
+            value = strtoul( minor, &end, 10 );
+            if (errno || end == minor || *end || value > 65535)
+                fatal_error( "Invalid subsystem version '%s'\n", subsystem );
+            spec->subsystem_minor = value;
         }
-        spec->subsystem_major = atoi( major );
     }
     free( str );
 }
@@ -212,7 +233,7 @@ static const char usage_str[] =
 "       --safeseh             Mark object files as SEH compatible\n"
 "       --save-temps          Do not delete the generated intermediate files\n"
 "       --strip-cmd=STRIP     Command to use for stripping (default: none)\n"
-"       --subsystem=SUBSYS    Set the subsystem (native, windows, console, os2, posix, wince)\n"
+"       --subsystem=SUBSYS    Set PE subsystem (windows, console, native, posix, wince, EFI, boot)\n"
 "   -u, --undefined=SYMBOL    Add an undefined reference to SYMBOL when linking\n"
 "   -v, --verbose             Display the programs invoked\n"
 "       --version             Print the version and exit\n"
