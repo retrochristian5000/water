@@ -693,7 +693,7 @@ static const char *get_msvc_arm_march( const char *value )
         lower[5] != '.' ||
         !((lower[4] == '8' && lower[6] >= '0' && lower[6] <= '9') ||
           (lower[4] == '9' && lower[6] >= '0' && lower[6] <= '4')))
-        error( "unsupported MSVC ARM /arch value '%s'\\n", value );
+        error( "unsupported MSVC ARM /arch value '%s'\n", value );
 
     /* LLVM expects armv8-a and armv9-a rather than armv8.0-a/armv9.0-a. */
     if (lower[6] == '0')
@@ -2484,7 +2484,7 @@ int main(int argc, char **argv)
         }
         else if (!strncmp( args.str[i], "/arch:", 6 ))
         {
-            if (!args.str[i][6]) error( "empty MSVC /arch selection\\n" );
+            if (!args.str[i][6]) error( "empty MSVC /arch selection\n" );
             msvc_arm_arch = args.str[i] + 6;
         }
 	else
@@ -2517,7 +2517,7 @@ int main(int argc, char **argv)
          * -arch on Darwin remains a separate, untouched option. */
         if (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app ||
             (target.cpu != CPU_ARM64 && target.cpu != CPU_ARM64EC))
-            error( "MSVC ARM /arch requires a Windows ARM64 or ARM64EC PE target\\n" );
+            error( "MSVC ARM /arch requires a Windows ARM64 or ARM64EC PE target\n" );
         strarray_add( &compiler_args, strmake( "-march=%s",
                        get_msvc_arm_march( msvc_arm_arch ) ) );
     }
