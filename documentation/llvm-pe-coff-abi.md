@@ -1,3 +1,84 @@
+## ARM64EC dllimport local-import reachability (15 October 2026)
+
+**Confirmed failure, targeted fix, and pinned LLVM submodule.**
+Microsoft documents `__declspec(dllimport)` as a compiler-directed
+IAT-indirect access, while ARM64EC requires hybrid entry/exit thunks
+and extra `__imp_aux_` import names. This does *not* mean that
+80286/Win16 symbols can be linked into ARM64EC COFF images.
+
+A standalone Clang 17 / LLD 17 test reproduced an LLD/MS LINK
+behavior mismatch with x64 COFF objects: a target function placed
+in its own discardable COMDAT, referenced only through an
+`__imp_target` local import, disappears under `/OPT:REF`.
+The emitted local-import pointer then contains the image base,
+not a function address. The **same objects** linked with
+`/OPT:NOREF` retained the function and a valid pointer. Without
+`-ffunction-sections` the target was a non-COMDAT section and
+the bug did not reproduce; recording this negative control is
+important. LLD also emitted the usual locally defined symbol
+imported warning (LNK4217). This agrees with LLVM issue #220370,
+which reports that MSVC LINK keeps the local target under
+`/OPT:REF`, but Microsoft LINK was not installed for this probe.
+
+**Actual repair in retrochristian5000/LLVM:** LLD's
+`LocalImportChunk` and `DefinedLocalImport` now expose the
+locally resolved target. `lld/COFF/MarkLive.cpp` follows
+`DefinedLocalImport` references to that target when marking
+live chunks, retaining locally imported COMDAT definitions.
+This is a reachability fix; it does **not** disable section GC,
+fabricate imports, or alter ARM64EC instruction lowering.
+`lld/test/COFF/locally-imported-gc.test` adds both x64
+`__imp_target` and ARM64EC `__imp_aux_target` positive cases,
+plus an unrelated dead COMDAT control. Water's LLVM gitlink now
+pins fork commit `65c6fbb6ae224813abe4c4c56bd583f9d1388b5f`,
+advanced from `ef6834df8e0dc4eaf3ebf99eb598448583327a3a`.
+The 11-commit fast-forward also includes existing Apple arm64e
+CI/test changes; **those unrelated changes are not being claimed
+as part of the import fix**.
+
+**Compiler-side negative evidence:** a separate Clang 17
+`-target arm64ec-windows-msvc` object emitting a
+`__declspec(dllimport)` function call and variable access
+contained undefined `__imp_whp_func` and `__imp_whp_data`
+symbols. The equivalent x64 and ordinary ARM64 objects emitted
+the same `__imp_` forms. These observations alone do **not**
+establish a Clang mangling/codegen defect. The LLVM fork
+`AArch64MCInstLower.cpp` already implements ARM64EC's
+`__imp_aux_` selection; do not replace it with generic ARM64
+import logic. Water previously repaired `_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS`
+for static libc++ archives; that separate producer/consumer
+annotation error is not evidence that Clang's `dllimport` lowering
+is inherently wrong.
+
+**Remaining distinct failure:** LLVM issue #220371 reports
+distributed ThinLTO preserving `dllimport` on symbols resolved
+locally when in-process ThinLTO clears it. It may cause
+indirect-call overhead and local-import warnings and, combined
+with the LLD GC bug, incorrect images. The LLD reachability
+fix is a guard against the crash class, **not a verified repair
+of the distributed ThinLTO code-generation discrepancy**.
+
+**Validation state:** LLVM 17 reproduction and its negative
+controls were executed; the three-file LLD patch and the dual
+architecture lit regression are committed on the fork, and
+Water's submodule pin is published. The **modified fork has
+not been rebuilt or had llvm-lit executed** in this round.
+Use the fork's built LLVM tools:
+
+```sh
+llvm-lit -sv lld/test/COFF/locally-imported-gc.test
+```
+
+Do not claim runtime ARM64EC loading, full Water DLL builds,
+Microsoft LINK binary parity, or corrected distributed ThinLTO
+from this narrow change.
+
+References:
+- https://learn.microsoft.com/en-us/cpp/build/importing-function-calls-using-declspec-dllimport
+- https://learn.microsoft.com/en-us/windows/arm/arm64ec-abi
+- https://github.com/llvm/llvm-project/issues/220370
+- https://github.com/llvm/llvm-project/issues/220371
+
 # LLVM PE/COFF ABI audit for Water
 
 State: **SOURCE-AUDITED + PATCH PUBLISHED; BUILD/LLD TESTS UNVERIFIED**.
