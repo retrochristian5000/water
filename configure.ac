@@ -487,6 +487,19 @@ WINE_WARNING_WITH(gettext,[test "$MSGFMT" = false],
                   [gettext tools not found (or too old), translations won't be built.],
                   [enable_po])
 
+dnl Check the COFF header bytes rather than trusting a Windows-looking
+dnl target triple. Clang can accept -target while emitting ELF/Mach-O for an
+dnl unsupported backend, and C/Clang++ can be selected from different families.
+dnl Use POSIX od so this works on the macOS build host without llvm-readobj.
+wine_pe_object_machine()
+{
+    test -f "$1" || return 1
+    wine_pe_header_bytes=$(LC_ALL=C od -An -tu1 -N2 "$1" 2>/dev/null) || return 1
+    set -- $wine_pe_header_bytes
+    test "$#" -eq 2 || return 1
+    printf '%s:%s\n' "$1" "$2"
+}
+
 dnl **** Check for PE cross compiler ****
 
 AC_SUBST(PE_ARCHS,"")
@@ -710,31 +723,48 @@ do
     WINE_NO_PE_ERROR([test -z "$target"],[$wine_arch PE compiler not found.
 Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
 
-    dnl PowerPC is not PE merely because Clang accepts *-windows as a
-    dnl target triple. LLVM 17, for example, emits ELF objects for
-    dnl powerpcle-windows and powerpcle-w64-mingw32. Never allow those
-    dnl objects to enter libc++ or Windows import archives.
-    AS_VAR_IF([wine_arch],[powerpc],
-        [AC_MSG_CHECKING([whether the PowerPC C++ target emits PE/COFF])
-         ppc_cxx_coff=no
-         cat >conftest-ppc-cxx.cpp <<_WHP_PPC_CXX
-extern "C" int whp_ppc_cxx_abi(void) { return sizeof(void *); }
-_WHP_PPC_CXX
-         if $CXX $CXXFLAGS -c conftest-ppc-cxx.cpp -o conftest-ppc-cxx.o >/dev/null 2>&1
-         then
-             ppc_cxx_machine=`od -An -tu1 -N2 conftest-ppc-cxx.o 2>/dev/null |
-                 tr -s '[:space:]' ':' | sed 's/^://;s/:$//'`
-             case "$ppc_cxx_machine" in
-                 240:1|241:1) ppc_cxx_coff=yes ;; dnl IMAGE_FILE_MACHINE_POWERPC/POWERPCFP
-             esac
-         fi
-         rm -f conftest-ppc-cxx.cpp conftest-ppc-cxx.o
-         AC_MSG_RESULT([$ppc_cxx_coff])
-         WINE_NO_PE_ERROR([test "x$ppc_cxx_coff" != xyes],
-                          [The PowerPC C++ compiler produced no Windows PowerPC COFF object.
-A Windows-named target triple that generates ELF cannot build Water PE libc++.
-Fix LLVM PowerPC COFF object/relocation/linker support before retiring
-the i386-era libc++ fallback for PowerPC.])])
+    dnl CMake and Autoconf target tests accept compiler flags without proving
+    dnl that both the C and C++ outputs are COFF for the *requested* PE ABI.
+    dnl Check object machine bytes before admitting each architecture. This
+    dnl prevents a native Mach-O host compiler (or another PE ABI) from being
+    dnl reused as Water's Windows cross-compiler.
+    AC_MSG_CHECKING([whether $wine_arch C and C++ compilers emit matching PE/COFF objects])
+    cat >conftest-whp-pe.c <<_WHP_PE_C
+int whp_pe_c_object(void) { return sizeof(void *); }
+_WHP_PE_C
+    cat >conftest-whp-pe.cpp <<_WHP_PE_CXX
+extern "C" int whp_pe_cxx_object(void) { return sizeof(void *); }
+_WHP_PE_CXX
+    wine_pe_c_machine=missing
+    wine_pe_cxx_machine=missing
+    if $CC $CFLAGS -c conftest-whp-pe.c -o conftest-whp-pe-c.o >/dev/null 2>&1
+    then
+        wine_pe_c_machine=$(wine_pe_object_machine conftest-whp-pe-c.o || printf invalid)
+    fi
+    if $CXX $CXXFLAGS -c conftest-whp-pe.cpp -o conftest-whp-pe-cxx.o >/dev/null 2>&1
+    then
+        wine_pe_cxx_machine=$(wine_pe_object_machine conftest-whp-pe-cxx.o || printf invalid)
+    fi
+    rm -f conftest-whp-pe.c conftest-whp-pe.cpp conftest-whp-pe-c.o conftest-whp-pe-cxx.o
+
+    dnl Object machine numbers in little-endian bytes:
+    dnl i386 0x014c, AMD64 0x8664, ARMNT 0x01c4, ARM64 0xaa64,
+    dnl ARM64EC 0xa641, PowerPC/PowerPCFP 0x01f0/0x01f1.
+    wine_pe_machine_ok=no
+    case "$wine_arch:$wine_pe_c_machine:$wine_pe_cxx_machine" in
+      i386:76:1:76:1|x86_64:100:134:100:134|arm:196:1:196:1|\
+      aarch64:100:170:100:170|arm64ec:65:166:65:166|\
+      powerpc:240:1:240:1|powerpc:240:1:241:1|\
+      powerpc:241:1:240:1|powerpc:241:1:241:1)
+          wine_pe_machine_ok=yes ;;
+    esac
+    AC_MSG_RESULT([$wine_pe_machine_ok (C=$wine_pe_c_machine C++=$wine_pe_cxx_machine)])
+    WINE_NO_PE_ERROR([test "$wine_pe_machine_ok" != yes],
+                     [The $wine_arch PE compiler produced a missing, foreign, or mismatched COFF object
+(C=$wine_pe_c_machine, C++=$wine_pe_cxx_machine). Do not mix macOS host,
+ARM64, ARM64EC or x64 object ABIs. Select a matching Clang/Clang++ pair
+with an LLVM backend that actually supports this Windows target.])
+    unset wine_pe_c_machine wine_pe_cxx_machine wine_pe_machine_ok
 
     AS_VAR_IF([wine_arch],[powerpc],
         [AC_MSG_CHECKING([for a PowerPC-capable dlltool])
