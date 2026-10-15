@@ -2492,8 +2492,12 @@ static BOOL is_com_ilonly( HANDLE file, const SECTION_IMAGE_INFORMATION *info )
                                       &cor_header, sizeof(cor_header), &magic );
 
     if (len != sizeof(cor_header)) return FALSE;
-    if (magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return FALSE;
-    return !!(cor_header.Flags & COMIMAGE_FLAGS_ILONLY);
+    /* Only architecture-neutral PE32 IL may cross to a 64-bit process.
+     * A 32-bit-required assembly or native CLR entry point is not AnyCPU. */
+    if (magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC || info->Machine != IMAGE_FILE_MACHINE_I386)
+        return FALSE;
+    return (cor_header.Flags & (COMIMAGE_FLAGS_ILONLY | COMIMAGE_FLAGS_32BITREQUIRED |
+                                COMIMAGE_FLAGS_NATIVE_ENTRYPOINT)) == COMIMAGE_FLAGS_ILONLY;
 }
 
 /* check LOAD_CONFIG header for CHPE metadata */
@@ -2504,10 +2508,12 @@ static BOOL has_chpe_metadata( HANDLE file, const SECTION_IMAGE_INFORMATION *inf
     ULONG len = read_image_directory( file, info, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
                                       &loadcfg, sizeof(loadcfg), &magic );
 
-    if (!len) return FALSE;
+    if (len < sizeof(loadcfg.Size)) return FALSE;
     if (magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return FALSE;
     len = min( len, loadcfg.Size );
-    if (len <= offsetof( IMAGE_LOAD_CONFIG_DIRECTORY64, CHPEMetadataPointer )) return FALSE;
+    /* A truncated load config cannot establish the ARM64X metadata field. */
+    if (len < offsetof( IMAGE_LOAD_CONFIG_DIRECTORY64, CHPEMetadataPointer ) +
+              sizeof(loadcfg.CHPEMetadataPointer)) return FALSE;
     return !!loadcfg.CHPEMetadataPointer;
 }
 
@@ -2517,12 +2523,15 @@ static BOOL is_valid_binary( HANDLE file, const SECTION_IMAGE_INFORMATION *info 
 {
     if (info->Machine == current_machine) return TRUE;
     if (NtCurrentTeb()->WowTebOffset) return TRUE;
-    /* support ARM64EC binaries on x86-64 */
-    if (current_machine == IMAGE_FILE_MACHINE_AMD64 && has_chpe_metadata( file, info )) return TRUE;
-    /* support 32-bit IL-only images on 64-bit */
-    if (!info->ImageContainsCode) return TRUE;
-    if (info->ComPlusNativeReady) return TRUE;
-    return is_com_ilonly( file, info );
+    /* ARM64X images expose an x64-compatible view through CHPE metadata. */
+    if (current_machine == IMAGE_FILE_MACHINE_AMD64 && info->Machine == IMAGE_FILE_MACHINE_ARM64 &&
+        has_chpe_metadata( file, info )) return TRUE;
+    /* A CLR directory does not imply a portable ABI.  Check the PE32
+     * IL-only flags rather than admitting 32-bit-required or mixed-mode
+     * images through a generic "native ready" shortcut. */
+    if (info->LoaderFlags) return is_com_ilonly( file, info );
+    /* Resource-only binaries without executable code remain loadable. */
+    return !info->ImageContainsCode;
 }
 
 #else  /* _WIN64 */

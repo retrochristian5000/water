@@ -637,6 +637,10 @@ static NTSTATUS map_image_section( const IMAGE_NT_HEADERS *nt_header, const IMAG
 
         SetLastError( 0xdeadbeef );
         mod = LoadLibraryExA( dll_name, 0, DONT_RESOLVE_DLL_REFERENCES );
+        /* 32BITREQUIRED is stricter than ILONLY/AnyCPU, including on
+         * ARM64 hosts.  An x86-only CLR DLL is not a 64-bit DLL. */
+        if (is_win64 && want_32bit && nt_header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+            ok_(__FILE__, line)( !mod, "32-bit-required CLR image loaded in a 64-bit process\n" );
         /* test loading dll of wrong 32/64 bitness */
         if (nt_header->OptionalHeader.Magic == (is_win64 ? IMAGE_NT_OPTIONAL_HDR32_MAGIC
                                                          : IMAGE_NT_OPTIONAL_HDR64_MAGIC))
