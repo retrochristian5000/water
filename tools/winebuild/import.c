@@ -1377,20 +1377,20 @@ static void build_arm64ec_import_lib( const char *lib_name, DLLSPEC *spec, struc
     /* GNU-style .delay.a uses different thunk semantics than MSVC /lib.
      * Failing explicitly is safer than silently producing a normal lib. */
     if (strendswith( lib_name, ".delay.a" ))
-        fatal_error( "ARM64EC delayed-import libraries are not supported by lld-link /lib\\n" );
+        fatal_error( "ARM64EC delayed-import libraries are not supported by lld-link /lib\n" );
 
     def_file = open_temp_output_file( ".def" );
     output_def_file( spec, &spec->exports, 1 );
-    if (fclose( output_file ) < 0) fatal_perror( "fclose" );
+    if (fclose( output_file ) < 0) fatal_error( "Unable to close ARM64EC DEF file\n" );
     output_file = NULL;
 
     if (native_arch != -1)
     {
         if (native_arch != CPU_ARM64)
-            fatal_error( "ARM64EC hybrid import libraries require native ARM64 exports\\n" );
+            fatal_error( "ARM64EC hybrid import libraries require native ARM64 exports\n" );
         native_def_file = open_temp_output_file( ".def" );
         output_def_file( spec, &spec->native_exports, 1 );
-        if (fclose( output_file ) < 0) fatal_perror( "fclose" );
+        if (fclose( output_file ) < 0) fatal_error( "Unable to close ARM64EC DEF file\n" );
         output_file = NULL;
     }
 
