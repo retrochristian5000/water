@@ -224,6 +224,8 @@ See also [MSVC `/vlen` and AVX10 target-feature continuity](llvm-msvc-vlen-abi.m
 
 See also [Microsoft `/Gv` vectorcall / ARM64EC ABI boundary](llvm-msvc-gv-abi.md): preserve x86 `@@` import/export decoration without inventing ARM64EC vectorcall codegen.
 
+See also [MSVC `/arch` instruction-set selection for ARM64EC](llvm-msvc-arch-abi.md): translate Arm ISA levels without changing the hybrid ABI or forwarding x86 AVX flags.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |
