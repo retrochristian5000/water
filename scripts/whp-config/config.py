@@ -97,6 +97,13 @@ OPTIONS = (
            'llvm', ('llvm', 'legacy')),
     Option('WATER_LIBCXX_I386', 'LLVM toolchain', 'i386 PE libc++ (experimental)',
            'choice', 'legacy', ('legacy', 'llvm')),
+    Option('WATER_LIBCXX_LEGACY_POLICY', 'LLVM toolchain', 'Old libc++ fallback guard',
+           'choice', 'allow', ('allow', 'error')),
+
+    Option('WATER_AUTOCONF_PROVIDER', 'Build toolchains', 'Autoconf generator',
+           'choice', 'pinned', ('pinned', 'host')),
+    Option('WATER_AUTOMAKE_PROVIDER', 'Build toolchains', 'Automake macros for Bash',
+           'choice', 'pinned', ('pinned', 'host')),
 
     Option('BOOTSTRAP_NINJA', 'Build behavior', 'Pinned WHP Ninja executor', 'choice',
            'auto', ('auto', 'y', 'n')),
@@ -112,6 +119,8 @@ OPTIONS = (
            'auto', ('auto', 'y', 'n')),
     Option('WATER_NINJA', 'Build behavior', 'Generate/prefer Ninja files', 'choice',
            'auto', ('auto', 'y', 'n')),
+    Option('WATER_KEEP_GOING', 'Build behavior', 'Keep independent jobs running after errors',
+           'bool', 'y'),
     Option('WATER_MAINTAINER_MODE', 'Build behavior', 'Maintainer mode', 'choice',
            'auto', ('auto', 'y', 'n')),
     Option('WATER_SAST', 'Build behavior', 'Clang static analysis / SAST', 'choice',
