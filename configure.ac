@@ -500,6 +500,18 @@ wine_pe_object_machine()
     printf '%s:%s\n' "$1" "$2"
 }
 
+wine_pe_machine_pair_matches()
+{
+    case "$1:$2:$3" in
+      i386:76:1:76:1|x86_64:100:134:100:134|arm:196:1:196:1|\
+      aarch64:100:170:100:170|arm64ec:65:166:65:166|\
+      powerpc:240:1:240:1|powerpc:240:1:241:1|\
+      powerpc:241:1:240:1|powerpc:241:1:241:1)
+          return 0 ;;
+    esac
+    return 1
+}
+
 dnl **** Check for PE cross compiler ****
 
 AC_SUBST(PE_ARCHS,"")
@@ -751,13 +763,10 @@ _WHP_PE_CXX
     dnl i386 0x014c, AMD64 0x8664, ARMNT 0x01c4, ARM64 0xaa64,
     dnl ARM64EC 0xa641, PowerPC/PowerPCFP 0x01f0/0x01f1.
     wine_pe_machine_ok=no
-    case "$wine_arch:$wine_pe_c_machine:$wine_pe_cxx_machine" in
-      i386:76:1:76:1|x86_64:100:134:100:134|arm:196:1:196:1|\
-      aarch64:100:170:100:170|arm64ec:65:166:65:166|\
-      powerpc:240:1:240:1|powerpc:240:1:241:1|\
-      powerpc:241:1:240:1|powerpc:241:1:241:1)
-          wine_pe_machine_ok=yes ;;
-    esac
+    if wine_pe_machine_pair_matches "$wine_arch" "$wine_pe_c_machine" "$wine_pe_cxx_machine"
+    then
+        wine_pe_machine_ok=yes
+    fi
     AC_MSG_RESULT([$wine_pe_machine_ok (C=$wine_pe_c_machine C++=$wine_pe_cxx_machine)])
     WINE_NO_PE_ERROR([test "$wine_pe_machine_ok" != yes],
                      [The $wine_arch PE compiler produced a missing, foreign, or mismatched COFF object
