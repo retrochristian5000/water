@@ -1314,6 +1314,23 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
         }
     }
 
+    /* Rebuilding an ARM64EC archive with a generic ar can drop the
+     * /<ECSYMBOLS>/ index that lets LLD select the EC versus native view.
+     * Use the COFF librarian for both creation and append operations. */
+    if (target.cpu == CPU_ARM64EC && is_llvm_pe_target( target ))
+    {
+        args = find_link_tool();
+        strarray_add( &args, "/lib" );
+        strarray_add( &args, "-machine:arm64ec" );
+        strarray_add( &args, strmake( "-out:%s", output_name ) );
+        if (!create) strarray_add( &args, output_name );
+        strarray_addall( &args, as_files );
+        strarray_addall( &args, files );
+        if (create) unlink( output_name );
+        spawn( args );
+        return;
+    }
+
     if (!use_ar && (!create || !is_llvm_pe_target( target ) || target.cpu == CPU_POWERPC))
     {
         const char *ar_name;
@@ -1347,6 +1364,48 @@ void output_static_lib( const char *output_name, struct strarray files, int crea
 }
 
 static void build_windows_import_lib( const char *lib_name, DLLSPEC *spec, struct strarray files );
+
+/* ARM64EC needs an ARM64EC-aware COFF import archive, not the internal
+ * Win32 thunk generator. LLD /lib writes short imports with machine A641,
+ * the EC symbol index, and the optional native ARM64 view for ARM64X.
+ * The ordinary GNU dlltool switches are not equivalent to this format. */
+static void build_arm64ec_import_lib( const char *lib_name, DLLSPEC *spec, struct strarray files )
+{
+    const char *def_file, *native_def_file = NULL;
+    struct strarray args;
+
+    /* GNU-style .delay.a uses different thunk semantics than MSVC /lib.
+     * Failing explicitly is safer than silently producing a normal lib. */
+    if (strendswith( lib_name, ".delay.a" ))
+        fatal_error( "ARM64EC delayed-import libraries are not supported by lld-link /lib\\n" );
+
+    def_file = open_temp_output_file( ".def" );
+    output_def_file( spec, &spec->exports, 1 );
+    if (fclose( output_file ) < 0) fatal_perror( "fclose" );
+    output_file = NULL;
+
+    if (native_arch != -1)
+    {
+        if (native_arch != CPU_ARM64)
+            fatal_error( "ARM64EC hybrid import libraries require native ARM64 exports\\n" );
+        native_def_file = open_temp_output_file( ".def" );
+        output_def_file( spec, &spec->native_exports, 1 );
+        if (fclose( output_file ) < 0) fatal_perror( "fclose" );
+        output_file = NULL;
+    }
+
+    args = find_link_tool();
+    strarray_add( &args, "/lib" );
+    strarray_add( &args, "-machine:arm64ec" );
+    strarray_add( &args, strmake( "-out:%s", lib_name ) );
+    strarray_add( &args, strmake( "-def:%s", def_file ) );
+    if (native_def_file)
+        strarray_add( &args, strmake( "-defarm64native:%s", native_def_file ) );
+    spawn( args );
+
+    /* Also preserve the hybrid symbol index when merging extra members. */
+    if (files.count) output_static_lib( lib_name, files, 0 );
+}
 
 /* create a Windows-style import library using dlltool */
 static void build_dlltool_import_lib( const char *lib_name, DLLSPEC *spec, struct strarray files )
@@ -1799,6 +1858,8 @@ static void build_unix_import_lib( DLLSPEC *spec, struct strarray files )
 void output_import_lib( DLLSPEC *spec, struct strarray files )
 {
     if (!is_pe()) build_unix_import_lib( spec, files );
+    else if (target.cpu == CPU_ARM64EC)
+        build_arm64ec_import_lib( output_file_name, spec, files );
     else if (use_dlltool) build_dlltool_import_lib( output_file_name, spec, files );
     else if (target.cpu == CPU_POWERPC)
         fatal_error( "PowerPC import libraries require a PowerPC-capable 'dlltool' for NT TOC glue\n" );
