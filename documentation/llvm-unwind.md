@@ -51,6 +51,16 @@ This proves the expected static *object contract*, **not**
 runtime exception propagation through an x64/ARM64EC thunk.
 Never fill in those helpers with LLVM libunwind or placeholders.
 
+**Negative evidence / preserve existing work:** Water's
+`dlls/ntdll/unwind.c` already decodes ARM64/ARM64EC
+`save_any_reg` (opcode `0xe7`) in `process_unwind_codes()`
+and handles Microsoft-specific machine/context unwind opcodes.
+That code is a Windows NTDLL runtime unwinder, **not** the
+old `libs/unwind` Itanium C++ unwinder. Do not remove or
+replace NTDLL's decoder while retiring the older GNU library.
+The presence of `save_any_reg` is not a full proof of correct
+SIMD restoration for all cross-architecture exception paths.
+
 **Regression:** `sh scripts/tests/arm64ec-unwind-isolation.sh`
 checks the compiler-level Windows C++ exception artifacts;
 optionally supply the **configured Water Makefile path** to
