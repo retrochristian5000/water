@@ -8,6 +8,7 @@ LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
 LLVM_LIBCXX_RUNTIME_DIR=${WHP_LIBCXX_RUNTIME_DIR:-"$BUILD_DIR/llvm-libcxx-pe"}
 AUTOMAKE_SOURCE_DIR=${WHP_AUTOMAKE_SOURCE_DIR:-"$SOURCE_DIR/toolchains/automake"}
+AUTOCONF_EXPLICIT=${AUTOCONF+x}
 BASH_SOURCE_DIR=${WHP_BASH_SOURCE_DIR:-"$SOURCE_DIR/toolchains/bash"}
 BASH_STAGE_DIR=${WHP_BASH_STAGE_DIR:-"$BUILD_DIR/bash-source"}
 BASH_EFFECTIVE_SOURCE_DIR=$BASH_SOURCE_DIR
@@ -125,6 +126,8 @@ Environment:
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LIBCXX_RUNTIME_DIR LLVM libc++ PE runtime cache (default: ./build/llvm-libcxx-pe)
   WHP_AUTOMAKE_SOURCE_DIR Pinned Automake macro source (default: ./toolchains/automake)
+  AUTOCONF              Explicit Autoconf executable (overrides pinned WHP fork)
+                        Default: bootstrap toolchains/autoconf at its recorded revision
   WHP_BASH_SOURCE_DIR   WHP Bash source tree (default: ./toolchains/bash)
   WHP_BASH_BUILD_DIR    Cached WHP Bash host-tool build (default: ./build/bash-bootstrap)
   WHP_BASH_STAGE_DIR    Immutable pinned Bash source snapshot (default: ./build/bash-source)
@@ -159,7 +162,6 @@ Environment:
   WHP_GIT_UPDATE        Source refresh: auto (default), 1 (strict), or 0 (offline)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
-  AUTOCONF              Autoconf program used to generate ./configure
   WATER_WITH_MINGW      PE compiler policy: auto, clang, llvm-mingw, y, or n
                          (auto prefers Water's selected LLVM clang)
 
@@ -394,6 +396,9 @@ autoconf_state_signature()
         die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
 
     printf 'AUTOCONF=%s\n' "$autoconf_path"
+    if [ -z "$AUTOCONF_EXPLICIT" ]; then
+        git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/autoconf 2>/dev/null
+    fi
     "$AUTOCONF" --version 2>/dev/null | sed -n '1p'
     cksum "$SOURCE_DIR/configure.ac"
     if [ -f "$SOURCE_DIR/aclocal.m4" ]; then
@@ -476,6 +481,17 @@ EOF
     fi
 }
 
+prepare_autoconf_toolchain()
+{
+    if [ -n "$AUTOCONF_EXPLICIT" ]; then
+        printf 'WHP Autoconf: explicit executable %s\n' "$AUTOCONF" >&2
+        return 0
+    fi
+    AUTOCONF=$(/bin/sh "$SOURCE_DIR/scripts/whp-build/ensure-autoconf.sh" "$SOURCE_DIR" "$BUILD_DIR" "$WHP_SUBMODULES") ||
+        die "failed to prepare pinned WHP Autoconf (set AUTOCONF to override)"
+    printf 'WHP Autoconf: %s\n' "$AUTOCONF" >&2
+}
+
 generate_configure()
 {
     command -v "$AUTOCONF" >/dev/null 2>&1 ||
@@ -530,7 +546,7 @@ update_dependency_pins()
 
     for whp_dep in "$@"; do
         case "$whp_dep" in
-            libs/fluidsynth|libs/zlib/source|toolchains/llvm-project|toolchains/ninja-builder|toolchains/bash|toolchains/automake) ;;
+            libs/fluidsynth|libs/zlib/source|toolchains/llvm-project|toolchains/ninja-builder|toolchains/bash|toolchains/automake|toolchains/autoconf) ;;
             *) die "unknown Water dependency submodule: $whp_dep" ;;
         esac
     done
@@ -3697,6 +3713,7 @@ case "${1:-build}" in
         ;;
 esac
 
+prepare_autoconf_toolchain
 generate_configure
 init_submodules
 prepare_ninja
