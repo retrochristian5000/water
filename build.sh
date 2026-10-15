@@ -7,7 +7,8 @@ BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
 LLVM_LIBCXX_RUNTIME_DIR=${WHP_LIBCXX_RUNTIME_DIR:-"$BUILD_DIR/llvm-libcxx-pe"}
-AUTOMAKE_SOURCE_EXPLICIT=${WHP_AUTOMAKE_SOURCE_DIR+x}
+AUTOMAKE_SOURCE_EXPLICIT=
+[ -n "${WHP_AUTOMAKE_SOURCE_DIR:-}" ] && AUTOMAKE_SOURCE_EXPLICIT=1
 AUTOMAKE_SOURCE_DIR=${WHP_AUTOMAKE_SOURCE_DIR:-"$SOURCE_DIR/toolchains/automake"}
 AUTOCONF_EXPLICIT=${AUTOCONF+x}
 BASH_SOURCE_DIR=${WHP_BASH_SOURCE_DIR:-"$SOURCE_DIR/toolchains/bash"}
@@ -1969,10 +1970,15 @@ select_automake_source()
 
     command -v aclocal >/dev/null 2>&1 ||
         die "host Automake selected but aclocal is unavailable"
+    command -v automake >/dev/null 2>&1 ||
+        die "host Automake selected but automake is unavailable"
     whp_aclocal_dir=$(aclocal --print-ac-dir) ||
         die "host aclocal cannot report its macro directory"
     whp_aclocal_version=$(aclocal --version | sed -n '1s/.* //p')
     [ -n "$whp_aclocal_version" ] || die "cannot determine host Automake macro version"
+    whp_automake_version=$(automake --version | sed -n '1s/.* //p')
+    [ "$whp_aclocal_version" = "$whp_automake_version" ] ||
+        die "installed aclocal and automake versions differ"
     whp_aclocal_root=$(dirname "$whp_aclocal_dir")
     for whp_aclocal_tag in "$whp_aclocal_version" "${whp_aclocal_version%.*}"; do
         whp_candidate=$whp_aclocal_root/aclocal-$whp_aclocal_tag
@@ -1985,7 +1991,7 @@ select_automake_source()
     [ -f "$AUTOMAKE_SOURCE_DIR/strip.m4" ] ||
         die "host Automake macros not found (set WHP_AUTOMAKE_SOURCE_DIR to override)"
     printf 'WHP Automake: host macros %s\n' "$AUTOMAKE_SOURCE_DIR" >&2
-    unset whp_aclocal_dir whp_aclocal_version whp_aclocal_root whp_aclocal_tag whp_candidate
+    unset whp_aclocal_dir whp_aclocal_version whp_automake_version whp_aclocal_root whp_aclocal_tag whp_candidate
 }
 
 automake_macro_directory()
