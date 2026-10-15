@@ -263,4 +263,58 @@ expect_dll_error 'MSVC /DLL requires a non-Win16 Windows PE target' \
 expect_dll_error 'MSVC /DLL requires a non-Win16 Windows PE target' \
     --target=i386-pc-mingw32 -Wl,/DLL
 
-echo 'winegcc PE alignment, export, ThinLTO, /MAP, and /DLL arguments: pass'
+# Microsoft /SUBSYSTEM must agree across winebuild metadata and the final
+# MSVC linker. Comma-delimited LINK versions must not become extra -Wl flags.
+check_subsystem()
+{
+    target=$1
+    expected=$2
+    shift 2
+    WINEGCC_PE_LINK_ARGS="$tmp/link-args" WINEGCC_PE_SPEC_ARGS="$tmp/spec-args" \
+        "$winegcc" "--target=$target" --cc-cmd "$tmp/cc" \
+        --winebuild "$tmp/winebuild" -nodefaultlibs -nostdlib \
+        -o "$tmp/subsystem.exe" "$tmp/in.obj" "$@"
+    grep -Fx -- "$expected" "$tmp/spec-args" >/dev/null || {
+        echo "winebuild subsystem mismatch: target $target, wanted $expected" >&2
+        cat "$tmp/spec-args" >&2
+        exit 1
+    }
+    link_name=${expected%%:*}
+    link_version=${expected#*:}
+    if [ "$link_name" = "$link_version" ]; then
+        link_expected="-subsystem:$link_name"
+    else
+        link_expected="-subsystem:$link_name,$link_version"
+    fi
+    grep -Fx -- "$link_expected" "$tmp/link-args" >/dev/null || {
+        echo "PE linker subsystem mismatch: target $target, wanted $link_expected" >&2
+        cat "$tmp/link-args" >&2
+        exit 1
+    }
+}
+
+check_subsystem i386-pc-windows windows:4.0 -Wl,/SUBSYSTEM:WINDOWS,4.0
+if grep -Fx -- '-Wl,4.0' "$tmp/link-args" >/dev/null ||
+   grep -Fxi -- '-Wl,/SUBSYSTEM:WINDOWS' "$tmp/link-args" >/dev/null; then
+    echo 'Microsoft /SUBSYSTEM was passed through with a broken comma split' >&2
+    exit 1
+fi
+check_subsystem arm64ec-pc-windows console:10.0 -Xlinker /SUBSYSTEM:CONSOLE,10.0
+check_subsystem aarch64-pc-windows efi_application:1.0 -Wl,-subsystem:EFI_APPLICATION,1.0
+check_subsystem x86_64-pc-windows boot_application:1.0 \
+    -Xlinker /SUBSYSTEM:BOOT_APPLICATION,1.0
+check_subsystem i386-pc-windows posix:1.0 -Wl,--subsystem,posix:1.0
+check_subsystem i386-pc-windows console:4.0 -mconsole -Wl,/SUBSYSTEM:CONSOLE,4.0
+
+expect_dll_error 'Win16 modules require a plain i386 target' \
+    --target=arm64ec-pc-windows -m16 -Wl,/SUBSYSTEM:WINDOWS,4.0
+expect_dll_error 'MSVC /SUBSYSTEM requires a non-Win16 Windows PE target' \
+    --target=i386-pc-windows -m16 -Wl,/SUBSYSTEM:WINDOWS,4.0
+expect_dll_error 'MSVC /SUBSYSTEM requires a non-Win16 Windows PE target' \
+    --target=i386-pc-mingw32 -Wl,/SUBSYSTEM:WINDOWS,4.0
+expect_dll_error 'invalid /SUBSYSTEM version' \
+    --target=i386-pc-windows -Wl,/SUBSYSTEM:WINDOWS,65536.0
+expect_dll_error 'unsupported MSVC /SUBSYSTEM type' \
+    --target=i386-pc-windows -Wl,/SUBSYSTEM:WINDOWSCE,5.0
+
+echo 'winegcc PE alignment, export, ThinLTO, /MAP, /DLL, and /SUBSYSTEM arguments: pass'
