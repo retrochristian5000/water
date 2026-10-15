@@ -236,6 +236,40 @@ See also [ARM64EC Windows SDK architecture macros and CONTEXT layout](windows-ar
 
 See also [Microsoft `#pragma conform(forScope)` scoping audit](llvm-msvc-conform-pragma.md): legacy loop-variable visibility is C++ source-language behavior, not an ARM64EC calling-convention or object-layout switch.
 
+### Microsoft `#pragma region` / `endregion` — ABI negative control (15 October 2026)
+
+Microsoft documents these as **Visual Studio editor-outlining markers**,
+not compiler controls. The pinned LLVM fork already registers
+`PragmaRegionHandler("region")` and
+`PragmaRegionHandler("endregion")` unconditionally in
+`clang/lib/Lex/Pragma.cpp` and intentionally discards their tokens.
+There is no implementation gap requiring an ARM64EC-specific parser
+or calling-convention repair. In particular, a region must not change
+`__cdecl`, `#` symbol decoration, x64 data layout, ABI unwind
+information or the hybrid `$ientry_thunk` machinery.
+
+**Direct Clang 17 tests passed** for i686, x64, native ARM64 and ARM64EC:
+a C++ fixture with nested `#pragma region`/`endregion` and
+`__pragma(region)`/`__pragma(endregion)` produced the **same**
+COFF bytes as the unmarked source, excluding COFF header bytes
+4–7 (`TimeDateStamp`). Those timestamp bytes may change when
+consecutive compiler invocations cross a second boundary; raw
+`cmp` can therefore produce false mismatches. Assertions also
+preserved ABI-specific struct size/offsets, exported `__cdecl`
+symbol names and, on ARM64EC, the entry thunk and
+`__os_arm64x_dispatch_ret` reference.
+
+The regression is `scripts/tests/msvc-region-arm64ec-abi.sh`.
+The standalone equivalent was run repeatedly with Clang 17.
+The **committed script** has not been executed from a checked-out
+Water tree or against a rebuilt LLVM fork, and Windows-on-Arm
+runtime execution was not attempted. No production source code
+was changed in this round. This is a closed **negative ABI
+finding**, not an invented new ARM64EC error.
+
+Sources: [Microsoft region and endregion pragma](https://learn.microsoft.com/en-us/cpp/preprocessor/region-endregion),
+`clang/lib/Lex/Pragma.cpp` in the pinned LLVM fork.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |
