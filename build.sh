@@ -560,11 +560,17 @@ update_dependency_pins()
     [ "$(git -C "$SOURCE_DIR" rev-parse --show-toplevel 2>/dev/null || true)" = "$SOURCE_DIR" ] ||
         die "update-deps requires a Water Git checkout"
 
+    # Use recorded submodule paths and pinned gitlinks, not a stale allowlist.
     for whp_dep in "$@"; do
-        case "$whp_dep" in
-            libs/fluidsynth|libs/zlib/source|toolchains/llvm-project|toolchains/ninja-builder|toolchains/bash|toolchains/automake|toolchains/autoconf) ;;
-            *) die "unknown Water dependency submodule: $whp_dep" ;;
-        esac
+        git -C "$SOURCE_DIR" ls-tree HEAD -- "$whp_dep" |
+            awk -F '\t' -v wanted="$whp_dep" '
+                $2 == wanted && $1 ~ /^160000 commit / { found = 1 }
+                END { exit !found }' ||
+            die "not a pinned Water dependency gitlink: $whp_dep"
+        git config -f "$SOURCE_DIR/.gitmodules" --get-regexp '^submodule\..*\.path$' |
+            sed 's/^[^[:space:]]*[[:space:]]*//' |
+            grep -Fx -- "$whp_dep" >/dev/null ||
+            die "dependency is not declared in .gitmodules: $whp_dep"
     done
     unset whp_dep
 

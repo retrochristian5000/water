@@ -49,17 +49,30 @@ mkdir -p "$build"
 build=$(cd "$build" && pwd)
 cache=$build/autoconf-bootstrap
 prefix=$cache/$pin-$fingerprint
-if [ -f "$prefix/.whp-ready" ] && [ -x "$prefix/bin/autoconf" ]; then
-    "$prefix/bin/autoconf" --version >/dev/null 2>&1 ||
-        fail "cached pinned Autoconf is unusable: $prefix"
+# A healthy cache is a fast path; interrupted or corrupt caches can be rebuilt.
+if [ -f "$prefix/.whp-ready" ] && [ -x "$prefix/bin/autoconf" ] &&
+   "$prefix/bin/autoconf" --version >/dev/null 2>&1; then
     printf '%s\n' "$prefix/bin/autoconf"
     exit 0
 fi
-[ ! -e "$prefix" ] || fail "incomplete Autoconf cache exists: $prefix"
 mkdir -p "$cache"
 lock=$prefix.lock
 mkdir "$lock" 2>/dev/null ||
     fail "another Autoconf bootstrap is already using $prefix"
+# Recheck after acquiring the lock: another worker may have just completed.
+if [ -f "$prefix/.whp-ready" ] && [ -x "$prefix/bin/autoconf" ] &&
+   "$prefix/bin/autoconf" --version >/dev/null 2>&1; then
+    rmdir "$lock" || fail "cannot release bootstrap lock: $lock"
+    printf '%s\n' "$prefix/bin/autoconf"
+    exit 0
+fi
+if [ -e "$prefix" ] || [ -L "$prefix" ]; then
+    printf 'WHP Autoconf: clearing incomplete cache %s\n' "$prefix" >&2
+    rm -rf "$prefix" || {
+        rmdir "$lock" 2>/dev/null || :
+        fail "cannot clean incomplete Autoconf cache: $prefix"
+    }
+fi
 tmp=$(mktemp -d "$cache/.source.XXXXXXXX") ||
     { rmdir "$lock" 2>/dev/null || :; fail 'cannot create bootstrap directory'; }
 cleanup()
