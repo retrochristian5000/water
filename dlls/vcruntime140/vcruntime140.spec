@@ -50,10 +50,10 @@
 @ cdecl __unDNameEx(ptr str long ptr ptr ptr long) ucrtbase.__unDNameEx
 @ cdecl __uncaught_exception() ucrtbase.__uncaught_exception
 @ cdecl __uncaught_exceptions()
-@ stub __vcrt_GetModuleFileNameW
-@ stub __vcrt_GetModuleHandleW
+@ cdecl __vcrt_GetModuleFileNameW(ptr ptr long)
+@ cdecl __vcrt_GetModuleHandleW(wstr)
 @ cdecl __vcrt_InitializeCriticalSectionEx(ptr long long)
-@ stub __vcrt_LoadLibraryExW
+@ cdecl __vcrt_LoadLibraryExW(wstr ptr long)
 @ cdecl -arch=i386 -norelay _chkesp() ucrtbase._chkesp
 @ cdecl -arch=i386 _except_handler2(ptr ptr ptr ptr) ucrtbase._except_handler2
 @ cdecl -arch=i386 _except_handler3(ptr ptr ptr ptr) ucrtbase._except_handler3
