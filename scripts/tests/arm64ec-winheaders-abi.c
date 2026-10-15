@@ -52,9 +52,13 @@ _Static_assert(sizeof(void *) == 4, "i386 pointer size");
 # error Target architecture unsupported by this ABI test
 #endif
 
-/* Never use the internal ARM64EC COFF object-machine value as a PE image
- * machine constant. Microsoft winnt.h intentionally omits that identifier. */
-#ifdef IMAGE_FILE_MACHINE_ARM64EC
-# error ARM64EC internal COFF machine must not be exposed as PE image machine
+/* Water currently exposes A641 as a nonstandard public header
+ * extension. Microsoft's SDK intentionally omits that object-only code.
+ * Track the divergence separately; never use A641 for an EXE/DLL header.
+ * Do not remove this symbol until internal COFF consumers are audited. */
+#if defined(IMAGE_FILE_MACHINE_ARM64EC) && IMAGE_FILE_MACHINE_ARM64EC != 0xa641
+# error ARM64EC object machine extension has an unexpected value
 #endif
+_Static_assert(IMAGE_FILE_MACHINE_AMD64 == 0x8664, "x64 PE image machine");
+_Static_assert(IMAGE_FILE_MACHINE_ARM64 == 0xaa64, "native ARM64 PE image machine");
 int whp_header_probe(void) { return 0; }
