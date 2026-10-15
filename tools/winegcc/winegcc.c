@@ -674,6 +674,41 @@ static bool use_thinlto_gc(void)
     return thin_lto;
 }
 
+/* Optional MSVC-style PE linker maps, never a Win16 MZ/NE link flag.
+ * Keep diagnostic output beside its image without changing normal builds. */
+static void add_pe_link_map( struct strarray *args )
+{
+    const char *mode = getenv( "WATER_PE_MAP" );
+
+    if (!mode || !*mode || !strcmp( mode, "0" )) return;
+    if (strcmp( mode, "1" ) && strcmp( mode, "exports" ))
+        error( "WATER_PE_MAP must be 0, 1, or exports\n" );
+    if (!is_pe || is_win16_app) return;
+
+    /* An explicit /MAP or /MAP:<file> takes precedence.  Linker arguments
+     * have already been expanded from -Wl, and -Xlinker by the parser. */
+    STRARRAY_FOR_EACH( arg, &linker_args )
+    {
+        const char *option = arg;
+
+        if (!strncmp( option, "-Wl,", 4 )) option += 4;
+        if (*option != '/' && *option != '-') continue;
+        option++;
+        if (strlen( option ) >= 3 &&
+            tolower( (unsigned char)option[0] ) == 'm' &&
+            tolower( (unsigned char)option[1] ) == 'a' &&
+            tolower( (unsigned char)option[2] ) == 'p' &&
+            (option[3] == 0 || option[3] == ':'))
+            return;
+    }
+
+    /* Use the full output path; two outputs with the same basename in
+     * different directories must not overwrite each other's maps. */
+    strarray_add( args, strmake( "-Wl,-map:%s.map", output_file_name ));
+    if (!strcmp( mode, "exports" ))
+        strarray_add( args, "-Wl,-mapinfo:exports" );
+}
+
 static struct strarray get_link_args( const char *output_name )
 {
     struct strarray link_args = get_translator();
@@ -834,6 +869,7 @@ static struct strarray get_link_args( const char *output_name )
         else
             strarray_add( &link_args, strmake( "-Wl,-filealign:%s,-align:%s", file_align, section_align ));
         strarray_add( &link_args, "-Wl,-merge:.CRT=.rdata" );
+        add_pe_link_map( &link_args );
 
         strarray_addall( &link_args, flags );
         return link_args;
