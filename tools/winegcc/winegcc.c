@@ -674,6 +674,25 @@ static bool use_thinlto_gc(void)
     return thin_lto;
 }
 
+/* A raw MSVC /DLL switch needs the same image personality in winebuild
+ * and in the final linker.  Do not infer a DLL from its .dll file suffix. */
+static bool has_msvc_dll_option(void)
+{
+    STRARRAY_FOR_EACH( arg, &linker_args )
+    {
+        const char *option = arg;
+
+        if (!strncmp( option, "-Wl,", 4 )) option += 4;
+        if ((*option != '/' && *option != '-') || strlen( option ) != 4)
+            continue;
+        if (tolower( (unsigned char)option[1] ) == 'd' &&
+            tolower( (unsigned char)option[2] ) == 'l' &&
+            tolower( (unsigned char)option[3] ) == 'l')
+            return true;
+    }
+    return false;
+}
+
 /* Optional MSVC-style PE linker maps, never a Win16 MZ/NE link flag.
  * Keep diagnostic output beside its image without changing normal builds. */
 static void add_pe_link_map( struct strarray *args )
@@ -2373,6 +2392,15 @@ int main(int argc, char **argv)
     if (processor == proc_cpp) skip_link = true;
 
     is_pe = is_pe_target( target );
+    if (has_msvc_dll_option())
+    {
+        /* The final linker cannot be the only component that knows /DLL:
+         * winebuild must emit DLL characteristics and exports as well.
+         * Reject modern PE /DLL on the segmented Win16 or GNU link path. */
+        if (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app)
+            error( "MSVC /DLL requires a non-Win16 Windows PE target; use -shared for other DLL formats\n" );
+        is_shared = true;
+    }
     if (is_pe) use_msvcrt = true;
     if (output && strendswith( output, ".fake" )) fake_module = true;
     if (raw_win16_module && !is_win16_app)
