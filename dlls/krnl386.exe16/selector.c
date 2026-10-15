@@ -459,19 +459,42 @@ WORD WINAPI SelectorAccessRights16( WORD sel, WORD op, WORD val )
 }
 
 
+/* Return how many bytes remain after offset within a segment.  The
+ * 80286 expands data/stack segments down from limit+1, not up from zero.
+ * The 386 default_big bit only changes the upper bound for such segments. */
+static BOOL selector_get_remaining( WORD sel, WORD offset, DWORD *remaining )
+{
+    struct ldt_bits bits = ldt_get_bits( sel );
+    DWORD limit = ldt_get_limit( sel );
+
+    if (!(bits.type & 0x08) && (bits.type & 0x04))  /* expand-down data */
+    {
+        DWORD upper = bits.default_big ? 0xffffffffu : 0xffffu;
+
+        if (offset <= limit || offset > upper) return FALSE;
+        *remaining = upper - offset;
+    }
+    else
+    {
+        if (offset > limit) return FALSE;
+        *remaining = limit - offset;
+    }
+    return TRUE;
+}
+
 /***********************************************************************
  *           IsBadCodePtr   (KERNEL.336)
  */
 BOOL16 WINAPI IsBadCodePtr16( SEGPTR ptr )
 {
     WORD sel = SELECTOROF( ptr );
+    DWORD remaining;
 
     if (!ldt_is_valid( sel )) return TRUE;
 
     /* check for code segment, ignoring conforming, read-only and accessed bits */
     if ((ldt_get_bits( sel ).type & 0x18) != 0x18) return TRUE;
-    if (OFFSETOF(ptr) > ldt_get_limit( sel )) return TRUE;
-    return FALSE;
+    return !selector_get_remaining( sel, OFFSETOF(ptr), &remaining );
 }
 
 
@@ -481,7 +504,7 @@ BOOL16 WINAPI IsBadCodePtr16( SEGPTR ptr )
 BOOL16 WINAPI IsBadStringPtr16( SEGPTR ptr, UINT16 size )
 {
     WORD sel = SELECTOROF( ptr );
-    unsigned int offset, limit, available;
+    DWORD remaining;
     const char *str;
 
     if (!ldt_is_valid( sel )) return TRUE;
@@ -491,17 +514,13 @@ BOOL16 WINAPI IsBadStringPtr16( SEGPTR ptr, UINT16 size )
     if ((ldt_get_bits( sel ).type & 0x0a) == 0x08) return TRUE;  /* non-readable code segment */
     if (!size) return FALSE;
 
-    offset = OFFSETOF( ptr );
-    limit = ldt_get_limit( sel );
-    if (offset > limit) return TRUE;
-    if (size - 1 <= limit - offset) return FALSE;
+    if (!selector_get_remaining( sel, OFFSETOF(ptr), &remaining )) return TRUE;
+    if (size - 1 <= remaining) return FALSE;
 
-    /* The requested range crosses the segment limit.  A terminating NUL
-     * inside the segment makes the shorter string valid; do not use strlen
-     * here, since it could read past the end of a 286-sized segment. */
-    available = limit - offset + 1;
+    /* A terminating NUL inside the accessible segment range makes a shorter
+     * string valid.  Never scan across a 286 expand-up or expand-down limit. */
     if (!(str = MapSL( ptr ))) return TRUE;
-    return !memchr( str, 0, available );
+    return !memchr( str, 0, remaining + 1 );
 }
 
 
@@ -511,14 +530,15 @@ BOOL16 WINAPI IsBadStringPtr16( SEGPTR ptr, UINT16 size )
 BOOL16 WINAPI IsBadHugeReadPtr16( SEGPTR ptr, DWORD size )
 {
     WORD sel = SELECTOROF( ptr );
+    DWORD remaining;
 
     if (!ldt_is_valid( sel )) return TRUE;
 
     /* check for data or readable code segment */
     if (!(ldt_get_bits( sel ).type & 0x10)) return TRUE;  /* system descriptor */
     if ((ldt_get_bits( sel ).type & 0x0a) == 0x08) return TRUE;  /* non-readable code segment */
-    if (size && (OFFSETOF(ptr) > ldt_get_limit( sel ) ||
-                 size - 1 > ldt_get_limit( sel ) - OFFSETOF(ptr))) return TRUE;
+    if (size && (!selector_get_remaining( sel, OFFSETOF(ptr), &remaining ) ||
+                 size - 1 > remaining)) return TRUE;
     return FALSE;
 }
 
@@ -529,13 +549,14 @@ BOOL16 WINAPI IsBadHugeReadPtr16( SEGPTR ptr, DWORD size )
 BOOL16 WINAPI IsBadHugeWritePtr16( SEGPTR ptr, DWORD size )
 {
     WORD sel = SELECTOROF( ptr );
+    DWORD remaining;
 
     if (!ldt_is_valid( sel )) return TRUE;
 
     /* check for writable data segment, ignoring expand-down and accessed flags */
     if ((ldt_get_bits( sel ).type & 0x1a) != 0x12) return TRUE;
-    if (size && (OFFSETOF(ptr) > ldt_get_limit( sel ) ||
-                 size - 1 > ldt_get_limit( sel ) - OFFSETOF(ptr))) return TRUE;
+    if (size && (!selector_get_remaining( sel, OFFSETOF(ptr), &remaining ) ||
+                 size - 1 > remaining)) return TRUE;
     return FALSE;
 }
 
