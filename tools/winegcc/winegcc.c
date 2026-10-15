@@ -2586,6 +2586,11 @@ int main(int argc, char **argv)
     if (processor == proc_cpp) skip_link = true;
 
     is_pe = is_pe_target( target );
+    /* ARM64X combines native ARM64 and ARM64EC objects in one PE image.
+     * Reject unrelated machines before generating either spec object.  Some
+     * Clang versions accept -marm64x on x86 and defer the error to LLD. */
+    if (is_arm64x && (!is_pe || (target.cpu != CPU_ARM64 && target.cpu != CPU_ARM64EC)))
+        error( "ARM64X requires an ARM64 or ARM64EC PE target\n" );
     if (msvc_for_scope_requested && (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app))
         error( "MSVC /Zc:forScope requires a non-Win16 Windows PE target\n" );
     if (msvc_eh_seen && (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app))

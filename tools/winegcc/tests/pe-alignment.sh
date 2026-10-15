@@ -19,6 +19,9 @@ cat > "$tmp/winebuild" <<'EOF'
 if [ -n "${WINEGCC_PE_SPEC_ARGS:-}" ]; then
     printf '%s\n' "$@" > "$WINEGCC_PE_SPEC_ARGS"
 fi
+if [ -n "${WINEGCC_PE_HYBRID_LOG:-}" ]; then
+    printf '%s\n' "$@" >> "$WINEGCC_PE_HYBRID_LOG"
+fi
 out=
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -317,4 +320,35 @@ expect_dll_error 'invalid /SUBSYSTEM version' \
 expect_dll_error 'unsupported MSVC /SUBSYSTEM type' \
     --target=i386-pc-windows -Wl,/SUBSYSTEM:WINDOWSCE,5.0
 
-echo 'winegcc PE alignment, export, ThinLTO, /MAP, /DLL, and /SUBSYSTEM arguments: pass'
+# ARM64X has two ABI-specific spec objects but one PE image. Check both
+# valid input target spellings and forbid wrong-machine or non-PE links.
+check_arm64x()
+{
+    target=$1
+    : > "$tmp/arm64x-spec-args"
+    WINEGCC_PE_LINK_ARGS="$tmp/link-args" WINEGCC_PE_HYBRID_LOG="$tmp/arm64x-spec-args" \
+        "$winegcc" "--target=$target" --cc-cmd "$tmp/cc" \
+        --winebuild "$tmp/winebuild" -nodefaultlibs -nostdlib \
+        -marm64x -shared -o "$tmp/arm64x.dll" "$tmp/in.obj"
+    if [ "$(grep -Fxc -- '--target' "$tmp/arm64x-spec-args")" -ne 2 ]; then
+        echo "ARM64X link did not generate both PE spec objects: $target" >&2
+        cat "$tmp/arm64x-spec-args" >&2
+        exit 1
+    fi
+    grep -Fx -- 'arm64ec-pc-windows' "$tmp/arm64x-spec-args" >/dev/null || exit 1
+    grep -Fx -- 'aarch64-pc-windows' "$tmp/arm64x-spec-args" >/dev/null || exit 1
+    grep -Fx -- '-marm64x' "$tmp/link-args" >/dev/null || {
+        echo "ARM64X linker flag missing: $target" >&2
+        exit 1
+    }
+}
+check_arm64x arm64ec-pc-windows
+check_arm64x aarch64-pc-windows
+expect_dll_error 'ARM64X requires an ARM64 or ARM64EC PE target' \
+    --target=x86_64-pc-windows -marm64x
+expect_dll_error 'ARM64X requires an ARM64 or ARM64EC PE target' \
+    --target=i386-pc-windows -marm64x
+expect_dll_error 'ARM64X requires an ARM64 or ARM64EC PE target' \
+    --target=x86_64-pc-linux-gnu -marm64x
+
+echo 'winegcc PE alignment, export, ThinLTO, /MAP, /DLL, /SUBSYSTEM, and ARM64X arguments: pass'
