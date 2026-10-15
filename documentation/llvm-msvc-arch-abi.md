@@ -102,8 +102,8 @@ crash in the fork.
 **Integration pin:** Water advances the existing
 `toolchains/llvm-project` gitlink from
 `65c6fbb6ae224813abe4c4c56bd583f9d1388b5f` to
-`6838a5f3c5f57ae3b7d5750dbeeff2e820bf4374`
-via an 3-commit fast-forward. No new branch was created.
+`57a56a2d1c9eda86818b2a9835814e9f226b03f2`
+via a 5-commit fast-forward. No new branch was created.
 The changes do not touch lib-machines, Win16 relay code,
 ARM64EC PAC metadata, or the missing
 `__os_arm64x_dispatch_ret` runtime dependency.
