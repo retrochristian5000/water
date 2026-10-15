@@ -1883,6 +1883,18 @@ static const char *get_make_variable_arch_override( const struct makefile *make,
     if (arch)
     {
         ret = get_make_variable( make, strmake( "%s_%s", archs.str[arch], name ));
+        /* Explicitly empty ARM64EC C++ ABI/unwind providers must override the
+         * generic GNU/Itanium defaults. Otherwise a nested
+         * $(CXX_PE_LIBS) -> $(CXXABI_PE_LIBS) -> $(UNWIND_PE_LIBS) expansion
+         * reattaches libunwind to a Microsoft SEH/vcruntime build. Keep the
+         * established empty-means-fallback behavior for all other variables
+         * and targets. */
+        if (ret && !strcmp( archs.str[arch], "arm64ec" ) &&
+            (!strcmp( name, "CXXABI_PE_LIBS" ) ||
+             !strcmp( name, "CXXABI_PE_CFLAGS" ) ||
+             !strcmp( name, "UNWIND_PE_LIBS" ) ||
+             !strcmp( name, "UNWIND_PE_CFLAGS" )))
+            return ret;
         if (ret && *skip_spaces( ret )) return ret;
     }
     return get_make_variable( make, name );
