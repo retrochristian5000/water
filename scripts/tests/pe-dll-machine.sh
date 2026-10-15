@@ -60,6 +60,41 @@ check_image aarch64-windows-msvc arm64 0xaa64 0x020b
 # ARM64EC uses 0xA641 in objects, but an x64-compatible final PE image.
 check_image arm64ec-windows-msvc arm64ec 0x8664 0x020b
 
+# A /SUBSYSTEM switch controls optional-header fields independently of
+# the machine type.  Validate the actual image, not only the linker exit code.
+check_subsystem()
+{
+    machine=$1
+    kind=$2
+    major=$3
+    minor=$4
+    subsystem_id=$5
+    "$linker" /dll /noentry "/machine:$machine" \
+        "/subsystem:$kind,$major.$minor" \
+        "/out:$tmp/subsystem-$machine.dll" "$tmp/$machine.obj"
+    "$python" - "$tmp/subsystem-$machine.dll" "$major" "$minor" "$subsystem_id" <<'PY'
+import pathlib
+import struct
+import sys
+
+image = pathlib.Path(sys.argv[1]).read_bytes()
+pe_offset = struct.unpack_from("<I", image, 0x3c)[0]
+if image[pe_offset:pe_offset + 4] != b"PE\0\0":
+    raise SystemExit("missing PE signature")
+optional = pe_offset + 24
+major, minor = struct.unpack_from("<HH", image, optional + 48)
+subsystem = struct.unpack_from("<H", image, optional + 68)[0]
+expected = tuple(map(int, sys.argv[2:]))
+if (major, minor, subsystem) != expected:
+    raise SystemExit(f"bad PE subsystem: {(major, minor, subsystem)} != {expected}")
+PY
+}
+check_subsystem x86 windows 4 0 2
+check_subsystem arm64 console 6 2 3
+check_subsystem arm64ec console 10 0 3
+check_subsystem x86 efi_application 1 0 10
+check_subsystem arm64 boot_application 1 0 16
+
 # Object format and ABI aren't selected by /DLL alone.  Do not let an
 # i386 COFF object enter a pure ARM64EC link.
 if "$linker" /dll /noentry /machine:arm64ec \
@@ -74,4 +109,4 @@ grep -Ei 'machine|conflict' "$tmp/mixed.log" >/dev/null || {
     exit 1
 }
 
-echo 'PE /DLL machine, image headers, and mixed-ABI rejection: pass'
+echo 'PE /DLL, /SUBSYSTEM image headers, and mixed-ABI rejection: pass'
