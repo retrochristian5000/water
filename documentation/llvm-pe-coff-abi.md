@@ -228,6 +228,8 @@ See also [MSVC `/arch` instruction-set selection for ARM64EC](llvm-msvc-arch-abi
 
 See also [MSVC `/EHc` exception boundary and ARM64EC unwind audit](llvm-msvc-ehc-abi.md): /EHsc is a nounwind assumption on extern-C declarations, not a change of ABI or SEH thunk format.
 
+See also [Microsoft `__cdecl` across ARM64EC/x64 and variadic thunks](llvm-msvc-cdecl-abi.md): explicit cdecl is source-compatible but ARM64EC must retain signature-specific hybrid entry/exit thunks and its COFF symbol aliases.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |
