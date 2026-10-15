@@ -1342,7 +1342,9 @@ static const struct
     { ".S",   parse_asm_file },
     { ".asm", parse_nasm_file },
     { ".idl", parse_idl_file },
+    { ".cc",  parse_cxx_file },
     { ".cpp", parse_cxx_file },
+    { ".cxx", parse_cxx_file },
     { ".hpp", parse_cxx_file },
     { ".ipp", parse_cxx_file },
     { ".rc",  parse_rc_file },
@@ -4055,8 +4057,13 @@ static void output_source_one_arch( struct makefile *make, struct incl_file *sou
 
     if ((source->file->flags & FLAG_ARM64EC_X64) && !strcmp( archs.str[arch], "arm64ec" ))
     {
-        char *cflags = get_expanded_make_variable( make, "x86_64_CFLAGS" );
-        cmd->cmd = get_expanded_make_variable( make, "x86_64_CC" );
+        /* The hybrid x64 lane must retain the source language in both the
+         * compile rule and compile_commands.json. */
+        const bool cxx = source->file->flags & FLAG_C_CXX;
+        const char *driver = cxx ? "x86_64_CXX" : "x86_64_CC";
+        const char *flags = cxx ? "x86_64_CXXFLAGS" : "x86_64_CFLAGS";
+        char *cflags = get_expanded_make_variable( make, flags );
+        cmd->cmd = get_expanded_make_variable( make, driver );
         if (cflags) strarray_add( &cmd->args, cflags );
     }
     else if (source->file->flags & FLAG_C_CXX)

@@ -2464,11 +2464,19 @@ int main(int argc, char **argv)
                         raw_compiler_arg = raw_linker_arg = 0;
 		    }
                     break;
-		case 'x':
-		    strarray_add(&file_args, args.str[i]);
-		    /* we'll pass these flags ourselves, explicitly */
+                case 'x':
+                    /* Keep both words of -x language. Losing the separated
+                     * operand can silently compile a C++ input as C. */
+                    strarray_add( &file_args, args.str[i] );
+                    if (next_is_arg) strarray_add( &file_args, option_arg );
+                    if (processor == proc_cc && option_arg &&
+                        (!strcmp( option_arg, "c++" ) ||
+                         !strcmp( option_arg, "c++-header" ) ||
+                         !strcmp( option_arg, "c++-cpp-output" ) ||
+                         !strcmp( option_arg, "objective-c++" )))
+                        processor = proc_cxx;
                     raw_compiler_arg = raw_linker_arg = 0;
-		    break;
+                    break;
                 case '-':
                     if (strcmp("-static", args.str[i]+1) == 0)
                         is_static = true;

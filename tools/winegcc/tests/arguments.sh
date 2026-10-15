@@ -31,6 +31,21 @@ run()
 }
 run -integrated-as "$tmp/source.c"
 assert_arg '-integrated-as'
+# Explicit source-language selection must not lose the operand or borrow
+# the C++ runtime provider for a C-only invocation.
+CXX_PE_CFLAGS='-DWHP_CXX_DRIVER=1' run -x c++ "$tmp/source.c"
+assert_arg '-x'
+assert_arg 'c++'
+assert_arg '-DWHP_CXX_DRIVER=1'
+CXX_PE_CFLAGS='-DWHP_CXX_DRIVER=1' run -xc++ "$tmp/source.c"
+assert_arg '-xc++'
+assert_arg '-DWHP_CXX_DRIVER=1'
+CXX_PE_CFLAGS='-DWHP_CXX_DRIVER=1' run -x c "$tmp/source.c"
+assert_arg 'c'
+if grep -Fx -- '-DWHP_CXX_DRIVER=1' "$tmp/args" >/dev/null; then
+    echo 'C object compilation unexpectedly selected C++ provider flags' >&2
+    exit 1
+fi
 run "-isystem$tmp/headers" "$tmp/source.c"
 assert_arg "-isystem$tmp/headers"
 run -isystem "$tmp/headers" "$tmp/source.c"
