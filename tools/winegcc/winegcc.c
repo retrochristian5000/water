@@ -694,7 +694,7 @@ static void set_msvc_subsystem( const char *value )
 {
     static const char * const names[] =
     {
-        "windows", "console", "native", "posix", "windowsce",
+        "windows", "console", "native", "posix",
         "boot_application", "efi_application", "efi_boot_service_driver",
         "efi_runtime_driver", "efi_rom"
     };
