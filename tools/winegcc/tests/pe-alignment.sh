@@ -28,6 +28,9 @@ done
 EOF
 chmod +x "$tmp/cc" "$tmp/winebuild"
 printf 'dummy object\n' > "$tmp/in.obj"
+# Keep the established alignment tests independent of the user's map policy.
+WATER_PE_MAP=0
+export WATER_PE_MAP
 
 check_alignment()
 {
@@ -150,4 +153,54 @@ check_kill_at arm64ec-pc-windows 0
 check_kill_at i386-pc-mingw32 1
 check_kill_at aarch64-pc-mingw32 0
 
-echo 'winegcc PE alignment, DLL exports, and ThinLTO GC arguments: pass'
+# Diagnostic maps are opt-in, per-output, and MSVC PE-specific.  They
+# must not change a caller-supplied /MAP path or add duplicate linker flags.
+check_pe_map()
+{
+    target=$1
+    mode=$2
+    shift 2
+    WATER_PE_MAP="$mode" WINEGCC_PE_LINK_ARGS="$tmp/link-args" "$winegcc" \
+        "--target=$target" --cc-cmd "$tmp/cc" \
+        --winebuild "$tmp/winebuild" -nodefaultlibs -nostdlib \
+        -o "$tmp/output.exe" "$tmp/in.obj" "$@"
+}
+
+check_pe_map arm64ec-pc-windows 1
+grep -Fx -- "-Wl,-map:$tmp/output.exe.map" "$tmp/link-args" >/dev/null
+if grep -F -- '-mapinfo:exports' "$tmp/link-args" >/dev/null; then
+    echo 'plain PE map unexpectedly requested exports' >&2
+    exit 1
+fi
+
+check_pe_map i386-pc-windows exports
+grep -Fx -- "-Wl,-map:$tmp/output.exe.map" "$tmp/link-args" >/dev/null
+grep -Fx -- '-Wl,-mapinfo:exports' "$tmp/link-args" >/dev/null
+
+check_pe_map x86_64-pc-windows 0
+if grep -Ei -- '^-Wl,[-/]map(:|$)' "$tmp/link-args" >/dev/null; then
+    echo 'disabled PE map policy injected /MAP' >&2
+    exit 1
+fi
+
+check_pe_map aarch64-pc-windows exports "-Wl,/MAP:$tmp/explicit.map"
+grep -Fx -- "-Wl,/MAP:$tmp/explicit.map" "$tmp/link-args" >/dev/null
+if grep -Fx -- "-Wl,-map:$tmp/output.exe.map" "$tmp/link-args" >/dev/null; then
+    echo 'PE map policy overrode explicit /MAP' >&2
+    exit 1
+fi
+
+check_pe_map arm64ec-pc-windows exports -Xlinker "/MAP:$tmp/explicit-xlink.map"
+if grep -Fx -- "-Wl,-map:$tmp/output.exe.map" "$tmp/link-args" >/dev/null; then
+    echo 'PE map policy overrode explicit -Xlinker /MAP' >&2
+    exit 1
+fi
+grep -Fx -- "/MAP:$tmp/explicit-xlink.map" "$tmp/link-args" >/dev/null
+
+if check_pe_map aarch64-pc-windows unsupported >"$tmp/map-invalid.log" 2>&1; then
+    echo 'invalid WATER_PE_MAP setting was accepted' >&2
+    exit 1
+fi
+grep -F 'WATER_PE_MAP must be 0, 1, or exports' "$tmp/map-invalid.log" >/dev/null
+
+echo 'winegcc PE alignment, DLL exports, ThinLTO GC, and linker-map arguments: pass'
