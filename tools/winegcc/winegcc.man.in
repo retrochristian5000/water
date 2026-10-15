@@ -71,6 +71,13 @@ Pass an option to winebuild.  If \fIoption\fR contains
 commas, it is split into multiple options at the commas.
 .IP \fB-Wl,--out-implib,\fIlib.a\fR
 When linking a dll, also create its corresponding import library.
+.IP \fB-Wl,/SUBSYSTEM:WINDOWS,4.0\fR
+Specify an MSVC-style PE subsystem and minimum version. The same choice
+is forwarded to winebuild and to the final PE linker; alternatively use
+-Xlinker /SUBSYSTEM:CONSOLE,10.0. For Win16 MZ/NE binaries use the
+separate Win16 toolchain, not PE /SUBSYSTEM. The implicit PE GUI/console
+default is 6.0 in Water unless a version is explicitly selected.
+An older version does not by itself guarantee older-Windows compatibility.
 .SH ENVIRONMENT
 .TP
 .B WINEBUILD
