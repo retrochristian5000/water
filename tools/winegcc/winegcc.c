@@ -199,6 +199,7 @@ static const char *image_base;
 static const char *section_align;
 static const char *file_align;
 static const char *subsystem;
+static const char *msvc_arm_arch;
 static bool msvc_subsystem_selected;
 static const char *entry_point;
 static struct strarray file_args;
@@ -673,6 +674,31 @@ static bool use_thinlto_gc(void)
             return false;
     }
     return thin_lto;
+}
+
+/* Convert Microsoft /arch:armv8.x[+feature] into Clang's GCC-style
+ * -march=armv8.x-a[+feature] without changing the selected PE ABI. */
+static const char *get_msvc_arm_march( const char *value )
+{
+    char *lower = xstrdup( value );
+    const char *suffix;
+    unsigned int i;
+
+    for (i = 0; lower[i]; i++)
+        lower[i] = tolower( (unsigned char)lower[i] );
+    suffix = strchr( lower, '+' );
+    if (!suffix) suffix = lower + strlen( lower );
+    if ((suffix - lower) != 7 ||
+        strncmp( lower, "armv", 4 ) ||
+        lower[5] != '.' ||
+        !((lower[4] == '8' && lower[6] >= '0' && lower[6] <= '9') ||
+          (lower[4] == '9' && lower[6] >= '0' && lower[6] <= '4')))
+        error( "unsupported MSVC ARM /arch value '%s'\\n", value );
+
+    /* LLVM expects armv8-a and armv9-a rather than armv8.0-a/armv9.0-a. */
+    if (lower[6] == '0')
+        return strmake( "armv%c-a%s", lower[4], suffix );
+    return strmake( "armv%c.%c-a%s", lower[4], lower[6], suffix );
 }
 
 /* Recognize the MSVC spelling without confusing the GCC -Wl, grammar.
@@ -2456,6 +2482,11 @@ int main(int argc, char **argv)
 	    /* skip the next token if it's an argument */
 	    if (next_is_arg) i++;
         }
+        else if (!strncmp( args.str[i], "/arch:", 6 ))
+        {
+            if (!args.str[i][6]) error( "empty MSVC /arch selection\\n" );
+            msvc_arm_arch = args.str[i] + 6;
+        }
 	else
 	{
 	    strarray_add( &file_args, args.str[i] );
@@ -2478,6 +2509,18 @@ int main(int argc, char **argv)
     if (processor == proc_cpp) skip_link = true;
 
     is_pe = is_pe_target( target );
+    if (msvc_arm_arch)
+    {
+        /* The GCC-style winegcc driver does not accept raw /arch.
+         * Translate only Windows ARM64/ARM64EC ISA levels; otherwise an
+         * x86 AVX option could silently contaminate a hybrid build.
+         * -arch on Darwin remains a separate, untouched option. */
+        if (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app ||
+            (target.cpu != CPU_ARM64 && target.cpu != CPU_ARM64EC))
+            error( "MSVC ARM /arch requires a Windows ARM64 or ARM64EC PE target\\n" );
+        strarray_add( &compiler_args, strmake( "-march=%s",
+                       get_msvc_arm_march( msvc_arm_arch ) ) );
+    }
     if (msvc_subsystem_selected &&
         (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app))
         error( "MSVC /SUBSYSTEM requires a non-Win16 Windows PE target\n" );
