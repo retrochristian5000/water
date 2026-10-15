@@ -1,3 +1,59 @@
+## MSVC /DLL coherence across Winebuild and ARM64EC (October 15, 2026)
+
+Microsoft's `LINK /DLL` sets the output image type, not its
+instruction-set architecture. The PE DLL characteristic and export
+information must agree with Water's `winebuild --dll` (and its
+startup/module-personality decisions). Prior to this change, passing
+`-Wl,/DLL` without `-shared` could make the final linker emit a
+DLL while `winebuild` still received `--exe`, producing mismatched
+module metadata and entry-point defaults.
+
+Water's `winegcc` now recognizes explicit MSVC `/DLL` or `-dll`
+from `-Wl,` and `-Xlinker`. For a non-Win16 MSVC-style PE target,
+it enables the **existing** shared-library flow, so `winebuild` gets
+`--dll` and Clang/LLD gets `-shared` in addition to the caller's
+explicit switch. The path still honors output filename, import
+library, exports, default DLL entry point, and runtime selection as
+before. No second linker or 286-to-ARM64EC translator was added.
+Raw MSVC `/DLL` is rejected for Win16 `-m16` and the GNU/MinGW
+linker paths. Those use their existing separate rules; plain
+`-shared` remains valid where supported.
+
+Existing Win16 architecture guards in `winegcc` and `winebuild`
+already prevent `-m16` relay generation on ARM64EC. An observed
+`winegcc` special case uses x64 compiler tooling for part of
+ARM64EC's spec-object generation; x64 is **not** a 286 object and
+does not itself prove ABI corruption. Audit the final linked hybrid
+headers, metadata and thunk symbols rather than removing that path
+merely because its tool name says x64.
+
+**Direct LLD smoke test (Clang/LLD 17 on Linux x86_64):**
+standalone data-only DLL objects compiled for i686, AArch64, and
+ARM64EC linked with `/dll /noentry`; the final image machines were
+respectively 0x014c, 0xaa64, and 0x8664 and all carried the DLL
+characteristic. A mixed i386+ARM64EC object link failed with
+`machine type x86 conflicts with arm64ec`. This rejects mismatched
+COFF machine types but does not validate the contents of all assembly
+instructions, import archives, or a Windows loader session.
+A separate ARM64EC exported-function fixture still fails without
+`__os_arm64x_dispatch_ret`: `/DLL` alone cannot supply the missing
+OS thunk/runtime. Never silence it with `/FORCE`.
+
+Added mock-link regressions to
+`tools/winegcc/tests/pe-alignment.sh`: explicit `-Wl,/DLL`,
+`-Wl,-dll`, and `-Xlinker /DLL` must keep the `winebuild --dll`
+and final `-shared` commands consistent. Negative checks cover
+Win16 and GNU path boundaries. For a standalone LLD check, run
+`sh scripts/tests/pe-dll-machine.sh` with Clang, LLD and Python 3.
+The Water `winegcc` regression has not been run against a newly
+built Water executable in this round.
+
+Evidence:
+- https://learn.microsoft.com/en-us/cpp/build/reference/dll-build-a-dll
+- https://learn.microsoft.com/en-us/cpp/build/reference/link-output
+- https://learn.microsoft.com/en-us/windows/arm/arm64ec
+- https://learn.microsoft.com/en-us/windows/arm/arm64ec-abi
+
 ## PE linker maps and segmented 16-bit boundary (October 15, 2026)
 
 **New opt-in diagnostic:** `WATER_PE_MAP=1` makes Water's
