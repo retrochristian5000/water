@@ -1,3 +1,56 @@
+## PE linker maps and segmented 16-bit boundary (October 15, 2026)
+
+**New opt-in diagnostic:** `WATER_PE_MAP=1` makes Water's
+MSVC-style `winegcc` PE link path pass `/MAP:<image>.map` through
+Clang's `-Wl,-map:` form. `WATER_PE_MAP=exports` also requests
+`/MAPINFO:EXPORTS`. Unset or `0` leaves links unchanged. The map's
+full filename is derived from the output image (e.g.
+`build/bin/app.exe.map`), so separate build directories cannot
+overwrite each other's maps. Explicit `-Wl,/MAP:filename` or
+`-Xlinker /MAP:filename` takes precedence; this is **diagnostic
+output**, not a linker ABI fix. The GNU/MinGW link path remains
+separate, and `-m16` is not given a modern PE map automatically.
+
+**Why the 286 is different:** the historical Microsoft LINK for
+MS-DOS and OS/2 also supported linker maps containing logical
+segments and groups; that is evidence from a *different linker and
+format*, not permission to feed today's PE/COFF flags to a
+protected-mode Windows 286 program. A mirrored Microsoft KB
+(Q93914) describes Microsoft C 6/Visual C++ 1.x sometimes ignoring
+`/LINK /MAP`, with compiler switch `/Fm` as the workaround.
+For Water's 286 analysis, map segment:offset addresses, DGROUP,
+near/far code/data, and NE loader segment tables still need
+separate tests. A PE linker map cannot prove 286 selector/privilege
+correctness or the presence of native 80286 instructions.
+
+**ARM64EC boundary:** Microsoft identifies `0xA641` as the
+ARM64EC *object* machine, not the final hybrid image machine.
+Compare linker maps with actual PE headers, export tables,
+CHPE/hybrid metadata, imports, and entry/exit thunks. An isolated
+Clang 17/LLD 17 test on October 15 compiled an ARM64EC object
+but linking a minimal DLL without the OS ABI dispatch support
+failed on `__os_arm64x_dispatch_ret`; this is an observed
+missing runtime/thunk dependency, not evidence that `/MAP`
+is unsupported. Do not use `/FORCE` to conceal it.
+
+**Verification:** direct Clang 17 + LLD 17 `-Wl,-map:` and
+`-Wl,-mapinfo:exports` smoke tests generated symbol maps for
+i386 and ordinary ARM64 MSVC-style PE DLLs. Source and mock-link
+regression changes are published in
+`tools/winegcc/tests/pe-alignment.sh`; the regression still
+requires a freshly built Water `winegcc`. The ordinary ARM64
+`wineld` smoke test now checks the map and probe symbol as well.
+No complete Water binary or native Windows loader test was
+performed in this round.
+
+References:
+- https://learn.microsoft.com/en-us/cpp/build/reference/map-generate-mapfile
+- https://learn.microsoft.com/en-us/cpp/build/reference/mapinfo-include-information-in-mapfile
+- https://learn.microsoft.com/en-us/windows/arm/arm64ec
+- https://learn.microsoft.com/en-us/windows/arm/arm64ec-abi
+- Historical Microsoft KB Q80437: https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/80437
+- Historical Microsoft KB Q93914: https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/93914
+
 ## Windows ARM64 linker flag repair (October 13, 2026)
 
 Water's `PLATFORM_WINDOWS` link command emitted
