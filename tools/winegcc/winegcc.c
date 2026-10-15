@@ -201,6 +201,7 @@ static const char *file_align;
 static const char *subsystem;
 static const char *msvc_arm_arch;
 static bool msvc_subsystem_selected;
+static bool msvc_for_scope_requested;
 static bool msvc_eh_seen, msvc_eh_sync, msvc_eh_async, msvc_eh_nounwind_c;
 static const char *entry_point;
 static struct strarray file_args;
@@ -2532,6 +2533,20 @@ int main(int argc, char **argv)
 	    /* skip the next token if it's an argument */
 	    if (next_is_arg) i++;
         }
+        else if (!strcmp( args.str[i], "/Zc:forScope" ))
+        {
+            /* Clang already implements standard C++ for-loop scope. The
+             * equivalent MSVC option is a no-op; never forward a slash
+             * option as a source filename in this GCC-style wrapper. */
+            msvc_for_scope_requested = true;
+        }
+        else if (!strcmp( args.str[i], "/Zc:forScope-" ))
+        {
+            /* #pragma conform(forScope, off) and /Zc:forScope- require
+             * nonstandard C++ lexical scoping, not a different PE/ARM64EC
+             * ABI. Do not silently accept a mode Clang cannot implement. */
+            error( "MSVC /Zc:forScope- is unsupported: Clang uses standard C++ for-loop scope\n" );
+        }
         else if (!strncmp( args.str[i], "/EH", 3 ))
         {
             parse_msvc_eh( args.str[i] + 3 );
@@ -2563,6 +2578,8 @@ int main(int argc, char **argv)
     if (processor == proc_cpp) skip_link = true;
 
     is_pe = is_pe_target( target );
+    if (msvc_for_scope_requested && (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app))
+        error( "MSVC /Zc:forScope requires a non-Win16 Windows PE target\n" );
     if (msvc_eh_seen && (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app))
         error( "MSVC /EH requires a non-Win16 Windows PE target\n" );
     if (msvc_eh_sync || msvc_eh_async)
