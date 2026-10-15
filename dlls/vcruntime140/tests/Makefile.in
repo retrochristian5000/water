@@ -1,0 +1,4 @@
+TESTDLL = vcruntime140.dll
+
+SOURCES = \
+    loader.c
