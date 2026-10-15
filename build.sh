@@ -7,6 +7,7 @@ BUILD_DIR=${WHP_BUILD_DIR:-"$SOURCE_DIR/build"}
 LLVM_SOURCE_DIR=${WHP_LLVM_SOURCE_DIR:-"$SOURCE_DIR/toolchains/llvm-project"}
 LLVM_BOOTSTRAP_DIR=${WHP_LLVM_BUILD_DIR:-"$BUILD_DIR/llvm-bootstrap"}
 LLVM_LIBCXX_RUNTIME_DIR=${WHP_LIBCXX_RUNTIME_DIR:-"$BUILD_DIR/llvm-libcxx-pe"}
+AUTOMAKE_SOURCE_EXPLICIT=${WHP_AUTOMAKE_SOURCE_DIR+x}
 AUTOMAKE_SOURCE_DIR=${WHP_AUTOMAKE_SOURCE_DIR:-"$SOURCE_DIR/toolchains/automake"}
 AUTOCONF_EXPLICIT=${AUTOCONF+x}
 BASH_SOURCE_DIR=${WHP_BASH_SOURCE_DIR:-"$SOURCE_DIR/toolchains/bash"}
@@ -125,7 +126,9 @@ Environment:
   WHP_LLVM_SOURCE_DIR   LLVM source tree (default: ./toolchains/llvm-project)
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LIBCXX_RUNTIME_DIR LLVM libc++ PE runtime cache (default: ./build/llvm-libcxx-pe)
-  WHP_AUTOMAKE_SOURCE_DIR Pinned Automake macro source (default: ./toolchains/automake)
+  WHP_AUTOMAKE_SOURCE_DIR Override menu-selected Automake macro source directory
+  WATER_AUTOCONF_PROVIDER pinned (default) or host generator
+  WATER_AUTOMAKE_PROVIDER pinned (default) or host Bash macro source
   AUTOCONF              Explicit Autoconf executable (overrides pinned WHP fork)
                         Default: bootstrap toolchains/autoconf at its recorded revision
   WHP_BASH_SOURCE_DIR   WHP Bash source tree (default: ./toolchains/bash)
@@ -271,6 +274,8 @@ validate_profile()
     WATER_LIBCXX_LEGACY_POLICY=${WATER_LIBCXX_LEGACY_POLICY:-allow}
     WATER_INSTALL=${WATER_INSTALL:-none}
     WATER_PREFIX=${WATER_PREFIX:-/usr/local}
+    WATER_AUTOCONF_PROVIDER=${WATER_AUTOCONF_PROVIDER:-pinned}
+    WATER_AUTOMAKE_PROVIDER=${WATER_AUTOMAKE_PROVIDER:-pinned}
     WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
     WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}
@@ -319,6 +324,14 @@ validate_profile()
     case "$WATER_LIBCXX_LEGACY_POLICY" in
         allow|error) ;;
         *) die "WATER_LIBCXX_LEGACY_POLICY must be allow or error" ;;
+    esac
+    case "$WATER_AUTOCONF_PROVIDER" in
+        pinned|host) ;;
+        *) die "WATER_AUTOCONF_PROVIDER must be pinned or host" ;;
+    esac
+    case "$WATER_AUTOMAKE_PROVIDER" in
+        pinned|host) ;;
+        *) die "WATER_AUTOMAKE_PROVIDER must be pinned or host" ;;
     esac
     case "$WATER_INSTALL" in
         none|runtime|development|all) ;;
@@ -483,7 +496,7 @@ EOF
 
 prepare_autoconf_toolchain()
 {
-    if [ -n "$AUTOCONF_EXPLICIT" ]; then
+    if [ -n "$AUTOCONF_EXPLICIT" ] || [ "$WATER_AUTOCONF_PROVIDER" = host ]; then
         printf 'WHP Autoconf: explicit executable %s\n' "$AUTOCONF" >&2
         return 0
     fi
@@ -1948,6 +1961,42 @@ selected_llvm_libcxx_archs()
 }
 
 
+select_automake_source()
+{
+    # Explicit source directories override menuconfig provider selection.
+    [ -z "$AUTOMAKE_SOURCE_EXPLICIT" ] || return 0
+    [ "$WATER_AUTOMAKE_PROVIDER" = host ] || return 0
+
+    command -v aclocal >/dev/null 2>&1 ||
+        die "host Automake selected but aclocal is unavailable"
+    whp_aclocal_dir=$(aclocal --print-ac-dir) ||
+        die "host aclocal cannot report its macro directory"
+    whp_aclocal_version=$(aclocal --version | sed -n '1s/.* //p')
+    [ -n "$whp_aclocal_version" ] || die "cannot determine host Automake macro version"
+    whp_aclocal_root=$(dirname "$whp_aclocal_dir")
+    for whp_aclocal_tag in "$whp_aclocal_version" "${whp_aclocal_version%.*}"; do
+        whp_candidate=$whp_aclocal_root/aclocal-$whp_aclocal_tag
+        if [ -f "$whp_candidate/install-sh.m4" ] && [ -f "$whp_candidate/strip.m4" ]; then
+            AUTOMAKE_SOURCE_DIR=$whp_candidate
+            break
+        fi
+    done
+    [ -f "$AUTOMAKE_SOURCE_DIR/install-sh.m4" ] &&
+    [ -f "$AUTOMAKE_SOURCE_DIR/strip.m4" ] ||
+        die "host Automake macros not found (set WHP_AUTOMAKE_SOURCE_DIR to override)"
+    printf 'WHP Automake: host macros %s\n' "$AUTOMAKE_SOURCE_DIR" >&2
+    unset whp_aclocal_dir whp_aclocal_version whp_aclocal_root whp_aclocal_tag whp_candidate
+}
+
+automake_macro_directory()
+{
+    if [ -f "$AUTOMAKE_SOURCE_DIR/m4/install-sh.m4" ]; then
+        printf '%s\n' "$AUTOMAKE_SOURCE_DIR/m4"
+    else
+        printf '%s\n' "$AUTOMAKE_SOURCE_DIR"
+    fi
+}
+
 automake_pinned_revision()
 {
     [ "$AUTOMAKE_SOURCE_DIR" = "$SOURCE_DIR/toolchains/automake" ] || return 1
@@ -1964,8 +2013,9 @@ automake_source_id()
     elif [ -d "$AUTOMAKE_SOURCE_DIR" ]; then
         whp_automake_source_id=$(git -C "$AUTOMAKE_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
         if [ -z "$whp_automake_source_id" ]; then
-            whp_automake_source_id=$(cksum "$AUTOMAKE_SOURCE_DIR/m4/install-sh.m4" \
-                "$AUTOMAKE_SOURCE_DIR/m4/strip.m4" 2>/dev/null |
+            whp_automake_macro_dir=$(automake_macro_directory)
+            whp_automake_source_id=$(cksum "$whp_automake_macro_dir/install-sh.m4" \
+                "$whp_automake_macro_dir/strip.m4" 2>/dev/null |
                 awk '{ printf "%s:%s;", $1, $2 }')
         fi
     fi
@@ -2010,9 +2060,10 @@ ensure_bash_automake_dependency()
             grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_STRIP\]' ||
             die "pinned Automake source is missing AM_PROG_INSTALL_STRIP"
     else
-        grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_SH\]' "$AUTOMAKE_SOURCE_DIR/m4/install-sh.m4" ||
+        whp_automake_macro_dir=$(automake_macro_directory)
+        grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_SH\]' "$whp_automake_macro_dir/install-sh.m4" ||
             die "Automake source is missing AM_PROG_INSTALL_SH"
-        grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_STRIP\]' "$AUTOMAKE_SOURCE_DIR/m4/strip.m4" ||
+        grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_STRIP\]' "$whp_automake_macro_dir/strip.m4" ||
             die "Automake source is missing AM_PROG_INSTALL_STRIP"
     fi
 
@@ -3247,6 +3298,8 @@ profile_signature()
         "WATER_LIBCXX=${WATER_LIBCXX:-llvm}" \
         "WATER_PREFIX=${WATER_PREFIX:-/usr/local}" \
         "WATER_LIBDIR=$(water_libdir)" \
+        "WATER_AUTOCONF_PROVIDER=${WATER_AUTOCONF_PROVIDER:-pinned}" \
+        "WATER_AUTOMAKE_PROVIDER=${WATER_AUTOMAKE_PROVIDER:-pinned}" \
         "WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}" \
         "WHP_AUTOMAKE_STATE=${WHP_AUTOMAKE_STATE:-}" \
         "WHP_LIBCXX_STATE=${WHP_LIBCXX_STATE:-}" \
@@ -3698,6 +3751,7 @@ esac
 
 load_whp_config
 validate_profile
+select_automake_source
 
 case "${1:-build}" in
     clean|distclean)
