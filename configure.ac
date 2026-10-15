@@ -735,6 +735,22 @@ do
     WINE_NO_PE_ERROR([test -z "$target"],[$wine_arch PE compiler not found.
 Please install mingw-w64, clang/llvm-dlltool/lld, or llvm-mingw.])
 
+    dnl A COFF object is not sufficient to establish the C++ ABI: GNU/MinGW
+    dnl triples use Itanium C++ symbols, including on ARM64EC. Never accept
+    dnl Water's private Microsoft/vcruntime libc++ archive for these targets,
+    dnl even if an environment override bypassed build.sh provider selection.
+    case "$target" in
+      *mingw*|*-windows-gnu*)
+        AS_VAR_COPY([wine_pe_cxx_provider_libs],[${wine_arch}_CXX_PE_LIBS])
+        case " $wine_pe_cxx_provider_libs " in
+          *-lwhp-libcxx*)
+            WINE_NO_PE_ERROR([true],[The $wine_arch GNU/MinGW C++ ABI cannot link Water's Microsoft-ABI libwhp-libcxx provider. Remove the Microsoft CXX_PE_LIBS override or use the MSVC target lane.])
+            ;;
+        esac
+        unset wine_pe_cxx_provider_libs
+        ;;
+    esac
+
     dnl CMake and Autoconf target tests accept compiler flags without proving
     dnl that both the C and C++ outputs are COFF for the *requested* PE ABI.
     dnl Check object machine bytes before admitting each architecture. This
