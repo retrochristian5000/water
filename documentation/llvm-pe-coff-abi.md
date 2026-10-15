@@ -226,6 +226,8 @@ See also [Microsoft `/Gv` vectorcall / ARM64EC ABI boundary](llvm-msvc-gv-abi.md
 
 See also [MSVC `/arch` instruction-set selection for ARM64EC](llvm-msvc-arch-abi.md): translate Arm ISA levels without changing the hybrid ABI or forwarding x86 AVX flags.
 
+See also [MSVC `/EHc` exception boundary and ARM64EC unwind audit](llvm-msvc-ehc-abi.md): /EHsc is a nounwind assumption on extern-C declarations, not a change of ABI or SEH thunk format.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |
