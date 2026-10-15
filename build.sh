@@ -133,6 +133,7 @@ Environment:
   WHP_LLVM_PREFIX       Built/installed LLVM prefix to prefer
   WATER_LLVM_LINKER     Host linker policy: auto, lld, or system (macOS default: system; others: auto)
   WATER_PE_LTO          PE LTO mode: none, thin, or full (default: none; thin recommended for testing)
+  WATER_PE_MAP          MSVC-style PE linker maps: 0 (default), 1, or exports; output is image.exe.map/image.dll.map
   WATER_LIBCXX          PE libc++ provider: llvm or legacy (default: llvm)
   WATER_LIBCXX_I386     i386 PE libc++: legacy or experimental llvm (default: legacy)
   WATER_LIBCXX_LEGACY_POLICY  Old libc++ fallback: allow (default) or error (strict retirement audit)
