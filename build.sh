@@ -874,6 +874,18 @@ whp_cmake_cache_value()
     ' "$2"
 }
 
+# Missing optional CMake settings may use defaults; duplicate or malformed
+# records must *not* be silently converted into a missing setting.
+whp_cmake_cache_optional_value()
+{
+    if whp_optional_value=$(whp_cmake_cache_value "$1" "$2"); then
+        printf '%s\n' "$whp_optional_value"
+    else
+        whp_optional_status=$?
+        [ "$whp_optional_status" -eq 1 ] || return "$whp_optional_status"
+    fi
+}
+
 whp_makefile_value()
 {
     [ -f "$2" ] || return 1
@@ -1303,7 +1315,8 @@ llvm_bootstrap_has_target()
     whp_target=$1
 
     if [ -f "$LLVM_BOOTSTRAP_DIR/build.ninja" ]; then
-        ninja_cmd=$(whp_cmake_cache_value CMAKE_MAKE_PROGRAM "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" 2>/dev/null || true)
+        ninja_cmd=$(whp_cmake_cache_optional_value CMAKE_MAKE_PROGRAM "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt") ||
+            die "invalid CMAKE_MAKE_PROGRAM cache entry in $LLVM_BOOTSTRAP_DIR/CMakeCache.txt"
         if [ -z "$ninja_cmd" ] || [ ! -x "$ninja_cmd" ]; then
             ninja_cmd=$(find_existing_ninja)
         fi
@@ -1482,7 +1495,8 @@ bootstrap_llvm()
             done
             unset whp_required_target
 
-            llvm_cached_linker=$(whp_cmake_cache_value LLVM_USE_LINKER "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" || true)
+            llvm_cached_linker=$(whp_cmake_cache_optional_value LLVM_USE_LINKER "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt") ||
+                die "invalid LLVM_USE_LINKER cache entry in $LLVM_BOOTSTRAP_DIR/CMakeCache.txt"
             if [ "$llvm_cached_linker" != "$llvm_use_linker" ]; then
                 printf 'WHP LLVM CMake: linker changed (%s -> %s); regenerating\n' \
                     "${llvm_cached_linker:-system}" "${llvm_use_linker:-system}" >&2
