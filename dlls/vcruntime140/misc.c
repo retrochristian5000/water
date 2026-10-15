@@ -24,6 +24,24 @@ WINE_DEFAULT_DEBUG_CHANNEL(vcruntime);
 
 int* CDECL __processing_throw(void);
 
+/* These public VCRUNTIME wrappers are ordinary Windows loader calls.  Keep
+ * their cdecl exports separate from the underlying WINAPI entry points
+ * (notably on i386), and let the OS API preserve LastError on failure. */
+DWORD CDECL __vcrt_GetModuleFileNameW(HMODULE module, WCHAR *filename, DWORD size)
+{
+    return GetModuleFileNameW(module, filename, size);
+}
+
+HMODULE CDECL __vcrt_GetModuleHandleW(const WCHAR *filename)
+{
+    return GetModuleHandleW(filename);
+}
+
+HMODULE CDECL __vcrt_LoadLibraryExW(const WCHAR *filename, HANDLE file, DWORD flags)
+{
+    return LoadLibraryExW(filename, file, flags);
+}
+
 /*********************************************************************
  *              __telemetry_main_invoke_trigger
  */
