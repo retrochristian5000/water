@@ -47,7 +47,7 @@ AUTOCONF_STATE_FILE="$BUILD_DIR/.whp-autoconf-state"
 LLVM_BOOTSTRAP_CONFIG_FILE="$LLVM_BOOTSTRAP_DIR/.whp-config"
 LLVM_BOOTSTRAP_STATE_FILE="$LLVM_BOOTSTRAP_DIR/.whp-state"
 BASH_BOOTSTRAP_STATE_FILE="$BASH_BOOTSTRAP_DIR/.whp-state"
-LLVM_BOOTSTRAP_RECIPE=8
+LLVM_BOOTSTRAP_RECIPE=9
 LLVM_LIBCXX_RECIPE=16
 BASH_BOOTSTRAP_RECIPE=4
 WHP_CONFIGURE_ARCHS=
@@ -148,7 +148,8 @@ Environment:
   CC_FOR_BUILD           Host C compiler for bootstrap/build tools (default: CC)
   CPPFLAGS_FOR_BUILD     Host preprocessor flags for bootstrap/build tools
   CPPBIN                 Standalone C preprocessor (default: selected LLVM clang-cpp)
-  CFLAGS_FOR_BUILD       Host compile flags for bootstrap/build tools
+  CFLAGS_FOR_BUILD       Host C flags for bootstrap/build tools (override CFLAGS)
+  CXXFLAGS_FOR_BUILD     Host C++ flags for bootstrap/build tools (override CXXFLAGS)
   CFLAGS/CXXFLAGS        Host compile flags; PE lanes use CROSSCFLAGS or per-arch flags
   CPPFLAGS               Host preprocessor flags; not forwarded to PE object builds
   CROSSCFLAGS            Default PE compile flags when per-arch CFLAGS are unset
@@ -1074,6 +1075,66 @@ llvm_source_state_signature()
     fi
 }
 
+# LLVM itself is a native host tool even while Water is compiling PE
+# targets. Explicit FOR_BUILD flags override shared C/C++ variables, including
+# an explicitly empty override. Never let CMake inherit a different set of
+# flags from the process environment than the set recorded in the cache.
+llvm_bootstrap_cflags()
+{
+    printf '%s' "${CPPFLAGS_FOR_BUILD-${CPPFLAGS:-}} ${CFLAGS_FOR_BUILD-${CFLAGS:-}}"
+}
+
+llvm_bootstrap_cxxflags()
+{
+    printf '%s' "${CPPFLAGS_FOR_BUILD-${CPPFLAGS:-}} ${CXXFLAGS_FOR_BUILD-${CXXFLAGS:-}}"
+}
+
+llvm_compiler_target_triple()
+{
+    [ -n "${1:-}" ] || return 1
+    "$1" -print-target-triple 2>/dev/null
+}
+
+llvm_clangxx_works()
+{
+    whp_clangxx=${1:-}
+    [ -n "$whp_clangxx" ] && [ -x "$whp_clangxx" ] || return 1
+    # A successful --version is not sufficient to catch a crashing cc1.
+    printf 'template<class T> T pass(T value) { return value; }\nint main() { return pass(0); }\n' |
+        "$whp_clangxx" -x c++ -fsyntax-only - >/dev/null 2>&1
+}
+
+llvm_validate_darwin_host_compilers()
+{
+    [ "$(uname -s 2>/dev/null || true)" = Darwin ] || return 0
+    whp_stage0_cc=${1:-}
+    whp_stage0_cxx=${2:-}
+    [ -n "$whp_stage0_cc" ] && [ -n "$whp_stage0_cxx" ] ||
+        die "macOS LLVM bootstrap requires both native stage-0 C and C++ compilers"
+
+    whp_cc_triple=$(llvm_compiler_target_triple "$whp_stage0_cc") ||
+        die "cannot determine the macOS LLVM stage-0 C compiler target"
+    whp_cxx_triple=$(llvm_compiler_target_triple "$whp_stage0_cxx") ||
+        die "cannot determine the macOS LLVM stage-0 C++ compiler target"
+
+    for whp_triple in "$whp_cc_triple" "$whp_cxx_triple"
+    do
+        case "$whp_triple" in
+            *-apple-darwin*|*-apple-macos*) ;;
+            *) die "LLVM stage-0 compiler targets $whp_triple rather than macOS; keep Windows PE targets out of host bootstrap" ;;
+        esac
+    done
+
+    # Identical Mach-O targets can be built under Rosetta; do not force the
+    # hardware architecture. Do reject mismatched C and C++ object ABIs.
+    whp_cc_arch=${whp_cc_triple%%-*}
+    whp_cxx_arch=${whp_cxx_triple%%-*}
+    case "$whp_cc_arch" in aarch64) whp_cc_arch=arm64 ;; aarch64e) whp_cc_arch=arm64e ;; esac
+    case "$whp_cxx_arch" in aarch64) whp_cxx_arch=arm64 ;; aarch64e) whp_cxx_arch=arm64e ;; esac
+    [ "$whp_cc_arch" = "$whp_cxx_arch" ] ||
+        die "LLVM stage-0 C ($whp_cc_triple) and C++ ($whp_cxx_triple) use different macOS architectures"
+}
+
 find_llvm_bootstrap_compiler()
 {
     whp_bootstrap_explicit=$1
@@ -1109,6 +1170,8 @@ llvm_bootstrap_config_signature()
     llvm_stage0_cc_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CC:-}" clang)
     llvm_stage0_cxx_sig=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
     llvm_lld_backends_sig=$(select_llvm_lld_backends)
+    llvm_stage0_cc_target=$(llvm_compiler_target_triple "$llvm_stage0_cc_sig" || true)
+    llvm_stage0_cxx_target=$(llvm_compiler_target_triple "$llvm_stage0_cxx_sig" || true)
     llvm_host_lld_sig=none
     case "$WATER_LLVM_LINKER:$(uname -s 2>/dev/null || true)" in
         lld:*|auto:Linux|auto:FreeBSD|auto:NetBSD|auto:OpenBSD|auto:DragonFly|auto:SunOS|auto:Haiku)
@@ -1119,6 +1182,13 @@ llvm_bootstrap_config_signature()
 
     printf '%s\n' \
         "LLVM_BOOTSTRAP_RECIPE=$LLVM_BOOTSTRAP_RECIPE" \
+        "LLVM_BUILD_OS=$(uname -s 2>/dev/null || true)" \
+        "LLVM_BUILD_ARCH=$(uname -m 2>/dev/null || true)" \
+        "LLVM_MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-}" \
+        "LLVM_HOST_C_FLAGS=$(llvm_bootstrap_cflags)" \
+        "LLVM_HOST_CXX_FLAGS=$(llvm_bootstrap_cxxflags)" \
+        "LLVM_STAGE0_CC_TARGET=$llvm_stage0_cc_target" \
+        "LLVM_STAGE0_CXX_TARGET=$llvm_stage0_cxx_target" \
         "WATER_LLVM_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
         "WATER_LLVM_ASSERTIONS=$WATER_LLVM_ASSERTIONS" \
         "WATER_LLVM_LEAN=$WATER_LLVM_LEAN" \
@@ -1163,6 +1233,7 @@ record_llvm_bootstrap_config()
 llvm_bootstrap_needs_update()
 {
     [ -x "$LLVM_BOOTSTRAP_DIR/bin/clang" ] || return 0
+    llvm_clangxx_works "$LLVM_BOOTSTRAP_DIR/bin/clang++" || return 0
     [ -x "$LLVM_BOOTSTRAP_DIR/bin/llvm-dlltool" ] || return 0
     [ -x "$LLVM_BOOTSTRAP_DIR/bin/llvm-rc" ] || return 0
     [ -f "$LLVM_BOOTSTRAP_STATE_FILE" ] || return 0
@@ -1227,6 +1298,7 @@ bootstrap_llvm()
     llvm_cache=$(select_llvm_cache)
     llvm_stage0_cc=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CC:-}" clang)
     llvm_stage0_cxx=$(find_llvm_bootstrap_compiler "${WHP_LLVM_BOOTSTRAP_CXX:-}" clang++)
+    llvm_validate_darwin_host_compilers "$llvm_stage0_cc" "$llvm_stage0_cxx"
     llvm_lld_backends=$(select_llvm_lld_backends)
     llvm_sdkroot=$(darwin_sdkroot)
     llvm_use_linker=
@@ -1268,6 +1340,8 @@ bootstrap_llvm()
         -S "$LLVM_SOURCE_DIR/llvm" \
         -B "$LLVM_BOOTSTRAP_DIR" \
         "-DCMAKE_BUILD_TYPE=$WATER_LLVM_BUILD_TYPE" \
+        "-DCMAKE_C_FLAGS=$(llvm_bootstrap_cflags)" \
+        "-DCMAKE_CXX_FLAGS=$(llvm_bootstrap_cxxflags)" \
         "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$llvm_disable_pch" \
         "-DCMAKE_C_COMPILER_LAUNCHER=$llvm_cache" \
         "-DCMAKE_CXX_COMPILER_LAUNCHER=$llvm_cache" \
@@ -1412,6 +1486,8 @@ bootstrap_llvm()
             --target clang clang-cpp lld llvm-ar llvm-dlltool llvm-rc llvm-nm llvm-ranlib llvm-strip
     fi
     unset llvm_generator
+    llvm_clangxx_works "$LLVM_BOOTSTRAP_DIR/bin/clang++" ||
+        die "LLVM bootstrap clang++ failed its native C++ smoke test; check build/host target and compiler crash logs"
     PATH=$llvm_bootstrap_saved_path
     export PATH
     record_llvm_bootstrap_state
@@ -1529,6 +1605,22 @@ setup_toolchain()
             awk '{ printf "%s:%s", $1, $2 }')
     fi
     export WHP_LLVM_TOOLCHAIN_STATE
+
+    # On macOS, reject a selected cross-target clang++ (or a crashing cc1)
+    # before it can compile host utilities or masquerade as a valid cache hit.
+    if [ -n "$LLVM_BIN" ] && [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+        whp_selected_cxx="$LLVM_BIN/clang++"
+        if [ -x "$whp_selected_cxx" ]; then
+            whp_selected_triple=$(llvm_compiler_target_triple "$whp_selected_cxx" || true)
+            case "$whp_selected_triple" in
+                *-apple-darwin*|*-apple-macos*) ;;
+                *) die "selected LLVM clang++ has non-macOS default target: ${whp_selected_triple:-unknown}" ;;
+            esac
+            llvm_clangxx_works "$whp_selected_cxx" ||
+                die "selected LLVM clang++ fails a native C++ syntax probe; verify host/bootstrap flags and macOS crash log"
+        fi
+        unset whp_selected_cxx whp_selected_triple
+    fi
 
     whp_auto_cc=0
     whp_auto_cxx=0
