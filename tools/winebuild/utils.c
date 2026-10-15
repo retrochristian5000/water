@@ -628,6 +628,10 @@ int remove_stdcall_decoration( char *name )
 {
     char *p, *end = strrchr( name, '@' );
     if (!end || !end[1] || end == name) return -1;
+    /* x86 __vectorcall uses name@@bytes, not the stdcall name@bytes
+     * convention. Preserve the full symbol for exports, import libraries
+     * and internal-link names; only undecorate a single-@ stdcall suffix. */
+    if (end[-1] == '@') return -1;
     if (target.cpu != CPU_i386) return -1;
     /* make sure all the rest is digits */
     for (p = end + 1; *p; p++) if (!isdigit(*p)) return -1;
