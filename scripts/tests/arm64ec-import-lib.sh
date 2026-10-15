@@ -45,22 +45,22 @@ path = Path(sys.argv[1])
 native = sys.argv[2] == "native"
 extra = sys.argv[3] == "extra"
 data = path.read_bytes()
-if not data.startswith(b"!<arch>\\n"):
+if not data.startswith(b"!<arch>\n"):
     raise SystemExit(f"{path}: not a COFF archive")
 offset, names, imports = 8, [], []
 while offset + 60 <= len(data):
     header = data[offset:offset + 60]
-    if header[58:60] != b"`\\n":
+    if header[58:60] != b"`\n":
         raise SystemExit(f"{path}: invalid archive header")
     size = int(header[48:58])
     body = data[offset + 60:offset + 60 + size]
     if len(body) != size:
         raise SystemExit(f"{path}: truncated member")
     names.append(header[:16].decode("ascii").strip())
-    if len(body) >= 20 and body[:4] == b"\\x00\\x00\\xff\\xff":
+    if len(body) >= 20 and body[:4] == b"\x00\x00\xff\xff":
         machine = struct.unpack_from("<H", body, 6)[0]
         import_type = struct.unpack_from("<H", body, 18)[0] & 3
-        fields = body[20:].split(b"\\0")
+        fields = body[20:].split(b"\0")
         if len(fields) < 2 or fields[1] != b"whpabi.dll" or not fields[0]:
             raise SystemExit(f"{path}: malformed short import record")
         imports.append((machine, import_type, fields[0]))
