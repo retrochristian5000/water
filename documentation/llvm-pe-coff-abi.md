@@ -234,6 +234,8 @@ See also [legacy LLVM unwind migration and ARM64EC Microsoft ABI isolation](llvm
 
 See also [ARM64EC Windows SDK architecture macros and CONTEXT layout](windows-arm64ec-header-abi.md): Water now defines `_AMD64_` plus `_ARM64EC_` for the hybrid header personality; COFF object machine `0xA641` remains distinct from final PE machine types.
 
+See also [Microsoft `#pragma conform(forScope)` scoping audit](llvm-msvc-conform-pragma.md): legacy loop-variable visibility is C++ source-language behavior, not an ARM64EC calling-convention or object-layout switch.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |
