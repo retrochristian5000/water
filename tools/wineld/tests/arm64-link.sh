@@ -40,8 +40,16 @@ expect_reject()
 }
 
 perl "$wineld" --target=aarch64-windows --linker="$linker" -- \
-    /dll /noentry "/out:$tmp/arm64.dll" "$tmp/arm64.obj" > "$tmp/result.log"
+    /dll /noentry "/out:$tmp/arm64.dll" "/map:$tmp/arm64.map" /mapinfo:exports \
+    "$tmp/arm64.obj" > "$tmp/result.log"
 grep -F 'verified ARM64 PE32+ output' "$tmp/result.log" >/dev/null
+test -s "$tmp/arm64.map" || { echo 'lld-link failed to emit /MAP output' >&2; exit 1; }
+grep -F 'wineld_probe' "$tmp/arm64.map" >/dev/null || {
+    echo 'link map omitted exported probe symbol' >&2; exit 1;
+}
+grep -F 'entry point at' "$tmp/arm64.map" >/dev/null || {
+    echo 'link map omitted entry point record' >&2; exit 1;
+}
 perl "$wineld" --target=aarch64-windows --dry-run -- \
     /dll /noentry "/out:$tmp/test.dll" "$tmp/good.lib" > "$tmp/result.log"
 grep -F 'verified 1 ARM64 COFF input' "$tmp/result.log" >/dev/null
