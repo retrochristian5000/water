@@ -3015,12 +3015,37 @@ static const char *cmd_prefix( const char *cmd )
 
 
 /*******************************************************************
+ *         make_has_cxx_objects
+ *
+ * Only compiled C++ sources require the libc++ provider at the PE link.
+ * Headers marked FLAG_C_CXX are not sufficient evidence of a C++ object.
+ */
+static bool make_has_cxx_objects( const struct makefile *make, unsigned int arch )
+{
+    struct incl_file *source;
+
+    LIST_FOR_EACH_ENTRY( source, &make->sources, struct incl_file, entry )
+    {
+        if (!source->file || !(source->file->flags & FLAG_C_CXX)) continue;
+        if (!strendswith( source->name, ".cpp" ) &&
+            !strendswith( source->name, ".cc" ) &&
+            !strendswith( source->name, ".cxx" )) continue;
+        if (source->arch && source->arch != arch && source->arch != native_archs[arch] &&
+            source->arch != hybrid_archs[arch]) continue;
+        return true;
+    }
+    return false;
+}
+
+
+/*******************************************************************
  *         output_winegcc_command
  */
 static void output_winegcc_command( struct makefile *make, unsigned int arch )
 {
     output( "\t%s%s -o $@", cmd_prefix( "CCLD" ), winegcc );
     output_filename( "--wine-objdir ." );
+    if (make_has_cxx_objects( make, arch )) output_filename( "--cxx-link" );
     if (tools_dir)
     {
         output_filename( "--winebuild" );

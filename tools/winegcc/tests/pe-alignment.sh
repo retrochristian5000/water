@@ -351,4 +351,38 @@ expect_dll_error 'ARM64X requires an ARM64 or ARM64EC PE target' \
 expect_dll_error 'ARM64X requires an ARM64 or ARM64EC PE target' \
     --target=x86_64-pc-linux-gnu -marm64x
 
-echo 'winegcc PE alignment, export, ThinLTO, /MAP, /DLL, /SUBSYSTEM, and ARM64X arguments: pass'
+# In-tree link mode suppresses normal C/OS defaults but must retain the
+# selected libc++ provider for C++ objects.  No provider in a plain C link.
+check_cxx_provider()
+{
+    target=$1
+    shift
+    CXX_PE_LIBS='-lwhp-cxx-abi-probe' WINEGCC_PE_LINK_ARGS="$tmp/link-args" \
+        "$winegcc" "--target=$target" --cc-cmd "$tmp/cc" \
+        --winebuild "$tmp/winebuild" --wine-objdir . -nostdlib \
+        -shared -o "$tmp/cxx.dll" "$tmp/in.obj" "$@"
+}
+check_cxx_provider arm64ec-pc-windows --cxx-link
+grep -Fx -- '-lwhp-cxx-abi-probe' "$tmp/link-args" >/dev/null || {
+    echo 'ARM64EC C++ in-tree link omitted the selected libc++ provider' >&2
+    cat "$tmp/link-args" >&2
+    exit 1
+}
+if grep -Fx -- '--cxx-link' "$tmp/link-args" >/dev/null; then
+    echo 'internal C++ link marker leaked to Clang' >&2
+    exit 1
+fi
+check_cxx_provider x86_64-pc-windows --cxx-link
+grep -Fx -- '-lwhp-cxx-abi-probe' "$tmp/link-args" >/dev/null || exit 1
+check_cxx_provider arm64ec-pc-windows
+if grep -Fx -- '-lwhp-cxx-abi-probe' "$tmp/link-args" >/dev/null; then
+    echo 'ARM64EC C-only link incorrectly imported libc++' >&2
+    exit 1
+fi
+check_cxx_provider arm64ec-pc-windows --cxx-link -nodefaultlibs
+if grep -Fx -- '-lwhp-cxx-abi-probe' "$tmp/link-args" >/dev/null; then
+    echo '-nodefaultlibs failed to suppress implicit libc++' >&2
+    exit 1
+fi
+
+echo 'winegcc PE alignment, export, ThinLTO, /MAP, /DLL, /SUBSYSTEM, ARM64X, and C++ ABI link arguments: pass'

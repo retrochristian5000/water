@@ -1781,6 +1781,13 @@ static void build(struct strarray input_files, const char *output)
         add_library(lib_dirs, &files, "ntdll");
     }
 
+    /* In-tree Makefile links supply the C/OS libraries explicitly, so the
+     * default-library block above is skipped.  C++ modules still need their
+     * selected PE libc++ provider.  Do not add it to C-only or -nodefaultlibs
+     * links; those must retain their existing dependency policy. */
+    if (wine_objdir && !nodefaultlibs && processor == proc_cxx && is_pe && use_msvcrt)
+        add_cxx_provider_libs( &lib_dirs, &files );
+
     /* set default entry point, if needed */
     if (!entry_point)
     {
@@ -2484,6 +2491,13 @@ int main(int argc, char **argv)
                     {
                         no_default_config = true;
                         raw_compiler_arg = raw_linker_arg = 1;
+                    }
+                    else if (!strcmp( args.str[i], "--cxx-link" ))
+                    {
+                        /* Used by generated in-tree PE link rules; object
+                         * extensions alone cannot tell C from C++ at link. */
+                        processor = proc_cxx;
+                        raw_compiler_arg = raw_linker_arg = 0;
                     }
                     else if (is_option( args, i, "--cc-cmd", &option_arg ))
                     {
