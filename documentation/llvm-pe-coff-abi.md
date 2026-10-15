@@ -1,3 +1,72 @@
+## ARM64EC import-library ABI audit (15 October 2026)
+
+**Outcome: repair the library producer; retain separate runtime/thunk work.**
+A standard COFF `.lib` is an archive of object/import members, not one
+machine-coded PE image. Microsoft's ARM64EC documentation identifies
+`0xA641` for ARM64EC **object/import members**, while linked hybrid
+DLL/EXE images use an x64-compatible or native ARM64 PE machine value
+as appropriate. A hybrid `.lib` may legitimately contain distinct
+ARM64EC and ARM64 records; do not classify it by an arbitrary
+first member or flatten it into pure ARM64.
+
+Before this audit, `tools/winebuild/import.c` routed ARM64EC through
+the generic `dlltool` import-library generator by default and
+failed if that tool was absent. `--without-dlltool` instead entered
+the internal Win32 thunk emitter, which asserts for CPU_ARM64EC.
+Also, `parse_def_file` filled only the target exports, unlike the
+`.spec` parser, leaving the native export view empty for
+`-marm64x` with `.def` input. Appending members through a generic
+archiver did not explicitly rebuild the specialized EC symbol index.
+
+**New route:** ARM64EC `winebuild --implib` always uses `lld-link
+/lib /machine:arm64ec /def:<generated.def> /out:<library>`.
+With `-marm64x`, it adds
+`/defarm64native:<generated-native.def>`, keeping distinct ARM64
+exports. Extra object members are appended by `lld-link /lib`
+itself, with the existing archive as input and output, so its COFF
+index gets rebuilt rather than treated like an ordinary `ar` index.
+The `--without-dlltool` option no longer falls through to the
+ARM64EC `assert(0)` internal thunk path. The existing non-ARM64EC,
+PowerPC, and Win16 paths are unchanged. `.delay.a` is explicitly
+rejected for ARM64EC: MSVC `/lib` output is *not* a substitute for
+GNU `dlltool -y` delayed-load glue.
+
+**Standalone evidence on LLVM/LLD 17:** `lld-link /lib` emitted
+an EC-specific `/<ECSYMBOLS>/` archive index. EC short-import members
+used machine `0xA641`; the code import used a `#` name and retained
+its unadorned exported DLL name, while data imports kept the ordinary
+name. With `/defarm64native`, the same archive also contained ARM64
+`0xAA64` short-import members. A second `/lib` pass accepted an
+additional ARM64EC object and retained the EC index and both machine
+views. Data-import consumers assembled for both ARM64EC and native
+ARM64 linked successfully against the hybrid library without an
+ARM64EC runtime. This validates archive structure and **data-import**
+lookup, not Windows runtime loading or function-call thunks.
+
+**Residual evidence:** a different ARM64EC function consumer can
+still require `__os_arm64x_dispatch_ret` from a hybrid call runtime.
+A no-runtime function-import probe with the local LLD 17 binary also
+failed to resolve `__imp_aux_...` in one configuration, although
+the EC index contained the corresponding entry. The present
+archive patch does not claim to repair that consumer-side issue;
+repeat it with the pinned LLVM fork and a correct ARM64EC CRT to
+distinguish a linker defect from missing helper libraries.
+
+**Regression:** `sh scripts/tests/arm64ec-import-lib.sh` checks
+archive machine records, EC index, native view, extra member, and
+cross-ABI data-import lookup with stand-alone Clang/LLD tools.
+`sh scripts/tests/arm64ec-import-lib.sh /path/to/winebuild`
+additionally exercises the real Water producer and
+`--without-dlltool -marm64x` path. The direct Clang/LLD test
+operations were performed successfully in this round, but a
+newly built Water `winebuild` was not available to execute the
+integration cases. Treat that part as **unverified**.
+
+References:
+- https://learn.microsoft.com/en-us/windows/arm/arm64ec
+- https://learn.microsoft.com/en-us/windows/arm/arm64x-build
+- https://www.llvm.org/doxygen/COFFImportFile_8cpp_source.html
+
 ## ARM64EC dllimport local-import reachability (15 October 2026)
 
 **Confirmed failure, targeted fix, and pinned LLVM submodule.**
