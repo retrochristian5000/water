@@ -16,6 +16,8 @@ WATER_PE_LTO|LLVM toolchain|PE link-time optimization|choice|none|none,thin,full
 WATER_LIBCXX|LLVM toolchain|PE libc++ provider|choice|llvm|llvm,legacy|
 WATER_LIBCXX_I386|LLVM toolchain|i386 PE libc++ (experimental)|choice|legacy|legacy,llvm|
 WATER_LIBCXX_LEGACY_POLICY|LLVM toolchain|Old libc++ fallback guard|choice|allow|allow,error|
+WATER_AUTOCONF_PROVIDER|Build toolchains|Autoconf generator|choice|pinned|pinned,host|
+WATER_AUTOMAKE_PROVIDER|Build toolchains|Automake macros for Bash|choice|pinned|pinned,host|
 BOOTSTRAP_NINJA|Build behavior|Pinned WHP Ninja executor|choice|auto|auto,y,n|
 WATER_BASH_BOOTSTRAP|Build behavior|Pinned WHP Bash executor|choice|auto|auto,y,n|
 WATER_WIN16|Build behavior|Win16 support (i386 only)|choice|auto|auto,y,n|
