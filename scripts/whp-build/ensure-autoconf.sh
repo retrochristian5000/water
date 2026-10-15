@@ -21,22 +21,9 @@ fi
 git -C "$source" cat-file -e "$pin^{commit}" 2>/dev/null ||
     fail 'pinned Autoconf unavailable; initialize toolchains/autoconf (WHP_SUBMODULES=1)'
 
-# macOS system m4 lacks GNU M4 semantics. Prefer gm4 if available.
-if [ -n "${M4:-}" ]; then
-    m4=$M4
-else
-    m4=
-    for candidate in gm4 m4; do
-        if command -v "$candidate" >/dev/null 2>&1 &&
-           "$candidate" --gnu --version 2>/dev/null | grep 'GNU M4' >/dev/null; then
-            m4=$(command -v "$candidate")
-            break
-        fi
-    done
-fi
-[ -n "$m4" ] || fail 'GNU M4 is required (install gm4 or set M4)'
-"$m4" --gnu --version 2>/dev/null | grep 'GNU M4' >/dev/null ||
-    fail "M4=$m4 is not GNU M4 with --gnu support"
+# One GNU M4 selector for both explicit overrides and macOS gm4 installs.
+m4=$(/bin/sh "$root/scripts/whp-build/m4.sh" --print-path) ||
+    fail 'could not select a compatible GNU M4'
 
 perl=${PERL:-perl}
 aclocal=${ACLOCAL:-aclocal}

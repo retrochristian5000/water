@@ -130,6 +130,8 @@ Environment:
   WHP_AUTOMAKE_SOURCE_DIR Override menu-selected Automake macro source directory
   WATER_AUTOCONF_PROVIDER pinned (default) or host generator
   WATER_AUTOMAKE_PROVIDER pinned (default) or host Bash macro source
+  M4                    GNU M4 executable for pinned Autoconf bootstrap
+                        Auto-detected by scripts/whp-build/m4.sh (gm4, then m4)
   AUTOCONF              Explicit Autoconf executable (overrides pinned WHP fork)
                         Default: bootstrap toolchains/autoconf at its recorded revision
   WHP_BASH_SOURCE_DIR   WHP Bash source tree (default: ./toolchains/bash)
