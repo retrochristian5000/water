@@ -199,6 +199,7 @@ static const char *image_base;
 static const char *section_align;
 static const char *file_align;
 static const char *subsystem;
+static bool msvc_subsystem_selected;
 static const char *entry_point;
 static struct strarray file_args;
 static struct strarray linker_args;
@@ -672,6 +673,74 @@ static bool use_thinlto_gc(void)
             return false;
     }
     return thin_lto;
+}
+
+/* Recognize the MSVC spelling without confusing the GCC -Wl, grammar.
+ * /SUBSYSTEM:WINDOWS,4.0 must set both winebuild and the final linker;
+ * treating the comma as a second linker switch loses the version. */
+static const char *msvc_subsystem_value( const char *arg )
+{
+    static const char option[] = "subsystem:";
+    unsigned int i;
+
+    if (*arg != '-' && *arg != '/') return NULL;
+    arg++;
+    for (i = 0; option[i]; i++)
+        if (!arg[i] || tolower( (unsigned char)arg[i] ) != option[i]) return NULL;
+    return arg + i;
+}
+
+static void set_msvc_subsystem( const char *value )
+{
+    static const char * const names[] =
+    {
+        "windows", "console", "native", "posix", "windowsce",
+        "boot_application", "efi_application", "efi_boot_service_driver",
+        "efi_runtime_driver", "efi_rom"
+    };
+    char *normalized = xstrdup( value ), *p, *version;
+    unsigned int i;
+    bool valid = false;
+
+    for (p = normalized; *p; p++)
+    {
+        if (*p == ',' || *p == ':') break;
+        *p = tolower( (unsigned char)*p );
+    }
+    if (*p)
+    {
+        *p++ = 0;
+        version = p;
+        /* Both comma (LINK) and colon (winebuild) are accepted here. */
+        if (!*version) error( "empty /SUBSYSTEM version\n" );
+        for (p = version; *p; p++)
+            if (!isdigit( (unsigned char)*p ) && *p != '.')
+                error( "invalid /SUBSYSTEM version %s\n", version );
+        {
+            char *end;
+            unsigned long major, minor = 0;
+            errno = 0;
+            major = strtoul( version, &end, 10 );
+            if (errno || end == version || major > 65535)
+                error( "invalid /SUBSYSTEM version %s\n", version );
+            if (*end == '.')
+            {
+                char *second = end + 1;
+                errno = 0;
+                minor = strtoul( second, &end, 10 );
+                if (errno || end == second || minor > 65535)
+                    error( "invalid /SUBSYSTEM version %s\n", version );
+            }
+            if (*end) error( "invalid /SUBSYSTEM version %s\n", version );
+        }
+    }
+    else version = NULL;
+
+    for (i = 0; i < ARRAY_SIZE(names); i++)
+        if (!strcmp( normalized, names[i] )) { valid = true; break; }
+    if (!valid) error( "unsupported MSVC /SUBSYSTEM type %s\n", normalized );
+    subsystem = version ? strmake( "%s:%s", normalized, version ) : normalized;
+    msvc_subsystem_selected = true;
 }
 
 /* A raw MSVC /DLL switch needs the same image personality in winebuild
@@ -2210,6 +2279,13 @@ int main(int argc, char **argv)
                         raw_compiler_arg = raw_linker_arg = 0;
                     }
                     break;
+                case 'X':
+                    if (next_is_arg && msvc_subsystem_value( option_arg ))
+                    {
+                        set_msvc_subsystem( msvc_subsystem_value( option_arg ) );
+                        raw_compiler_arg = raw_linker_arg = 0;
+                    }
+                    break;
                 case 'W':
                     if (strncmp("-Wl,", args.str[i], 4) == 0)
 		    {
@@ -2217,6 +2293,16 @@ int main(int argc, char **argv)
                         struct strarray Wl = strarray_fromstring(args.str[i] + 4, ",");
                         for (j = 0; j < Wl.count; j++)
                         {
+                            const char *msvc_value = msvc_subsystem_value( Wl.str[j] );
+
+                            if (msvc_value)
+                            {
+                                if (j + 1 < Wl.count && isdigit( (unsigned char)Wl.str[j + 1][0] ))
+                                    set_msvc_subsystem( strmake( "%s,%s", msvc_value, Wl.str[++j] ) );
+                                else
+                                    set_msvc_subsystem( msvc_value );
+                                continue;
+                            }
                             if (!strcmp(Wl.str[j], "--image-base") && j < Wl.count - 1)
                             {
                                 image_base = xstrdup( Wl.str[++j] );
@@ -2392,6 +2478,9 @@ int main(int argc, char **argv)
     if (processor == proc_cpp) skip_link = true;
 
     is_pe = is_pe_target( target );
+    if (msvc_subsystem_selected &&
+        (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app))
+        error( "MSVC /SUBSYSTEM requires a non-Win16 Windows PE target\n" );
     if (has_msvc_dll_option())
     {
         /* The final linker cannot be the only component that knows /DLL:
@@ -2449,7 +2538,11 @@ int main(int argc, char **argv)
     }
 
     if (!subsystem) subsystem = is_gui_app ? "windows" : "console";
-    if (!strcmp( subsystem, "windows" ) || !strcmp( subsystem, "console" ))
+    /* Win16 MZ/NE has no PE subsystem version.  Keep the existing 6.0
+     * default for PE output until an explicit legacy Windows profile is
+     * selected; caller-specified /SUBSYSTEM versions must win. */
+    if (!is_win16_app && !msvc_subsystem_selected &&
+        (!strcmp( subsystem, "windows" ) || !strcmp( subsystem, "console" )))
         subsystem = strmake( "%s:6.0", subsystem );
 
     if (!winebuild)
