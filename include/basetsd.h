@@ -40,6 +40,30 @@ extern "C" {
 #define _WIN64
 #endif
 
+/* Match the Windows SDK architecture markers independently of compiler
+ * _M_* macros. ARM64EC deliberately exposes the x64 data-layout contract:
+ * both _AMD64_ and _ARM64EC_ are defined, but never _ARM64_. Do not
+ * infer the native instruction set from __x86_64__, which Clang also
+ * defines for ARM64EC. Keep host-side Wine/Unix headers unaffected. */
+#if (defined(_WIN32) || defined(__MINGW32__) || defined(__WINE_PE_BUILD)) && !defined(WINE_UNIX_LIB)
+# if defined(__arm64ec__) || defined(_M_ARM64EC)
+#  ifndef _ARM64EC_
+#   define _ARM64EC_ 1
+#  endif
+#  ifndef _AMD64_
+#   define _AMD64_ 1
+#  endif
+# elif defined(__x86_64__) || defined(_M_AMD64)
+#  ifndef _AMD64_
+#   define _AMD64_ 1
+#  endif
+# elif defined(__aarch64__) || defined(_M_ARM64)
+#  ifndef _ARM64_
+#   define _ARM64_ 1
+#  endif
+# endif
+#endif
+
 /* Type model independent typedefs */
 /* The __intXX types are native types defined by the MS C compiler.
  * Apps that make use of them before they get defined here, can
