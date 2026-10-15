@@ -201,6 +201,7 @@ static const char *file_align;
 static const char *subsystem;
 static const char *msvc_arm_arch;
 static bool msvc_subsystem_selected;
+static bool msvc_eh_seen, msvc_eh_sync, msvc_eh_async, msvc_eh_nounwind_c;
 static const char *entry_point;
 static struct strarray file_args;
 static struct strarray linker_args;
@@ -674,6 +675,40 @@ static bool use_thinlto_gc(void)
             return false;
     }
     return thin_lto;
+}
+
+/* The /EH options can be combined (e.g. /EHsc-) or supplied as
+ * separate switches. /EHc alone has no effect and /EHa overrides it.
+ * Preserve modifier order without silently assuming that a C-linkage
+ * callback cannot propagate a C++ exception. */
+static void parse_msvc_eh( const char *value )
+{
+    const char *p = value;
+
+    if (!*p) error( "missing MSVC /EH exception-model modifier\n" );
+    while (*p)
+    {
+        const char modifier = *p++;
+        const bool enabled = *p != '-';
+        if (!enabled) p++;
+        switch (modifier)
+        {
+        case 's':
+            msvc_eh_sync = enabled;
+            if (enabled) msvc_eh_async = false;
+            break;
+        case 'a':
+            msvc_eh_async = enabled;
+            if (enabled) msvc_eh_sync = false;
+            break;
+        case 'c':
+            msvc_eh_nounwind_c = enabled;
+            break;
+        default:
+            error( "unsupported MSVC /EH modifier '%c'\n", modifier );
+        }
+    }
+    msvc_eh_seen = true;
 }
 
 /* Convert Microsoft /arch:armv8.x[+feature] into Clang's GCC-style
@@ -1273,6 +1308,21 @@ static void compile( struct strarray files, const char *output_name, int compile
     }
 
     if (verbose > 1) strarray_add( &comp_args, "-v" );
+
+    /* The GCC-style Clang driver does not accept MSVC /EH options or
+     * cc1's -fexternc-nounwind directly. Do not set it globally: this
+     * optimization is only valid when /EHs and /EHc are both active. */
+    if (msvc_eh_sync || msvc_eh_async)
+    {
+        strarray_add( &comp_args, "-fexceptions" );
+        if (processor == proc_cxx) strarray_add( &comp_args, "-fcxx-exceptions" );
+        if (msvc_eh_async) strarray_add( &comp_args, "-fasync-exceptions" );
+        if (msvc_eh_sync && msvc_eh_nounwind_c)
+        {
+            strarray_add( &comp_args, "-Xclang" );
+            strarray_add( &comp_args, "-fexternc-nounwind" );
+        }
+    }
 
     /* the rest of the pass-through parameters */
     strarray_addall(&comp_args, compiler_args);
@@ -2482,6 +2532,10 @@ int main(int argc, char **argv)
 	    /* skip the next token if it's an argument */
 	    if (next_is_arg) i++;
         }
+        else if (!strncmp( args.str[i], "/EH", 3 ))
+        {
+            parse_msvc_eh( args.str[i] + 3 );
+        }
         else if (!strncmp( args.str[i], "/arch:", 6 ))
         {
             if (!args.str[i][6]) error( "empty MSVC /arch selection\n" );
@@ -2509,6 +2563,15 @@ int main(int argc, char **argv)
     if (processor == proc_cpp) skip_link = true;
 
     is_pe = is_pe_target( target );
+    if (msvc_eh_seen && (!is_pe || target.platform != PLATFORM_WINDOWS || is_win16_app))
+        error( "MSVC /EH requires a non-Win16 Windows PE target\n" );
+    if (msvc_eh_sync || msvc_eh_async)
+    {
+        struct strarray cc = build_tool_name( target.cpu,
+                                               processor == proc_cxx ? tool_cxx : tool_cc );
+        if (!command_uses_clang( cc ))
+            error( "MSVC /EH requires Clang in Water's GCC-style compiler wrapper\n" );
+    }
     if (msvc_arm_arch)
     {
         /* The GCC-style winegcc driver does not accept raw /arch.
