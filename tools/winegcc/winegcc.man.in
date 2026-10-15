@@ -77,6 +77,15 @@ When linking a dll, also create its corresponding import library.
 Specifies the path and name of the \fBwinebuild\fR binary that will be
 launched automatically by \fBwinegcc\fR.  If not set, \fBwinegcc\fR
 will look for a file named \fIwinebuild\fR in the path.
+.TP
+.B WATER_PE_MAP
+Opt-in linker map generation for MSVC-style PE/COFF targets using a
+compatible Windows linker. Set to 1 to pass /MAP with a separate
+\fIimage.exe.map\fR (or \fIimage.dll.map\fR) output beside each image,
+or to \"exports\" to also pass /MAPINFO:EXPORTS. Unset or 0 disables
+automatic maps. An explicit -Wl,/MAP:filename or -Xlinker /MAP:filename
+takes precedence. This option does not alter 16-bit Win16 MZ/NE linking
+or the separate GNU-style PE linker path.
 .SH DEFINES
 winegcc defines __WINE__, for code that needs to know when it is
 being compiled under Wine. It also defines WIN32, _WIN32, __WIN32, 
