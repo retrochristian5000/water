@@ -127,6 +127,20 @@ ULONG_PTR get_exception_pc( DISPATCHER_CONTEXT *dispatch )
 }
 
 
+/*******************************************************************
+ *              _local_unwind (MSVCRT.@)
+ *
+ * MSVCRT exports this on all Win64 personalities, including ARM64EC.
+ * The x86_64 implementation is excluded from this source target, so
+ * define the same Windows unwind delegation here. RtlUnwind must remain
+ * responsible for the ARM64EC/x64 hybrid context and function tables;
+ * do not redirect through GNU libunwind or a native-ARM64-only helper.
+ */
+void __cdecl _local_unwind( void *frame, void *target )
+{
+    RtlUnwind( frame, target, NULL, 0 );
+}
+
 /*********************************************************************
  *              handle_fpieee_flt
  */
