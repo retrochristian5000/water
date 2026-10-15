@@ -1,3 +1,70 @@
+## PE /SUBSYSTEM flag audit (October 15, 2026)
+
+The Microsoft `/SUBSYSTEM:NAME[,major[.minor]]` option is a PE
+optional-header policy, **not** a selector for 80286 protected-mode
+instruction support. Microsoft documents console, windows, native,
+POSIX, EFI, and boot-application subsystems with distinct version
+rules. It can also influence default entry-point selection.
+
+**Source-confirmed gap and repair:** `winegcc` previously knew its
+internal `-Wl,--subsystem,windows:4.0` notation but not the full
+Microsoft `-Wl,/SUBSYSTEM:WINDOWS,4.0` spelling. The comma could
+become a second, unrelated linker option, while `winebuild`
+retained the default subsystem. The wrapper now handles both
+`-Wl,/SUBSYSTEM:NAME,VERSION` and
+`-Xlinker /SUBSYSTEM:NAME,VERSION`, validates decimal version
+components (0 through 65535), canonicalizes name/version, and
+supplies matching `--subsystem NAME:VERSION` to `winebuild`
+and `-subsystem:NAME,VERSION` to LLD. Direct MSVC syntax
+is rejected for Win16 `-m16` and GNU/MinGW link paths.
+`winebuild` also rejects malformed or overflowing version
+components rather than silently accepting `atoi` truncations.
+
+Added PE subsystem constants: EFI application (10), EFI boot service
+driver (11), EFI runtime driver (12), EFI ROM (13) and Windows
+boot application (16). These IDs are header metadata, **not**
+proof that Water supplies a functional EFI or boot runtime,
+its startup libraries or an appropriate entry point. Explicit
+entry/CRT compatibility needs independent verification.
+
+Microsoft's older `WINDOWSCE` option remains represented in
+`winebuild` for legacy use. Clang/LLD 17 accepted the contemporary
+EFI and boot names but rejected `/SUBSYSTEM:WINDOWSCE`
+as unknown. Therefore the new *modern MSVC* switch normalizer
+rejects `WINDOWSCE`; do not silently remap it to ordinary Windows.
+
+**Existing default is still unresolved:** ordinary PE
+`windows`/`console` without an explicit version retains
+Water's old `6.0` policy. That version is not a general
+Win95/98 minimum and is also not a substitute for current
+ARM64EC minimum-system testing. For a specific Win9x experiment,
+request the correct `/SUBSYSTEM:WINDOWS,4.0` deliberately,
+then validate all imports and APIs; a header version cannot prove
+binary compatibility. Win16 MZ/NE generation no longer inherits
+this modern PE default. No historical linker options were
+injected into the Win16 pipeline.
+
+**Direct Clang/LLD smoke evidence:** independently generated
+COFF objects linked with `/DLL /NOENTRY /SUBSYSTEM`, and
+Python verified actual PE header subsystem IDs and versions:
+i386 GUI 4.0 (ID 2); ARM64 console 6.02 (ID 3);
+ARM64EC console 10.0 (ID 3, final machine AMD64 0x8664);
+i386 EFI application 1.0 (ID 10); ARM64 boot application 1.0
+(ID 16). All five header probes passed. These no-entry/data-only
+fixtures are **not** functional Windows/EFI programs.
+
+Added mock-link regressions in
+`tools/winegcc/tests/pe-alignment.sh` and PE-header checks in
+`scripts/tests/pe-dll-machine.sh`. The former needs a freshly
+compiled Water `winegcc`; Water's full binary build, `winebuild`
+execution, and native Windows loader testing were not performed
+in this round. Run the standalone tests with
+`sh scripts/tests/pe-dll-machine.sh`.
+
+Sources:
+- https://learn.microsoft.com/en-us/cpp/build/reference/subsystem-specify-subsystem
+- https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+
 ## MSVC /DLL coherence across Winebuild and ARM64EC (October 15, 2026)
 
 Microsoft's `LINK /DLL` sets the output image type, not its
