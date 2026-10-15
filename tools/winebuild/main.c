@@ -697,11 +697,19 @@ int main(int argc, char **argv)
         break;
     case MODE_IMPLIB:
         check_target();
+        if (native_arch != -1 && target.cpu != CPU_ARM64EC)
+            fatal_error( "-marm64x import libraries require an ARM64EC target.\n" );
         if (!spec_file_name) fatal_error( "missing .spec file\n" );
         if (!parse_input_file( spec )) break;
         output_import_lib( spec, files );
         break;
     case MODE_STATICLIB:
+        /* /MACHINE is a COFF architecture selector, not a protected-mode
+         * setting. Do not let -m16 bypass the Win16/i386 boundary just
+         * because static archives do not generate a .spec object. */
+        check_target();
+        if (native_arch != -1 && target.cpu != CPU_ARM64EC)
+            fatal_error( "-marm64x static libraries require an ARM64EC target.\n" );
         output_static_lib( output_file_name, files, 1 );
         break;
     case MODE_BUILTIN:
