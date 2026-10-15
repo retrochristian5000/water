@@ -2578,6 +2578,14 @@ register_llvm_libcxx_install_arch()
 
 prepare_one_llvm_libcxx()
 {
+    # The in-tree LLVM provider is built with the Microsoft C++ ABI and
+    # vcruntime. A Windows GNU/MinGW target still uses the Itanium C++ ABI,
+    # including for an ARM64EC COFF object. Do not publish MSVC providers in
+    # the non-MSVC compiler lane, even through the __libcxx_one entry point.
+    case "${WATER_WITH_MINGW:-auto}" in
+        llvm-mingw|y|1|n|0)
+            die "Microsoft-ABI LLVM libc++ cannot be used with WATER_WITH_MINGW=${WATER_WITH_MINGW}; use the GNU/legacy C++ provider" ;;
+    esac
     whp_libcxx_arch=$1
     whp_libcxx_target=$(libcxx_ms_target "$whp_libcxx_arch") ||
         die "no LLVM libc++ Microsoft-ABI target mapping for $whp_libcxx_arch"
@@ -2972,6 +2980,24 @@ prepare_libcxx_provider()
         printf 'WHP libc++ provider: legacy Water libc++ (_LIBCPP_VERSION 8000)\n' >&2
         return
     fi
+
+    # GNU/MinGW C++ has an Itanium-style ABI even on Windows/ARM64EC. The
+    # Microsoft vcruntime libc++ archives produced below are not usable in
+    # that lane. Unknown compiler-discovery / disabled-PE modes must not
+    # publish those archives either. Preserve GNU legacy providers unless
+    # strict mode demands a separately validated LLVM GNU runtime.
+    case "${WATER_WITH_MINGW:-auto}" in
+        llvm-mingw|y|1|n|0)
+            [ "$WATER_LIBCXX_LEGACY_POLICY" != error ] ||
+                die "strict modern libc++ policy: GNU/MinGW or disabled PE mode cannot use the Microsoft-ABI LLVM libc++ provider"
+            WHP_LIBCXX_STATE="$WHP_LIBCXX_STATE;abi=gnu-or-no-pe;msvc-provider=disabled"
+            WHP_LIBCXX_INSTALL_MODE=legacy
+            WHP_LIBCXX_INSTALL_LEGACY_HEADERS=1
+            export WHP_LIBCXX_STATE WHP_LIBCXX_INSTALL_MODE WHP_LIBCXX_INSTALL_LEGACY_HEADERS
+            printf 'WHP libc++: GNU/MinGW or no PE cross-compiler; Microsoft-ABI provider disabled\n' >&2
+            return
+            ;;
+    esac
 
     whp_libcxx_selected=$(selected_libcxx_archs)
     for whp_libcxx_arch in $whp_libcxx_selected
