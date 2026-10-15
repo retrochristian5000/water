@@ -222,6 +222,8 @@ See also the [`/F` executable stack-reserve audit](llvm-msvc-f-stack-abi.md), in
 
 See also [MSVC `/vlen` and AVX10 target-feature continuity](llvm-msvc-vlen-abi.md): vector-width preferences must not change the enabled instruction-set features.
 
+See also [Microsoft `/Gv` vectorcall / ARM64EC ABI boundary](llvm-msvc-gv-abi.md): preserve x86 `@@` import/export decoration without inventing ARM64EC vectorcall codegen.
+
 ## Architecture boundaries
 
 | Water output or build stage | Architecture | File format | Critical constraints |
