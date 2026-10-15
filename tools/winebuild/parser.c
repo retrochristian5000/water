@@ -1291,5 +1291,8 @@ int parse_def_file( FILE *file, DLLSPEC *spec )
 
     current_line = 0;  /* no longer parsing the input file */
     assign_exports( spec, target.cpu, &spec->exports );
+    /* Match the .spec parser: an ARM64X import lib needs the native ARM64
+     * view of .def exports as well as the ARM64EC symbol set. */
+    if (native_arch != -1) assign_exports( spec, native_arch, &spec->native_exports );
     return !nb_errors;
 }
