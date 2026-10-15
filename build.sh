@@ -848,10 +848,63 @@ compiler_has_assert_h()
         "$compiler" -x "$language" -fsyntax-only - >/dev/null 2>&1
 }
 
+
+# Parse generated CMake/Make cache assignments without relying on sed's
+# locale-dependent regex processing, the output of a pipe, or an implicit
+# "missing key means empty string" assumption. Values may contain '='.
+whp_cmake_cache_value()
+{
+    [ -f "$2" ] || return 1
+    LC_ALL=C awk -v wanted="$1" '
+        index($0, wanted ":") == 1 {
+            entry = substr($0, length(wanted) + 2)
+            pos = index(entry, "=")
+            if (!pos) { malformed = 1; next }
+            value = substr(entry, pos + 1)
+            count++
+        }
+        END {
+            if (malformed || count > 1) {
+                printf "malformed or duplicated CMake cache entry: %s\n", wanted > "/dev/stderr"
+                exit 2
+            }
+            if (count != 1) exit 1
+            print value
+        }
+    ' "$2"
+}
+
+whp_makefile_value()
+{
+    [ -f "$2" ] || return 1
+    LC_ALL=C awk -v wanted="$1" '
+        {
+            entry = $0
+            sub(/^[[:space:]]*/, "", entry)
+            pos = index(entry, "=")
+            if (!pos) next
+            key = substr(entry, 1, pos - 1)
+            sub(/[[:space:]]*$/, "", key)
+            if (key != wanted) next
+            value = substr(entry, pos + 1)
+            sub(/^[[:space:]]*/, "", value)
+            count++
+        }
+        END {
+            if (count > 1) {
+                printf "duplicated Makefile assignment: %s\n", wanted > "/dev/stderr"
+                exit 2
+            }
+            if (count != 1) exit 1
+            print value
+        }
+    ' "$2"
+}
+
 shell_quote()
 {
     printf "'"
-    printf '%s' "$1" | sed "s/'/'\\\\''/g"
+    printf '%s' "$1" | LC_ALL=C sed "s/'/'\\\\''/g"
     printf "'"
 }
 
@@ -1250,7 +1303,7 @@ llvm_bootstrap_has_target()
     whp_target=$1
 
     if [ -f "$LLVM_BOOTSTRAP_DIR/build.ninja" ]; then
-        ninja_cmd=$(sed -n 's/^CMAKE_MAKE_PROGRAM:[^=]*=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" 2>/dev/null | sed -n '1p')
+        ninja_cmd=$(whp_cmake_cache_value CMAKE_MAKE_PROGRAM "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" 2>/dev/null || true)
         if [ -z "$ninja_cmd" ] || [ ! -x "$ninja_cmd" ]; then
             ninja_cmd=$(find_existing_ninja)
         fi
@@ -1429,8 +1482,7 @@ bootstrap_llvm()
             done
             unset whp_required_target
 
-            llvm_cached_linker=$(sed -n 's/^LLVM_USE_LINKER:[^=]*=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" |
-                sed -n '1p')
+            llvm_cached_linker=$(whp_cmake_cache_value LLVM_USE_LINKER "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" || true)
             if [ "$llvm_cached_linker" != "$llvm_use_linker" ]; then
                 printf 'WHP LLVM CMake: linker changed (%s -> %s); regenerating\n' \
                     "${llvm_cached_linker:-system}" "${llvm_use_linker:-system}" >&2
@@ -1465,7 +1517,8 @@ bootstrap_llvm()
 
     jobs=$(detect_jobs)
     printf 'WHP LLVM bootstrap: incremental %s\n' "$LLVM_BOOTSTRAP_DIR" >&2
-    llvm_generator=$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt" | sed -n '1p')
+    llvm_generator=$(whp_cmake_cache_value CMAKE_GENERATOR "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt") ||
+        die "LLVM CMake cache is missing CMAKE_GENERATOR: "$LLVM_BOOTSTRAP_DIR/CMakeCache.txt""
     if [ "$WATER_KEEP_GOING" = y ] || [ "$WATER_KEEP_GOING" = 1 ]; then
         case "$llvm_generator" in
             Ninja*)
@@ -2711,16 +2764,20 @@ prepare_one_llvm_libcxx()
                 die "LLVM libc++ missing requested CMake setting $whp_libcxx_option for $whp_libcxx_target"
         done
         unset whp_libcxx_option
-        whp_libcxx_abi=$(sed -n 's/^LIBCXX_CXX_ABI:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        whp_libcxx_abi=$(whp_cmake_cache_value LIBCXX_CXX_ABI "$whp_libcxx_build/CMakeCache.txt") ||
+            die "LLVM libc++ CMake cache is missing LIBCXX_CXX_ABI for $whp_libcxx_target"
         [ "$whp_libcxx_abi" = vcruntime ] ||
             die "LLVM libc++ selected unexpected C++ ABI provider '${whp_libcxx_abi:-unknown}' for $whp_libcxx_target; expected vcruntime"
-        whp_libcxx_runtimes=$(sed -n 's/^LLVM_ENABLE_RUNTIMES:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        whp_libcxx_runtimes=$(whp_cmake_cache_value LLVM_ENABLE_RUNTIMES "$whp_libcxx_build/CMakeCache.txt") ||
+            die "LLVM libc++ CMake cache is missing LLVM_ENABLE_RUNTIMES for $whp_libcxx_target"
         [ "$whp_libcxx_runtimes" = libcxx ] ||
             die "LLVM runtime set changed unexpectedly to '${whp_libcxx_runtimes:-unknown}' for $whp_libcxx_target; expected libcxx only"
-        whp_libcxx_threads=$(sed -n 's/^LIBCXX_ENABLE_THREADS:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        whp_libcxx_threads=$(whp_cmake_cache_value LIBCXX_ENABLE_THREADS "$whp_libcxx_build/CMakeCache.txt") ||
+            die "LLVM libc++ CMake cache is missing LIBCXX_ENABLE_THREADS for $whp_libcxx_target"
         [ "$whp_libcxx_threads" = ON ] ||
             die "LLVM libc++ disabled threads for $whp_libcxx_target"
-        whp_libcxx_site_defines=$(sed -n 's/^LIBCXX_EXTRA_SITE_DEFINES:STRING=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        whp_libcxx_site_defines=$(whp_cmake_cache_value LIBCXX_EXTRA_SITE_DEFINES "$whp_libcxx_build/CMakeCache.txt") ||
+            die "LLVM libc++ CMake cache is missing LIBCXX_EXTRA_SITE_DEFINES for $whp_libcxx_target"
         case ";$whp_libcxx_site_defines;" in
             *";_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS;"*) ;;
             *) die "LLVM libc++ lost Water's static visibility site define for $whp_libcxx_target" ;;
@@ -2729,10 +2786,12 @@ prepare_one_llvm_libcxx()
             *";_LIBCPP_NO_ABI_TAG;"*) ;;
             *) die "LLVM libc++ lost Water's Microsoft-ABI no-abi-tag site define for $whp_libcxx_target" ;;
         esac
-        whp_libcxx_hermetic=$(sed -n 's/^LIBCXX_HERMETIC_STATIC_LIBRARY:BOOL=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        whp_libcxx_hermetic=$(whp_cmake_cache_value LIBCXX_HERMETIC_STATIC_LIBRARY "$whp_libcxx_build/CMakeCache.txt") ||
+            die "LLVM libc++ CMake cache is missing LIBCXX_HERMETIC_STATIC_LIBRARY for $whp_libcxx_target"
         [ "$whp_libcxx_hermetic" = ON ] ||
             die "LLVM libc++ disabled hermetic static-library mode for $whp_libcxx_target"
-        whp_libcxx_msvc_runtime=$(sed -n 's/^CMAKE_MSVC_RUNTIME_LIBRARY:[^=]*=//p' "$whp_libcxx_build/CMakeCache.txt" | sed -n '1p')
+        whp_libcxx_msvc_runtime=$(whp_cmake_cache_value CMAKE_MSVC_RUNTIME_LIBRARY "$whp_libcxx_build/CMakeCache.txt") ||
+            die "LLVM libc++ CMake cache is missing CMAKE_MSVC_RUNTIME_LIBRARY for $whp_libcxx_target"
         [ -z "$whp_libcxx_msvc_runtime" ] ||
             die "CMake injected MSVC runtime '$whp_libcxx_msvc_runtime' for $whp_libcxx_target"
 
@@ -3104,9 +3163,9 @@ configured_install_layout_changed()
 {
     [ -f "$BUILD_DIR/Makefile" ] || return 1
 
-    configured_prefix=$(sed -n 's/^prefix[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
-    configured_exec_prefix=$(sed -n 's/^exec_prefix[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
-    configured_libdir=$(sed -n 's/^libdir[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
+    configured_prefix=$(whp_makefile_value prefix "$BUILD_DIR/Makefile") || return 0
+    configured_exec_prefix=$(whp_makefile_value exec_prefix "$BUILD_DIR/Makefile") || return 0
+    configured_libdir=$(whp_makefile_value libdir "$BUILD_DIR/Makefile") || return 0
 
     [ "$configured_prefix" = "$WATER_PREFIX" ] || return 0
     [ "$configured_libdir" = "$(water_libdir)" ] || return 0
@@ -3422,8 +3481,10 @@ configure_build()
         cd "$BUILD_DIR"
         WATER_PE_LTO="$WATER_PE_LTO" "$SOURCE_DIR/configure" "$@"
     )
-    configured_host=$(sed -n 's/^HOST_ARCH[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
-    configured_pe=$(sed -n 's/^PE_ARCHS[[:space:]]*=[[:space:]]*//p' "$BUILD_DIR/Makefile" | head -n 1)
+    configured_host=$(whp_makefile_value HOST_ARCH "$BUILD_DIR/Makefile") ||
+        die "generated Makefile is missing HOST_ARCH: $BUILD_DIR/Makefile"
+    configured_pe=$(whp_makefile_value PE_ARCHS "$BUILD_DIR/Makefile") ||
+        die "generated Makefile is missing PE_ARCHS: $BUILD_DIR/Makefile"
     [ -n "$configured_pe" ] || configured_pe=none
     printf 'WHP architectures: host=%s PE=%s\n' "$configured_host" "$configured_pe" >&2
     unset configured_host configured_pe
