@@ -466,6 +466,8 @@ BOOL16 WINAPI IsBadCodePtr16( SEGPTR ptr )
 {
     WORD sel = SELECTOROF( ptr );
 
+    if (!ldt_is_valid( sel )) return TRUE;
+
     /* check for code segment, ignoring conforming, read-only and accessed bits */
     if ((ldt_get_bits( sel ).type & 0x18) != 0x18) return TRUE;
     if (OFFSETOF(ptr) > ldt_get_limit( sel )) return TRUE;
@@ -479,13 +481,27 @@ BOOL16 WINAPI IsBadCodePtr16( SEGPTR ptr )
 BOOL16 WINAPI IsBadStringPtr16( SEGPTR ptr, UINT16 size )
 {
     WORD sel = SELECTOROF( ptr );
+    unsigned int offset, limit, available;
+    const char *str;
+
+    if (!ldt_is_valid( sel )) return TRUE;
 
     /* check for data or readable code segment */
     if (!(ldt_get_bits( sel ).type & 0x10)) return TRUE;  /* system descriptor */
     if ((ldt_get_bits( sel ).type & 0x0a) == 0x08) return TRUE;  /* non-readable code segment */
-    if (strlen(MapSL(ptr)) < size) size = strlen(MapSL(ptr)) + 1;
-    if (size && (OFFSETOF(ptr) + size - 1 > ldt_get_limit( sel ))) return TRUE;
-    return FALSE;
+    if (!size) return FALSE;
+
+    offset = OFFSETOF( ptr );
+    limit = ldt_get_limit( sel );
+    if (offset > limit) return TRUE;
+    if (size - 1 <= limit - offset) return FALSE;
+
+    /* The requested range crosses the segment limit.  A terminating NUL
+     * inside the segment makes the shorter string valid; do not use strlen
+     * here, since it could read past the end of a 286-sized segment. */
+    available = limit - offset + 1;
+    if (!(str = MapSL( ptr ))) return TRUE;
+    return !memchr( str, 0, available );
 }
 
 
@@ -496,10 +512,13 @@ BOOL16 WINAPI IsBadHugeReadPtr16( SEGPTR ptr, DWORD size )
 {
     WORD sel = SELECTOROF( ptr );
 
+    if (!ldt_is_valid( sel )) return TRUE;
+
     /* check for data or readable code segment */
     if (!(ldt_get_bits( sel ).type & 0x10)) return TRUE;  /* system descriptor */
     if ((ldt_get_bits( sel ).type & 0x0a) == 0x08) return TRUE;  /* non-readable code segment */
-    if (size && (OFFSETOF(ptr) + size - 1 > ldt_get_limit( sel ))) return TRUE;
+    if (size && (OFFSETOF(ptr) > ldt_get_limit( sel ) ||
+                 size - 1 > ldt_get_limit( sel ) - OFFSETOF(ptr))) return TRUE;
     return FALSE;
 }
 
@@ -511,9 +530,12 @@ BOOL16 WINAPI IsBadHugeWritePtr16( SEGPTR ptr, DWORD size )
 {
     WORD sel = SELECTOROF( ptr );
 
+    if (!ldt_is_valid( sel )) return TRUE;
+
     /* check for writable data segment, ignoring expand-down and accessed flags */
     if ((ldt_get_bits( sel ).type & 0x1a) != 0x12) return TRUE;
-    if (size && (OFFSETOF(ptr) + size - 1 > ldt_get_limit( sel ))) return TRUE;
+    if (size && (OFFSETOF(ptr) > ldt_get_limit( sel ) ||
+                 size - 1 > ldt_get_limit( sel ) - OFFSETOF(ptr))) return TRUE;
     return FALSE;
 }
 
