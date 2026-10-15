@@ -1,5 +1,8 @@
 # Windows ARM64 headers: ABI alignment audit
 
+For the separate x64-compatible hybrid personality, see
+[ARM64EC Windows SDK architecture markers and context ABI](windows-arm64ec-header-abi.md).
+
 ## Scope and provenance (14 October 2026)
 
 The target here is **ordinary AArch64 Windows with the MSVC PE/COFF
