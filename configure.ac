@@ -1554,7 +1554,7 @@ case " $PE_ARCHS " in
   *" arm64ec "*)
     if test -n "$arm64ec_CXXABI_PE_LIBS" -o -n "$arm64ec_UNWIND_PE_LIBS"
     then
-      AC_MSG_ERROR([ARM64EC uses the Microsoft C++ exception ABI; do not link CXXABI_PE_LIBS or UNWIND_PE_LIBS into its objects. Use ARM64EC_CXX_PE_LIBS with a Microsoft-compatible runtime provider instead.])
+      AC_MSG_ERROR([ARM64EC uses the Microsoft C++ exception ABI; do not link CXXABI_PE_LIBS or UNWIND_PE_LIBS into its objects. Use arm64ec_CXX_PE_LIBS with a Microsoft-compatible runtime provider instead.])
     fi
     arm64ec_CXXABI_PE_LIBS=
     arm64ec_CXXABI_PE_CFLAGS=
