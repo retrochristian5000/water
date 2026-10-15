@@ -41,7 +41,7 @@ OPTIONAL_COMPONENTS = (
     ('HWLOC', 'hwloc'),
     ('INOTIFY', 'inotify'),
     ('KRB5', 'Kerberos 5'),
-    ('MINGW', 'MinGW / PE cross compiler'),
+    ('MINGW', 'PE compiler policy'),
     ('NETAPI', 'Samba NetAPI'),
     ('OPENCL', 'OpenCL'),
     ('OPENGL', 'OpenGL'),
@@ -73,7 +73,7 @@ OPTIONAL_COMPONENTS = (
 
 
 OPTIONS = (
-    Option('WATER_ARCHS_MODE', 'Architectures', 'PE architecture selection', 'choice',
+    Option('WATER_ARCHS_MODE', 'Architectures', 'PE architecture selection (auto = all buildable)', 'choice',
            'auto', ('auto', 'custom', 'none')),
     Option('WATER_ARCH_I386', 'Architectures', 'i386', 'bool', 'y'),
     Option('WATER_ARCH_X86_64', 'Architectures', 'x86_64', 'bool', 'y'),
@@ -109,7 +109,7 @@ OPTIONS = (
            'auto', ('auto', 'y', 'n')),
     Option('WATER_BASH_BOOTSTRAP', 'Build behavior', 'Pinned WHP Bash executor', 'choice',
            'auto', ('auto', 'y', 'n')),
-    Option('WATER_WIN16', 'Build behavior', 'Win16 support', 'choice',
+    Option('WATER_WIN16', 'Build behavior', 'Win16 support (i386 only)', 'choice',
            'auto', ('auto', 'y', 'n')),
     Option('WATER_WIN64', 'Build behavior', 'Win64-only build', 'choice',
            'auto', ('auto', 'y', 'n')),
@@ -138,7 +138,8 @@ OPTIONS = (
 
     *tuple(
         Option(f'WATER_WITH_{key}', 'Optional components', label, 'choice',
-               'auto', ('auto', 'y', 'n'))
+               'auto', ('auto', 'clang', 'llvm-mingw', 'y', 'n') if key == 'MINGW'
+               else ('auto', 'y', 'n'))
         for key, label in OPTIONAL_COMPONENTS
     ),
 
