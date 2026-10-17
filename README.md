@@ -29,6 +29,19 @@ so Water also pins the Automake fork that provides those macros. Water validates
 that provenance during the Bash bootstrap; it does not require a separate
 system-installed `automake` executable for the normal build.
 
+Water records the source checksums, pinned Autoconf gitlink and generated
+`configure` checksum under `build/.whp-autoconf-inputs` after successful
+generation. Subsequent builds with unchanged inputs reuse that verified
+`configure` without starting the pinned Autoconf bootstrap. Changed inputs
+or a changed gitlink invalidate the cache and require regeneration. A fresh
+Git checkout still needs an Autoconf generator: the pinned fork's first
+bootstrap needs GNU M4, Perl and host Automake tools. On systems where the
+installed Autoconf can process Water's sources, use
+`WATER_AUTOCONF_PROVIDER=host ./build.sh` to avoid that bootstrap.
+The pinned Bash source already includes a generated `configure`; Water
+preserves it instead of invoking an older host Autoconf to regenerate it.
+Run `sh scripts/tests/configure-cache.sh` to verify the cache safeguards.
+
 The LLVM libc++ PE runtime cache at `build/llvm-libcxx-pe/` is audited
 before reuse. Each archive member must have the expected COFF machine type
 for its target (including AArch64 and ARM64EC), so a stale x64 or mixed
