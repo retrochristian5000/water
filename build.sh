@@ -2170,6 +2170,10 @@ stage_pinned_bash_source()
     if [ -f "$whp_bash_stage_state" ] &&
        [ "$(cat "$whp_bash_stage_state")" = "$whp_bash_expected" ] &&
        [ -f "$BASH_STAGE_DIR/configure" ]; then
+        # Repair timestamps even for source snapshots cached before the
+        # pre-generated configure guard was introduced.
+        touch "$BASH_STAGE_DIR/configure" ||
+            die 'cannot refresh cached Bash configure timestamp'
         BASH_EFFECTIVE_SOURCE_DIR=$BASH_STAGE_DIR
         export BASH_EFFECTIVE_SOURCE_DIR
         printf 'WHP Bash source: cached pinned snapshot %s\n' "$whp_bash_expected" >&2
