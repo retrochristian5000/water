@@ -499,6 +499,15 @@ EOF
 
 prepare_autoconf_toolchain()
 {
+    # A verified generated configure does not need Autoconf (or Automake,
+    # GNU M4, and Perl just to bootstrap Autoconf) on every invocation.
+    # Only trust manifests produced by Water's pinned generator path.
+    if [ -z "$AUTOCONF_EXPLICIT" ] && [ "$WATER_AUTOCONF_PROVIDER" = pinned ] &&
+       /bin/sh "$SOURCE_DIR/scripts/whp-build/configure-cache.sh" check "$SOURCE_DIR" "$BUILD_DIR"; then
+        AUTOCONF_REUSE_CONFIGURE=1
+        printf 'WHP Autoconf: verified generated configure; bootstrap skipped\n' >&2
+        return 0
+    fi
     if [ -n "$AUTOCONF_EXPLICIT" ] || [ "$WATER_AUTOCONF_PROVIDER" = host ]; then
         printf 'WHP Autoconf: explicit executable %s\n' "$AUTOCONF" >&2
         return 0
@@ -510,16 +519,25 @@ prepare_autoconf_toolchain()
 
 generate_configure()
 {
-    command -v "$AUTOCONF" >/dev/null 2>&1 ||
-        die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
-
     validate_configure_rules
     validate_makefile_source_continuations
+
+    if [ "${AUTOCONF_REUSE_CONFIGURE:-0}" = 1 ]; then
+        printf 'WHP configure script: verified cached\n' >&2
+        return 0
+    fi
+
+    command -v "$AUTOCONF" >/dev/null 2>&1 ||
+        die "Autoconf is required to generate ./configure (AUTOCONF=$AUTOCONF)"
 
     if [ -f "$SOURCE_DIR/configure" ] && [ -f "$AUTOCONF_STATE_FILE" ]; then
         current=$(autoconf_state_signature)
         previous=$(cat "$AUTOCONF_STATE_FILE")
         if [ "$current" = "$previous" ]; then
+            if [ -z "$AUTOCONF_EXPLICIT" ] && [ "$WATER_AUTOCONF_PROVIDER" = pinned ]; then
+                /bin/sh "$SOURCE_DIR/scripts/whp-build/configure-cache.sh" record "$SOURCE_DIR" "$BUILD_DIR" ||
+                    die 'cannot record verified generated configure'
+            fi
             printf 'WHP configure script: cached\n' >&2
             return 0
         fi
@@ -551,6 +569,12 @@ generate_configure()
         printf 'WHP configure script: regenerated from configure.ac\n' >&2
     fi
     record_autoconf_state
+    if [ -z "$AUTOCONF_EXPLICIT" ] && [ "$WATER_AUTOCONF_PROVIDER" = pinned ]; then
+        /bin/sh "$SOURCE_DIR/scripts/whp-build/configure-cache.sh" record "$SOURCE_DIR" "$BUILD_DIR" ||
+            die 'cannot record generated configure provenance'
+    else
+        rm -f "$BUILD_DIR/.whp-autoconf-inputs"
+    fi
 }
 
 update_dependency_pins()
@@ -590,17 +614,14 @@ init_submodules()
 
     # Ninja initializes its own source lazily only when its bootstrap path
     # is selected. Keep unconditional submodule work to build-required modules.
-    whp_submodules="libs/fluidsynth libs/zlib/source toolchains/bash"
-    if [ "$AUTOMAKE_SOURCE_DIR" = "$SOURCE_DIR/toolchains/automake" ]; then
-        whp_submodules="$whp_submodules toolchains/automake"
-    fi
+    whp_submodules="libs/fluidsynth libs/zlib/source"
     if [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
 
-    # Bash and its Automake macro provenance are updated with the other pinned
-    # build submodules here. prepare_bash_toolchain() stages the immutable Bash
-    # gitlink snapshot and validates its vendored AM_* macros against Automake.
+    # Bash and Automake are optional host-bootstrap dependencies. The Bash
+    # bootstrap initializes its own pinned source and validates Automake
+    # macro provenance only if that executor is actually needed.
     git -C "$SOURCE_DIR" submodule sync --recursive
     git -C "$SOURCE_DIR" submodule update --init --recursive $whp_submodules
     unset whp_submodules
@@ -2171,6 +2192,15 @@ stage_pinned_bash_source()
         return 1
     fi
     rm -f "$whp_bash_stage_archive"
+    # This pinned snapshot already contains a generated configure. Make it
+    # newer than configure.ac/aclocal.m4 so Make never tries to regenerate it
+    # with a possibly incompatible system Autoconf.
+    if [ ! -f "$whp_bash_stage_tmp/configure" ] ||
+       ! touch "$whp_bash_stage_tmp/configure"; then
+        rm -rf "$whp_bash_stage_tmp"
+        printf 'WHP Bash: missing or unusable generated configure\n' >&2
+        return 1
+    fi
     printf '%s\n' "$whp_bash_expected" > "$whp_bash_stage_tmp/.whp-source"
     rm -rf "$BASH_STAGE_DIR"
     mv "$whp_bash_stage_tmp" "$BASH_STAGE_DIR"
