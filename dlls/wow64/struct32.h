@@ -869,4 +869,15 @@ typedef struct
     ULONGLONG Ticket;
 } ALPC_WORK_ON_BEHALF_ATTR32, *PALPC_WORK_ON_BEHALF_ATTR32;
 
+/* These layouts belong to the 32-bit caller, never to the 64-bit host.
+ * Keep the ABI checks alongside the structures used by the WoW64 thunks. */
+C_ASSERT( sizeof(ULONG) == 4 );
+C_ASSERT( sizeof(OBJECT_ATTRIBUTES32) == 24 );
+C_ASSERT( sizeof(IO_STATUS_BLOCK32) == 8 );
+C_ASSERT( sizeof(MEMORY_BASIC_INFORMATION32) == 28 );
+C_ASSERT( sizeof(PROCESS_BASIC_INFORMATION32) == 24 );
+C_ASSERT( sizeof(MEMORY_RANGE_ENTRY32) == 8 );
+C_ASSERT( sizeof(MEM_ADDRESS_REQUIREMENTS32) == 12 );
+C_ASSERT( sizeof(MEM_EXTENDED_PARAMETER32) == 16 );
+
 #endif /* __WOW64_STRUCT32_H */

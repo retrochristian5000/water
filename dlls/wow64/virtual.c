@@ -88,7 +88,9 @@ static NTSTATUS mem_extended_parameters_32to64( MEM_EXTENDED_PARAMETER **ret_par
 
     if (*count && !params32) return STATUS_INVALID_PARAMETER;
 
-    params = Wow64AllocateTemp( (*count + 1) * sizeof(*params) + sizeof(*req) );
+    /* Promote the 32-bit guest count before adding the extra parameter. */
+    if (!(params = Wow64AllocateTemp( ((SIZE_T)*count + 1) * sizeof(*params) + sizeof(*req) )))
+        return STATUS_NO_MEMORY;
     req = (MEM_ADDRESS_REQUIREMENTS *)(params + *count + 1);
 
     for (i = 0; i < *count; i++)
@@ -513,7 +515,7 @@ NTSTATUS WINAPI wow64_NtMapViewOfSectionEx( UINT *args )
     NTSTATUS status;
     MEM_EXTENDED_PARAMETER *params64;
     BOOL is_current = RtlIsCurrentProcess( process );
-    BOOL set_limit = (!*addr32 && is_current);
+    BOOL set_limit = (addr32 && !*addr32 && is_current);
     void *prev = NtCurrentTeb()->Tib.ArbitraryUserPointer;
 
     if (addr32 && *addr32 > highest_user_address) return STATUS_INVALID_PARAMETER;
