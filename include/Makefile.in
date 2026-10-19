@@ -1115,6 +1115,10 @@ SOURCES = \
 	windows.ui.xaml.interop.idl \
 	windowscontracts.idl \
 	windowsx.h \
+	whp/win95rtm/vmm.h \
+	whp/win95rtm/display/win16_abi.h \
+	whp/win95rtm/display/ddk_minidrv.h \
+	whp/win95rtm/display/minivdd.h \
 	wine/afd.h \
 	wine/asm.h \
 	wine/atsvc.idl \
