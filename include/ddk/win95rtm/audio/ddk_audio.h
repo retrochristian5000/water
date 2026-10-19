@@ -6,7 +6,7 @@
 #ifndef WHP_WIN95_RTM_AUDIO_DDK_AUDIO_H
 #define WHP_WIN95_RTM_AUDIO_DDK_AUDIO_H
 
-#include <whp/win95rtm/display/win16_abi.h>
+#include <ddk/win95rtm/win16_abi.h>
 
 #ifdef WHP_WIN95_AUDIO_USE_HISTORICAL_DDK
 /* Caller must supply an independently verified historical DDK include path

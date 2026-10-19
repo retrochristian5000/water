@@ -5,7 +5,7 @@
 #ifndef WHP_WIN95_RTM_DISPLAY_DDK_MINIDRV_H
 #define WHP_WIN95_RTM_DISPLAY_DDK_MINIDRV_H
 
-#include <whp/win95rtm/display/win16_abi.h>
+#include <ddk/win95rtm/win16_abi.h>
 
 #if !defined(WHP_WIN95_DISPLAY_USE_HISTORICAL_DDK)
 #error "Historical Windows 95 display DDK inclusion requires an explicit opt-in"

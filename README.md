@@ -11,18 +11,21 @@ Wine is free software, released under the GNU LGPL; see the file
 LICENSE for the details.
 
 
-## Windows 95 RTM WHP ABI reference headers
+## Windows 95 RTM DDK compatibility reference headers
 
-The `include/whp/win95rtm/` headers are WHP-authored, version-scoped
+The `include/ddk/win95rtm/` headers are WHP-authored, version-scoped
 **compile-time reference boundaries** shared with the separately pinned
 `WHP-Drivers` project. `vmm.h` describes an i386 VxD DDB candidate;
-`display/win16_abi.h` checks OpenWatcom 16-bit pointer sizes;
+`win16_abi.h` checks OpenWatcom 16-bit pointer sizes for audio/display;
 `display/ddk_minidrv.h` requires an opt-in historical Win95 display DDK;
-and `display/minivdd.h` records selected 9x mini-VDD data for comparison.
+`display/minivdd.h` records selected 9x mini-VDD data for comparison;
+and `audio/ddk_audio.h` opts into historical Win16 sound-driver headers.
 These are not complete or certified Windows 95 RTM DDK headers.
 They do **not** provide DIBENGINE/GDIINFO layouts, VDD dispatch calling
 conventions, a driver runtime, or Windows 95 RTM import libraries. Do not
 substitute NT/WDM headers or Water's Win32 libraries for those components.
+The separate `network/ndis31.h` boundary can opt into a verified NT 3.51
+NDIS DDK. Its API is not replaced by the generic `include/ddk/ndis.h`.
 The driver-only `minivdd.h` legacy-name adapter and device-specific headers
 remain in WHP-Drivers. The consumer must pin Water by gitlink revision.
 

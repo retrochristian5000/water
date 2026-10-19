@@ -1,9 +1,9 @@
-/* WHP Windows 95 RTM Win16 display compile boundary (not a DDK copy).
+/* WHP Windows 95 RTM Win16 compile boundary (audio and display) (not a DDK copy).
  * Intentionally NO DIBENGINE/GDIINFO/PDEVICE layout or DIBENG exports here.
  * The DDK owns those definitions, and Win16 uses segmented pointers.
  */
-#ifndef WHP_WIN95_RTM_DISPLAY_WIN16_ABI_H
-#define WHP_WIN95_RTM_DISPLAY_WIN16_ABI_H
+#ifndef WHP_WIN95_RTM_WIN16_ABI_H
+#define WHP_WIN95_RTM_WIN16_ABI_H
 
 #if !defined(__WATCOMC__) || defined(__386__) || defined(_WIN32)
 #error "Use the OpenWatcom 16-bit wcc compiler with -bt=windows, not wcc386 or Clang"
@@ -24,4 +24,4 @@ typedef char whp_w95_win16_dword_is_32[(sizeof(DWORD) == 4) ? 1 : -1];
 typedef char whp_w95_win16_far_is_32[(sizeof(void __far *) == 4) ? 1 : -1];
 typedef char whp_w95_win16_lpstr_is_far[(sizeof(LPSTR) == 4) ? 1 : -1];
 
-#endif /* WHP_WIN95_RTM_DISPLAY_WIN16_ABI_H */
+#endif /* WHP_WIN95_RTM_WIN16_ABI_H */

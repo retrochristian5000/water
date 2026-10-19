@@ -33,8 +33,8 @@ and NT kernel-streaming structures are NOT Windows 95 RTM audio DDIs.
 
 ## Fail-closed Win16 include strategy
 
-Water include/whp/win95rtm/audio/ddk_audio.h shares already validated
-primitive type and far-pointer checks from display/win16_abi.h, avoiding
+Water include/ddk/win95rtm/audio/ddk_audio.h shares already validated
+primitive type and far-pointer checks from win16_abi.h, avoiding
 a duplicate ABI definition. Without a macro opt-in it imports no audio DDK
 headers. With WHP_WIN95_AUDIO_USE_HISTORICAL_DDK it includes mmsystem.h
 and mmddk.h from an independently verified Win95 DDK include directory.
