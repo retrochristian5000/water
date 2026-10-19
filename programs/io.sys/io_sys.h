@@ -25,6 +25,22 @@ struct iosys_config_sys
     INT switches_ebios_bytes;          /* /E: -1 absent, 0 disable, >0 relocation bytes */
 };
 
+/* BIOS MBR -> active primary partition -> volume boot record coordinates.
+ * No raw device reads, writes or guest control transfer occur here. */
+struct iosys_mbr_boot_partition
+{
+    BYTE slot;                /* primary partition index, 0..3 */
+    BYTE partition_type;
+    DWORD start_lba;         /* absolute 512-byte disk sectors */
+    DWORD sector_count;
+};
+
+BOOL IOSYS_ParseMbrBootPartition(const BYTE mbr[512], ULONGLONG disk_sectors,
+                                 struct iosys_mbr_boot_partition *out);
+BOOL IOSYS_IsWin95RtmPartitionType(BYTE type);
+BOOL IOSYS_ValidateWin95RtmVbr(const BYTE vbr[512],
+                               const struct iosys_mbr_boot_partition *part);
+
 /* Classic FAT12/FAT16 BIOS parameter block used by DOS/IO.SYS. */
 struct iosys_fat_bpb
 {

@@ -133,6 +133,120 @@ static DWORD iosys_get_dword( const BYTE *p )
 }
 
 
+
+/*
+ * Decode the four-entry PC/AT MBR to obtain the single active partition's
+ * volume boot record (VBR) location.  This never executes the MBR and never
+ * reads or writes host sectors; the caller provides sector 0 and the actual
+ * disk size in 512-byte logical sectors.
+ *
+ * MBR coordinates are DISK LBAs.  They must not be confused with the volume
+ * sector zero returned by \\.\\C: or other DOS logical-drive mappings.
+ */
+BOOL IOSYS_ParseMbrBootPartition(const BYTE mbr[512], ULONGLONG disk_sectors,
+                                 struct iosys_mbr_boot_partition *out)
+{
+    struct iosys_mbr_boot_partition parsed;
+    unsigned int i;
+    BOOL found = FALSE;
+
+    if (!mbr || !out || disk_sectors < 2 ||
+        mbr[510] != 0x55 || mbr[511] != 0xaa)
+        return FALSE;
+
+    memset( &parsed, 0, sizeof(parsed) );
+    for (i = 0; i < 4; i++)
+    {
+        const BYTE *entry = mbr + 0x1be + i * 16;
+        BYTE indicator = entry[0];
+        DWORD start, count;
+
+        /* A malformed boot flag invalidates the table even when some other
+         * entry is active: do not pick an arbitrary partition. */
+        if (indicator != 0x00 && indicator != 0x80) return FALSE;
+        if (indicator != 0x80) continue;
+        if (found) return FALSE;
+
+        start = iosys_get_dword( entry + 8 );
+        count = iosys_get_dword( entry + 12 );
+        if (!entry[4] || !start || !count ||
+            (ULONGLONG)start + count > disk_sectors)
+            return FALSE;
+
+        parsed.slot = i;
+        parsed.partition_type = entry[4];
+        parsed.start_lba = start;
+        parsed.sector_count = count;
+        found = TRUE;
+    }
+
+    if (!found) return FALSE;
+    *out = parsed;
+    return TRUE;
+}
+
+/*
+ * Recognize the FAT12 and FAT16 primary partitions available on Windows 95
+ * RTM.  FAT32 types 0x0b/0x0c arrived with OSR2, not the RTM release.
+ * Type 0x0e (FAT16 LBA) also requires BIOS INT 13h extensions, which
+ * Water's current boot-chain model does not implement.
+ */
+BOOL IOSYS_IsWin95RtmPartitionType(BYTE type)
+{
+    return type == 0x01 || type == 0x04 || type == 0x06 || type == 0x0e;
+}
+
+/* Given an independently supplied 512-byte VBR at the selected MBR LBA,
+ * check FAT12/16 geometry before handing off to a future IO.SYS loader.
+ * This is structural validation; it does NOT authenticate or execute boot
+ * code, check the FAT/root directory, or prove IO.SYS exists on the volume.
+ */
+BOOL IOSYS_ValidateWin95RtmVbr(const BYTE vbr[512],
+                               const struct iosys_mbr_boot_partition *part)
+{
+    DWORD total, first_data, root_sectors, clusters;
+    WORD reserved, root_entries, fat_sectors;
+    BYTE sectors_per_cluster, fat_count;
+    ULONGLONG fat_entries;
+    BOOL fat12;
+
+    if (!vbr || !part || !IOSYS_IsWin95RtmPartitionType(part->partition_type) ||
+        vbr[510] != 0x55 || vbr[511] != 0xaa ||
+        !((vbr[0] == 0xeb && vbr[2] == 0x90) || vbr[0] == 0xe9) ||
+        iosys_get_word( vbr + 0x0b ) != 512)
+        return FALSE;
+
+    sectors_per_cluster = vbr[0x0d];
+    reserved = iosys_get_word( vbr + 0x0e );
+    fat_count = vbr[0x10];
+    root_entries = iosys_get_word( vbr + 0x11 );
+    fat_sectors = iosys_get_word( vbr + 0x16 );
+    total = iosys_get_word( vbr + 0x13 );
+    if (!total) total = iosys_get_dword( vbr + 0x20 );
+
+    if (!sectors_per_cluster || sectors_per_cluster > 128 ||
+        (sectors_per_cluster & (sectors_per_cluster - 1)) ||
+        !reserved || !fat_count || fat_count > 2 || !root_entries ||
+        !fat_sectors || !total || total > part->sector_count ||
+        iosys_get_dword( vbr + 0x1c ) != part->start_lba ||
+        vbr[0x15] < 0xf0)
+        return FALSE;
+
+    root_sectors = ((DWORD)root_entries * 32 + 511) / 512;
+    first_data = reserved + (DWORD)fat_count * fat_sectors + root_sectors;
+    if (first_data >= total) return FALSE;
+
+    clusters = (total - first_data) / sectors_per_cluster;
+    if (!clusters || clusters >= 65525) return FALSE;
+    fat12 = clusters < 4085;
+    if (fat12 != (part->partition_type == 0x01)) return FALSE;
+
+    fat_entries = (ULONGLONG)fat_sectors * 512;
+    fat_entries = fat12 ? fat_entries * 2 / 3 : fat_entries / 2;
+    if (fat_entries < (ULONGLONG)clusters + 2) return FALSE;
+    return TRUE;
+}
+
 /*
  * Read a physical volume boot sector only when the host grants access.
  * Never write physical sectors, and never invent a synthetic FAT image

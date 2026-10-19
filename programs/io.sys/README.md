@@ -96,3 +96,46 @@ and describes the *separate* WinBoot registry setting:
 https://techshelps.github.io/MSDN/KB/Source/win95x/q174018.htm
 
 Standalone parser regression: `python3 -m unittest discover -s scripts/tests -p test_iosys_doublebuffer.py`.
+
+## BIOS hard-disk MBR boot preparation (Windows 95 RTM)
+
+The **classic** BIOS hard-disk chain is: BIOS reads disk LBA 0 (MBR)
+-> MBR selects the active primary partition -> partition VBR checks its
+FAT BIOS Parameter Block and loads `IO.SYS` -> Win95 `IO.SYS` processes
+text `MSDOS.SYS` and DOS boot configuration -> `WIN.COM` starts Windows.
+The MBR does not itself find `IO.SYS`, and a floppy boot or an OEM boot
+manager may have a different first-stage path.
+
+Water now contains **read-only, pure** MBR/VBR decoders in `config.c`:
+
+- `IOSYS_ParseMbrBootPartition` requires a 512-byte supplied MBR
+  sector, the known total disk size in 512-byte sectors, a `55 AA`
+  signature, exactly one active partition, valid status flags, a
+  non-empty partition type and an in-range nonzero start/length. It
+  returns disk-absolute VBR LBA and count **only on full success**.
+- `IOSYS_IsWin95RtmPartitionType` recognizes FAT12 `01`, FAT16
+  `04`/`06`, and FAT16-LBA `0E`. The latter needs BIOS INT 13h
+  extensions before a real boot can use it.
+- `IOSYS_ValidateWin95RtmVbr` accepts the separately supplied
+  active partition's VBR only when it has a valid boot signature,
+  boot jump, 512-byte FAT12/16 BPB, self-consistent FAT capacity,
+  partition-fit geometry and matching hidden-sector LBA. It rejects
+  FAT32 (types `0B`/`0C`) because Win95 **RTM** predates OSR2.
+
+**No real boot yet.** The decoders neither run MBR boot code nor read
+physical disk LBA 0, select host devices, execute BIOS INT 13h, read
+FAT directory chains, or transfer control into a bootable `IO.SYS`
+image. Existing `iosys_read_boot_sector` reads a mapped **logical
+volume's VBR**, not a physical drive's MBR. Its behavior is not
+silently reinterpreted. Partition status and type are not a security
+trust boundary against malicious boot-sector instructions; these
+routines are for structure/compatibility validation only.
+
+Regression: `python3 -m unittest discover -s scripts/tests -p test_iosys_mbr.py`.
+
+Sources: Microsoft Windows 95 startup KB Q174018
+(https://techshelps.github.io/MSDN/KB/Source/win95x/q174018.htm);
+Microsoft partition type KB Q69912
+(https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/69912);
+PC/AT MBR layout
+(https://wiki.osdev.org/MBR_%28x86%29).
