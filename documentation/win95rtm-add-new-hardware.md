@@ -72,6 +72,42 @@ that hardware is detected, resources assigned or a display driver works.
 Do not copy WHP INF research scaffolds into WINDOWS\\INF or run
 untrusted vendor installation code on a real host.
 
+## SETUPX ordinal 312: guarded preselected driver handling
+
+Status: **limited source implementation, synthetic tests committed, Win95 RTM
+guest/NE loader ABI not yet verified**. Water now routes SETUPX ordinal
+312 through `pascal -ret16 DiSelectDevice(ptr)` to
+`DiSelectDevice16(LPDEVICE_INFO16)` in `dlls/setupx.dll16/devinst16.c`.
+Unlike modern `SetupDiSelectDevice`, this is the legacy Win16 SETUPX
+namespace and uses the existing `RETERR16` error codes.
+
+The implementation rejects NULL or incorrectly sized `DEVICE_INFO16`
+with `ERR_DI_BAD_DEV_INFO`. If `lpSelectedDriver` is non-NULL and equals
+the head of `lpCompatDrvList` or `lpClassDrvList`, it returns `OK`
+without changing the pointer. This is caller-provided preselection only;
+head equality does **not** validate INF metadata, hardware identity,
+driver node contents, or installation. All other cases return
+`ERR_DI_BAD_SELECTDEVICE_PARAMS`. No dialog, registry changes, file
+copying, class installer, device probes, inferred list traversal, or
+automatic choice. Failed selection never mutates `DEVICE_INFO16`.
+
+A 1998 user report describes `DiSelectDevice` presenting a chooser;
+a later Win9x/Win98 DDK-derived installation utility shows the
+`lpSelectedDriver = lpCompatDrvList` preselection pattern. These are
+cross-version witnesses, **not** original Windows 95 RTM binary ABI
+proof. Preserve missing data on `DRIVER_NODE`, linked-list traversal,
+per-driver resource matching and the true wizard UI before extending.
+
+- 1998 report: https://groups.google.com/g/comp.os.ms-windows.programmer.win32/c/K3lgPnkxLQ8
+- Later 9x sample: https://git.ainet.us/AMajor/SoftEtherVPN/blame/commit/832c69add22cbc1787693b786e172e281b4f5117/src/vpn16/vpn16.c
+- Modern API comparison only: https://learn.microsoft.com/en-us/windows/win32/api/setupapi/nf-setupapi-setupdiselectdevice
+
+Regression: `python3 -m unittest discover -s scripts/tests -p
+test_setupx_select_device.py`. The test compiles the real selector
+against synthetic structures, not a Win16/DOS guest or original SETUPX.
+Existing driver builders `DiBuildCompatDrvList` and
+`DiBuildClassDrvList`, `DiInstallDevice`, and hardware/INF validation
+remain incomplete; the research-only Radeon INF must remain unbound.
 ## Sound-card and Ethernet drivers: implications
 
 - Sound: the wizard may expose a sound-card model and resource choices;

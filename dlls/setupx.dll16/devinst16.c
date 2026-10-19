@@ -67,6 +67,28 @@ RETERR16 WINAPI DiBuildClassDrvList16(LPDEVICE_INFO16 lpdi)
 }
 
 /***********************************************************************
+ *              DiSelectDevice (SETUPX.312)
+ * Preserve a caller's preselection when it points to a known driver-list
+ * head. Building lists and opening an interactive Win95 dialog are TODOs.
+ */
+RETERR16 WINAPI DiSelectDevice16(LPDEVICE_INFO16 lpdi)
+{
+    if (!lpdi || lpdi->cbSize != sizeof(*lpdi))
+        return ERR_DI_BAD_DEV_INFO;
+
+    /* Opaque DRIVER_NODE layout: compare list-head pointers only.
+     * This does not check hardware compatibility or install a driver.
+     */
+    if (lpdi->lpSelectedDriver &&
+        (lpdi->lpSelectedDriver == lpdi->lpCompatDrvList ||
+         lpdi->lpSelectedDriver == lpdi->lpClassDrvList))
+        return OK;
+
+    /* Never invent a choice when there is no verified selection/UI. */
+    return ERR_DI_BAD_SELECTDEVICE_PARAMS;
+}
+
+/***********************************************************************
  *		DiCallClassInstaller (SETUPX.308)
  */
 RETERR16 WINAPI DiCallClassInstaller16(DI_FUNCTION16 diFctn, LPDEVICE_INFO16 lpdi)

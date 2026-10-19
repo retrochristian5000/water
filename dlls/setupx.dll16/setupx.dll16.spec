@@ -145,7 +145,7 @@
 309  stub     DiCreateDriverNode #(ptr word word word str str str str str str long)
 310  stub     DiDrawMiniIcon
 311  stub     DiGetClassBitmapIndex #(str ptr)
-312  stub     DiSelectDevice #(ptr)
+312  pascal -ret16 DiSelectDevice(ptr) DiSelectDevice16
 313  stub     DiInstallDevice #(ptr)
 314  stub     DiLoadClassIcon #(str ptr ptr)
 315  stub     DiAskForOEMDisk #(ptr)
