@@ -41,3 +41,68 @@ non-stock driver implementations.
 - Compiled PE export tables and Windows 95 guest execution still require
   independent verification. Also verify the system DLL file version and
   provenance when expanding the ledger to later Win9x releases.
+
+## Dependent module observations: Win95 RTM vs Water build
+
+An actual Windows 95 RTM guest running Dependency Walker shows
+`USER32.DLL` referring to `KERNEL32.DLL`. This is an **observed module
+dependency**, separate from the two guest-observed KERNEL32 export ordinals
+above. The imported symbols (name versus ordinal), dependency edge type,
+and exact file version/PE timestamp have **not yet been recorded**. Do not
+infer that USER32 itself imports AddAtomA (50) or WinExec (728).
+
+| Consumer | Provider | Basis | Classification |
+| --- | --- | --- | --- |
+| Native Win95 RTM `USER32.DLL` | Native `KERNEL32.DLL` | Dependency Walker report from the WHP RTM guest | Observed dependency; specific imports pending |
+| Water `dlls/user32` | `$(PNG_PE_LIBS) gdi32 sechost advapi32 kernelbase win32u uuid` | `dlls/user32/Makefile.in` `IMPORTS` | Water build declaration, **not** Win95 RTM import evidence |
+| Water `dlls/kernel32` | `kernelbase ntdll` | `dlls/kernel32/Makefile.in` `IMPORTS` | Water build declaration |
+| Water `dlls/user.exe16` | `mpr user32 gdi32 win32u` | `dlls/user.exe16/Makefile.in` `IMPORTS` | Wine Win16 compatibility module, not native Win95 `USER32.DLL` |
+| Water `dlls/gdi32` | `user32 advapi32 win32u` | `dlls/gdi32/Makefile.in` `IMPORTS` | Water build declaration |
+
+**Important:** These Makefile lists are link inputs, not a dump of an
+actual compiled PE Import Address Table. They must not be silently copied
+into a Windows 95 RTM profile. In particular, adding `kernel32` to
+Water's current `user32` `IMPORTS` would change the modern build graph
+without establishing which Windows 95 interfaces the real DLL imported.
+Avoid NT-only `KERNELBASE` assumptions in Win95 driver ABI declarations,
+but do not remove it from current Water builds merely to reproduce the
+1995 dependency list.
+
+### Reproducible import-table audit
+
+On a modern development host, with a legitimately obtained copy of the
+guest's system DLLs (do **not** replace, redistribute, or execute them):
+
+```sh
+winedump dump -j import USER32.DLL
+winedump dump -j export KERNEL32.DLL
+```
+
+Water already supplies `tools/winedump`; no extra PE parser is needed.
+If building from the repository, use the locally built executable path.
+In Dependency Walker on Win95, select `USER32.DLL`, then inspect the
+imported-functions view for `KERNEL32.DLL`. For each row capture:
+
+- original importing file name, Windows version, file version/PE timestamp;
+- imported target DLL and **exact API name or raw ordinal**;
+- whether the import is implicit, delay-load or dynamically discovered;
+- corresponding KERNEL32 export name and ordinal in the **same guest build**;
+- mismatches, absent imports, and unknown fields without filling the gaps.
+
+The module dependency alone does **not** show that USER32 directly invokes
+KERNEL32 ordinal 50 or 728. Even a by-name import has an ordinal in the
+provider's export table, but it does not require that ordinal in the
+consumer's import lookup. Keep Win16 `USER.EXE` and `KERNEL` ordinal
+namespaces separate from Win32 `USER32.DLL` and `KERNEL32.DLL`.
+
+Dependency Walker documents the difference between implicit, delay-load,
+and explicit/dynamic dependencies:
+https://www.dependencywalker.com/help/html/interpreting_errors.htm
+
+Microsoft's 1995 Windows 95 API guidance separately warns against using
+new Win32 APIs through undocumented Win16 exports:
+https://helparchive.huntertur.net/document/37836
+
+**Status:** guest-observed dependency plus source-audited Water build
+difference. Native `USER32.DLL` function-level import table, compiled
+Water PE imports, and runtime compatibility remain unverified.
