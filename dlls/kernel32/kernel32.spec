@@ -57,6 +57,9 @@
  47 stdcall -noname -i386 -private -norelay LogCBThkSL(str) krnl386.exe16.LogCBThkSL
  48 stdcall -noname -i386 -private ReleaseThunkLock(ptr) krnl386.exe16.ReleaseThunkLock
  49 stdcall -noname -i386 -private RestoreThunkLock(long) krnl386.exe16.RestoreThunkLock
+# Windows 95 RTM KERNEL32 exports AddAtomA by name AND ordinal 50.
+# Keep this separate from Win16 KERNEL's unrelated ordinal 50.
+ 50 stdcall -i386 AddAtomA(str)
 
  51 stdcall -noname -i386 -private -norelay W32S_BackTo32() krnl386.exe16.W32S_BackTo32
  52 stdcall -noname -i386 -private GetThunkBuff() krnl386.exe16.GetThunkBuff
@@ -136,7 +139,7 @@
 @ stdcall AcquireSRWLockExclusive(ptr) NTDLL.RtlAcquireSRWLockExclusive
 @ stdcall AcquireSRWLockShared(ptr) NTDLL.RtlAcquireSRWLockShared
 @ stdcall -import ActivateActCtx(ptr ptr)
-@ stdcall AddAtomA(str)
+@ stdcall -arch=!i386 AddAtomA(str)
 @ stdcall AddAtomW(wstr)
 @ stdcall -import AddConsoleAliasA(str str str)
 @ stdcall -import AddConsoleAliasW(wstr wstr wstr)

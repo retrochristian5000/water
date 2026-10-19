@@ -584,6 +584,33 @@ static void test_local_error_handling(void)
     }
 }
 
+
+/* Windows 95 RTM KERNEL32 exports AddAtomA under its name and ordinal 50.
+ * Import-by-ordinal compatibility is separate from Win16 KERNEL ordinal 50,
+ * which identifies a different function.  Do not impose Win95 ordinals on NT.
+ */
+static void test_win95_addatom_ordinal(void)
+{
+    HMODULE kernel32;
+    FARPROC by_name, by_ordinal;
+
+    /* The legacy KERNEL32 table is only meaningful on 32-bit Win9x. */
+    if (sizeof(void *) != 4 || !(GetVersion() & 0x80000000))
+    {
+        skip("Windows 95 KERNEL32 ordinal test requires a Win9x i386 personality\n");
+        return;
+    }
+
+    kernel32 = GetModuleHandleA("kernel32.dll");
+    ok( kernel32 != NULL, "missing KERNEL32.DLL\n" );
+    if (!kernel32) return;
+
+    by_name = GetProcAddress( kernel32, "AddAtomA" );
+    by_ordinal = GetProcAddress( kernel32, MAKEINTRESOURCEA(50) );
+    ok( by_name != NULL, "missing AddAtomA named export\n" );
+    ok( by_ordinal == by_name, "ordinal 50 does not resolve to AddAtomA\n" );
+}
+
 START_TEST(atom)
 {
     /* Global atom table seems to be available to GUI apps only in
@@ -596,4 +623,5 @@ START_TEST(atom)
     test_local_add_atom();
     test_local_get_atom_name();
     test_local_error_handling();
+    test_win95_addatom_ordinal();
 }
