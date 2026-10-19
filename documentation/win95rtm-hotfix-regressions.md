@@ -135,6 +135,131 @@ RTM and OSR2 guest snapshots. Preserve source timestamps and
 download provenance. Do not allow an RTM image to be replaced with
 the OSR2 image merely because the filename is IFSMGR.VXD.
 
+## AMDK6UPD.EXE: OSR2 high-frequency CPU timing and disk-driver init
+
+**Source state:** Microsoft Q192841, Q234259, Q312108 and an archived
+Microsoft Download Center record were read. NO AMDK6UPD.EXE binary,
+extracted driver, digital signature, executable hash, update INF, guest
+crash, or fixed-vs-original disassembly was inspected. The following
+is source evidence and a test plan, NOT a fixed IOS driver.
+
+### Affected systems and mechanism: keep the product split
+
+- Q192841: the early Windows 95 family can report `Device IOS failed
+  to initialize` or a Windows Protection Error when an AMD K6-2
+  operates at 350 MHz or faster; a later KB revision also mentions
+  an AMD Athlon at >=1.1 GHz. Occurrence at 350 MHz is intermittent
+  and becomes more likely with higher CPU speed.
+- The Microsoft article attributes the IOS fault to a **divide exception
+  in IOS.VXD** and other startup divide exceptions to **ESDI_506.PDR**
+  or **SCSIPORT.PDR**. Faulty initialisation timing-loop *software*
+  is blamed, not a defective processor. Precise divisor expressions,
+  CPU-counter instructions and their patched instructions remain unknown.
+- Microsoft explicitly provides this fix for **Windows 95 OSR2,
+  OSR2.1 and OSR2.5** only. An RTM retail installation may show
+  similar errors but **must not load the OSR2 patch's binaries**.
+  Windows 98 is described as having resolved the problem.
+- `AMDK6UPD.EXE` was itself revised: KB Q234259 finds that the
+  original `VFBackup.VXD` regressed some floppy backups. The later
+  download center record was published 1999-10-14. File version,
+  publication date, archive timestamp and binary hash are distinct.
+
+### Microsoft Q192841 listed OSR2 component inventory
+
+| File | Listed update version | Bytes | Subsystem and role |
+| --- | --- | ---: | --- |
+| `IOS.VXD` | 4.00.1113 | 68,962 | Protected-mode block I/O supervisor; divide fault reported |
+| `ESDI_506.PDR` | 4.00.1118 | 24,426 | Protected-mode IDE disk driver; divide fault reported |
+| `SCSIPORT.PDR` | 4.00.1112 | 23,158 | Windows 9x SCSI port; divide fault reported |
+| `HSFLOP.PDR` | 4.00.1113 | 25,249 | High-capacity floppy port driver |
+| `CDFS.VXD` | 4.00.1112 | 59,153 | CD filesystem driver |
+| `DISKTSD.VXD` | 4.00.1112 | 18,809 | Disk type-specific driver |
+| `INT13.VXD` | 4.00.1112 | 9,955 | BIOS INT 13h disk interface |
+| `VFBackup.VXD` | 4.00.1112 | 18,197 | ORIGINAL update backup VxD; later replaced |
+| `NTKERN.VXD` | 4.00.1213 | 111,678 | OSR2.1/2.5 only; original article tabulates 4.00.1213 |
+
+**Do not flatten these into one repair algorithm.** The KB names
+divide exceptions only in IOS/ESDI_506/SCSIPORT. For the remaining
+files, inclusion in the update does not by itself prove they contained
+the same timing-loop defect. In its prose, Q192841 additionally says
+`NTKERN.VXD` should display **4.03.1213** in file properties, whereas
+its table reports **4.00.1213**. Preserve that unresolved provenance
+inconsistency pending an actual file-version resource dump. The
+September 18, 1998 package revision did not replace NTKERN on
+OSR2.1/2.5, according to the article; verify installer variant.
+
+### Q234259: original versus revised backup VxD
+
+| Package iteration | VFBackup version | Bytes | QFE registration |
+| --- | --- | ---: | --- |
+| Original AMDK6 update | `4.00.1112` | 18,197 | `...\\Setup\\Updates\\980911N1` |
+| Revised AMDK6 update | `4.00.1114` (1999-05-25) | 18,197 | `...\\Setup\\Updates\\990602N1` |
+
+The full registry root is
+`HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Setup\\Updates`.
+Q234259 states that the revised update replaces the older QFE
+registration and that QfeCheck can identify installed patches.
+The **identical byte size** of these VFBackup releases is a clear
+warning against relying on filename/size as proof of identical code.
+`AMDK6_UN.INF` is documented as an uninstall route by a contemporary
+download mirror; its own contents and exact rollback semantics are
+not independently verified. Do not actually run an archived installer.
+
+### Cross-program audit of the CURRENT Water fork
+
+| Water file or program | Current implementation | Q192841 implication |
+| --- | --- | --- |
+| `dlls/ios.vxd/ios.c` | IOS VxDCall table has `IOS_GET_VERSION`; remaining register/command/timeout services fail as unsupported. No disk-initialization timing loop is present. | No identical IOS divide instruction or patched code exists to repair. Retain failure rather than fabricate success. |
+| `dlls/krnl386.exe16/vxd.c` | Generic VxD service and timer compatibility; timers use host tick functions in places. | NOT proof of IOS's ring-0 clock calibration or CPU-dependent I/O startup loop. |
+| `programs/io.sys/config.c` | MSDOS.SYS settings and pure MBR/VBR/FAT decoding; no working IO.SYS boot binary. | Real-mode boot setup is distinct from protected-mode IOS.VXD; do not transplant patch here. |
+| `dlls/scsiport.sys` | NT-style Windows driver compatibility module. | **NOT** Windows 95's `SCSIPORT.PDR`; do not port a 9x fix to NT SCSI port by filename resemblance. |
+| `dlls/vmm.vxd/vmm.c` | Selected VxD service compatibility; does not form a working original 9x kernel. | Avoid inventing timing APIs or service numbers from hotfix module names. |
+
+**Implementation gate:** once a real 9x IDE/SCSI/IOS initialization
+path exists, calibration must use a documented monotonic timebase
+and nonzero, range-checked divisors; avoid unsigned wraparound,
+unchecked narrowing, busy-loop counts tied to nominal CPU MHz,
+and hidden dependency on the host's CPU frequency. This is
+**engineering guidance**, not a claim about Microsoft's precise fix.
+Preserve disk/device state and report failure on unusable timing data.
+
+Proposed read-only synthetic tests: varying emulated CPU speed
+(e.g. 200/300/350/400/500/1100 MHz) while maintaining a consistent
+virtual timebase; zero/very-short timer interval; near-overflow
+counters; slow/paused clock; restart after failed calibration;
+and independent IDE versus SCSI initialization. Check absence of
+divide-by-zero, timeout overflow, host I/O and false successful driver
+registration. The 350 MHz threshold is a **historical symptom** in
+one Microsoft OS release, not a new branch condition to hardcode.
+
+**Independent related issue, NOT part of AMDK6UPD:** Microsoft
+Q312108 later described a divide-by-zero in NDIS initialization
+at **2.2 GHz and above** on Windows 95/98. That is a separate
+network driver/timing issue; do not mistake the two CPU thresholds
+or assert that AMDK6UPD fixes NDIS.
+
+### Package acquisition and validation backlog
+
+Identify a genuine OSR2-era `AMDK6UPD.EXE` variant and record source
+URL, timestamp, byte length, SHA-256, executable signature if any,
+self-extractor `/T:` and `/C` behavior, internal `W95UPD.INF` or other
+installer INF, component file resources/hashes, NTKERN conditional
+install logic, `VFBackup.VXD` revision, `AMDK6_UN.INF` rollback and
+the QFE registry metadata. Inspect the executable **without executing
+it** on a host. Confirm all changes with disposable OSR2.0/2.1/2.5
+guest snapshots and retain a distinct RTM 4.00.950 control.
+
+### Sources for this extension
+
+- Microsoft KB Q192841 (archived):
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/192841
+- Microsoft KB Q234259 (original and revised VFBackup/QFE metadata):
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/234259
+- Archived Microsoft Download Center listing (2012 snapshot; 1999-10-14):
+  https://legacyupdate.net/download-center/download/16838/windows-95-windows-95-oem-service-release-2-2.1-2.5-update-for-problems-with-high-speed-amd-k6-2-cpu-amdk6upd.exe
+- Microsoft KB Q312108 (distinct NDIS timing fault):
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/312108
+
 ## WHP gate checklist for other Windows 95 updates
 
 Capture separately: KB number and revision; bulletin/CVE; original

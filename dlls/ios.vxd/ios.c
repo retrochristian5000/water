@@ -82,6 +82,14 @@ BOOL WINAPI IOS_DeviceIoControl(DWORD code, LPVOID in_buffer, DWORD in_size,
  * VxD id 0010h is the Windows 9x BlockDev/IOS service table. Only
  * contracts that Water can currently satisfy without fabricating IOP,
  * DCB, VRP, or calldown state are implemented here.
+ *
+ * Historical Q192841 (AMDK6UPD.EXE, OSR2-only) documents divide
+ * exceptions in Microsoft's startup timing loops in IOS.VXD and the
+ * separate ESDI_506.PDR/SCSIPORT.PDR drivers at high CPU frequencies.
+ * Water has no corresponding IOS initialization/calibration routine:
+ * do not invent a CPU-frequency divisor, silently map PDR to an NT
+ * .SYS interface, or return success for the still-unsupported services.
+ * See documentation/win95rtm-hotfix-regressions.md for the evidence.
  */
 DWORD WINAPI IOS_VxDCall(DWORD service, I386_CONTEXT *context)
 {
