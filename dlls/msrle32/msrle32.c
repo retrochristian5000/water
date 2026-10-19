@@ -833,6 +833,78 @@ LRESULT MSRLE32_CompressRLE8(const CodecInfo *pi, LPCBITMAPINFOHEADER lpbiIn,
 
 /*****************************************************************************/
 
+
+/*
+ * Compressed RLE4/RLE8 bitstreams share a two-byte packet grammar.
+ * The old codec decoded until an EOI escape without checking source
+ * bounds or destination row/delta limits. Validate structure first.
+ * biSizeImage is only a DECLARED size; callers must still provide
+ * an accessible input allocation of at least that many bytes.
+ */
+static BOOL MSRLE32_ValidateCompressedStream(const BYTE *data, DWORD size,
+                                              LONG width, LONG height, WORD bitcount)
+{
+  DWORD pos = 0;
+  unsigned int x = 0, y = 0;
+
+  if (!data || size < 2 || width <= 0 || height <= 0 ||
+      (bitcount != 4 && bitcount != 8))
+    return FALSE;
+
+  while (size - pos >= 2) {
+    BYTE count = data[pos++];
+    BYTE value = data[pos++];
+
+    if (count) {
+      if (y >= (unsigned int)height || x > (unsigned int)width ||
+          count > (unsigned int)width - x)
+        return FALSE;
+      x += count;
+      continue;
+    }
+
+    switch (value) {
+    case 0: /* end of line */
+      if (y >= (unsigned int)height) return FALSE;
+      x = 0;
+      y++;
+      break;
+    case 1: /* end of image; an EOL can precede this */
+      return TRUE;
+    case 2: /* horizontal and vertical delta */
+      {
+        BYTE dx, dy;
+        if (size - pos < 2 || y >= (unsigned int)height) return FALSE;
+        dx = data[pos++];
+        dy = data[pos++];
+        if (x > (unsigned int)width || dx > (unsigned int)width - x ||
+            dy >= (unsigned int)height - y)
+          return FALSE;
+        x += dx;
+        y += dy;
+        /* The existing decoder wraps a delta reaching the right edge. */
+        if (x == (unsigned int)width) {
+          x = 0;
+          if (++y >= (unsigned int)height) return FALSE;
+        }
+        break;
+      }
+    default: /* absolute run, padded to an even byte count */
+      {
+        unsigned int bytes = (value * bitcount + 7) / 8;
+        unsigned int padded = (bytes + 1) & ~1u;
+        if (y >= (unsigned int)height || x > (unsigned int)width ||
+            value > (unsigned int)width - x || padded > size - pos)
+          return FALSE;
+        pos += padded;
+        x += value;
+        break;
+      }
+    }
+  }
+  return FALSE; /* missing explicit end of image */
+}
+
 static LRESULT MSRLE32_DecompressRLE4(const CodecInfo *pi, LPCBITMAPINFOHEADER lpbi,
 				      const BYTE *lpIn, LPBYTE lpOut)
 {
@@ -1727,6 +1799,14 @@ static LRESULT Decompress(CodecInfo *pi, ICDECOMPRESS *pic, DWORD dwSize)
   if (pic->lpbiInput == NULL || pic->lpInput == NULL ||
       pic->lpbiOutput == NULL || pic->lpOutput == NULL)
     return ICERR_BADPARAM;
+
+  /* Validate byte and row bounds before invoking the legacy RLE loops. */
+  if ((pic->lpbiInput->biCompression == BI_RLE4 ||
+       pic->lpbiInput->biCompression == BI_RLE8) &&
+      !MSRLE32_ValidateCompressedStream(pic->lpInput, pic->lpbiInput->biSizeImage,
+                                        pic->lpbiInput->biWidth, pic->lpbiInput->biHeight,
+                                        pic->lpbiInput->biBitCount))
+    return ICERR_BADFORMAT;
 
   /* check formats */
   if (! pi->bDecompress) {
