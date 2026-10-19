@@ -32,6 +32,16 @@
 #define DISPLAYDIB_NOPALETTE      0x0010
 #define DISPLAYDIB_NOCENTER       0x0020
 #define DISPLAYDIB_NOWAIT         0x0040
+/* Additional flags attested in Microsoft's 1990-1993 DISPDIB.H,
+ * reproduced in contemporary Windows multimedia programming discussions.
+ * Declarations do not imply that the built-in DISPLAYDIB implementation
+ * supports these operations.
+ */
+#define DISPLAYDIB_NOIMAGE        0x0080
+#define DISPLAYDIB_ZOOM2          0x0100
+#define DISPLAYDIB_DONTLOCKTASK   0x0200
+#define DISPLAYDIB_TEST           0x0400
+#define DISPLAYDIB_NOFLIP         0x0800
 #define DISPLAYDIB_BEGIN          0x8000
 #define DISPLAYDIB_END            0x4000
 #define DISPLAYDIB_MODE           0x000F /* mask */

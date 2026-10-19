@@ -54,9 +54,12 @@ WINE_DEFAULT_DEBUG_CHANNEL(ddraw);
  *  DISPLAYDIB_INVALIDFORMAT: invalid DIB format
  *  DISPLAYDIB_INVALIDTASK: not called from current task
  *
- * BUGS
+ * LIMITATIONS
  *
- *  Waiting for keypresses is not implemented.
+ *  Full-screen VGA mode handling, image output, and mode restoration are
+ *  unimplemented.  The export must not report success without performing
+ *  the requested operation.  BEGIN/END may legitimately pass null DIB
+ *  pointers, so do not classify those calls as invalid DIBs here.
  */
 WORD WINAPI DisplayDib(
 		LPBITMAPINFO lpbi, /* [in] DIB header with resolution and palette */
@@ -64,6 +67,8 @@ WORD WINAPI DisplayDib(
 		WORD wFlags        /* [in] */
 	)
 {
-    FIXME( "broken, should be rewritten using ddraw\n" );
-    return DISPLAYDIB_NOERROR;
+    (void)lpbi;
+    (void)lpBits;
+    FIXME( "full-screen DIB display not implemented (flags %#x)\n", (unsigned int)wFlags );
+    return DISPLAYDIB_NOTSUPPORTED;
 }
