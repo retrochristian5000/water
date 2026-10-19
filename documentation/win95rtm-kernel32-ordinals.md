@@ -47,13 +47,14 @@ non-stock driver implementations.
 An actual Windows 95 RTM guest running Dependency Walker shows
 `USER32.DLL` referring to `KERNEL32.DLL`. This is an **observed module
 dependency**, separate from the two guest-observed KERNEL32 export ordinals
-above. The imported symbols (name versus ordinal), dependency edge type,
-and exact file version/PE timestamp have **not yet been recorded**. Do not
-infer that USER32 itself imports AddAtomA (50) or WinExec (728).
+above. The guest also identifies `FT_Exit48` as a KERNEL32 import referenced
+by USER32. The import lookup encoding (raw name versus ordinal), other imported
+symbols, dependency edge type, and exact file version/PE timestamp remain
+**unrecorded**. Do not infer that USER32 imports AddAtomA (50) or WinExec (728).
 
 | Consumer | Provider | Basis | Classification |
 | --- | --- | --- | --- |
-| Native Win95 RTM `USER32.DLL` | Native `KERNEL32.DLL` | Dependency Walker report from the WHP RTM guest | Observed dependency; specific imports pending |
+| Native Win95 RTM `USER32.DLL` | Native `KERNEL32.DLL` | Dependency Walker report from the WHP RTM guest | Observed dependency; `FT_Exit48` import identified, remaining imports pending |
 | Water `dlls/user32` | `$(PNG_PE_LIBS) gdi32 sechost advapi32 kernelbase win32u uuid` | `dlls/user32/Makefile.in` `IMPORTS` | Water build declaration, **not** Win95 RTM import evidence |
 | Water `dlls/kernel32` | `kernelbase ntdll` | `dlls/kernel32/Makefile.in` `IMPORTS` | Water build declaration |
 | Water `dlls/user.exe16` | `mpr user32 gdi32 win32u` | `dlls/user.exe16/Makefile.in` `IMPORTS` | Wine Win16 compatibility module, not native Win95 `USER32.DLL` |
@@ -67,6 +68,48 @@ without establishing which Windows 95 interfaces the real DLL imported.
 Avoid NT-only `KERNELBASE` assumptions in Win95 driver ABI declarations,
 but do not remove it from current Water builds merely to reproduce the
 1995 dependency list.
+
+### FT_Exit48: observed import and thunking ABI
+
+- **Guest observation:** Windows 95 RTM `USER32.DLL` lists `FT_Exit48`
+  as an import from `KERNEL32.DLL` in Dependency Walker. This updates the
+  previously unknown function-level edge. It is **not** evidence that
+  `FT_Exit48` is a USER32 export, that USER32 imports it by ordinal,
+  or that the function was actually executed. A successfully resolved
+  dependency would corroborate its presence as a provider export.
+- **Source-level cross-check:** Water's `dlls/kernel32/kernel32.spec`
+  already includes
+  `@ stdcall -i386 -private -norelay FT_Exit48() krnl386.exe16.FT_Exit48`.
+  The Wine/WHP `-private` flag excludes ordinary import-library use; it
+  does not by itself prove that the export is absent from the PE export
+  directory. The underlying 32-bit callable relay is declared in
+  `dlls/krnl386.exe16/krnl386.exe16.spec`.
+- **Behavior and ABI:** `dlls/krnl386.exe16/thunk.c` implements the
+  `FT_ExitNN` family. The generated `FT_Exit48` restores the
+  thunk frame and saved registers, moves the result into EAX, then
+  returns using `ret $48`, i.e. a **48-byte stack cleanup**. Despite
+  the Win32 .spec entry's empty argument signature, this is a special
+  compiler-generated thunk exit, **not** an ordinary zero-argument
+  application API and not `ExitProcess`.
+- **Historical cross-check:** A January 2000 Wine KERNEL32 export spec
+  lists `229 register FT_Exit48() FT_Exit48`; a separate Windows 95
+  export inventory also lists hexadecimal `0E5` (= decimal 229).
+  This is a **candidate historical ordinal**, not an RTM-specific
+  ordinal verified against the user's installed KERNEL32 binary.
+  Do **not** pin or move Water's FT_Exit48 ordinal solely on this basis.
+
+Sources:
+- https://sources.debian.org/src/wine/0.0.20000109-3/relay32/kernel32.spec
+- https://www.frankcheng.com/win32/win95.htm
+- https://source.winehq.org/WineAPI/kernel32.html
+
+**Follow-up proof targets:** Read `USER32.DLL`'s raw import thunk to
+distinguish an imported name from a resolved ordinal label; inspect the
+same guest's `KERNEL32.DLL` exported `FT_Exit48` ordinal and PE
+timestamp/file version; then compare an actual Water i386 PE export
+table. Avoid calling `FT_Exit48` as a test: it expects a prepared
+thunk stack frame, so an ordinary direct call would be unsafe.
+
 
 ### Reproducible import-table audit
 
@@ -103,6 +146,8 @@ Microsoft's 1995 Windows 95 API guidance separately warns against using
 new Win32 APIs through undocumented Win16 exports:
 https://helparchive.huntertur.net/document/37836
 
-**Status:** guest-observed dependency plus source-audited Water build
-difference. Native `USER32.DLL` function-level import table, compiled
-Water PE imports, and runtime compatibility remain unverified.
+**Status:** guest-observed module dependency **and FT_Exit48 import label**;
+source-audited Water export and 48-byte thunk exit implementation. Other
+native USER32 function-level imports, import encoding, RTM FT_Exit48
+ordinal, compiled Water PE imports, and runtime compatibility remain
+unverified.
