@@ -3969,8 +3969,24 @@ static void test_SetMetaFileBits(void)
     ret = DeleteMetaFile(hmf);
     ok(ret, "DeleteMetaFile(%p) error %ld\n", hmf, GetLastError());
 
-    /* NULL data crashes XP SP1 */
-    /*hmf = SetMetaFileBitsEx(sizeof(MF_GRAPHICS_BITS), NULL);*/
+    /* Null inputs and truncated headers should fail safely in Water.
+     * Some native Windows versions crash on NULL: never run this block
+     * against the original system DLL in a historical guest.
+     */
+    if (winetest_platform_is_wine)
+    {
+        BYTE short_header[2] = {0};
+
+        SetLastError(0xdeadbeef);
+        hmf = SetMetaFileBitsEx(sizeof(short_header), short_header);
+        ok(!hmf, "truncated metafile header should fail\n");
+        ok(GetLastError() == ERROR_INVALID_DATA, "wrong truncated-header error %ld\n", GetLastError());
+
+        SetLastError(0xdeadbeef);
+        hmf = SetMetaFileBitsEx(sizeof(METAHEADER), NULL);
+        ok(!hmf, "NULL metafile input should fail\n");
+        ok(GetLastError() == ERROR_INVALID_DATA, "wrong NULL-input error %ld\n", GetLastError());
+    }
 
     /* Now with zero size */
     SetLastError(0xdeadbeef);

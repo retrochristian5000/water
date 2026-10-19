@@ -42,6 +42,61 @@ non-stock driver implementations.
   independent verification. Also verify the system DLL file version and
   provenance when expanding the ledger to later Win9x releases.
 
+
+## USER32 -> GDI32 dependency: Windows 95 RTM metafile import
+
+A Windows 95 RTM guest running Dependency Walker shows native `USER32.DLL`
+referencing `GDI32.DLL`, with `SetMetaFileBitsEx` as an imported API.
+This is a separate **guest-observed import label** from the earlier
+`USER32.DLL -> KERNEL32.DLL!FT_Exit48` evidence. Record it without
+assuming that the function actually ran, that it was imported by name
+rather than by ordinal, or that all of USER32's GDI imports are known.
+File-level PE import descriptors, file versions, and the RTM GDI32
+`SetMetaFileBitsEx` export ordinal have **not** yet been captured.
+
+| Consumer | Provider | Symbol | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| Win95 RTM `USER32.DLL` | Win95 RTM `GDI32.DLL` | `SetMetaFileBitsEx` | Dependency Walker guest observation | Import label observed; ordinal / lookup encoding unverified |
+| Water `dlls/user32` | Water `dlls/gdi32` | No specific name established by the Makefile | `dlls/user32/Makefile.in`: `IMPORTS` includes `gdi32` | Modern build link input; **not** evidence of exact RTM imports |
+| Water `dlls/gdi32` | Water `dlls/user32` | No specific name established by the Makefile | `dlls/gdi32/Makefile.in`: `IMPORTS` includes `user32` | Modern reverse build dependency; actual PE imports unverified |
+
+### ABI and implementation audit
+
+- Water's `dlls/gdi32/gdi32.spec` exposes
+  `@ stdcall SetMetaFileBitsEx(long ptr)`, currently without a fixed ordinal.
+- Water's `include/wingdi.h` declares `HMETAFILE WINAPI
+  SetMetaFileBitsEx(UINT, const BYTE *)`. On i386, the two arguments are
+  4 bytes each with Win32 stdcall stack cleanup, **not** a Win16 thunk
+  exit. This is a Windows-format metafile (WMF), not automatically an
+  enhanced metafile (EMF).
+- Water's `dlls/gdi32/metafile.c` implements it by copying the supplied
+  Windows-format metafile data into a GDI-managed in-memory metafile.
+  The prior code accessed `METAHEADER` fields for small, positive
+  buffer sizes **before confirming the header fitted**; the new guard
+  rejects truncated headers and NULL data with `ERROR_INVALID_DATA`
+  before dereferencing the header. This does **not** validate all nested
+  WMF records: record-walking bounds are a separate audit target.
+- Regression checks in `dlls/gdi32/tests/metafile.c` cover truncated
+  and NULL input under Water/Wine only. Historical native Windows
+  versions can crash on NULL input, so the tests deliberately do not
+  execute those inputs against the original RTM DLL.
+
+The public Win32 API description identifies the function as creating
+an in-memory *Windows-format metafile* from a byte buffer:
+
+https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-setmetafilebitsex
+
+That current documentation lists modern support baselines; they are
+**not** evidence that Windows 95 RTM lacked the function when the
+guest's import view says otherwise.
+
+**Next proof points:** Extract the raw `USER32.DLL` import-table entry
+for `SetMetaFileBitsEx`, the exact matching RTM `GDI32.DLL` export
+ordinal/name, and the timestamps or hashes of both system DLLs. Then
+compare them with a freshly built Water i386 PE import/export table.
+Do not pin GDI32 ordinals, add an RTM-only build-time link cycle, or
+invent a function call site before that evidence is available.
+
 ## Dependent module observations: Win95 RTM vs Water build
 
 An actual Windows 95 RTM guest running Dependency Walker shows

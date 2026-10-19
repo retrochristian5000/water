@@ -1023,7 +1023,8 @@ break;
 /******************************************************************
  *         SetMetaFileBitsEx    (GDI32.@)
  *
- *  Create a metafile from raw data. No checking of the data is performed.
+ *  Create a metafile from raw data. Validate the fixed-size header before
+ *  reading it; individual metafile records are not validated here.
  *  Use GetMetaFileBitsEx() to get raw data from a metafile.
  *
  * PARAMS
@@ -1041,7 +1042,11 @@ HMETAFILE WINAPI SetMetaFileBitsEx( UINT size, const BYTE *lpData )
 
     if (size & 1) return 0;
 
-    if (!size || mh_in->mtType != METAFILE_MEMORY || mh_in->mtVersion != MFVERSION ||
+    /* Reject truncated or NULL buffers before dereferencing METAHEADER.
+     * The previous header reads were out of bounds when 0 < size < 18.
+     */
+    if (size < sizeof(METAHEADER) || !lpData ||
+        mh_in->mtType != METAFILE_MEMORY || mh_in->mtVersion != MFVERSION ||
         mh_in->mtHeaderSize != sizeof(METAHEADER) / 2)
     {
         SetLastError(ERROR_INVALID_DATA);
