@@ -53,6 +53,34 @@ need separate testing. The guard does not harden the independent
 GDI or WIC decoders; avoid changing unrelated user-mode APIs
 merely because format names overlap.
 
+## Encoder audit: input 1bpp palette bit order
+
+The same audit uncovered two independently testable encoder issues
+in `dlls/msrle32/msrle32.c`, before the compressed RLE4/RLE8
+output is generated:
+
+1. `GetRawPixel`'s 1bpp branch used a shift of `8 - (x % 8)`,
+   which interpreted the first bit as bit 8 (always zero for a
+   byte) instead of bit 7, and shifted the eighth bit by one.
+   Corrected to `7 - (x % 8)`.
+2. `computeInternalFrame` processed only **seven** of each eight
+   packed 1bpp pixels, and iterated over `width / 8` whole
+   bytes. It now converts every pixel through `x < biWidth`,
+   indexing `lpIn[x / 8]` and honoring MSB-first bit order,
+   including legal partial bytes.
+
+This is a **Water implementation defect**, not evidence that
+Microsoft's original Windows 95 video codec had the same bug.
+The change does not relax existing codec format negotiation,
+change the RLE4/RLE8 wire format or alter other bit depths.
+
+Source-extracted regression:
+`python3 -m unittest discover -s scripts/tests -p test_msrle_1bpp.py`.
+The harness extracts the actual 1bpp macro and switch branch and
+compiles them under C99 with synthetic packed pixels. It checks the
+bit positions across byte boundaries and a width that is not a
+multiple of 8. Full VfW codec integration remains untested.
+
 ## Test and version controls
 
 `python3 -m unittest discover -s scripts/tests -p test_msrle_stream.py`

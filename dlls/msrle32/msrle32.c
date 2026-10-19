@@ -47,7 +47,7 @@ static inline WORD Intensity(RGBQUAD clr)
 }
 
 #define GetRawPixel(lpbi,lp,x) \
-  ((lpbi)->biBitCount == 1 ? ((lp)[(x)/8] >> (8 - (x)%8)) & 1 : \
+  ((lpbi)->biBitCount == 1 ? ((lp)[(x)/8] >> (7 - (x)%8)) & 1 : \
    ((lpbi)->biBitCount == 4 ? ((lp)[(x)/2] >> (4 * (1 - (x)%2))) & 15 : lp[x]))
 
 /*****************************************************************************/
@@ -216,10 +216,9 @@ void computeInternalFrame(CodecInfo *pi, LPCBITMAPINFOHEADER lpbiIn, const BYTE 
 
     switch (lpbiIn->biBitCount) {
     case 1:
-      for (x = 0; x < lpbiIn->biWidth / 8; x++) {
-	for (i = 0; i < 7; i++)
-	  lpOut[8 * x + i] = wIntensityTbl[(lpIn[x] >> (7 - i)) & 1];
-      }
+      /* Indexed 1bpp input is MSB-first, including a partial final byte. */
+      for (x = 0; x < lpbiIn->biWidth; x++)
+        lpOut[x] = wIntensityTbl[(lpIn[x / 8] >> (7 - (x % 8))) & 1];
       break;
     case 4:
       for (x = 0; x < lpbiIn->biWidth / 2; x++) {
