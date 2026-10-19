@@ -38,6 +38,11 @@ struct iosys_fat_bpb
     WORD sectors_per_fat;
 };
 
+/* MSDOS.SYS [Options] DoubleBuffer: 0=default/off, 1=conditional, 2=forced.
+ * This is file-requested boot policy only, not evidence that DBLBUFF.SYS loaded. */
+BOOL IOSYS_ParseDoubleBuffer(const char *value, BYTE *mode);
+BYTE IOSYS_GetMsdosDoubleBufferMode(void);
+
 void IOSYS_InitConfig(void);
 BYTE IOSYS_GetBootDrive(void);
 BOOL IOSYS_GetFat1216BPB(BYTE drive, struct iosys_fat_bpb *bpb);

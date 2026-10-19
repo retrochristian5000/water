@@ -28,8 +28,11 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dos);
 
-/* Boot drive reported by the Win9x IO.SYS/MSDOS.SYS startup state. */
+/* Boot state owned by IO.SYS, not by the 32-bit KERNEL32/GDI32 loaders. */
 static BYTE iosys_boot_drive;
+/* File policy only: registry WinBoot overrides and controller detection are
+ * separate boot inputs that are not yet implemented in Water. */
+static BYTE iosys_msdos_double_buffer_mode;
 
 static BYTE drive_number_from_string( const char *value )
 {
@@ -91,6 +94,32 @@ static void get_msdos_path_value( const char *filename, const char *name,
                                   const char *default_value, char *buffer, DWORD size )
 {
     GetPrivateProfileStringA( "Paths", name, default_value, buffer, size, filename );
+}
+
+/*
+ * MSDOS.SYS [Options] DoubleBuffer is a three-state value, not a Boolean:
+ * 0 = no file-requested double buffering (default), 1 = conditional,
+ * 2 = unconditional. Reject malformed values without updating the caller.
+ * This parser only records policy; it does not load DBLBUFF.SYS.
+ */
+BOOL IOSYS_ParseDoubleBuffer(const char *value, BYTE *mode)
+{
+    const char *p = value;
+    BYTE parsed;
+
+    if (!p || !mode) return FALSE;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p < '0' || *p > '2') return FALSE;
+    parsed = *p++ - '0';
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p) return FALSE;
+    *mode = parsed;
+    return TRUE;
+}
+
+BYTE IOSYS_GetMsdosDoubleBufferMode(void)
+{
+    return iosys_msdos_double_buffer_mode;
 }
 
 static WORD iosys_get_word( const BYTE *p )
@@ -294,6 +323,7 @@ void IOSYS_InitConfig(void)
 {
     char filename[MAX_PATH], windows[MAX_PATH];
     char windir[MAX_PATH], winbootdir[MAX_PATH], host_drive[16];
+    char double_buffer_value[32];
     DWORD len;
     BOOL have_file;
 
@@ -303,6 +333,7 @@ void IOSYS_InitConfig(void)
      * no Win9x MSDOS.SYS boot policy. The default KRNL386 personality remains
      * the Win9x path.
      */
+    iosys_msdos_double_buffer_mode = 0; /* No stale boot policy across initializations. */
     if (is_win3_standard_personality() ||
         WIN386_QuerySession( NULL ) || kernel_is_nt_wow_session())
         return;
@@ -321,6 +352,20 @@ void IOSYS_InitConfig(void)
         get_msdos_path_value( filename, "WinDir", windows, windir, sizeof(windir) );
         get_msdos_path_value( filename, "WinBootDir", windir, winbootdir, sizeof(winbootdir) );
         get_msdos_path_value( filename, "HostWinBootDrv", "", host_drive, sizeof(host_drive) );
+
+        /* Read the DOS 7 boot policy without trying to load a real-mode
+         * driver from the KRNL386 compatibility bridge. Windows Me's
+         * reduced real-mode startup is a different, unmodeled path.
+         */
+        if (!is_winme_personality())
+        {
+            len = GetPrivateProfileStringA( "Options", "DoubleBuffer", "0",
+                                            double_buffer_value, sizeof(double_buffer_value),
+                                            filename );
+            if (len >= sizeof(double_buffer_value) - 1 ||
+                !IOSYS_ParseDoubleBuffer( double_buffer_value, &iosys_msdos_double_buffer_mode ))
+                WARN( "Ignoring invalid DoubleBuffer setting in %s\n", debugstr_a(filename) );
+        }
 
         /*
          * HostWinBootDrv is the Win9x boot-drive root, not the Windows

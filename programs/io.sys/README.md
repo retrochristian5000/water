@@ -56,3 +56,43 @@ Parser regression: `python3 -m unittest discover -s scripts/tests -p test_iosys_
 Sources: Microsoft Windows 98 CONFIG.TXT (KB Q232557; mirrored at
 https://helparchive.huntertur.net/document/106583) and MS-DOS 6.22 HELP
 (https://www.infania.net/misc/dos622help/switches.html).
+
+## MSDOS.SYS [Options] DoubleBuffer (Windows 95/98)
+
+Windows 95 RTM attests `DoubleBuffer=0|1|2` in the *text* MSDOS.SYS
+`[Options]` section. This is **not** the binary MSDOS.SYS kernel of
+earlier DOS, not DOS `BUFFERS=`, and not disk compression
+`DBLSPACE.BIN` / `DRVSPACE.BIN`.
+
+- `0`: no double-buffering requested by this MSDOS.SYS setting (the
+  documented default).
+- `1`: conditional double buffering for controllers needing it
+  (commonly certain SCSI controllers).
+- `2`: unconditional double buffering, even when not detected as necessary.
+
+`IOSYS_ParseDoubleBuffer` accepts these exact numeric modes, ignoring
+outer ASCII spaces/tabs; rejects invalid/ambiguous input atomically.
+`IOSYS_InitConfig` reads `[Options] DoubleBuffer` from the already
+selected boot-root MSDOS.SYS and resets the file-policy state on each
+initialization. `IOSYS_GetMsdosDoubleBufferMode` exposes **only this
+parsed file-mode**, not a statement that double buffering is active.
+
+**Not yet implemented:** real boot of `IO.SYS`, automatic loading of
+`DBLBUFF.SYS`, controller need detection, the independent
+`HKLM\\System\\CurrentControlSet\\Control\\WinBoot\\DoubleBuffer`
+registry control, or `CONFIG.SYS DEVICE=DBLBUFF.SYS /D+` handling.
+Do not emulate one of those merely because `DoubleBuffer` parsed, and
+do not propagate its state to Win3.x, NT/WOW, or Windows Me boot paths.
+
+A Microsoft Windows 95 CD-ROM MSDOSDRV.TXT extract (dated August 1995)
+documents DBLBUFF.SYS and `/D+`:
+https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/135485
+
+Microsoft KB Q118579 documents the values 0, 1 and 2:
+https://techshelps.github.io/MSDN/KB/Source/zMiscellaneous/Q118579.htm
+
+Microsoft KB Q174018 documents IO.SYS loading DBLBUFF.SYS during early boot
+and describes the *separate* WinBoot registry setting:
+https://techshelps.github.io/MSDN/KB/Source/win95x/q174018.htm
+
+Standalone parser regression: `python3 -m unittest discover -s scripts/tests -p test_iosys_doublebuffer.py`.
