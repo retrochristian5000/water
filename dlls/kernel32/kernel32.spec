@@ -60,6 +60,10 @@
 # Windows 95 RTM KERNEL32 exports AddAtomA by name AND ordinal 50.
 # Keep this separate from Win16 KERNEL's unrelated ordinal 50.
  50 stdcall -i386 AddAtomA(str)
+# Win95 RTM KERNEL32: WinExec is named export 728 (0x02d8).
+# Later Windows 95 KERNEL32 revisions have been listed with other ordinals;
+# do not treat this static i386 map as an OSR2 or NT export profile.
+728 stdcall -i386 WinExec(str long)
 
  51 stdcall -noname -i386 -private -norelay W32S_BackTo32() krnl386.exe16.W32S_BackTo32
  52 stdcall -noname -i386 -private GetThunkBuff() krnl386.exe16.GetThunkBuff
@@ -1658,7 +1662,7 @@
 # @ stub WerpNotifyUseStringResource
 # @ stub WerpStringLookup
 @ stdcall -import WideCharToMultiByte(long long wstr long ptr long ptr ptr)
-@ stdcall WinExec(str long)
+@ stdcall -arch=!i386 WinExec(str long)
 @ stdcall -import Wow64DisableWow64FsRedirection(ptr)
 @ stdcall -import Wow64EnableWow64FsRedirection(long)
 @ stdcall -import Wow64GetThreadContext(long ptr)

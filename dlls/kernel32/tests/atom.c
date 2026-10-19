@@ -611,6 +611,39 @@ static void test_win95_addatom_ordinal(void)
     ok( by_ordinal == by_name, "ordinal 50 does not resolve to AddAtomA\n" );
 }
 
+
+/* Win95 RTM (4.00.950) KERNEL32 exports WinExec as ordinal 728.
+ * Later revisions can shift ordinals. Check only the RTM-version family
+ * and resolve exports without calling WinExec (which starts a process).
+ */
+static void test_win95_rtm_winexec_ordinal(void)
+{
+    OSVERSIONINFOA version;
+    HMODULE kernel32;
+    FARPROC by_name, by_ordinal;
+
+    memset( &version, 0, sizeof(version) );
+    version.dwOSVersionInfoSize = sizeof(version);
+
+    if (sizeof(void *) != 4 || !(GetVersion() & 0x80000000) ||
+        !GetVersionExA( &version ) ||
+        version.dwMajorVersion != 4 || version.dwMinorVersion != 0 ||
+        version.dwBuildNumber != 950)
+    {
+        skip("WinExec ordinal 728 check requires Windows 95 RTM-family 4.00.950 on i386\n");
+        return;
+    }
+
+    kernel32 = GetModuleHandleA("kernel32.dll");
+    ok( kernel32 != NULL, "missing KERNEL32.DLL\n" );
+    if (!kernel32) return;
+
+    by_name = GetProcAddress( kernel32, "WinExec" );
+    by_ordinal = GetProcAddress( kernel32, MAKEINTRESOURCEA(728) );
+    ok( by_name != NULL, "missing WinExec named export\n" );
+    ok( by_ordinal == by_name, "ordinal 728 does not resolve to WinExec\n" );
+}
+
 START_TEST(atom)
 {
     /* Global atom table seems to be available to GUI apps only in
@@ -624,4 +657,5 @@ START_TEST(atom)
     test_local_get_atom_name();
     test_local_error_handling();
     test_win95_addatom_ordinal();
+    test_win95_rtm_winexec_ordinal();
 }
