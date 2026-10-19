@@ -211,9 +211,10 @@ HANDLE __wine_vxd_open( LPCWSTR filenameW, DWORD access, SECURITY_ATTRIBUTES *sa
             IO_STATUS_BLOCK io;
             FILE_INTERNAL_INFORMATION info;
             NTSTATUS status;
+            DWORD path_len = GetModuleFileNameW( module, path, MAX_PATH );
 
-            if (!GetModuleFileNameW( module, path, MAX_PATH ) ||
-                lstrlenW( path ) >= MAX_PATH - 1)
+            /* A truncated path need not be NUL-terminated on older Windows. */
+            if (!path_len || path_len >= MAX_PATH)
             {
                 FreeLibrary( module );
                 SetLastError( ERROR_FILENAME_EXCED_RANGE );
