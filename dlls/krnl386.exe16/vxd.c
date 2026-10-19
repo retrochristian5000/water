@@ -144,9 +144,18 @@ done:
 HANDLE __wine_vxd_open( LPCWSTR filenameW, DWORD access, SECURITY_ATTRIBUTES *sa )
 {
     int i;
-    HANDLE handle;
+    HANDLE handle = 0;
     HMODULE module;
     WCHAR *p, name[13];
+
+    /* This is a built-in VxD alias resolver, not an LE/.386 file loader.
+     * Reject malformed basenames before LoadLibraryW searches for a module.
+     */
+    if (!filenameW || !*filenameW || *filenameW == '.' || wcschr( filenameW, ':' ))
+    {
+        SetLastError( ERROR_FILE_NOT_FOUND );
+        return 0;
+    }
 
     /* normalize the filename */
 
@@ -193,6 +202,7 @@ HANDLE __wine_vxd_open( LPCWSTR filenameW, DWORD access, SECURITY_ATTRIBUTES *sa
         if (vxd_modules[i].module == module)
         {
             handle = vxd_modules[i].handle;
+            FreeLibrary( module ); /* release this lookup's extra reference */
             goto done;  /* already registered */
         }
         if (!vxd_modules[i].module)  /* new one, register it */
@@ -200,17 +210,35 @@ HANDLE __wine_vxd_open( LPCWSTR filenameW, DWORD access, SECURITY_ATTRIBUTES *sa
             WCHAR path[MAX_PATH];
             IO_STATUS_BLOCK io;
             FILE_INTERNAL_INFORMATION info;
+            NTSTATUS status;
 
-            GetModuleFileNameW( module, path, MAX_PATH );
+            if (!GetModuleFileNameW( module, path, MAX_PATH ) ||
+                lstrlenW( path ) >= MAX_PATH - 1)
+            {
+                FreeLibrary( module );
+                SetLastError( ERROR_FILENAME_EXCED_RANGE );
+                handle = 0;
+                goto done;
+            }
             handle = CreateFileW( path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0 );
             if (handle == INVALID_HANDLE_VALUE)
             {
+                DWORD error = GetLastError();
                 FreeLibrary( module );
+                SetLastError( error );
+                handle = 0; /* INVALID_HANDLE_VALUE is a process pseudo-handle */
                 goto done;
             }
-            if (!NtQueryInformationFile( handle, &io, &info, sizeof(info), FileInternalInformation ))
-                vxd_modules[i].index = info.IndexNumber;
-
+            status = NtQueryInformationFile( handle, &io, &info, sizeof(info), FileInternalInformation );
+            if (status)
+            {
+                CloseHandle( handle );
+                FreeLibrary( module );
+                SetLastError( RtlNtStatusToDosError( status ) );
+                handle = 0;
+                goto done;
+            }
+            vxd_modules[i].index = info.IndexNumber;
             vxd_modules[i].module = module;
             vxd_modules[i].handle = handle;
             vxd_modules[i].proc = (DeviceIoProc)GetProcAddress( module, "DeviceIoControl" );
@@ -220,10 +248,12 @@ HANDLE __wine_vxd_open( LPCWSTR filenameW, DWORD access, SECURITY_ATTRIBUTES *sa
 
     ERR("too many open VxD modules, please report\n" );
     FreeLibrary( module );
+    SetLastError( ERROR_TOO_MANY_OPEN_FILES );
     handle = 0;
 
 done:
     RtlLeaveCriticalSection( &vxd_section );
+    if (!handle) return 0;
     if (!DuplicateHandle( GetCurrentProcess(), handle, GetCurrentProcess(), &handle, 0,
                           (sa && (sa->nLength>=sizeof(*sa)) && sa->bInheritHandle),
                           DUPLICATE_SAME_ACCESS ))
@@ -460,20 +490,26 @@ void WINAPI __wine_vxd_vxdloader( I386_CONTEXT *context )
 	break;
 
     case 0x0001: /* load device */
-	FIXME("load device %04lx:%04x (%s)\n",
-	      context->SegDs, DX_reg(context),
-	      debugstr_a(MapSL(MAKESEGPTR(context->SegDs, DX_reg(context)))));
-	SET_AX( context, 0x0000 );
-	context->SegEs = 0x0000;
-	SET_DI( context, 0x0000 );
-	RESET_CFLAG(context);
-	break;
+        /* No real LE/.386 VxD loader exists here. Do not dereference an
+         * unvalidated DS:DX pointer just for logging, or report success.
+         * Error 3 is the legacy VXDLDR API's file-not-found response.
+         */
+        FIXME("load device not implemented (DS:DX %04lx:%04x)\n",
+              context->SegDs, DX_reg(context));
+        SET_AX( context, 0x0003 );
+        context->SegEs = 0;
+        SET_DI( context, 0 );
+        SET_CFLAG(context);
+        break;
 
     case 0x0002: /* unload device */
-	FIXME("unload device (%08lx)\n", context->Ebx);
-	SET_AX( context, 0x0000 );
-	RESET_CFLAG(context);
-	break;
+        /* No driver was installed through this stub. Legacy VXDLDR uses
+         * error 8 for an unknown/not-installed driver.
+         */
+        FIXME("unload device not implemented (BX %04x)\n", BX_reg(context));
+        SET_AX( context, 0x0008 );
+        SET_CFLAG(context);
+        break;
 
     default:
 	VXD_BARF( context, "VXDLDR" );
