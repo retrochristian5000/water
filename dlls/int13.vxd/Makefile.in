@@ -1,0 +1,4 @@
+MODULE    = int13.vxd
+
+SOURCES = \
+	int13.c
