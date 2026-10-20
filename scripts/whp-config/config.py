@@ -101,7 +101,7 @@ OPTIONS = (
            'choice', 'allow', ('allow', 'error')),
 
     Option('WATER_AUTOCONF_PROVIDER', 'Build toolchains', 'Autoconf generator',
-           'choice', 'pinned', ('pinned', 'host')),
+           'choice', 'pinned', ('pinned', 'host', 'cached')),
     Option('WATER_AUTOMAKE_PROVIDER', 'Build toolchains', 'Automake macros for Bash',
            'choice', 'pinned', ('pinned', 'host')),
 
