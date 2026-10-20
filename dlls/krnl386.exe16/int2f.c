@@ -280,6 +280,20 @@ void WINAPI DOSVM_Int2fHandler( I386_CONTEXT *context )
        }
        break;
 
+    case 0x48: /* DOSKEY.COM command-line editor (MS-DOS 5+) */
+        if (AL_reg(context) == 0x00) /* AX=4800h: installation check */
+        {
+            /* This KRNL386 compatibility handler has no resident DOSKEY.
+             * Report absence through AL only. Do not invent a TSR segment,
+             * return a DOS 5.x installation signature, or imply that the
+             * Windows 95 real-mode DOS environment has been emulated.
+             */
+            SET_AL( context, 0 );
+        }
+        else /* Includes AX=4810h: requires an actual resident DOSKEY */
+            INT_BARF( context, 0x2f );
+        break;
+
     case 0x4a:
         switch(LOBYTE(context->Eax))
         {
