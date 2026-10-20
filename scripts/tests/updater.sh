@@ -110,4 +110,38 @@ if WHP_GIT_UPDATE=1 sh "$tmp/auto/build.sh" --help > "$tmp/offline-strict.log" 2
 fi
 grep -Fq 'cannot reach configured Water upstream' "$tmp/offline-strict.log"
 
-printf 'PASS: Water auto-refresh, one-shot reentry, pins, offline and dirty guards\n'
+# A consuming repository intentionally leaves Water detached at its gitlink.
+# Auto mode must identify a matching pin without fetching or reporting damage.
+git init -q -b master "$tmp/consumer"
+git -C "$tmp/consumer" config user.name 'Water updater test'
+git -C "$tmp/consumer" config user.email 'test@example.invalid'
+git -C "$tmp/consumer" submodule add -q "$tmp/remote.git" toolchains/wine
+git -C "$tmp/consumer" commit -qm 'pin Water'
+git clone -q "$tmp/consumer" "$tmp/consumer-work"
+git -C "$tmp/consumer-work" submodule update -q --init --checkout -- toolchains/wine
+child="$tmp/consumer-work/toolchains/wine"
+pinned=$(git -C "$tmp/consumer-work" ls-files -s -- toolchains/wine | awk '$1 == "160000" { print $2; exit }')
+[ "$(git -C "$child" rev-parse HEAD)" = "$pinned" ]
+[ -z "$(git -C "$child" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ]
+CI= WHP_GIT_UPDATE=auto sh "$child/scripts/update-source.sh" > "$tmp/pinned.log" 2>&1
+grep -Fq 'pinned Water submodule (detached HEAD expected); refresh skipped' "$tmp/pinned.log"
+[ "$(git -C "$child" rev-parse HEAD)" = "$pinned" ]
+if WHP_GIT_UPDATE=1 sh "$child/scripts/update-source.sh" > "$tmp/pinned-strict.log" 2>&1; then
+    printf 'strict source update unexpectedly accepted a detached submodule\n' >&2
+    exit 1
+fi
+grep -Fq 'Water is on a detached HEAD' "$tmp/pinned-strict.log"
+
+# A mismatched gitlink is NOT an expected, pinned checkout.
+git -C "$child" checkout -q --detach HEAD^
+CI= WHP_GIT_UPDATE=auto sh "$child/scripts/update-source.sh" > "$tmp/mismatched.log" 2>&1
+grep -Fq 'Water submodule HEAD differs from the consumer gitlink' "$tmp/mismatched.log"
+git -C "$tmp/consumer-work" submodule update -q --checkout -- toolchains/wine
+[ "$(git -C "$child" rev-parse HEAD)" = "$pinned" ]
+
+# A detached standalone Water checkout remains a warning, not a pin.
+git -C "$tmp/auto" checkout -q --detach HEAD
+CI= WHP_GIT_UPDATE=auto sh "$tmp/auto/scripts/update-source.sh" > "$tmp/standalone.log" 2>&1
+grep -Fq 'Water is on a detached HEAD, not an updating branch' "$tmp/standalone.log"
+
+printf 'PASS: Water auto-refresh, one-shot reentry, pinned submodules, offline and dirty guards\n'
