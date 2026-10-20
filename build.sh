@@ -128,7 +128,7 @@ Environment:
   WHP_LLVM_BUILD_DIR    Water LLVM bootstrap directory (default: ./build/llvm-bootstrap)
   WHP_LIBCXX_RUNTIME_DIR LLVM libc++ PE runtime cache (default: ./build/llvm-libcxx-pe)
   WHP_AUTOMAKE_SOURCE_DIR Override menu-selected Automake macro source directory
-  WATER_AUTOCONF_PROVIDER pinned (default) or host generator
+  WATER_AUTOCONF_PROVIDER pinned (default), host, or cached (verified-only; no generator)
   WATER_AUTOMAKE_PROVIDER pinned (default) or host Bash macro source
   M4                    GNU M4 executable for pinned Autoconf bootstrap
                         Auto-detected by scripts/whp-build/m4.sh (gm4, then m4)
@@ -329,8 +329,8 @@ validate_profile()
         *) die "WATER_LIBCXX_LEGACY_POLICY must be allow or error" ;;
     esac
     case "$WATER_AUTOCONF_PROVIDER" in
-        pinned|host) ;;
-        *) die "WATER_AUTOCONF_PROVIDER must be pinned or host" ;;
+        pinned|host|cached) ;;
+        *) die "WATER_AUTOCONF_PROVIDER must be pinned, host, or cached" ;;
     esac
     case "$WATER_AUTOMAKE_PROVIDER" in
         pinned|host) ;;
@@ -502,11 +502,19 @@ prepare_autoconf_toolchain()
     # A verified generated configure does not need Autoconf (or Automake,
     # GNU M4, and Perl just to bootstrap Autoconf) on every invocation.
     # Only trust manifests produced by Water's pinned generator path.
-    if [ -z "$AUTOCONF_EXPLICIT" ] && [ "$WATER_AUTOCONF_PROVIDER" = pinned ] &&
+    # "cached" is a fail-closed choice for hosts without build-time Autotools:
+    # a changed input, pinned gitlink, or configure checksum must NOT fall
+    # through to a generator or an unverified stale script.
+    if [ -z "$AUTOCONF_EXPLICIT" ] && [ "$WATER_AUTOCONF_PROVIDER" != host ] &&
        /bin/sh "$SOURCE_DIR/scripts/whp-build/configure-cache.sh" check "$SOURCE_DIR" "$BUILD_DIR"; then
         AUTOCONF_REUSE_CONFIGURE=1
         printf 'WHP Autoconf: verified generated configure; bootstrap skipped\n' >&2
         return 0
+    fi
+    if [ "$WATER_AUTOCONF_PROVIDER" = cached ]; then
+        [ -z "$AUTOCONF_EXPLICIT" ] ||
+            die 'WATER_AUTOCONF_PROVIDER=cached cannot be combined with AUTOCONF override'
+        die 'cached Autoconf mode requires a verified pinned-generated configure; run with WATER_AUTOCONF_PROVIDER=pinned first'
     fi
     if [ -n "$AUTOCONF_EXPLICIT" ] || [ "$WATER_AUTOCONF_PROVIDER" = host ]; then
         printf 'WHP Autoconf: explicit executable %s\n' "$AUTOCONF" >&2
