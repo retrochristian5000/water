@@ -55,6 +55,29 @@ if [ "$dirty" = 1 ]; then
     exit 0
 fi
 if [ -z "$branch" ]; then
+    # A consumer such as QEMU normally checks out Water at its pinned
+    # gitlink revision with a detached HEAD. Do not turn that expected
+    # state into a warning or attempt to move the consumer's dependency.
+    # Check the parent's index pin before classifying it as expected.
+    if [ "$mode" = auto ]; then
+        superproject=$(git -C "$SOURCE_DIR" rev-parse --show-superproject-working-tree 2>/dev/null || true)
+        if [ -n "$superproject" ]; then
+            case "$SOURCE_DIR" in
+                "$superproject"/*)
+                    submodule_path=${SOURCE_DIR#"$superproject"/}
+                    pinned_oid=$(git -C "$superproject" ls-files -s -- "$submodule_path" |
+                        awk '$1 == "160000" { print $2; exit }')
+                    current_oid=$(git -C "$SOURCE_DIR" rev-parse HEAD)
+                    if [ -n "$pinned_oid" ] && [ "$pinned_oid" = "$current_oid" ]; then
+                        printf 'WHP source update: pinned Water submodule (detached HEAD expected); refresh skipped\n' >&2
+                        exit 0
+                    fi
+                    warn_or_fail 'Water submodule HEAD differs from the consumer gitlink'
+                    exit 0
+                    ;;
+            esac
+        fi
+    fi
     warn_or_fail 'Water is on a detached HEAD, not an updating branch'
     exit 0
 fi
