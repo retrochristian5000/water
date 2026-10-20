@@ -60,6 +60,34 @@ The pinned Bash source already includes a generated `configure`; Water
 preserves it instead of invoking an older host Autoconf to regenerate it.
 Run `sh scripts/tests/configure-cache.sh` to verify the cache safeguards.
 
+For an offline or older development host **after a pinned generation has
+succeeded**, use `WATER_AUTOCONF_PROVIDER=cached` to require the verified
+generated `configure` without invoking any generator:
+
+```sh
+WHP_GIT_UPDATE=0 WHP_SUBMODULES=0 WATER_AUTOCONF_PROVIDER=cached ./build.sh incremental
+```
+
+The `cached` option is available in `./build.sh menuconfig`. It checks the
+pinned gitlink and input/output hashes; a missing or invalid cache **fails**
+rather than falling back to a moving Autoconf, guessing a version, or
+regenerating stale content. The `WHP_SUBMODULES=0` example assumes all
+other required build dependencies are already present. Selecting
+`AUTOCONF` explicitly conflicts with cached-only mode, because a generator
+override cannot establish pinned provenance.
+
+**Version boundaries:** Water's `configure.ac` requires Autoconf `2.63b`
+at script-generation time. The pinned **Autoconf source fork itself** has
+`AC_PREREQ([2.69])`; that is a bootstrap-source requirement, not the
+minimum Autoconf version for running an already generated `configure`.
+For an explicit system generator instead of bootstrapping the fork, select
+`WATER_AUTOCONF_PROVIDER=host` (or supply `AUTOCONF=/path/to/autoconf`).
+A host generator still has to support the actual macros in Water's
+`configure.ac`; an arbitrarily old version is not assumed compatible.
+Neither route weakens the fork's minimum version or silently imports newer
+Autotools macros into Windows 95 driver headers.
+
+
 The LLVM libc++ PE runtime cache at `build/llvm-libcxx-pe/` is audited
 before reuse. Each archive member must have the expected COFF machine type
 for its target (including AArch64 and ARM64EC), so a stale x64 or mixed
