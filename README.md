@@ -119,6 +119,11 @@ its commit changes, and merge using `--ff-only` (never rebase or force-push).
 checkouts, uncommitted tracked changes, and temporarily unreachable remotes
 retain the current source rather than silently discarding work or blocking an
 offline build when its pinned dependencies are already present.
+When Water is checked out as a submodule (such as QEMU's `toolchains/wine`),
+automatic updates verify its detached HEAD against the consuming repository's
+index gitlink. A matching pin is reported as expected, without changing
+revisions; a mismatch still warns, and strict updates still reject a detached
+checkout rather than silently attaching it to a branch.
 Set `WHP_GIT_UPDATE=1` for strict failure on those conditions, or
 `WHP_GIT_UPDATE=0` to disable source checks. To disable dependency
 initialization as well for a fully offline build with existing toolchains,
