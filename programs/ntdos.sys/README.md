@@ -30,12 +30,19 @@ guest NTDOS.SYS path is executable.
 ## DOSKEY.COM TSR compatibility: evidence and missing DOS services (2026-10-19)
 
 DOSKEY is a historical **DOS** resident command-line editor, not an NT
-`DOSKEY.EXE`/CMD.EXE facility or a hardware-driver binary. Windows 95
-replaced older MS-DOS utilities including `DOSKEY.COM` during Setup
-(Microsoft KB Q129581); this does not establish byte-identical behavior
-between MS-DOS 5/6, Win95 RTM (MS-DOS 7.0) and later Win9x releases.
-Neither an original Win95 DOSKEY executable nor a live guest trace has
-been inspected for this audit.
+`DOSKEY.EXE`/CMD.EXE facility or a hardware-driver binary. Microsoft's
+Windows 95 DMF-floppy media inventory (Q135544, `WIN95_09.CAB`) lists
+`DOSKEY.COM` at **15,431 bytes**, with a file timestamp of **1995-07-11
+09:50**. The same inventory lists `KEYB.COM`, `ANSI.SYS`, `DISPLAY.SYS`,
+`DBLBUFF.SYS`, and `RAMDRIVE.SYS`: distinct keyboard, console/display,
+buffering and device-driver components, not DOSKEY's own resident services.
+This is an archived *file-list witness*, not an inspected executable,
+cryptographic hash, loader trace or proof of DOSKEY's runtime ABI.
+Q129581 instead describes the **Windows 95 Preview Program** upgrade
+process; its replacement-file list must not be treated as independent
+final-release verification. None of these inventories establishes
+byte-identical behavior between MS-DOS 5/6, Win95 RTM (MS-DOS 7.0) and
+later Win9x releases.
 
 ### Evidence-backed interrupt contracts
 
@@ -82,7 +89,10 @@ inspection.
   Missing evidence must remain a failing or unimplemented status.
 
 Source trail:
-- Microsoft KB Q129581, Windows 95 replacement of older `DOSKEY.COM`:
+- Microsoft KB Q135544, Windows 95 DMF `WIN95_09.CAB` filename/size/date
+  inventory (not extracted binaries):
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/135544
+- Microsoft KB Q129581, **Preview Program** predecessor inventory only:
   https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/129581
 - Microsoft KB Q79245, DOSKEY's `INT 16h` and interactive/batch distinction:
   https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/79245
