@@ -127,8 +127,21 @@ git -C "$tmp/source" checkout -q --detach "$pin" || fail 'cannot check out pinne
     ./configure --prefix="$prefix" M4="$m4" PERL="$perl" || exit 1
     # These targets match the pinned fork's Automake-generated Makefile.
     # Avoid the default all/install targets, which also build manuals.
-    "$make"         bin/autoconf bin/autoheader bin/autom4te bin/autoreconf         bin/autoscan bin/autoupdate bin/ifnames         lib/autom4te.cfg lib/autoconf/autoconf.m4f         lib/autoscan/autoscan.list         lib/m4sugar/m4sugar.m4f lib/m4sugar/m4sh.m4f         lib/autotest/autotest.m4f || exit 1
-    "$make"         install-binSCRIPTS install-dist_perllibDATA         install-nodist_pkgdataDATA install-dist_autoconflibDATA         install-nodist_autoconflibDATA install-nodist_autoscanlibDATA         install-dist_m4sugarlibDATA install-nodist_m4sugarlibDATA         install-dist_autotestlibDATA install-nodist_autotestlibDATA         install-dist_buildauxDATA install-data-hook         pkgdata_DATA= || exit 1
+    "$make" \
+        bin/autoconf bin/autoheader bin/autom4te bin/autoreconf \
+        bin/autoscan bin/autoupdate bin/ifnames \
+        lib/autom4te.cfg lib/autoconf/autoconf.m4f \
+        lib/autoscan/autoscan.list \
+        lib/m4sugar/m4sugar.m4f lib/m4sugar/m4sh.m4f \
+        lib/autotest/autotest.m4f || exit 1
+    "$make" \
+        install-binSCRIPTS install-dist_perllibDATA \
+        install-nodist_pkgdataDATA install-dist_autoconflibDATA \
+        install-nodist_autoconflibDATA install-nodist_autoscanlibDATA \
+        install-dist_m4sugarlibDATA install-nodist_m4sugarlibDATA \
+        install-dist_autotestlibDATA install-nodist_autotestlibDATA \
+        install-dist_buildauxDATA install-data-hook \
+        pkgdata_DATA= || exit 1
 ) >&2 || fail "bootstrap failed for pinned Autoconf $pin"
 [ -x "$prefix/bin/autoconf" ] &&
     "$prefix/bin/autoconf" --version >/dev/null 2>&1 ||
