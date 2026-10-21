@@ -104,6 +104,8 @@ OPTIONS = (
            'choice', 'pinned', ('pinned', 'host', 'cached')),
     Option('WATER_AUTOMAKE_PROVIDER', 'Build toolchains', 'Automake macros for Bash',
            'choice', 'pinned', ('pinned', 'host')),
+    Option('WATER_AUTOMAKE_EXEC_PROVIDER', 'Build toolchains', 'Automake tools for Autoconf',
+           'choice', 'auto', ('auto', 'pinned', 'host')),
 
     Option('BOOTSTRAP_NINJA', 'Build behavior', 'Pinned WHP Ninja executor', 'choice',
            'auto', ('auto', 'y', 'n')),
