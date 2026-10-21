@@ -47,7 +47,7 @@ cat > "$tmp/tools/make" <<'EOF'
 #!/bin/sh
 case "${1:-}" in
     --version) echo 'GNU Make mock' ;;
-    install)
+    install-binSCRIPTS)
         prefix=$(cat .mock-prefix)
         mkdir -p "$prefix/bin"
         cat > "$prefix/bin/autoconf" <<'EOC'
