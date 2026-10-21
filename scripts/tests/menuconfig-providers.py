@@ -3,7 +3,9 @@
 """Guard Python and POSIX menuconfig metadata and provider persistence."""
 from __future__ import annotations
 
+import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,10 +42,14 @@ class MenuconfigProvidersTest(unittest.TestCase):
         self.assertEqual(shell_schema(), expected)
 
     def test_defaults_and_valid_providers(self):
-        for key in ("WATER_AUTOCONF_PROVIDER", "WATER_AUTOMAKE_PROVIDER"):
+        expected = {
+            "WATER_AUTOCONF_PROVIDER": ("pinned", "host", "cached"),
+            "WATER_AUTOMAKE_PROVIDER": ("pinned", "host"),
+        }
+        for key, choices in expected.items():
             option = whp_config.OPTION_BY_KEY[key]
             self.assertEqual(option.default, "pinned")
-            self.assertEqual(option.choices, ("pinned", "host"))
+            self.assertEqual(option.choices, choices)
             for value in option.choices:
                 whp_config.validate_value(option, value)
             with self.assertRaises(ValueError):
@@ -78,6 +84,37 @@ class MenuconfigProvidersTest(unittest.TestCase):
                     self.assertIn("host", result.stdout)
                     self.assertIn(key if command[0] == "/bin/sh" else
                                   whp_config.OPTION_BY_KEY[key].label, result.stdout)
+
+
+    def test_maintenance_without_automake_bootstrap(self):
+        """A host Automake selection must not block unrelated maintenance."""
+        if os.name == "nt":
+            self.skipTest("Water's build wrapper requires a POSIX shell")
+        dirname = shutil.which("dirname")
+        if not dirname:
+            self.skipTest("dirname unavailable")
+
+        with tempfile.TemporaryDirectory(prefix="water-automake-bypass-") as root:
+            tmp = pathlib.Path(root)
+            shutil.copy2(ROOT / "build.sh", tmp / "build.sh")
+            tools = tmp / "tools"
+            tools.mkdir()
+            (tools / "dirname").symlink_to(dirname)
+            env = os.environ.copy()
+            env.update({
+                "PATH": str(tools),
+                "WHP_GIT_UPDATE": "0",
+                "WHP_SUBMODULES": "0",
+                "WATER_LLVM_LINKER": "system",
+                "WATER_AUTOCONF_PROVIDER": "cached",
+                "WATER_AUTOMAKE_PROVIDER": "host",
+                "WATER_BASH_BOOTSTRAP": "n",
+            })
+            env.pop("WHP_AUTOMAKE_SOURCE_DIR", None)
+            result = subprocess.run(["/bin/sh", str(tmp / "build.sh"), "clean"],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("already absent", result.stderr)
 
 
 if __name__ == "__main__":
