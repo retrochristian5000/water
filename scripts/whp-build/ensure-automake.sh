@@ -93,9 +93,15 @@ if usable; then
 fi
 if [ -e "$prefix" ] || [ -L "$prefix" ]; then
     printf 'WHP Automake: clearing incomplete cache %s\n' "$prefix" >&2
-    rm -rf "$prefix" || fail 'cannot clean incomplete Automake cache'
+    rm -rf "$prefix" || {
+        rmdir "$lock" 2>/dev/null || :
+        fail 'cannot clean incomplete Automake cache'
+    }
 fi
-tmp=$(mktemp -d "$cache/.source.XXXXXXXX") || fail 'cannot create bootstrap directory'
+tmp=$(mktemp -d "$cache/.source.XXXXXXXX") || {
+    rmdir "$lock" 2>/dev/null || :
+    fail 'cannot create bootstrap directory'
+}
 cleanup()
 {
     rm -rf "$tmp"
