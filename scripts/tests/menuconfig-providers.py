@@ -45,10 +45,12 @@ class MenuconfigProvidersTest(unittest.TestCase):
         expected = {
             "WATER_AUTOCONF_PROVIDER": ("pinned", "host", "cached"),
             "WATER_AUTOMAKE_PROVIDER": ("pinned", "host"),
+            "WATER_AUTOMAKE_EXEC_PROVIDER": ("auto", "pinned", "host"),
         }
         for key, choices in expected.items():
             option = whp_config.OPTION_BY_KEY[key]
-            self.assertEqual(option.default, "pinned")
+            self.assertEqual(option.default,
+                             "auto" if key == "WATER_AUTOMAKE_EXEC_PROVIDER" else "pinned")
             self.assertEqual(option.choices, choices)
             for value in option.choices:
                 whp_config.validate_value(option, value)
@@ -61,14 +63,17 @@ class MenuconfigProvidersTest(unittest.TestCase):
             state = whp_config.load_config(config_file)
             state.values["WATER_AUTOCONF_PROVIDER"] = "host"
             state.values["WATER_AUTOMAKE_PROVIDER"] = "host"
+            state.values["WATER_AUTOMAKE_EXEC_PROVIDER"] = "pinned"
             whp_config.save_config(config_file, state)
 
             state = whp_config.load_config(config_file)
             self.assertEqual(state.values["WATER_AUTOCONF_PROVIDER"], "host")
             self.assertEqual(state.values["WATER_AUTOMAKE_PROVIDER"], "host")
+            self.assertEqual(state.values["WATER_AUTOMAKE_EXEC_PROVIDER"], "pinned")
             assignments = whp_config.shell_assignments(state, {})
             self.assertIn("WATER_AUTOCONF_PROVIDER='host'", assignments)
             self.assertIn("WATER_AUTOMAKE_PROVIDER='host'", assignments)
+            self.assertIn("WATER_AUTOMAKE_EXEC_PROVIDER='pinned'", assignments)
             # Environment variables take precedence over persistent profile values.
             assignments = whp_config.shell_assignments(
                 state, {"WATER_AUTOCONF_PROVIDER": "pinned"})
@@ -80,11 +85,28 @@ class MenuconfigProvidersTest(unittest.TestCase):
                 ["/bin/sh", str(MENU / "menuconfig.sh"), str(config_file), "--dump"],
             ):
                 result = subprocess.run(command, capture_output=True, text=True, check=True)
-                for key in ("WATER_AUTOCONF_PROVIDER", "WATER_AUTOMAKE_PROVIDER"):
-                    self.assertIn("host", result.stdout)
+                for key in ("WATER_AUTOCONF_PROVIDER", "WATER_AUTOMAKE_PROVIDER",
+                            "WATER_AUTOMAKE_EXEC_PROVIDER"):
+                    expected_value = "pinned" if key == "WATER_AUTOMAKE_EXEC_PROVIDER" else "host"
+                    self.assertIn(expected_value, result.stdout)
                     self.assertIn(key if command[0] == "/bin/sh" else
                                   whp_config.OPTION_BY_KEY[key].label, result.stdout)
 
+
+    def test_autotools_bootstrap_order_and_bypass(self):
+        wrapper = (ROOT / "build.sh").read_text(encoding="utf-8")
+        auto_fn = wrapper.index("prepare_automake_executables()")
+        ac_fn = wrapper.index("prepare_autoconf_toolchain()")
+        cache = wrapper.index('configure-cache.sh" check', ac_fn)
+        prepare = wrapper.index("    prepare_automake_executables\n", ac_fn)
+        build_autoconf = wrapper.index("ensure-autoconf.sh", prepare)
+        self.assertLess(auto_fn, ac_fn)
+        self.assertLess(cache, prepare)
+        self.assertLess(prepare, build_autoconf)
+        self.assertIn('if [ "$AUTOMAKE_EXEC_EXPLICIT" = 1 ]; then', wrapper)
+        helper = ROOT / "scripts" / "whp-build" / "ensure-automake.sh"
+        self.assertTrue(helper.is_file())
+        self.assertIn("git clone -q --shared", helper.read_text(encoding="utf-8"))
 
     def test_maintenance_without_automake_bootstrap(self):
         """A host Automake selection must not block unrelated maintenance."""
