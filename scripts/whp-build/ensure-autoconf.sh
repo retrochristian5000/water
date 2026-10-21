@@ -153,5 +153,8 @@ git -C "$tmp/source" checkout -q --detach "$pin" || fail 'cannot check out pinne
     "$prefix/bin/autoconf" --version >/dev/null 2>&1 ||
     fail "installed fork Autoconf is unusable: $prefix"
 : > "$prefix/.whp-ready"
-autoconf_usable || fail "installed fork Autoconf cannot generate a configure script: $prefix"
+if ! autoconf_usable; then
+    rm -f "$prefix/.whp-ready"
+    fail "installed fork Autoconf cannot generate a configure script: $prefix"
+fi
 printf '%s\n' "$prefix/bin/autoconf"
