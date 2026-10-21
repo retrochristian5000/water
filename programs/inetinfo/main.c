@@ -68,10 +68,10 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
     status.dwCurrentState = SERVICE_STOPPED;
     status.dwControlsAccepted = 0;
     status.dwWin32ExitCode = ERROR_CALL_NOT_IMPLEMENTED;
+    FIXME("%s needs a Windows 2000 IIS service backend.\n", debugstr_w(name));
+    /* Successful SERVICE_STOPPED can cause SCM to terminate this process. */
     if (!SetServiceStatus(handle, &status))
         ERR("Could not report %s service status: %lu.\n", debugstr_w(name), GetLastError());
-
-    FIXME("%s needs a Windows 2000 IIS service backend.\n", debugstr_w(name));
 }
 
 int __cdecl wmain(int argc, WCHAR **argv)
@@ -85,6 +85,9 @@ int __cdecl wmain(int argc, WCHAR **argv)
         { nntpsvcW, service_main },
         { NULL, NULL }
     };
+
+    (void)argc;
+    (void)argv;
 
     if (!StartServiceCtrlDispatcherW(table))
     {
