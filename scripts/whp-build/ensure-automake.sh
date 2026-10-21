@@ -58,7 +58,7 @@ m4=$(/bin/sh "$root/scripts/whp-build/m4.sh" --print-path) ||
 
 # Distinct tool fingerprints prevent stale install reuse.
 identity=$(
-    printf '%s\n' 'RECIPE=1' "PIN=$pin" "AC=$seed_autoconf:$ac_version" \
+    printf '%s\n' 'RECIPE=2' "PIN=$pin" "AC=$seed_autoconf:$ac_version" \
         "AUTOM4TE=$seed_autom4te:$am4_version" "PERL=$perl" "MAKE=$make" "M4=$m4"
     "$perl" --version | sed -n '2p'
     "$make" --version | sed -n '1p'
@@ -117,9 +117,13 @@ ln -s "$m4" "$tmp/seed-bin/m4" || fail 'cannot expose validated GNU M4'
 [ -f "$tmp/source/configure" ] || fail 'Automake bootstrap did not generate configure'
 (
     cd "$tmp/build"
-    PATH="$tmp/seed-bin:$PATH" M4="$m4" PERL="$perl" \
-        AUTOCONF="$seed_autoconf" AUTOM4TE="$seed_autom4te" \
-        /bin/sh "$tmp/source/configure" --prefix="$prefix" || exit 1
+    PATH="$tmp/seed-bin:$PATH"
+    M4="$m4"
+    PERL="$perl"
+    AUTOCONF="$seed_autoconf"
+    AUTOM4TE="$seed_autom4te"
+    export PATH M4 PERL AUTOCONF AUTOM4TE
+    /bin/sh "$tmp/source/configure" --prefix="$prefix" || exit 1
     "$make" || exit 1
     "$make" install || exit 1
 ) >&2 || fail "could not build/install pinned Automake $pin"
