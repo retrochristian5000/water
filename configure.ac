@@ -2808,6 +2808,7 @@ enable_plugplay=${enable_plugplay:-$HOST_ARCH}
 enable_rpcss=${enable_rpcss:-$HOST_ARCH}
 enable_services=${enable_services:-$HOST_ARCH}
 enable_spoolsv=${enable_spoolsv:-$HOST_ARCH}
+enable_inetinfo=${enable_inetinfo:-$HOST_ARCH}
 enable_termsv=${enable_termsv:-$HOST_ARCH}
 enable_wineboot=${enable_wineboot:-$HOST_ARCH}
 enable_winemenubuilder=${enable_winemenubuilder:-$HOST_ARCH}
@@ -4079,6 +4080,7 @@ WINE_CONFIG_MAKEFILE(programs/hh)
 WINE_CONFIG_MAKEFILE(programs/hostname)
 WINE_CONFIG_MAKEFILE(programs/icacls)
 WINE_CONFIG_MAKEFILE(programs/icinfo)
+WINE_CONFIG_MAKEFILE(programs/inetinfo)
 WINE_CONFIG_MAKEFILE(programs/iexplore)
 WINE_CONFIG_MAKEFILE(programs/icwconn1)
 WINE_CONFIG_MAKEFILE(programs/ipconfig)
