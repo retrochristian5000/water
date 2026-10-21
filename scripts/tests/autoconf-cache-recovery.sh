@@ -129,10 +129,8 @@ rmdir "$prefix.lock"
 # A version-only impostor cannot satisfy the installed-runtime smoke test.
 printf '#!/bin/sh\n[ "\${1:-}" = --version ] && echo "autoconf (GNU Autoconf) mock"\n' > "$cmd"
 chmod +x "$cmd"
-if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
-    echo 'FAIL: version-only Autoconf cache was trusted' >&2; exit 1
-fi
-# The preceding attempt repairs the poisoned install rather than trusting it.
+[ "$(/bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0)" = "$cmd" ] ||
+    { echo 'FAIL: version-only Autoconf cache was not repaired' >&2; exit 1; }
 # A healthy rebuild must have occurred before the smoke-test validation.
 [ "$(wc -l < "$WHP_CACHE_INSTALL_LOG" | tr -d ' ')" -eq 4 ] ||
     { echo 'FAIL: version-only cache did not trigger rebuild' >&2; exit 1; }
