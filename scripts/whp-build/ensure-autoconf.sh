@@ -52,7 +52,7 @@ esac
 
 # A distinct prefix for each toolchain signature prevents stale binary reuse.
 identity=$(
-    printf '%s\n' 'RECIPE=2' "PIN=$pin" "M4=$m4" \
+    printf '%s\n' 'RECIPE=3' "PIN=$pin" "M4=$m4" \
         "PERL=$(command -v "$perl")" "ACLOCAL=$(command -v "$aclocal")" \
         "AUTOMAKE=$(command -v "$automake")" "MAKE=$(command -v "$make")"
     "$m4" --version | sed -n '1p'
@@ -65,19 +65,34 @@ mkdir -p "$build"
 build=$(cd "$build" && pwd)
 cache=$build/autoconf-bootstrap
 prefix=$cache/$pin-$fingerprint
+mkdir -p "$cache"
+autoconf_usable()
+{
+    [ -f "$prefix/.whp-ready" ] && [ -x "$prefix/bin/autoconf" ] || return 1
+    "$prefix/bin/autoconf" --version >/dev/null 2>&1 || return 1
+    # A version banner does not load the installed Perl/M4 modules.
+    # Run the actual generator in an isolated directory before trusting cache.
+    probe=$(mktemp -d "$cache/.smoke.XXXXXXXX") || return 1
+    printf '%s\n' 'AC_INIT([whp-water-bootstrap],[1])' 'AC_OUTPUT' > "$probe/configure.ac"
+    (
+        cd "$probe" || exit 1
+        unset AUTOCONF AUTOM4TE AUTOHEADER AUTORECONF M4
+        "$prefix/bin/autoconf" -o configure configure.ac >/dev/null 2>&1
+    ) && [ -s "$probe/configure" ]
+    result=$?
+    rm -rf "$probe"
+    return "$result"
+}
 # A healthy cache is a fast path; interrupted or corrupt caches can be rebuilt.
-if [ -f "$prefix/.whp-ready" ] && [ -x "$prefix/bin/autoconf" ] &&
-   "$prefix/bin/autoconf" --version >/dev/null 2>&1; then
+if autoconf_usable; then
     printf '%s\n' "$prefix/bin/autoconf"
     exit 0
 fi
-mkdir -p "$cache"
 lock=$prefix.lock
 mkdir "$lock" 2>/dev/null ||
     fail "another Autoconf bootstrap is already using $prefix"
 # Recheck after acquiring the lock: another worker may have just completed.
-if [ -f "$prefix/.whp-ready" ] && [ -x "$prefix/bin/autoconf" ] &&
-   "$prefix/bin/autoconf" --version >/dev/null 2>&1; then
+if autoconf_usable; then
     rmdir "$lock" || fail "cannot release bootstrap lock: $lock"
     printf '%s\n' "$prefix/bin/autoconf"
     exit 0
@@ -113,7 +128,9 @@ git -C "$tmp/source" checkout -q --detach "$pin" || fail 'cannot check out pinne
     "$make" || exit 1
     "$make" install || exit 1
 ) >&2 || fail "bootstrap failed for pinned Autoconf $pin"
-[ -x "$prefix/bin/autoconf" ] && "$prefix/bin/autoconf" --version >/dev/null 2>&1 ||
+[ -x "$prefix/bin/autoconf" ] &&
+    "$prefix/bin/autoconf" --version >/dev/null 2>&1 ||
     fail "installed fork Autoconf is unusable: $prefix"
 : > "$prefix/.whp-ready"
+autoconf_usable || fail "installed fork Autoconf cannot generate a configure script: $prefix"
 printf '%s\n' "$prefix/bin/autoconf"
