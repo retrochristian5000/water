@@ -87,6 +87,20 @@ cmd=$(/bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0)
 prefix=$(dirname "$(dirname "$cmd")")
 [ -f "$prefix/.whp-ready" ] || { echo 'FAIL: ready cache missing' >&2; exit 1; }
 
+# Mismatched stage-0 Automake tools must not reuse a cached Autoconf binary.
+cp "$tmp/tools/automake" "$tmp/automake.saved"
+cat > "$tmp/tools/automake" <<'EOF'
+#!/bin/sh
+echo 'automake (GNU automake) different-version'
+EOF
+chmod +x "$tmp/tools/automake"
+if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: mismatched stage-0 Automake tools accepted' >&2; exit 1
+fi
+grep -q 'aclocal and automake versions differ' "$tmp/err" ||
+    { echo 'FAIL: missing paired-stage-0 diagnostic' >&2; exit 1; }
+mv "$tmp/automake.saved" "$tmp/tools/automake"
+
 # A half-installed cache no longer strands the next build.
 rm "$prefix/.whp-ready"
 printf 'stale\n' > "$prefix/old-file"
