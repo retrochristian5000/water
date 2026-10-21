@@ -52,8 +52,11 @@ case "${1:-}" in
         mkdir -p "$prefix/bin"
         cat > "$prefix/bin/autoconf" <<'EOC'
 #!/bin/sh
-[ "${1:-}" = --version ] && { echo 'autoconf (GNU Autoconf) mock'; exit 0; }
-exit 1
+case "${1:-}" in
+    --version) echo 'autoconf (GNU Autoconf) mock' ;;
+    -o) printf '#!/bin/sh\nexit 0\n' > "$2" ;;
+    *) exit 1 ;;
+esac
 EOC
         chmod +x "$prefix/bin/autoconf"
         printf 'install\n' >> "$WHP_CACHE_INSTALL_LOG"
@@ -123,10 +126,21 @@ rmdir "$prefix.lock"
 [ "$(wc -l < "$WHP_CACHE_INSTALL_LOG" | tr -d ' ')" -eq 3 ] ||
     { echo 'FAIL: post-lock cache not repaired' >&2; exit 1; }
 
+# A version-only impostor cannot satisfy the installed-runtime smoke test.
+printf '#!/bin/sh\n[ "\${1:-}" = --version ] && echo "autoconf (GNU Autoconf) mock"\n' > "$cmd"
+chmod +x "$cmd"
+if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: version-only Autoconf cache was trusted' >&2; exit 1
+fi
+# The preceding attempt repairs the poisoned install rather than trusting it.
+# A healthy rebuild must have occurred before the smoke-test validation.
+[ "$(wc -l < "$WHP_CACHE_INSTALL_LOG" | tr -d ' ')" -eq 4 ] ||
+    { echo 'FAIL: version-only cache did not trigger rebuild' >&2; exit 1; }
+
 # A misleading ready marker with a broken executable must not be trusted.
 printf '#!/bin/sh\nexit 1\n' > "$cmd"
 chmod +x "$cmd"
 /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 >/dev/null
-[ "$(wc -l < "$WHP_CACHE_INSTALL_LOG" | tr -d ' ')" -eq 4 ] ||
+[ "$(wc -l < "$WHP_CACHE_INSTALL_LOG" | tr -d ' ')" -eq 5 ] ||
     { echo 'FAIL: corrupt cache not repaired' >&2; exit 1; }
 echo 'PASS: interrupted and corrupt Autoconf caches recover without bypassing lock'
