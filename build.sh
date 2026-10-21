@@ -11,6 +11,8 @@ AUTOMAKE_SOURCE_EXPLICIT=
 [ -n "${WHP_AUTOMAKE_SOURCE_DIR:-}" ] && AUTOMAKE_SOURCE_EXPLICIT=1
 AUTOMAKE_SOURCE_DIR=${WHP_AUTOMAKE_SOURCE_DIR:-"$SOURCE_DIR/toolchains/automake"}
 AUTOCONF_EXPLICIT=${AUTOCONF+x}
+AUTOMAKE_EXEC_EXPLICIT=
+[ -n "${AUTOMAKE:-}" ] || [ -n "${ACLOCAL:-}" ] && AUTOMAKE_EXEC_EXPLICIT=1
 BASH_SOURCE_DIR=${WHP_BASH_SOURCE_DIR:-"$SOURCE_DIR/toolchains/bash"}
 BASH_STAGE_DIR=${WHP_BASH_STAGE_DIR:-"$BUILD_DIR/bash-source"}
 BASH_EFFECTIVE_SOURCE_DIR=$BASH_SOURCE_DIR
@@ -130,6 +132,9 @@ Environment:
   WHP_AUTOMAKE_SOURCE_DIR Override menu-selected Automake macro source directory
   WATER_AUTOCONF_PROVIDER pinned (default), host, or cached (verified-only; no generator)
   WATER_AUTOMAKE_PROVIDER pinned (default) or host Bash macro source
+  WATER_AUTOMAKE_EXEC_PROVIDER auto (default), pinned, or host bootstrap executables
+  WHP_AUTOMAKE_SEED_AUTOCONF  Seed Autoconf used to bootstrap pinned Automake
+  WHP_AUTOMAKE_SEED_AUTOM4TE  Matching seed autom4te executable
   M4                    GNU M4 executable for pinned Autoconf bootstrap
                         Auto-detected by scripts/whp-build/m4.sh (gm4, then m4)
   AUTOCONF              Explicit Autoconf executable (overrides pinned WHP fork)
@@ -279,6 +284,7 @@ validate_profile()
     WATER_PREFIX=${WATER_PREFIX:-/usr/local}
     WATER_AUTOCONF_PROVIDER=${WATER_AUTOCONF_PROVIDER:-pinned}
     WATER_AUTOMAKE_PROVIDER=${WATER_AUTOMAKE_PROVIDER:-pinned}
+    WATER_AUTOMAKE_EXEC_PROVIDER=${WATER_AUTOMAKE_EXEC_PROVIDER:-auto}
     WATER_BASH_BOOTSTRAP=${WATER_BASH_BOOTSTRAP:-auto}
     WATER_COMPILER_CACHE=${WATER_COMPILER_CACHE:-auto}
     WATER_KEEP_GOING=${WATER_KEEP_GOING:-y}
@@ -335,6 +341,10 @@ validate_profile()
     case "$WATER_AUTOMAKE_PROVIDER" in
         pinned|host) ;;
         *) die "WATER_AUTOMAKE_PROVIDER must be pinned or host" ;;
+    esac
+    case "$WATER_AUTOMAKE_EXEC_PROVIDER" in
+        auto|pinned|host) ;;
+        *) die "WATER_AUTOMAKE_EXEC_PROVIDER must be auto, pinned, or host" ;;
     esac
     case "$WATER_INSTALL" in
         none|runtime|development|all) ;;
@@ -497,6 +507,64 @@ EOF
     fi
 }
 
+whp_automake_pair_usable()
+{
+    [ -n "$1" ] && [ -n "$2" ] || return 1
+    command -v "$1" >/dev/null 2>&1 &&
+    command -v "$2" >/dev/null 2>&1 || return 1
+    whp_am_version=$("$1" --version 2>/dev/null | sed -n '1p') || return 1
+    whp_al_version=$("$2" --version 2>/dev/null | sed -n '1p') || return 1
+    case "$whp_am_version:$whp_al_version" in
+        *'GNU automake'*:*'GNU automake'*) ;;
+        *) return 1 ;;
+    esac
+    [ "${whp_am_version##* }" = "${whp_al_version##* }" ]
+}
+
+prepare_automake_executables()
+{
+    # Keep the Bash macro provider separate from the executable provider.
+    # No helper is invoked until the verified configure fast path misses.
+    if [ "$AUTOMAKE_EXEC_EXPLICIT" = 1 ]; then
+        [ -n "${AUTOMAKE:-}" ] && [ -n "${ACLOCAL:-}" ] &&
+            whp_automake_pair_usable "$AUTOMAKE" "$ACLOCAL" ||
+            die 'explicit AUTOMAKE and ACLOCAL must be a matched GNU Automake pair'
+        printf 'WHP Automake: explicit executable pair %s / %s\n' "$AUTOMAKE" "$ACLOCAL" >&2
+    else
+        whp_host_am=$(command -v automake 2>/dev/null || true)
+        whp_host_al=$(command -v aclocal 2>/dev/null || true)
+        whp_use_host=0
+        case "$WATER_AUTOMAKE_EXEC_PROVIDER" in
+            host) whp_use_host=1 ;;
+            auto)
+                # Prefer pinned tools on macOS, where the Apple/third-party
+                # host toolchains often contain incompatible mixed versions.
+                if [ "$(uname -s 2>/dev/null || true)" != Darwin ] &&
+                   whp_automake_pair_usable "$whp_host_am" "$whp_host_al"; then
+                    whp_use_host=1
+                fi
+                ;;
+        esac
+        if [ "$whp_use_host" = 1 ]; then
+            whp_automake_pair_usable "$whp_host_am" "$whp_host_al" ||
+                die 'host Automake/aclocal are missing or mismatched'
+            AUTOMAKE=$whp_host_am
+            ACLOCAL=$whp_host_al
+            printf 'WHP Automake: host executable pair %s / %s\n' "$AUTOMAKE" "$ACLOCAL" >&2
+        else
+            whp_automake_prefix=$(/bin/sh "$SOURCE_DIR/scripts/whp-build/ensure-automake.sh" \
+                "$SOURCE_DIR" "$BUILD_DIR" "$WHP_SUBMODULES") ||
+                die 'failed to prepare pinned WHP Automake (seed Autoconf/autom4te required)'
+            AUTOMAKE="$whp_automake_prefix/bin/automake"
+            ACLOCAL="$whp_automake_prefix/bin/aclocal"
+            whp_automake_pair_usable "$AUTOMAKE" "$ACLOCAL" ||
+                die 'pinned WHP Automake installed an incompatible executable pair'
+            printf 'WHP Automake: pinned executable pair %s / %s\n' "$AUTOMAKE" "$ACLOCAL" >&2
+        fi
+    fi
+    export AUTOMAKE ACLOCAL
+}
+
 prepare_autoconf_toolchain()
 {
     # A verified generated configure does not need Autoconf (or Automake,
@@ -520,6 +588,7 @@ prepare_autoconf_toolchain()
         printf 'WHP Autoconf: explicit executable %s\n' "$AUTOCONF" >&2
         return 0
     fi
+    prepare_automake_executables
     AUTOCONF=$(/bin/sh "$SOURCE_DIR/scripts/whp-build/ensure-autoconf.sh" "$SOURCE_DIR" "$BUILD_DIR" "$WHP_SUBMODULES") ||
         die "failed to prepare pinned WHP Autoconf (set AUTOCONF to override)"
     printf 'WHP Autoconf: %s\n' "$AUTOCONF" >&2
