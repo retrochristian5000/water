@@ -2078,6 +2078,10 @@ ensure_bash_automake_dependency()
     grep -q 'AC_DEFUN(\[AM_PROG_INSTALL_STRIP\]' "$BASH_EFFECTIVE_SOURCE_DIR/aclocal.m4" ||
         die "WHP Bash aclocal.m4 is missing AM_PROG_INSTALL_STRIP"
 
+    # Resolve host Automake macros only when Bash actually needs their provenance.
+    # Cached configure, maintenance targets and disabled Bash bootstrap do not.
+    select_automake_source
+
     whp_automake_expected=$(automake_source_id)
     [ -n "$whp_automake_expected" ] ||
         die "WHP Bash uses Automake macros but no Automake source revision is available"
@@ -3807,7 +3811,6 @@ esac
 
 load_whp_config
 validate_profile
-select_automake_source
 
 case "${1:-build}" in
     clean|distclean)
