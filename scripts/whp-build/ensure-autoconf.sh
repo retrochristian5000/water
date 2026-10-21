@@ -30,18 +30,34 @@ aclocal=${ACLOCAL:-aclocal}
 automake=${AUTOMAKE:-automake}
 make=${MAKE:-make}
 for tool in "$perl" "$aclocal" "$automake" "$make" git cksum awk; do
-    command -v "$tool" >/dev/null 2>&1 || fail "missing host bootstrap tool: $tool"
+    command -v "$tool" >/dev/null 2>&1 || fail "missing stage-0 host bootstrap tool: $tool"
 done
+
+# Autoconf's git bootstrap uses existing Automake executables.  The
+# WATER_AUTOMAKE_PROVIDER selection controls Bash macro provenance; it does
+# not turn the pinned Automake source into a usable stage-0 executable.
+# Fail before staging/building when the two host executables are incompatible.
+aclocal_version=$("$aclocal" --version 2>/dev/null) ||
+    fail "stage-0 aclocal does not run: $aclocal"
+automake_version=$("$automake" --version 2>/dev/null) ||
+    fail "stage-0 automake does not run: $automake"
+aclocal_version=$(printf '%s\n' "$aclocal_version" | sed -n '1p')
+automake_version=$(printf '%s\n' "$automake_version" | sed -n '1p')
+case "$aclocal_version:$automake_version" in
+    *'GNU automake'*:*'GNU automake'*) ;;
+    *) fail "stage-0 tools must be GNU Automake: $aclocal_version / $automake_version" ;;
+esac
+[ "${aclocal_version##* }" = "${automake_version##* }" ] ||
+    fail "stage-0 aclocal and automake versions differ: $aclocal_version / $automake_version"
 
 # A distinct prefix for each toolchain signature prevents stale binary reuse.
 identity=$(
-    printf '%s\n' 'RECIPE=1' "PIN=$pin" "M4=$m4" \
+    printf '%s\n' 'RECIPE=2' "PIN=$pin" "M4=$m4" \
         "PERL=$(command -v "$perl")" "ACLOCAL=$(command -v "$aclocal")" \
         "AUTOMAKE=$(command -v "$automake")" "MAKE=$(command -v "$make")"
     "$m4" --version | sed -n '1p'
     "$perl" --version | sed -n '2p'
-    "$aclocal" --version | sed -n '1p'
-    "$automake" --version | sed -n '1p'
+    printf '%s\n' "$aclocal_version" "$automake_version"
     "$make" --version | sed -n '1p'
 )
 fingerprint=$(printf '%s\n' "$identity" | cksum | awk '{print $1 "-" $2}')
