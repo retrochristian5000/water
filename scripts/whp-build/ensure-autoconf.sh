@@ -52,7 +52,7 @@ esac
 
 # A distinct prefix for each toolchain signature prevents stale binary reuse.
 identity=$(
-    printf '%s\n' 'RECIPE=4' "PIN=$pin" "M4=$m4" \
+    printf '%s\n' 'RECIPE=5' "PIN=$pin" "M4=$m4" \
         "PERL=$(command -v "$perl")" "ACLOCAL=$(command -v "$aclocal")" \
         "AUTOMAKE=$(command -v "$automake")" "MAKE=$(command -v "$make")"
     "$m4" --version | sed -n '1p'
@@ -123,7 +123,13 @@ git clone -q --shared "$source" "$tmp/source" || fail 'cannot stage Autoconf sou
 git -C "$tmp/source" checkout -q --detach "$pin" || fail 'cannot check out pinned Autoconf'
 (
     cd "$tmp/source"
-    M4="$m4" PERL="$perl" ACLOCAL="$aclocal" AUTOMAKE="$automake" ./bootstrap || exit 1
+    M4="$m4"
+    PERL="$perl"
+    ACLOCAL="$aclocal"
+    AUTOMAKE="$automake"
+    PATH="$(dirname "$automake"):$PATH"
+    export M4 PERL ACLOCAL AUTOMAKE PATH
+    /bin/sh ./bootstrap || exit 1
     ./configure --prefix="$prefix" M4="$m4" PERL="$perl" || exit 1
     # These targets match the pinned fork's Automake-generated Makefile.
     # Avoid the default all/install targets, which also build manuals.
