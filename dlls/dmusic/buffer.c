@@ -83,6 +83,7 @@ static HRESULT WINAPI IDirectMusicBufferImpl_Flush(LPDIRECTMUSICBUFFER iface)
     TRACE("(%p)->()\n", iface);
 
     This->write_pos = 0;
+    This->read_pos = 0;
 
     return S_OK;
 }
@@ -161,17 +162,44 @@ static HRESULT WINAPI IDirectMusicBufferImpl_ResetReadPtr(LPDIRECTMUSICBUFFER if
 {
     IDirectMusicBufferImpl *This = impl_from_IDirectMusicBuffer(iface);
 
-    FIXME("(%p): stub\n", This);
+    TRACE("(%p)\n", This);
 
+    This->read_pos = 0;
     return S_OK;
 }
 
-static HRESULT WINAPI IDirectMusicBufferImpl_GetNextEvent(LPDIRECTMUSICBUFFER iface, LPREFERENCE_TIME prt, LPDWORD pdwChannelGroup, LPDWORD pdwLength, LPBYTE* ppData)
+static HRESULT WINAPI IDirectMusicBufferImpl_GetNextEvent(LPDIRECTMUSICBUFFER iface, LPREFERENCE_TIME prt,
+        LPDWORD pdwChannelGroup, LPDWORD pdwLength, LPBYTE *ppData)
 {
     IDirectMusicBufferImpl *This = impl_from_IDirectMusicBuffer(iface);
+    const DMUS_EVENTHEADER *header;
+    DWORD remaining, event_size;
 
-    FIXME("(%p, %p, %p, %p, %p): stub\n", This, prt, pdwChannelGroup, pdwLength, ppData);
+    TRACE("(%p, %p, %p, %p, %p)\n", This, prt, pdwChannelGroup, pdwLength, ppData);
 
+    if (This->read_pos >= This->write_pos)
+        return S_FALSE;
+
+    /* SetUsedBytes and GetRawBufferPtr expose raw buffers to callers.
+     * Never follow a truncated or overflowing event header. */
+    remaining = This->write_pos - This->read_pos;
+    if (remaining < sizeof(*header))
+        return DMUS_E_INVALID_EVENT;
+
+    header = (const DMUS_EVENTHEADER *)(This->data + This->read_pos);
+    if (header->cbEvent > remaining - sizeof(*header))
+        return DMUS_E_INVALID_EVENT;
+
+    event_size = DMUS_EVENT_SIZE(header->cbEvent);
+    if (event_size > remaining)
+        return DMUS_E_INVALID_EVENT;
+
+    if (prt) *prt = This->start_time + header->rtDelta;
+    if (pdwChannelGroup) *pdwChannelGroup = header->dwChannelGroup;
+    if (pdwLength) *pdwLength = header->cbEvent;
+    if (ppData) *ppData = (BYTE *)(header + 1);
+
+    This->read_pos += event_size;
     return S_OK;
 }
 
@@ -267,6 +295,8 @@ static HRESULT WINAPI IDirectMusicBufferImpl_SetUsedBytes(LPDIRECTMUSICBUFFER if
         return DMUS_E_BUFFER_FULL;
 
     This->write_pos = used_bytes;
+    if (This->read_pos > This->write_pos)
+        This->read_pos = This->write_pos;
 
     return S_OK;
 }
