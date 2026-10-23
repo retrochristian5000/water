@@ -5232,10 +5232,25 @@ void WINAPI DOSVM_Int21Handler( I386_CONTEXT *context )
             TRACE( "GET GLOBAL CODE PAGE TABLE\n" );
             SET_BX( context, GetOEMCP() );
             SET_DX( context, GetOEMCP() );
+            RESET_CFLAG( context );
             break;
         case 0x02:
-            FIXME( "SET GLOBAL CODE PAGE TABLE, active %d, system %d - ignored\n",
+            /* A successful no-op is safe, but changing DOS code pages also
+             * requires the OEM filename conversions and DOS NLS tables to change.
+             * Do not claim success while those still use the system OEM page. */
+            if (BX_reg(context) == GetOEMCP() && DX_reg(context) == GetOEMCP())
+            {
+                RESET_CFLAG( context );
+                break;
+            }
+            FIXME( "SET GLOBAL CODE PAGE TABLE, active %u, system %u - unsupported\n",
                    BX_reg(context), DX_reg(context) );
+            SET_AX( context, ERROR_INVALID_FUNCTION );
+            SET_CFLAG( context );
+            break;
+        default:
+            SET_AX( context, ERROR_INVALID_FUNCTION );
+            SET_CFLAG( context );
             break;
         }
         break;
