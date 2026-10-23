@@ -631,7 +631,7 @@ BOOL IOSYS_ParseAnsiDevice(const char *value, struct iosys_config_sys *config, B
         if (*p == '\\' || *p == ':') base = p + 1;
         p++;
     }
-    if (p - base != sizeof(filename) - 1) return FALSE;
+    if ((size_t)(p - base) != sizeof(filename) - 1) return FALSE;
     for (i = 0; i < sizeof(filename) - 1; i++)
     {
         char ch = base[i];
