@@ -2191,7 +2191,10 @@ MMRESULT16 WINAPI joyGetDevCaps16(UINT16 wID, LPJOYCAPS16 lpCaps, UINT16 wSize)
     JOYCAPSA	jca;
     MMRESULT	ret;
 
-    if (lpCaps == NULL) return MMSYSERR_INVALPARAM;
+    /* A Windows 3.x JOYCAPS buffer ends before the Win95 extensions.
+     * Never write even the base fields when the caller supplied less. */
+    if (!lpCaps) return MMSYSERR_INVALPARAM;
+    if (wSize < offsetof(JOYCAPS16, wRmin)) return JOYERR_PARMS;
 
     ret = joyGetDevCapsA(wID, &jca, sizeof(jca));
 
@@ -2245,6 +2248,7 @@ MMRESULT16 WINAPI joyGetPos16(UINT16 wID, LPJOYINFO16 lpInfo)
 
     TRACE("(%d, %p);\n", wID, lpInfo);
 
+    if (!lpInfo) return MMSYSERR_INVALPARAM;
     if ((ret = joyGetPos(wID, &ji)) == JOYERR_NOERROR) {
 	lpInfo->wXpos = ji.wXpos;
 	lpInfo->wYpos = ji.wYpos;
@@ -2262,6 +2266,7 @@ MMRESULT16 WINAPI joyGetThreshold16(UINT16 wID, LPUINT16 lpThreshold)
     UINT        t;
     MMRESULT    ret;
 
+    if (!lpThreshold) return MMSYSERR_INVALPARAM;
     ret = joyGetThreshold(wID, &t);
     if (ret == JOYERR_NOERROR)
         *lpThreshold = t;
