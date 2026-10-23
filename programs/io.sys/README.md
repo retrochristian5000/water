@@ -57,6 +57,53 @@ Sources: Microsoft Windows 98 CONFIG.TXT (KB Q232557; mirrored at
 https://helparchive.huntertur.net/document/106583) and MS-DOS 6.22 HELP
 (https://www.infania.net/misc/dos622help/switches.html).
 
+## CONFIG.SYS ANSI.SYS request tracking (Windows 95/98)
+
+The IO.SYS parser recognizes `DEVICE=ANSI.SYS` and
+`DEVICEHIGH=[drive:][path]ANSI.SYS` as *requested* legacy character
+drivers, including documented `/X` (extended-key remapping), `/K`
+(84-key keyboard compatibility) and `/R` (readability-oriented
+scrolling) switches. File basename matching is ASCII case-insensitive.
+Unrelated device names and malformed options do not alter existing
+boot state. The last valid ANSI.SYS directive supplies the saved
+switches. CONFIG.SYS selected-section filtering still applies; the
+Windows Me boot-personality skip remains intact.
+
+`ansi_device_requested` deliberately does **not** mean that ANSI.SYS
+was loaded, found on disk or attached to CON. Water does not yet
+implement a real-mode character-driver loader, strategy/interrupt
+entry points, CON replacement, INT 29h interception or a stateful
+ANSI.SYS output/keyboard escape interpreter. No Win32-console VT
+processing flag is implicitly enabled, and no host terminal escape
+handling substitutes for this DOS driver.
+
+Runtime implementation boundaries:
+- IO.SYS resolves and loads the requested DOS driver from the boot
+  environment; its load result, not parser acceptance, controls
+  installation state and DEV/DEVICEHIGH placement.
+- DOS CON output must feed a streaming escape interpreter **only**
+  when a compatible driver is actually installed. Preserve parser
+  state between separate INT 21h writes; leave redirected file bytes
+  untouched and keep direct video-memory output a separate path.
+- Apply the active DOS OEM codepage to printable character bytes,
+  separately from ESC (1Bh), '[' (5Bh), ASCII digits and control
+  syntax. DOS 7 codepage switching and DBCS require separate tests.
+- Preserve cursor, erase, SGR color, saved position, mode and keyboard
+  remapping behavior in historical phases, including DOS/Win9x
+  differences and invalid-sequence recovery. ANSI.SYS is not a
+  generic modern UTF-8/VT100 compatibility switch.
+
+Parser regression is in existing
+`scripts/tests/test_iosys_switches.py`; it compiles the actual
+`IOSYS_ParseAnsiDevice` function as standalone C.
+
+References: MS-DOS 6.22 HELP,
+https://www.infania.net/misc/dos622help/ansi.sys.html ;
+Microsoft Windows 98 MSDOSDRV.TXT (archived),
+https://www.betaarchive.com/wiki/index.php/Windows_98/4.10.1546/msdosdrv.txt ;
+MS-DOS v2 `ANSI.DOC`,
+https://github.com/microsoft/MS-DOS/blob/main/v2.0/bin/ANSI.DOC .
+
 ## MSDOS.SYS [Options] DoubleBuffer (Windows 95/98)
 
 Windows 95 RTM attests `DoubleBuffer=0|1|2` in the *text* MSDOS.SYS
