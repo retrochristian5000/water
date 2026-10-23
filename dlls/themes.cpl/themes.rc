@@ -1,0 +1,9 @@
+/* Classic Desktop Themes, not Windows XP visual styles. */
+#include "resource.h"
+LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
+STRINGTABLE
+BEGIN
+    IDS_CPL_NAME "Desktop Themes"
+    IDS_CPL_INFO "Apply classic Windows 98 desktop theme colors and wallpaper."
+END
+ICO_THEME ICON "themes.ico"

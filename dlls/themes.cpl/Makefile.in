@@ -1,0 +1,9 @@
+MODULE    = themes.cpl
+IMPORTS   = comdlg32 advapi32 user32 gdi32
+
+VER_FILEDESCRIPTION_STR = "Classic Desktop Themes Control Panel"
+
+SOURCES = \
+    main.c \
+    rgb.c \
+    themes.rc
