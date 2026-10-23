@@ -17,6 +17,13 @@ struct iosys_config_sys
     INT umb_linked;       /* -1 when CONFIG.SYS did not specify UMB/NOUMB */
     BOOL break_on;
 
+    /* Requested by CONFIG.SYS only; this does not mean ANSI.SYS is loaded. */
+    BOOL ansi_device_requested;
+    BOOL ansi_device_high;
+    BOOL ansi_switch_extended_keys;   /* ANSI.SYS /X */
+    BOOL ansi_switch_legacy_keys;     /* ANSI.SYS /K */
+    BOOL ansi_switch_readable_scroll; /* ANSI.SYS /R */
+
     /* SWITCHES= is IO.SYS boot policy, not an INT 21h runtime service. */
     BOOL switches_fast_boot;           /* /F: suppress startup F5/F8 delay */
     BOOL switches_legacy_keyboard;     /* /K: conventional keyboard behavior */
@@ -87,6 +94,7 @@ struct iosys_fat32_bpb
 BOOL IOSYS_ParseFat32BPB(const BYTE sector[512], struct iosys_fat32_bpb *bpb);
 BOOL IOSYS_GetFat32BPB(BYTE drive, struct iosys_fat32_bpb *bpb);
 BOOL IOSYS_ParseSwitches(const char *value, struct iosys_config_sys *config);
+BOOL IOSYS_ParseAnsiDevice(const char *value, struct iosys_config_sys *config, BOOL high);
 void IOSYS_ReadConfigSys(struct iosys_config_sys *config);
 
 #endif /* __WATER_IO_SYS_H */
