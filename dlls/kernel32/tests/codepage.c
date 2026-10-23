@@ -1334,6 +1334,44 @@ static void test_dbcs_to_widechar(void)
     }
 }
 
+/* DOS OEM and Windows ANSI assign different characters to the same byte. */
+static void test_legacy_codepage_distinction(void)
+{
+    static const struct
+    {
+        UINT cp;
+        WCHAR character;
+    } cases[] = { { 437, 0x00e9 }, { 1252, 0x201a } };
+    const char source = (char)0x82;
+    WCHAR character;
+    char result;
+    unsigned int i;
+    int ret;
+
+    for (i = 0; i < ARRAY_SIZE(cases); i++)
+    {
+        if (!IsValidCodePage(cases[i].cp))
+        {
+            skip("Codepage %u is unavailable\n", cases[i].cp);
+            continue;
+        }
+
+        character = 0;
+        ret = MultiByteToWideChar(cases[i].cp, 0, &source, 1, &character, 1);
+        ok(ret == 1, "Codepage %u decoded %d characters instead of 1\n", cases[i].cp, ret);
+        if (ret != 1) continue;
+        ok(character == cases[i].character,
+           "Codepage %u decoded byte 82h as %04x instead of %04x\n",
+           cases[i].cp, character, cases[i].character);
+
+        result = 0;
+        ret = WideCharToMultiByte(cases[i].cp, 0, &cases[i].character, 1, &result, 1, NULL, NULL);
+        ok(ret == 1 && (unsigned char)result == 0x82,
+           "Codepage %u round-tripped to %02x, length %d\n",
+           cases[i].cp, (unsigned char)result, ret);
+    }
+}
+
 START_TEST(codepage)
 {
     BOOL bUsedDefaultChar;
@@ -1356,4 +1394,5 @@ START_TEST(codepage)
     test_threadcp();
 
     test_dbcs_to_widechar();
+    test_legacy_codepage_distinction();
 }
