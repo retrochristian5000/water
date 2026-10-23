@@ -61,3 +61,11 @@ bind an unsupported miniport or write hardware registers in probes.
   https://techshelps.github.io/MSDN/WIN95DDK/HTML/S2D04.HTM
 - Modern Microsoft ndis.h reference (contrast only, NOT RTM):
   https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ndis/
+
+## DMA shared-memory ownership (2026-10-23)
+
+The portable ownership policy, DDK-gated `NdisMAllocateSharedMemory` /
+`NdisMFreeSharedMemory` compilation adapter, synthetic DMA tests, and strict
+cache-synchronization/PCI safety limits are tracked separately in
+[`win95rtm-ndis31-dma.md`](win95rtm-ndis31-dma.md). These are **not**
+Windows 95 NDIS.VXD implementations and do not establish runtime DMA support.
