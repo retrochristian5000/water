@@ -83,5 +83,21 @@ if "enable_win16=${enable_win16:-i386}" not in CONFIG:
 if r"[.*\.\(.*16\|vxd\)$],[win16]" not in MACROS:
     fail("Win16 / VxD macro routing changed; re-audit before removing it")
 
+# WIN.COM in this tree is an NT-style PE compatibility launcher, not the
+# real-mode Windows 3.0 DOS bootstrap. Its option filter must not swallow
+# unrecognized application arguments, including absolute or slash paths.
+WINCOM = (ROOT / "programs/win.com/main.c").read_text(encoding="utf-8")
+if "This binary is the NT-style WIN.COM compatibility launcher" not in WINCOM:
+    fail("WIN.COM launcher identity changed; review DOS/PE ownership")
+if "while (is_legacy_mode_switch( p ))" not in WINCOM:
+    fail("WIN.COM must filter known switches instead of dropping every /arg")
+if "while (*p == '/' || *p == '-')" in WINCOM:
+    fail("WIN.COM reverted to indiscriminately dropping slash arguments")
+if "option == 'R' || option == 'S' || option == '2' || option == '3'" not in WINCOM:
+    fail("WIN.COM mode-switch whitelist changed; re-audit 3.0/3.1/NT behavior")
+if "CreateProcessA( NULL, command" not in WINCOM:
+    fail("WIN.COM NT compatibility launch boundary changed")
+
 print("PASS: native PE personality defaults reject Win9x DLL/NTVDM ARM64 ports")
 print("PASS: i386 compatibility, WOW64 ARM64, x64 CPU thunk and mf3216 controls retained")
+print("PASS: NT WIN.COM preserves unknown switches and does not claim Win3 DOS boot")
