@@ -6,8 +6,10 @@ RUNTIME FIX CLAIMED. Review: 2026-10-23.
 
 This is a cross-topic diagnostic ledger, not a mandate to invent OS files.
 Use it alongside `windows-native-pe-module-matrix.md`,
-`win95rtm-hotfix-regressions.md`, `winini-parsing.md`, and the existing
-Win16/WinMM/NE sources. Preserve their older datapoints.
+`win95rtm-hotfix-regressions.md`, `winini-parsing.md`,
+`win31-386-enhanced.md` (the OS-supplied Win3.1 CPWIN386.CPL
+virtual-memory and 32-bit disk applet), and the existing Win16/WinMM/NE
+sources. Preserve their older datapoints.
 
 ## Two independent classification axes
 
