@@ -46,6 +46,10 @@ case "$1" in
     *) exit 1 ;;
 esac
 EOF
+cat > "$tmp/tools/makeinfo" <<'EOF'
+#!/bin/sh
+[ "${1:-}" = --version ] && echo 'makeinfo (GNU texinfo) mock'
+EOF
 cat > "$tmp/tools/make" <<'EOF'
 #!/bin/sh
 case "${1:-}" in
@@ -71,6 +75,8 @@ EOC
 esac
 EOF
 chmod +x "$tmp/upstream/bootstrap" "$tmp/tools/"*
+PATH="$tmp/tools:$PATH"
+export PATH
 git init -q -b master "$tmp/upstream"
 git -C "$tmp/upstream" config user.name 'Water test'
 git -C "$tmp/upstream" config user.email 'test@example.invalid'
@@ -115,6 +121,22 @@ grep -q 'versions differ' "$tmp/err" || {
     echo 'FAIL: mismatched seed lacks diagnostic' >&2; exit 1
 }
 mv "$tmp/autom4te.saved" "$tmp/tools/autom4te"
+
+# A broken or mixed Texinfo implementation must be rejected even if the
+# old Automake install cache is otherwise valid.
+cp "$tmp/tools/makeinfo" "$tmp/makeinfo.saved"
+cat > "$tmp/tools/makeinfo" <<'EOF'
+#!/bin/sh
+[ "${1:-}" = --version ] && echo 'makeinfo (unknown vendor) mock'
+EOF
+chmod +x "$tmp/tools/makeinfo"
+if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: non-GNU makeinfo accepted' >&2; exit 1
+fi
+grep -q 'makeinfo is not GNU Texinfo' "$tmp/err" || {
+    echo 'FAIL: unsupported Texinfo lacks diagnostic' >&2; exit 1
+}
+mv "$tmp/makeinfo.saved" "$tmp/tools/makeinfo"
 
 rm "$prefix/.whp-ready"
 printf 'stale\n' > "$prefix/old"
