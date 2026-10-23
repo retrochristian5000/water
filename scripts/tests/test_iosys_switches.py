@@ -123,5 +123,103 @@ class SwitchesTests(unittest.TestCase):
             self.assertIn("iosys switches: passed", run.stdout)
 
 
+ANSI_HARNESS = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+typedef unsigned char BYTE;
+typedef unsigned short WORD;
+typedef int BOOL;
+typedef int INT;
+#define TRUE 1
+#define FALSE 0
+__STRUCT__
+__FUNCTION__
+
+static void invalid(const char *name, struct iosys_config_sys *config, BOOL high)
+{
+    struct iosys_config_sys previous = *config;
+    assert(!IOSYS_ParseAnsiDevice(name, config, high));
+    assert(!memcmp(config, &previous, sizeof(previous)));
+}
+
+int main(void)
+{
+    struct iosys_config_sys config = {0};
+
+    assert(IOSYS_ParseAnsiDevice("ANSI.SYS", &config, FALSE));
+    assert(config.ansi_device_requested);
+    assert(!config.ansi_device_high);
+    assert(!config.ansi_switch_extended_keys);
+    assert(!config.ansi_switch_legacy_keys);
+    assert(!config.ansi_switch_readable_scroll);
+
+    assert(IOSYS_ParseAnsiDevice(" C:\\WINDOWS\\COMMAND\\ansi.sys /x /K /r  ",
+                                 &config, TRUE));
+    assert(config.ansi_device_requested && config.ansi_device_high);
+    assert(config.ansi_switch_extended_keys && config.ansi_switch_legacy_keys);
+    assert(config.ansi_switch_readable_scroll);
+
+    assert(IOSYS_ParseAnsiDevice("C:\\DOS\\ANSI.SYS /R", &config, FALSE));
+    assert(!config.ansi_device_high && config.ansi_switch_readable_scroll);
+    assert(!config.ansi_switch_extended_keys && !config.ansi_switch_legacy_keys);
+    invalid("C:\\DOS\\HIMEM.SYS", &config, FALSE);
+    invalid("ANSI.SYS.BAK /X", &config, FALSE);
+    invalid("C:\\DOS\\NOTANSI.SYS", &config, FALSE);
+    invalid("ANSI.SYS /Q", &config, FALSE);
+    invalid("ANSI.SYS /X /Q", &config, FALSE);
+    invalid("ANSI.SYS /", &config, FALSE);
+    invalid("ANSI.SYS /Xtrailing", &config, FALSE);
+    invalid("ANSI.SYS /X/R", &config, FALSE);
+    invalid("ANSI.SYS /R;comment", &config, FALSE);
+    invalid("", &config, FALSE);
+    invalid(NULL, &config, FALSE);
+    assert(!IOSYS_ParseAnsiDevice("ANSI.SYS", NULL, FALSE));
+
+    puts("iosys ansi device: passed");
+    return 0;
+}
+"""
+
+
+class AnsiDeviceTests(unittest.TestCase):
+    def test_boot_policy_only(self):
+        source = (ROOT / "programs/io.sys/config.c").read_text()
+        header = (ROOT / "programs/io.sys/io_sys.h").read_text()
+        body = source[source.index("void IOSYS_ReadConfigSys"):]
+        self.assertIn("BOOL ansi_device_requested;", header)
+        self.assertIn('!_stricmp( name, "DEVICE" )', body)
+        self.assertIn('!_stricmp( name, "DEVICEHIGH" )', body)
+        self.assertIn("IOSYS_ParseAnsiDevice( value, config,", body)
+        self.assertIn("config->ansi_device_requested = FALSE;", body)
+        self.assertLess(body.index("if (is_winme_personality())"),
+                        body.index('!_stricmp( name, "DEVICE" )'))
+        self.assertLess(body.index("if (!active)"),
+                        body.index('!_stricmp( name, "DEVICE" )'))
+        self.assertNotIn("LoadLibraryA", function(source, "IOSYS_ParseAnsiDevice"))
+
+    def test_parser_compiled(self):
+        compiler = shlex.split(os.environ.get("CC", "cc"))
+        if not compiler or not shutil.which(compiler[0]):
+            self.skipTest("C compiler unavailable")
+        source = (ROOT / "programs/io.sys/config.c").read_text()
+        header = (ROOT / "programs/io.sys/io_sys.h").read_text()
+        struct = re.search(r"struct iosys_config_sys\s*\{[^}]+\};", header)
+        self.assertIsNotNone(struct)
+        code = ANSI_HARNESS.replace("__STRUCT__", struct.group(0))
+        code = code.replace("__FUNCTION__", function(source, "IOSYS_ParseAnsiDevice"))
+        with tempfile.TemporaryDirectory(prefix="water-ansi-device-") as directory:
+            input_file = Path(directory) / "test.c"
+            binary = Path(directory) / "test"
+            input_file.write_text(code)
+            build = subprocess.run(compiler + ["-std=c99", "-Wall", "-Wextra",
+                                               "-Werror", str(input_file), "-o",
+                                               str(binary)], text=True, capture_output=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            run = subprocess.run([str(binary)], text=True, capture_output=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertIn("iosys ansi device: passed", run.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
