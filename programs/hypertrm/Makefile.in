@@ -1,0 +1,8 @@
+MODULE    = hypertrm.exe
+IMPORTS   = user32 gdi32
+
+EXTRADLLFLAGS = -mwindows
+
+SOURCES = \
+	main.c \
+	settings.c
