@@ -195,6 +195,21 @@ static void test_api(void)
         infoex.ex.dwFlags = flags[i];
         ret = joyGetPosEx(joyid, &infoex.ex);
         ok(ret == JOYERR_NOERROR, "Expected %d, got %d\n", JOYERR_NOERROR, ret);
+        if (ret == JOYERR_NOERROR && flags[i] == JOY_RETURNALL)
+        {
+            DWORD mask = infoex.ex.dwButtons;
+            DWORD first = 0;
+
+            while (mask)
+            {
+                ++first;
+                if (mask & 1) break;
+                mask >>= 1;
+            }
+            ok(infoex.ex.dwButtonNumber == first,
+               "first pressed button %lu, expected %lu (mask %#lx)\n",
+               infoex.ex.dwButtonNumber, first, infoex.ex.dwButtons);
+        }
     }
 
     /* the interactive tests spans for 15 seconds, a 500ms polling is used to get
