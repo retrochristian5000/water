@@ -590,10 +590,43 @@ static void test_searchenv(void)
     }
 }
 
+
+/* The CRT documents <direct.h> as sufficient to declare _getdiskfree.
+ * This translation unit intentionally does not include <dos.h>. */
+static void test_getdiskfree_declaration(void)
+{
+    unsigned int (__cdecl *getdiskfree)(unsigned int, struct _diskfree_t *) = _getdiskfree;
+    struct _diskfree_t diskfree;
+    unsigned int error;
+    int drive = _getdrive();
+
+    ok(sizeof(diskfree) == 4 * sizeof(unsigned int),
+       "Incorrect _diskfree_t size: %u\n", (unsigned int)sizeof(diskfree));
+
+    /* UNC paths may not have a current drive letter. */
+    if (drive < 1 || drive > 26)
+    {
+        win_skip("No DOS drive letter available for _getdiskfree\n");
+        return;
+    }
+
+    memset(&diskfree, 0, sizeof(diskfree));
+    error = getdiskfree(drive, &diskfree);
+    if (error)
+    {
+        win_skip("_getdiskfree on current drive returned %u\n", error);
+        return;
+    }
+    ok(diskfree.sectors_per_cluster != 0, "Invalid sectors per cluster\n");
+    ok(diskfree.bytes_per_sector != 0, "Invalid bytes per sector\n");
+    ok(diskfree.total_clusters != 0, "Invalid cluster count\n");
+}
+
 START_TEST(dir)
 {
     init();
 
+    test_getdiskfree_declaration();
     test_fullpath();
     test_makepath();
     test_makepath_s();

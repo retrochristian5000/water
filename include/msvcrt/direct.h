@@ -31,6 +31,8 @@ _ACRTIMP int           __cdecl _chdrive(int);
 _ACRTIMP char*         __cdecl _getcwd(char*,int);
 _ACRTIMP char*         __cdecl _getdcwd(int,char*,int);
 _ACRTIMP int           __cdecl _getdrive(void);
+/* Win32 CRT drive geometry API (not the real-mode DOS INT 21h interface). */
+_ACRTIMP unsigned int  __cdecl _getdiskfree(unsigned int, struct _diskfree_t *);
 _ACRTIMP __msvcrt_ulong __cdecl _getdrives(void);
 _ACRTIMP int           __cdecl _mkdir(const char*);
 _ACRTIMP int           __cdecl _rmdir(const char*);
