@@ -190,7 +190,12 @@ static HRESULT WINAPI IDirectMusicBufferImpl_GetNextEvent(LPDIRECTMUSICBUFFER if
     if (header->cbEvent > remaining - sizeof(*header))
         return DMUS_E_INVALID_EVENT;
 
-    event_size = DMUS_EVENT_SIZE(header->cbEvent);
+    /* DMUS_EVENT_SIZE rounds up to an eight-byte boundary. Check the
+     * addition before rounding so malformed lengths cannot wrap to zero. */
+    event_size = sizeof(*header) + header->cbEvent;
+    if (event_size > ~0u - 7)
+        return DMUS_E_INVALID_EVENT;
+    event_size = (event_size + 7) & ~7u;
     if (event_size > remaining)
         return DMUS_E_INVALID_EVENT;
 
