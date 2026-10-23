@@ -835,6 +835,43 @@ static void run_cscript_error_on_stdout_test(void)
     ok(stderr_buf[0] == 0, "expected no stderr output, got: %s\n", stderr_buf);
 }
 
+
+/* //E selects the actual COM script engine rather than guessing from the
+ * filename. .txt intentionally has no registered ScriptEngine association. */
+static void run_cscript_explicit_vbscript_engine_test(void)
+{
+    static const char script_data[] = "WScript.Echo \"WATER_VBS_ENGINE_OK\"\n";
+    const char file_name[] = "test_explicit_engine.txt";
+    char stdout_buf[4096], stderr_buf[4096];
+    DWORD exit_code;
+
+    if(!create_temp_vbs(file_name, script_data))
+        goto cleanup;
+
+    exit_code = run_cscript("//nologo //E:VBScript test_explicit_engine.txt",
+                            stdout_buf, sizeof(stdout_buf), stderr_buf, sizeof(stderr_buf));
+    if(exit_code == ~0u)
+        goto cleanup;
+    ok(exit_code == 0, "Explicit VBScript engine failed: %lu\n", exit_code);
+    ok(strstr(stdout_buf, "WATER_VBS_ENGINE_OK") != NULL,
+       "VBScript was not executed: %s\n", stdout_buf);
+
+    /* The option may appear after the script file, and is case-insensitive. */
+    exit_code = run_cscript("//nologo test_explicit_engine.txt //e:vbscript",
+                            stdout_buf, sizeof(stdout_buf), stderr_buf, sizeof(stderr_buf));
+    ok(exit_code == 0, "Trailing VBScript engine override failed: %lu\n", exit_code);
+    ok(strstr(stdout_buf, "WATER_VBS_ENGINE_OK") != NULL,
+       "VBScript was not executed with trailing option: %s\n", stdout_buf);
+
+    /* A missing engine must never fall back silently to another interpreter. */
+    exit_code = run_cscript("//nologo //E:Water.MissingScriptEngine test_explicit_engine.txt",
+                            stdout_buf, sizeof(stdout_buf), stderr_buf, sizeof(stderr_buf));
+    ok(exit_code == 1, "Missing scripting engine returned %lu, expected 1\n", exit_code);
+
+cleanup:
+    DeleteFileA(file_name);
+}
+
 static void test_script_encoding(void)
 {
     static const WCHAR utf16le[] =
@@ -878,6 +915,7 @@ START_TEST(run)
         run_cscript_logo_test();
         run_cscript_nologo_test();
         run_cscript_host_option_after_filename_test();
+        run_cscript_explicit_vbscript_engine_test();
         run_cscript_nonexistent_file_test();
         run_cscript_error_on_stdout_test();
 }

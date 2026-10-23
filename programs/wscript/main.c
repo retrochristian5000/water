@@ -54,6 +54,8 @@ ITypeInfo *host_ti;
 ITypeInfo *arguments_ti;
 
 static BOOL nologo;
+/* WSH //E:lang selects a registered Active Scripting engine explicitly. */
+static const WCHAR *engine_override;
 
 static HRESULT query_interface(REFIID,void**);
 
@@ -568,6 +570,7 @@ static BOOL run_script(BSTR text, IActiveScript *script, IActiveScriptParse *par
     if(FAILED(hres)) {
         if(hres != SCRIPT_E_REPORTED)
             WINE_WARN("SetScriptState failed: %08lx\n", hres);
+        return FALSE;
     }
 
     return TRUE;
@@ -599,8 +602,11 @@ static BOOL set_host_properties(const WCHAR *prop)
         WINE_FIXME("ignoring //u\n");
     else if(wcsicmp(prop, L"s") == 0)
         WINE_FIXME("ignoring //s\n");
-    else if(wcsnicmp(prop, L"e:", 2) == 0)
-        WINE_FIXME("ignoring //e:\n");
+    else if(wcsnicmp(prop, L"e:", 2) == 0) {
+        if(!prop[2])
+            return FALSE;
+        engine_override = prop + 2;
+    }
     else if(wcsnicmp(prop, L"h:", 2) == 0)
         WINE_FIXME("ignoring //h:\n");
     else if(wcsnicmp(prop, L"job:", 4) == 0)
@@ -713,10 +719,21 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPWSTR cmdline, int cm
         return 1;
     }
 
-    ext = wcsrchr(filepart, '.');
-    if(!ext || !get_engine_clsid(ext, &clsid)) {
-        WINE_FIXME("Could not find engine for %s\n", wine_dbgstr_w(ext));
-        return 1;
+    /* Explicit //E is authoritative, including on files without a known
+     * extension. Otherwise preserve the registered .vbs/.js association. */
+    if(engine_override) {
+        if(FAILED(CLSIDFromProgID(engine_override, &clsid))) {
+            WINE_WARN("Could not find script engine %s\n", wine_dbgstr_w(engine_override));
+            SysFreeString(script_text);
+            return 1;
+        }
+    }else {
+        ext = filepart ? wcsrchr(filepart, '.') : NULL;
+        if(!ext || !get_engine_clsid(ext, &clsid)) {
+            WINE_WARN("Could not find engine for %s\n", wine_dbgstr_w(ext));
+            SysFreeString(script_text);
+            return 1;
+        }
     }
 
     CoInitialize(NULL);
@@ -735,7 +752,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPWSTR cmdline, int cm
         IActiveScript_Close(script);
         ITypeInfo_Release(host_ti);
     }else {
-        WINE_FIXME("Script initialization failed\n");
+        WINE_WARN("Script initialization failed\n");
+        ret = 1;
     }
 
     SysFreeString(script_text);
