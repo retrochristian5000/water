@@ -56,10 +56,35 @@ esac
 m4=$(/bin/sh "$root/scripts/whp-build/m4.sh" --print-path) ||
     fail 'could not select GNU M4'
 
+# A Git checkout regenerates the Automake Texinfo manual during make.
+# Homebrew's texinfo formula may be keg-only on macOS; locate its
+# makeinfo without changing the user's shell or installing packages.
+makeinfo=$(command -v makeinfo 2>/dev/null || true)
+if [ -z "$makeinfo" ] && command -v brew >/dev/null 2>&1; then
+    texinfo_prefix=$(brew --prefix texinfo 2>/dev/null || true)
+    if [ -n "$texinfo_prefix" ] && [ -x "$texinfo_prefix/bin/makeinfo" ]; then
+        makeinfo=$texinfo_prefix/bin/makeinfo
+    fi
+fi
+[ -n "$makeinfo" ] || fail 'GNU Texinfo makeinfo required (macOS: brew install texinfo)'
+case "$makeinfo" in
+    /*) ;;
+    *) fail "makeinfo must resolve to an absolute executable: $makeinfo" ;;
+esac
+makeinfo_version=$("$makeinfo" --version 2>/dev/null | sed -n '1p') ||
+    fail 'makeinfo version probe failed'
+case "$makeinfo_version" in
+    *'GNU texinfo'*|*'GNU Texinfo'*) ;;
+    *) fail "makeinfo is not GNU Texinfo: $makeinfo_version" ;;
+esac
+PATH="$(dirname "$makeinfo"):$PATH"
+export PATH
+
 # Distinct tool fingerprints prevent stale install reuse.
 identity=$(
     printf '%s\n' 'RECIPE=2' "PIN=$pin" "AC=$seed_autoconf:$ac_version" \
-        "AUTOM4TE=$seed_autom4te:$am4_version" "PERL=$perl" "MAKE=$make" "M4=$m4"
+        "AUTOM4TE=$seed_autom4te:$am4_version" "PERL=$perl" "MAKE=$make" "M4=$m4" \
+        "MAKEINFO=$makeinfo:$makeinfo_version"
     "$perl" --version | sed -n '2p'
     "$make" --version | sed -n '1p'
     "$m4" --version | sed -n '1p'
