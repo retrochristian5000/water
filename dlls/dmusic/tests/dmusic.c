@@ -443,6 +443,15 @@ static void test_dmbuffer(void)
     hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, &time, &size, &bytes, &data);
     ok(hr == S_FALSE, "GetNextEvent after Flush returned %#lx\n", hr);
 
+    /* An externally specified used-byte count can end inside an event header.
+     * Do not read beyond the used buffer or advance on malformed input. */
+    hr = IDirectMusicBuffer_SetUsedBytes(dmbuffer, 4);
+    ok(hr == S_OK, "SetUsedBytes returned %#lx\n", hr);
+    hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, NULL, NULL, NULL, NULL);
+    ok(hr == DMUS_E_INVALID_EVENT, "truncated GetNextEvent returned %#lx\n", hr);
+    hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, NULL, NULL, NULL, NULL);
+    ok(hr == DMUS_E_INVALID_EVENT, "truncated GetNextEvent advanced the read pointer, hr %#lx\n", hr);
+
     if (dmbuffer)
         IDirectMusicBuffer_Release(dmbuffer);
     IDirectMusic_Release(dmusic);
