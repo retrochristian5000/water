@@ -101,10 +101,11 @@ static BOOL CALLBACK enum_instances( const DIDEVICEINSTANCEW *instance, void *co
     if (type == DI8DEVTYPE_MOUSE) return DIENUM_CONTINUE;
     if (type == DI8DEVTYPE_KEYBOARD) return DIENUM_CONTINUE;
 
-    instances[index++] = *instance;
     if (index >= ARRAY_SIZE(instances)) return DIENUM_STOP;
+
+    instances[index++] = *instance;
     *(ULONG *)context = index;
-    return DIENUM_CONTINUE;
+    return index < ARRAY_SIZE(instances) ? DIENUM_CONTINUE : DIENUM_STOP;
 }
 
 static BOOL WINAPI joystick_load_once( INIT_ONCE *once, void *param, void **context )
@@ -115,6 +116,16 @@ static BOOL WINAPI joystick_load_once( INIT_ONCE *once, void *param, void **cont
     return TRUE;
 }
 
+/* Keep a WinMM joystick slot stable. Never move a live capture, timer or
+ * DirectInput device into a different joystick ID during enumeration. */
+static void joystick_release_slot( struct joystick *joy )
+{
+    if (joy->capture) KillTimer( joy->capture, joy->timer );
+    if (joy->device) IDirectInputDevice8_Release( joy->device );
+    if (joy->event) CloseHandle( joy->event );
+    memset( joy, 0, sizeof(*joy) );
+}
+
 void joystick_unload(void)
 {
     int i;
@@ -122,13 +133,10 @@ void joystick_unload(void)
     if (!dinput) return;
 
     for (i = 0; i < ARRAY_SIZE(joysticks); i++)
-    {
-        if (!joysticks[i].device) continue;
-        IDirectInputDevice8_Release( joysticks[i].device );
-        CloseHandle( joysticks[i].event );
-    }
+        joystick_release_slot( &joysticks[i] );
 
     IDirectInput8_Release( dinput );
+    dinput = NULL;
 }
 
 static int is_already_mapped( const DIOBJECTDATAFORMAT *object_formats, DWORD count, DWORD instance_number )
@@ -242,36 +250,46 @@ static void find_joysticks(void)
 
     IDirectInputDevice8W *device;
     HANDLE event;
-    DWORD index;
+    DWORD index, count = 0;
     HRESULT hr;
 
     InitOnceExecuteOnce( &init_once, joystick_load_once, NULL, NULL );
 
     if (!dinput) return;
 
-    index = 0;
-    IDirectInput8_EnumDevices( dinput, DI8DEVCLASS_ALL, enum_instances, &index, DIEDFL_ATTACHEDONLY );
-    TRACE( "found %lu device instances\n", index );
-
-    while (index--)
+    /* A game-port SideWinder belongs to the game-controller class, not the
+     * mouse/keyboard or unrelated HID classes. MIDI on a shared DA-15
+     * connector remains a separate sound-card/MPU-401 function. */
+    hr = IDirectInput8_EnumDevices( dinput, DI8DEVCLASS_GAMECTRL, enum_instances,
+                                    &count, DIEDFL_ATTACHEDONLY );
+    if (FAILED(hr))
     {
-        if (!memcmp( &joysticks[index].instance, &instances[index], sizeof(DIDEVICEINSTANCEW) ))
+        WARN( "EnumDevices game controllers failed, hr %#lx\n", hr );
+        return;
+    }
+    TRACE( "found %lu game controller instances\n", count );
+
+    for (index = 0; index < count; ++index)
+    {
+        struct joystick *joy = &joysticks[index];
+
+        if (joy->device &&
+            !memcmp( &joy->instance, &instances[index], sizeof(DIDEVICEINSTANCEW) ))
             continue;
 
-        if (joysticks[index].device)
-        {
-            IDirectInputDevice8_Release( joysticks[index].device );
-            CloseHandle( joysticks[index].event );
-        }
-
-        if (!(event = CreateEventW( NULL, FALSE, FALSE, NULL )))
-            WARN( "could not event for device, error %lu\n", GetLastError() );
-        else if (FAILED(hr = IDirectInput8_CreateDevice( dinput, &instances[index].guidInstance, &device, NULL )))
+        joystick_release_slot( joy );
+        device = NULL;
+        event = CreateEventW( NULL, FALSE, FALSE, NULL );
+        if (!event)
+            WARN( "could not create event for device, error %lu\n", GetLastError() );
+        else if (FAILED(hr = IDirectInput8_CreateDevice( dinput, &instances[index].guidInstance,
+                                                         &device, NULL )))
             WARN( "could not create device %s instance, hr %#lx\n",
                   debugstr_guid( &instances[index].guidInstance ), hr );
         else if (FAILED(hr = IDirectInputDevice8_SetEventNotification( device, event )))
             WARN( "SetEventNotification device %p hr %#lx\n", device, hr );
-        else if (FAILED(hr = IDirectInputDevice8_SetCooperativeLevel( device, NULL, DISCL_NONEXCLUSIVE|DISCL_BACKGROUND )))
+        else if (FAILED(hr = IDirectInputDevice8_SetCooperativeLevel( device, NULL,
+                                        DISCL_NONEXCLUSIVE | DISCL_BACKGROUND )))
             WARN( "SetCooperativeLevel device %p hr %#lx\n", device, hr );
         else if (FAILED(hr = set_data_format( device )))
             WARN( "SetDataFormat device %p hr %#lx\n", device, hr );
@@ -281,19 +299,19 @@ static void find_joysticks(void)
         {
             TRACE( "opened device %p event %p\n", device, event );
 
-            memset( &joysticks[index], 0, sizeof(struct joystick) );
-            joysticks[index].instance = instances[index];
-            joysticks[index].device = device;
-            joysticks[index].event = event;
+            joy->instance = instances[index];
+            joy->device = device;
+            joy->event = event;
             continue;
         }
 
-        CloseHandle( event );
+        if (event) CloseHandle( event );
         if (device) IDirectInputDevice8_Release( device );
-        memmove( joysticks + index, joysticks + index + 1,
-                 (ARRAY_SIZE(joysticks) - index - 1) * sizeof(struct joystick) );
-        memset( &joysticks[ARRAY_SIZE(joysticks) - 1], 0, sizeof(struct joystick) );
+        /* Keep this slot empty instead of shifting another joystick ID. */
     }
+
+    for (; index < ARRAY_SIZE(joysticks); ++index)
+        joystick_release_slot( &joysticks[index] );
 }
 
 static BOOL compare_uint(unsigned int x, unsigned int y, unsigned int max_diff)
@@ -572,7 +590,7 @@ MMRESULT WINAPI DECLSPEC_HOTPATCH joyGetPosEx( UINT id, JOYINFOEX *info )
             {
                 if (!state.buttons[i]) continue;
                 info->dwButtonNumber++;
-                info->dwButtons |= 1 << i;
+                info->dwButtons |= 1u << i;
             }
         }
     }
