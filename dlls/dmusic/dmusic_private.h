@@ -127,6 +127,7 @@ struct IDirectMusicBufferImpl {
     DWORD size;
     LPBYTE data;
     DWORD write_pos;
+    DWORD read_pos;
     REFERENCE_TIME start_time;
 };
 
