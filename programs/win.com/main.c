@@ -22,6 +22,22 @@ static char *skip_word( char *p )
     return p;
 }
 
+/* This NT compatibility launcher accepts the historical mode spellings,
+ * but does not select DOS-Windows real, standard or enhanced mode.  Consume
+ * only an exact one-letter switch; an unknown option is not disposable. */
+static BOOL is_legacy_mode_switch( const char *p )
+{
+    char option;
+
+    if ((*p != '/' && *p != '-') || !p[1] ||
+        (p[2] && p[2] != ' ' && p[2] != '\t'))
+        return FALSE;
+
+    option = p[1];
+    if (option >= 'a' && option <= 'z') option -= 'a' - 'A';
+    return option == 'R' || option == 'S' || option == '2' || option == '3';
+}
+
 int WINAPI WinMain( HINSTANCE instance, HINSTANCE prev_instance, char *cmdline, int show )
 {
     STARTUPINFOA startup;
@@ -42,7 +58,7 @@ int WINAPI WinMain( HINSTANCE instance, HINSTANCE prev_instance, char *cmdline, 
      * NT keeps accepting those spellings, but this compatibility owner must
      * not reinterpret them as DOS-Windows mode selection.
      */
-    while (*p == '/' || *p == '-')
+    while (is_legacy_mode_switch( p ))
     {
         p = skip_blanks( skip_word( p ) );
     }
