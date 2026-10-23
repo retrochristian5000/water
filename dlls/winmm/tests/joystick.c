@@ -87,6 +87,7 @@ static void test_api(void)
 
             trace("Joystick[%d] - name: '%s', axes: %d, buttons: %d, period range: %d - %d\n",
                   JOYSTICKID1 + i, jc.szPname, jc.wNumAxes, jc.wNumButtons, jc.wPeriodMin, jc.wPeriodMax);
+            ok(jc.szPname[0], "Joystick[%u] returned an empty product name\n", JOYSTICKID1 + i);
             ret = joyGetDevCapsW(JOYSTICKID1 + i, &jcw, sizeof(jcw));
             if (ret != MMSYSERR_NOTSUPPORTED) /* Win 98 */
             {
