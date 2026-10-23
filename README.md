@@ -63,6 +63,21 @@ so Water also pins the Automake fork that provides those macros. Water validates
 that provenance during the Bash bootstrap; it does not require a separate
 system-installed `automake` executable for the normal build.
 
+On macOS, the pinned Automake source bootstrap needs **GNU Autoconf and
+autom4te from the same version**, GNU M4, GNU Make, Perl, and GNU Texinfo
+(`makeinfo`). Homebrew can provide the non-default host tools:
+
+```sh
+brew install autoconf m4 make texinfo
+```
+
+The pinned Automake bootstrap helper searches Homebrew's keg-only Texinfo
+prefix when `makeinfo` is not on `PATH`, and fails clearly if Texinfo is
+absent or not GNU. This is a host build-tool dependency, not a Windows ABI
+component. The Automake fork also runs native macOS Apple Silicon and Intel
+bootstrap/build/test/install smoke jobs; their CI result is independent of
+Water's own complete build verification.
+
 Water records the source checksums, pinned Autoconf gitlink and generated
 `configure` checksum under `build/.whp-autoconf-inputs` after successful
 generation. Subsequent builds with unchanged inputs reuse that verified
