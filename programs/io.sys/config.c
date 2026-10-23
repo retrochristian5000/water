@@ -609,14 +609,75 @@ BOOL IOSYS_ParseSwitches(const char *value, struct iosys_config_sys *config)
 }
 
 
+/*
+ * Recognize only the documented ANSI.SYS DEVICE/DEVICEHIGH request.
+ * Store boot policy, not loaded-driver state: no CON replacement, strategy
+ * entry point or ANSI output interpreter exists at this boundary yet.
+ * Invalid switch sets and unrelated device names leave config unchanged.
+ */
+BOOL IOSYS_ParseAnsiDevice(const char *value, struct iosys_config_sys *config, BOOL high)
+{
+    static const char filename[] = "ANSI.SYS";
+    struct iosys_config_sys parsed;
+    const char *p, *base;
+    unsigned int i;
+
+    if (!value || !config) return FALSE;
+    p = value;
+    while (*p == ' ' || *p == '\t') p++;
+    base = p;
+    while (*p && *p != ' ' && *p != '\t')
+    {
+        if (*p == '\\' || *p == ':') base = p + 1;
+        p++;
+    }
+    if (p - base != sizeof(filename) - 1) return FALSE;
+    for (i = 0; i < sizeof(filename) - 1; i++)
+    {
+        char ch = base[i];
+        if (ch >= 'a' && ch <= 'z') ch -= 'a' - 'A';
+        if (ch != filename[i]) return FALSE;
+    }
+
+    parsed = *config;
+    parsed.ansi_device_requested = TRUE;
+    parsed.ansi_device_high = !!high;
+    parsed.ansi_switch_extended_keys = FALSE;
+    parsed.ansi_switch_legacy_keys = FALSE;
+    parsed.ansi_switch_readable_scroll = FALSE;
+
+    while (*p)
+    {
+        char option;
+
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        if (*p++ != '/' || !*p) return FALSE;
+        option = *p++;
+        if (option >= 'a' && option <= 'z') option -= 'a' - 'A';
+        switch (option)
+        {
+        case 'X': parsed.ansi_switch_extended_keys = TRUE; break;
+        case 'K': parsed.ansi_switch_legacy_keys = TRUE; break;
+        case 'R': parsed.ansi_switch_readable_scroll = TRUE; break;
+        default: return FALSE;
+        }
+        if (*p && *p != ' ' && *p != '\t') return FALSE;
+    }
+
+    *config = parsed;
+    return TRUE;
+}
+
 /***********************************************************************
  *           IOSYS_ReadConfigSys
  *
  * Parse the CONFIG.SYS directives for which Water already has concrete DOS
  * backing state.  Windows 9x IO.SYS owns this boot-time parse before WIN.COM.
  *
- * DEVICE/DEVICEHIGH, FILES, FCBS, STACKS, COUNTRY and SHELL require their own
- * real boot services and are deliberately not fabricated here.
+ * ANSI.SYS DEVICE/DEVICEHIGH requests are recorded but NOT installed.
+ * Other device drivers, FILES, FCBS, STACKS, COUNTRY and SHELL require real
+ * boot services and are deliberately not fabricated here.
  */
 void IOSYS_ReadConfigSys(struct iosys_config_sys *config)
 {
@@ -636,6 +697,11 @@ void IOSYS_ReadConfigSys(struct iosys_config_sys *config)
     config->last_drive = 0;
     config->umb_linked = -1;
     config->break_on = FALSE;
+    config->ansi_device_requested = FALSE;
+    config->ansi_device_high = FALSE;
+    config->ansi_switch_extended_keys = FALSE;
+    config->ansi_switch_legacy_keys = FALSE;
+    config->ansi_switch_readable_scroll = FALSE;
     config->switches_fast_boot = FALSE;
     config->switches_legacy_keyboard = FALSE;
     config->switches_disable_boot_keys = FALSE;
@@ -766,6 +832,11 @@ void IOSYS_ReadConfigSys(struct iosys_config_sys *config)
         {
             if (!IOSYS_ParseSwitches( value, config ))
                 WARN( "Ignoring invalid SWITCHES directive in %s: %s\n", path, debugstr_a(value) );
+        }
+        else if (!_stricmp( name, "DEVICE" ) || !_stricmp( name, "DEVICEHIGH" ))
+        {
+            /* Record ANSI.SYS requests without pretending its driver loaded. */
+            IOSYS_ParseAnsiDevice( value, config, !_stricmp( name, "DEVICEHIGH" ) );
         }
         else if (!_stricmp( name, "BUFFERS" ) || !_stricmp( name, "BUFFERSHIGH" ))
         {
