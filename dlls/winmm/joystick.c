@@ -589,7 +589,10 @@ MMRESULT WINAPI DECLSPEC_HOTPATCH joyGetPosEx( UINT id, JOYINFOEX *info )
             for (i = 0; i < ARRAY_SIZE(state.buttons); ++i)
             {
                 if (!state.buttons[i]) continue;
-                info->dwButtonNumber++;
+                /* WinMM reports the first pressed button's 1-based number,
+                 * not the total number pressed. SideWinder pads may press
+                 * multiple buttons simultaneously. */
+                if (!info->dwButtonNumber) info->dwButtonNumber = i + 1;
                 info->dwButtons |= 1u << i;
             }
         }
