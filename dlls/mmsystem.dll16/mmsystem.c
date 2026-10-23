@@ -1284,9 +1284,13 @@ UINT16 WINAPI waveOutUnprepareHeader16(HWAVEOUT16 hWaveOut,       /* [in] */
 				       SEGPTR lpsegWaveOutHdr,    /* [???] */
 				       UINT16 uSize)              /* [in] */
 {
-    LPWAVEHDR		lpWaveOutHdr = MapSL(lpsegWaveOutHdr);
+    LPWAVEHDR lpWaveOutHdr;
 
     TRACE("(%04X, %08lx, %u);\n", hWaveOut, lpsegWaveOutHdr, uSize);
+
+    if (!lpsegWaveOutHdr) return MMSYSERR_INVALPARAM;
+    lpWaveOutHdr = MapSL(lpsegWaveOutHdr);
+    if (!lpWaveOutHdr) return MMSYSERR_INVALPARAM;
 
     if (!(lpWaveOutHdr->dwFlags & WHDR_PREPARED)) {
 	return MMSYSERR_NOERROR;
@@ -1304,6 +1308,9 @@ UINT16 WINAPI waveOutWrite16(HWAVEOUT16 hWaveOut,       /* [in] */
 {
     TRACE("(%04X, %08lx, %u);\n", hWaveOut, lpsegWaveOutHdr, uSize);
 
+    /* WODM_WRITE maps this segmented header before passing it to winmm.
+     * Reject null here instead of dereferencing it in the 16->32 mapper. */
+    if (!lpsegWaveOutHdr) return MMSYSERR_INVALPARAM;
     return MMSYSTDRV_Message(HWAVEOUT_32(hWaveOut), WODM_WRITE, lpsegWaveOutHdr, uSize);
 }
 
@@ -1372,6 +1379,7 @@ UINT16 WINAPI waveOutGetPosition16(HWAVEOUT16 hWaveOut, LPMMTIME16 lpTime,
     UINT	ret;
     MMTIME	mmt;
 
+    if (!lpTime) return MMSYSERR_INVALPARAM;
     mmt.wType = lpTime->wType;
     ret = waveOutGetPosition(HWAVEOUT_32(hWaveOut), &mmt, sizeof(mmt));
     MMSYSTEM_MMTIME32to16(lpTime, &mmt);
