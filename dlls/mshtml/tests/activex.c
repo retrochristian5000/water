@@ -74,6 +74,7 @@ DEFINE_EXPECT(FreezeEvents_FALSE);
 DEFINE_EXPECT(QuickActivate);
 DEFINE_EXPECT(IPersistPropertyBag_InitNew);
 DEFINE_EXPECT(IPersistPropertyBag_Load);
+DEFINE_EXPECT(IPersistPropertyBag2_Load);
 DEFINE_EXPECT(Invoke_READYSTATE);
 DEFINE_EXPECT(Invoke_ENABLED);
 DEFINE_EXPECT(Invoke_VALID);
@@ -111,7 +112,8 @@ DEFINE_EXPECT(Unadvise);
 enum {
     TEST_FLASH,
     TEST_NOQUICKACT,
-    TEST_DISPONLY
+    TEST_DISPONLY,
+    TEST_BAG2
 };
 
 static ITypeInfo *class_typeinfo;
@@ -655,6 +657,108 @@ static const IPersistPropertyBagVtbl PersistPropertyBagVtbl = {
 };
 
 static IPersistPropertyBag PersistPropertyBag = { &PersistPropertyBagVtbl };
+
+
+/* Exercise the IPersistPropertyBag2-only control path and the HTML PARAM
+ * property bag rather than testing a fake standalone COM implementation. */
+static HRESULT WINAPI PersistPropertyBag2_QueryInterface(IPersistPropertyBag2 *iface, REFIID riid, void **ppv)
+{
+    return ax_qi(riid, ppv);
+}
+
+static ULONG WINAPI PersistPropertyBag2_AddRef(IPersistPropertyBag2 *iface)
+{
+    return ++activex_refcnt;
+}
+
+static ULONG WINAPI PersistPropertyBag2_Release(IPersistPropertyBag2 *iface)
+{
+    return --activex_refcnt;
+}
+
+static HRESULT WINAPI PersistPropertyBag2_GetClassID(IPersistPropertyBag2 *iface, CLSID *clsid)
+{
+    ok(0, "unexpected call\n");
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI PersistPropertyBag2_InitNew(IPersistPropertyBag2 *iface)
+{
+    ok(0, "unexpected InitNew with PARAM elements\n");
+    return S_OK;
+}
+
+static HRESULT WINAPI PersistPropertyBag2_Load(IPersistPropertyBag2 *iface, IPropertyBag2 *bag, IErrorLog *error_log)
+{
+    PROPBAG2 props[2], request[2];
+    VARIANT values[2];
+    HRESULT results[2] = { E_FAIL, E_FAIL };
+    ULONG count = 0, obtained = 0;
+    HRESULT hr;
+    unsigned i;
+
+    CHECK_EXPECT(IPersistPropertyBag2_Load);
+    ok(bag != NULL, "IPropertyBag2 is NULL\n");
+    ok(error_log == NULL, "Unexpected error log\n");
+    if(!bag) return E_INVALIDARG;
+
+    hr = IPropertyBag2_CountProperties(bag, &count);
+    ok(hr == S_OK, "CountProperties returned %#lx\n", hr);
+    ok(count == 2, "Expected 2 PARAM entries, got %lu\n", count);
+
+    memset(props, 0, sizeof(props));
+    hr = IPropertyBag2_GetPropertyInfo(bag, 0, 2, props, &obtained);
+    ok(hr == S_OK, "GetPropertyInfo returned %#lx\n", hr);
+    ok(obtained == 2, "Expected 2 property descriptors, got %lu\n", obtained);
+    for(i = 0; i < obtained && i < 2; ++i) {
+        ok(props[i].dwType == PROPBAG2_TYPE_DATA, "Unexpected property type %lu\n", props[i].dwType);
+        ok(props[i].vt == VT_BSTR, "Unexpected variant type %u\n", props[i].vt);
+        CoTaskMemFree(props[i].pstrName);
+    }
+
+    memset(request, 0, sizeof(request));
+    request[0].pstrName = (WCHAR *)L"param_name";
+    request[0].vt = VT_BSTR;
+    request[1].pstrName = (WCHAR *)L"num_param";
+    request[1].vt = VT_I4;
+    memset(values, 0, sizeof(values));
+    hr = IPropertyBag2_Read(bag, 2, request, NULL, values, results);
+    ok(hr == S_OK, "Read returned %#lx\n", hr);
+    ok(results[0] == S_OK && results[1] == S_OK,
+       "Property statuses %#lx %#lx\n", results[0], results[1]);
+    ok(V_VT(&values[0]) == VT_BSTR, "Expected VT_BSTR, got %u\n", V_VT(&values[0]));
+    if(V_VT(&values[0]) == VT_BSTR && V_BSTR(&values[0]))
+        ok(!lstrcmpW(V_BSTR(&values[0]), L"param_value"), "Wrong parameter value\n");
+    ok(V_VT(&values[1]) == VT_I4 && V_I4(&values[1]) == 3, "Wrong numeric parameter\n");
+    VariantClear(&values[0]);
+    VariantClear(&values[1]);
+    return S_OK;
+}
+
+static HRESULT WINAPI PersistPropertyBag2_Save(IPersistPropertyBag2 *iface, IPropertyBag2 *bag,
+        BOOL clear_dirty, BOOL save_all)
+{
+    ok(0, "unexpected call\n");
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI PersistPropertyBag2_IsDirty(IPersistPropertyBag2 *iface)
+{
+    return S_FALSE;
+}
+
+static const IPersistPropertyBag2Vtbl PersistPropertyBag2Vtbl = {
+    PersistPropertyBag2_QueryInterface,
+    PersistPropertyBag2_AddRef,
+    PersistPropertyBag2_Release,
+    PersistPropertyBag2_GetClassID,
+    PersistPropertyBag2_InitNew,
+    PersistPropertyBag2_Load,
+    PersistPropertyBag2_Save,
+    PersistPropertyBag2_IsDirty
+};
+
+static IPersistPropertyBag2 PersistPropertyBag2 = { &PersistPropertyBag2Vtbl };
 
 static HRESULT WINAPI Dispatch_QueryInterface(IDispatch *iface, REFIID riid, void **ppv)
 {
@@ -1413,7 +1517,9 @@ static HRESULT ax_qi(REFIID riid, void **ppv)
     }else if(IsEqualGUID(riid, &IID_IQuickActivate)) {
         *ppv = no_quickact ? NULL : &QuickActivate;
     }else if(IsEqualGUID(riid, &IID_IPersistPropertyBag)) {
-        *ppv = no_quickact ? NULL : &PersistPropertyBag;
+        *ppv = no_quickact || plugin_behavior == TEST_BAG2 ? NULL : &PersistPropertyBag;
+    }else if(IsEqualGUID(riid, &IID_IPersistPropertyBag2)) {
+        *ppv = plugin_behavior == TEST_BAG2 ? &PersistPropertyBag2 : NULL;
     }else if(IsEqualGUID(riid, &IID_IDispatch)) {
         *ppv = &Dispatch;
     }else if(IsEqualGUID(riid, &IID_IProvideClassInfo)) {
@@ -2448,6 +2554,42 @@ static void test_flash_ax(void)
     IOleClientSite_Release(cs);
 }
 
+
+static void test_propertybag2_ax(void)
+{
+    IHTMLDocument2 *doc;
+
+    init_test(TEST_BAG2);
+
+    SET_EXPECT(CreateInstance);
+    SET_EXPECT(QuickActivate);
+    SET_EXPECT(IPersistPropertyBag2_Load);
+    SET_EXPECT(Invoke_READYSTATE);
+    SET_EXPECT(Invoke_SECURITYCTX);
+    SET_EXPECT(Invoke_SCRIPTCALL);
+    SET_EXPECT(DoVerb);
+
+    doc = create_doc(object_ax_str);
+
+    CHECK_CALLED(CreateInstance);
+    CHECK_CALLED(QuickActivate);
+    CHECK_CALLED(IPersistPropertyBag2_Load);
+    CHECK_CALLED(Invoke_READYSTATE);
+    CHECK_CALLED(Invoke_SECURITYCTX);
+    CHECK_CALLED(Invoke_SCRIPTCALL);
+    CHECK_CALLED(DoVerb);
+    CHECK_CALLED(InPlaceObject_GetWindow);
+    CHECK_CALLED(SetObjectRects);
+
+    SET_EXPECT(InPlaceDeactivate);
+    SET_EXPECT(Close);
+    SET_EXPECT(SetClientSite_NULL);
+    release_doc(doc);
+    CHECK_CALLED(InPlaceDeactivate);
+    CHECK_CALLED(Close);
+    CHECK_CALLED(SetClientSite_NULL);
+}
+
 static void test_noquickact_ax(void)
 {
     IHTMLDocument2 *doc;
@@ -2774,6 +2916,8 @@ START_TEST(activex)
     if(register_activex()) {
         trace("Testing emulated flash embedding...\n");
         test_flash_ax();
+        trace("Testing IPersistPropertyBag2 ActiveX initialization...\n");
+        test_propertybag2_ax();
         trace("Testing plugin without IQuickActivate iface...\n");
         test_noquickact_ax();
         trace("Testing plugin with IDispatch iface only...\n");

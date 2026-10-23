@@ -222,8 +222,27 @@ static HRESULT WINAPI PropertyBag2_Read(IPropertyBag2 *iface, ULONG cProperties,
         IErrorLog *pErrLog, VARIANT *pvarValue, HRESULT *phrError)
 {
     PropertyBag *This = impl_from_IPropertyBag2(iface);
-    FIXME("(%p)->(%ld %p %p %p %p)\n", This, cProperties, pPropBag, pErrLog, pvarValue, phrError);
-    return E_NOTIMPL;
+    HRESULT hres, ret = S_OK;
+    ULONG i;
+
+    TRACE("(%p)->(%lu %p %p %p %p)\n", This, cProperties, pPropBag, pErrLog, pvarValue, phrError);
+
+    if(cProperties && (!pPropBag || !pvarValue || !phrError))
+        return E_INVALIDARG;
+
+    for(i = 0; i < cProperties; i++) {
+        VariantInit(&pvarValue[i]);
+        V_VT(&pvarValue[i]) = pPropBag[i].vt == VT_EMPTY ? VT_BSTR : pPropBag[i].vt;
+        hres = pPropBag[i].pstrName
+                ? IPropertyBag_Read(&This->IPropertyBag_iface, pPropBag[i].pstrName, &pvarValue[i], pErrLog)
+                : E_INVALIDARG;
+        phrError[i] = hres;
+        if(FAILED(hres)) {
+            VariantInit(&pvarValue[i]);
+            ret = S_FALSE;
+        }
+    }
+    return ret;
 }
 
 static HRESULT WINAPI PropertyBag2_Write(IPropertyBag2 *iface, ULONG cProperties, PROPBAG2 *pPropBag, VARIANT *pvarValue)
@@ -236,16 +255,60 @@ static HRESULT WINAPI PropertyBag2_Write(IPropertyBag2 *iface, ULONG cProperties
 static HRESULT WINAPI PropertyBag2_CountProperties(IPropertyBag2 *iface, ULONG *pcProperties)
 {
     PropertyBag *This = impl_from_IPropertyBag2(iface);
-    FIXME("(%p)->(%p)\n", This, pcProperties);
-    return E_NOTIMPL;
+    param_prop_t *prop;
+    ULONG count = 0;
+
+    TRACE("(%p)->(%p)\n", This, pcProperties);
+
+    if(!pcProperties)
+        return E_INVALIDARG;
+
+    LIST_FOR_EACH_ENTRY(prop, &This->props, param_prop_t, entry)
+        count++;
+    *pcProperties = count;
+    return S_OK;
 }
 
 static HRESULT WINAPI PropertyBag2_GetPropertyInfo(IPropertyBag2 *iface, ULONG iProperty, ULONG cProperties,
         PROPBAG2 *pPropBag, ULONG *pcProperties)
 {
     PropertyBag *This = impl_from_IPropertyBag2(iface);
-    FIXME("(%p)->(%lu %lu %p %p)\n", This, iProperty, cProperties, pPropBag, pcProperties);
-    return E_NOTIMPL;
+    param_prop_t *prop;
+    ULONG index = 0, copied = 0;
+
+    TRACE("(%p)->(%lu %lu %p %p)\n", This, iProperty, cProperties, pPropBag, pcProperties);
+
+    if(!pcProperties || (cProperties && !pPropBag))
+        return E_INVALIDARG;
+    *pcProperties = 0;
+
+    LIST_FOR_EACH_ENTRY(prop, &This->props, param_prop_t, entry) {
+        PROPBAG2 *info;
+        size_t size;
+
+        if(index++ < iProperty)
+            continue;
+        if(copied == cProperties)
+            break;
+
+        info = &pPropBag[copied];
+        memset(info, 0, sizeof(*info));
+        size = (wcslen(prop->name) + 1) * sizeof(WCHAR);
+        info->pstrName = CoTaskMemAlloc(size);
+        if(!info->pstrName) {
+            while(copied)
+                CoTaskMemFree(pPropBag[--copied].pstrName);
+            return E_OUTOFMEMORY;
+        }
+        memcpy(info->pstrName, prop->name, size);
+        info->dwType = PROPBAG2_TYPE_DATA;
+        info->vt = VT_BSTR;
+        info->dwHint = index; /* One-based hint, local to this property bag. */
+        copied++;
+    }
+
+    *pcProperties = copied;
+    return copied == cProperties ? S_OK : S_FALSE;
 }
 
 static HRESULT WINAPI PropertyBag2_LoadObject(IPropertyBag2 *iface, LPCOLESTR pstrName, DWORD dwHint,
@@ -441,7 +504,8 @@ static void get_pos_rect(PluginHost *host, RECT *ret)
     SetRect(ret, 0, 0, host->rect.right - host->rect.left, host->rect.bottom - host->rect.top);
 }
 
-static void load_prop_bag(PluginHost *host, IPersistPropertyBag *persist_prop_bag)
+static void load_prop_bag(PluginHost *host, IPersistPropertyBag *persist_prop_bag,
+        IPersistPropertyBag2 *persist_prop_bag2)
 {
     IPropertyBag *prop_bag;
     HRESULT hres;
@@ -450,18 +514,30 @@ static void load_prop_bag(PluginHost *host, IPersistPropertyBag *persist_prop_ba
     if(FAILED(hres))
         return;
 
+    /* Both persistence interfaces must obey the same untrusted-data policy. */
     if(prop_bag && !check_load_safety(host)) {
         IPropertyBag_Release(prop_bag);
         prop_bag = NULL;
     }
 
     if(prop_bag) {
-        hres = IPersistPropertyBag_Load(persist_prop_bag, prop_bag, NULL);
+        if(persist_prop_bag2) {
+            IPropertyBag2 *prop_bag2;
+
+            hres = IPropertyBag_QueryInterface(prop_bag, &IID_IPropertyBag2, (void**)&prop_bag2);
+            if(SUCCEEDED(hres)) {
+                hres = IPersistPropertyBag2_Load(persist_prop_bag2, prop_bag2, NULL);
+                IPropertyBag2_Release(prop_bag2);
+            }
+        }else {
+            hres = IPersistPropertyBag_Load(persist_prop_bag, prop_bag, NULL);
+        }
         IPropertyBag_Release(prop_bag);
         if(FAILED(hres))
             WARN("Load failed: %08lx\n", hres);
     }else {
-        hres = IPersistPropertyBag_InitNew(persist_prop_bag);
+        hres = persist_prop_bag2 ? IPersistPropertyBag2_InitNew(persist_prop_bag2)
+                                : IPersistPropertyBag_InitNew(persist_prop_bag);
         if(FAILED(hres))
             WARN("InitNew failed: %08lx\n", hres);
     }
@@ -475,14 +551,14 @@ static void load_plugin(PluginHost *host)
 
     hres = IUnknown_QueryInterface(host->plugin_unk, &IID_IPersistPropertyBag2, (void**)&persist_prop_bag2);
     if(SUCCEEDED(hres)) {
-        FIXME("Use IPersistPropertyBag2 iface\n");
+        load_prop_bag(host, NULL, persist_prop_bag2);
         IPersistPropertyBag2_Release(persist_prop_bag2);
         return;
     }
 
     hres = IUnknown_QueryInterface(host->plugin_unk, &IID_IPersistPropertyBag, (void**)&persist_prop_bag);
     if(SUCCEEDED(hres)) {
-        load_prop_bag(host, persist_prop_bag);
+        load_prop_bag(host, persist_prop_bag, NULL);
         IPersistPropertyBag_Release(persist_prop_bag);
         return;
     }
@@ -2398,7 +2474,7 @@ static ULONG WINAPI InstallCallback_AddRef(IBindStatusCallback *iface)
 static ULONG WINAPI InstallCallback_Release(IBindStatusCallback *iface)
 {
     InstallCallback *This = impl_from_IBindStatusCallback(iface);
-    LONG ref = InterlockedIncrement(&This->ref);
+    LONG ref = InterlockedDecrement(&This->ref);
 
     TRACE("(%p) ref=%ld\n", This, ref);
 
