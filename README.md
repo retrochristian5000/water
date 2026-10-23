@@ -10,6 +10,22 @@ be used for porting Windows code into native Unix executables.
 Wine is free software, released under the GNU LGPL; see the file
 LICENSE for the details.
 
+## Windows application compatibility and provenance
+
+Before treating a historical filename or Microsoft-branded product as a
+Windows OS component, separate its functional owner (OS, optional runtime,
+driver, application or application-private support library) from its
+distribution history (original media, OEM bundle, independent release,
+application update or OS hotfix). A file shipped on installation media
+does not necessarily belong to a default OS installation or run there.
+
+See [the Windows application compatibility ledger](documentation/windows-application-compatibility.md)
+for the Microsoft Arcade (1993) and Microsoft Dangerous Creatures (1994)
+test cases, their Win16, CD-ROM, GDI, multimedia and INI boundaries,
+original-source links, and the evidence required before changing Water.
+This ledger records requirements and proposed probes; it does not claim
+that either original program has been executed successfully.
+
 
 ## Windows 95 RTM DDK compatibility reference headers
 
