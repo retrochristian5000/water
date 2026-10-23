@@ -414,6 +414,35 @@ static void test_dmbuffer(void)
         ok(message == 0x000080, "Message 2 is %0lx instead of 0x000080\n", message);
     }
 
+    /* Reading an event must return its timestamped MIDI bytes, not merely S_OK. */
+    hr = IDirectMusicBuffer_ResetReadPtr(dmbuffer);
+    ok(hr == S_OK, "ResetReadPtr returned %#lx\n", hr);
+    time = -1;
+    bytes = 0xdeadbeef;
+    data = NULL;
+    hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, &time, &size, &bytes, &data);
+    ok(hr == S_OK, "first GetNextEvent returned %#lx\n", hr);
+    ok(time == 40, "first event time was %s\n", wine_dbgstr_longlong(time));
+    ok(size == 0 && bytes == 3, "first event group %lu size %lu\n", size, bytes);
+    ok(data && data[0] == 0x90, "first event data invalid\n");
+
+    hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, &time, &size, &bytes, &data);
+    ok(hr == S_OK, "second GetNextEvent returned %#lx\n", hr);
+    ok(time == 50, "second event time was %s\n", wine_dbgstr_longlong(time));
+    ok(data && data[0] == 0x80, "second event data invalid\n");
+
+    hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, NULL, NULL, NULL, NULL);
+    ok(hr == S_FALSE, "exhausted GetNextEvent returned %#lx\n", hr);
+    hr = IDirectMusicBuffer_ResetReadPtr(dmbuffer);
+    ok(hr == S_OK, "ResetReadPtr returned %#lx\n", hr);
+    hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, NULL, NULL, NULL, NULL);
+    ok(hr == S_OK, "GetNextEvent with optional NULL outputs returned %#lx\n", hr);
+
+    hr = IDirectMusicBuffer_Flush(dmbuffer);
+    ok(hr == S_OK, "Flush returned %#lx\n", hr);
+    hr = IDirectMusicBuffer_GetNextEvent(dmbuffer, &time, &size, &bytes, &data);
+    ok(hr == S_FALSE, "GetNextEvent after Flush returned %#lx\n", hr);
+
     if (dmbuffer)
         IDirectMusicBuffer_Release(dmbuffer);
     IDirectMusic_Release(dmusic);
