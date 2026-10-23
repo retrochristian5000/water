@@ -27,6 +27,7 @@
  */
 
 #include <stdarg.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "windef.h"
