@@ -18,6 +18,7 @@
 #include "winternl.h"
 #include "wine/doskeyb.h"
 #include "dosvm.h"
+#include "pif.h"
 #include "sb20.h"
 #include "wow.h"
 #include "wine/debug.h"
@@ -264,6 +265,7 @@ static int run_dosbox( const char *appname, const char *args )
 static void usage(void)
 {
     WINE_MESSAGE( "Usage: ntvdm.exe --app-name app.com [arguments]\n"
+                  "       ntvdm.exe --dos-app-name app.com original-command-line\n"
                   "       ntvdm.exe --wow-app-name app.exe command-line\n"
                   "       ntvdm.exe --prepare-only app.com [arguments]\n" );
 }
@@ -275,13 +277,23 @@ int main( int argc, char **argv )
     const char *appname;
     char **app_args;
     char *args;
-    BOOL prepare_only = FALSE, wow_app = FALSE;
+    char pif_program[MAX_PATH];
+    struct ntvdm_pif pif;
+    BOOL prepare_only = FALSE, wow_app = FALSE, have_pif = FALSE;
     int ret;
 
     if (argc >= 3 && !strcmp( argv[1], "--app-name" ))
     {
         appname = argv[2];
         app_args = argv + 3;
+    }
+    else if (argc >= 3 && !strcmp( argv[1], "--dos-app-name" ))
+    {
+        appname = argv[2];
+        app_args = argv + 3;
+        /* KernelBase supplies the original command line, including its
+         * executable token.  Legacy --app-name callers omit that token. */
+        if (*app_args) app_args++;
     }
     else if (argc >= 3 && !strcmp( argv[1], "--wow-app-name" ))
     {
@@ -313,9 +325,44 @@ int main( int argc, char **argv )
         return wow_run_app( appname, app_args );
     }
 
+    /* A PIF describes a DOS program and must not enter the image loader. */
+    {
+        const char *extension = strrchr( appname, '.' );
+        if (extension && !lstrcmpiA( extension, ".pif" ))
+        {
+            DWORD len;
+
+            if (!ntvdm_read_pif( appname, &pif ))
+            {
+                ERR( "invalid PIF file %s (error %lu)\n", debugstr_a(appname), GetLastError() );
+                return 1;
+            }
+            have_pif = TRUE;
+            if (pif.directory[0] && !SetCurrentDirectoryA( pif.directory ))
+                WARN( "PIF startup directory %s is unavailable (error %lu)\n",
+                      debugstr_a(pif.directory), GetLastError() );
+            len = pif.program[0] ? SearchPathA( NULL, pif.program, NULL,
+                                               ARRAY_SIZE(pif_program), pif_program, NULL ) : 0;
+            if (!len || len >= ARRAY_SIZE(pif_program))
+            {
+                ERR( "PIF target %s not found or path too long\n", debugstr_a(pif.program) );
+                return 1;
+            }
+            appname = pif_program;
+            if (pif.text_mode && AllocConsole() && pif.title[0]) SetConsoleTitleA( pif.title );
+            if (pif.close_on_exit) TRACE( "PIF close-on-exit requested\n" );
+        }
+    }
+
     WINE_TRACE( "DOS application = %s\n", appname );
 
     if (!(args = build_dos_args( app_args ))) return 1;
+    if (have_pif && !args[0] && pif.parameters[0])
+    {
+        HeapFree( GetProcessHeap(), 0, args );
+        if (!(args = HeapAlloc( GetProcessHeap(), 0, strlen(pif.parameters) + 1 ))) return 1;
+        strcpy( args, pif.parameters );
+    }
 
     kind = dos_prepare_process( appname, args, &process );
     if (kind == DOS_IMAGE_COM)

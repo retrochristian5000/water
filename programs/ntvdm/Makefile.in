@@ -9,6 +9,7 @@ SOURCES = \
 	dem_process.c \
 	dosvm.c \
 	doskrnl.c \
+	pif.c \
 	sb20.c \
 	ntvdm.c \
 	wow.c

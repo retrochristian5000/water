@@ -377,10 +377,13 @@ static NTSTATUS create_vdm_process( HANDLE token, HANDLE debug, SECURITY_ATTRIBU
     }
     else
     {
+        /* The NT DOS host owns DOS and PIF execution.  The distinct mode
+         * strips the original command-name token supplied by KernelBase,
+         * unlike --app-name from the legacy winevdm.exe wrapper. */
         host = (is_win64 || is_wow64 ?
-                L"C:\\windows\\syswow64\\winevdm.exe" :
-                L"C:\\windows\\system32\\winevdm.exe");
-        mode = L"--app-name";
+                L"C:\\windows\\syswow64\\ntvdm.exe" :
+                L"C:\\windows\\system32\\ntvdm.exe");
+        mode = L"--dos-app-name";
     }
 
     len = lstrlenW(params->ImagePathName.Buffer) + lstrlenW(params->CommandLine.Buffer) +
