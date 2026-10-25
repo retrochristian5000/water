@@ -2743,6 +2743,70 @@ static void test_device_object(void)
     ok(!upper_device->Reserved, "Got Reserved %p.\n", upper_device->Reserved);
 }
 
+struct power_irp_test
+{
+    KEVENT event;
+    DEVICE_OBJECT *device;
+    UCHAR minor;
+    POWER_STATE state;
+    NTSTATUS completion_status;
+    unsigned int completions;
+};
+
+static struct power_irp_test power_test;
+static unsigned int power_dispatches;
+
+static void WINAPI power_request_complete( DEVICE_OBJECT *device, UCHAR minor,
+                                            POWER_STATE state, void *context, IO_STATUS_BLOCK *iosb )
+{
+    struct power_irp_test *test = context;
+
+    test->device = device;
+    test->minor = minor;
+    test->state = state;
+    test->completion_status = iosb->Status;
+    ++test->completions;
+    KeSetEvent( &test->event, IO_NO_INCREMENT, FALSE );
+}
+
+static void test_power_irps(void)
+{
+    POWER_STATE state, previous;
+    LARGE_INTEGER timeout;
+    IRP *requested_irp = NULL;
+    NTSTATUS status;
+
+    /* NT must return the previous device state, not the new one. */
+    state.DeviceState = PowerDeviceD0;
+    PoSetPowerState( lower_device, DevicePowerState, state );
+    state.DeviceState = PowerDeviceD1;
+    previous = PoSetPowerState( lower_device, DevicePowerState, state );
+    ok(previous.DeviceState == PowerDeviceD0, "Previous power state is %u\n", previous.DeviceState);
+    state.DeviceState = PowerDeviceD0;
+    previous = PoSetPowerState( lower_device, DevicePowerState, state );
+    ok(previous.DeviceState == PowerDeviceD1, "Previous power state is %u\n", previous.DeviceState);
+
+    memset( &power_test, 0, sizeof(power_test) );
+    KeInitializeEvent( &power_test.event, NotificationEvent, FALSE );
+    power_dispatches = 0;
+    status = PoRequestPowerIrp( lower_device, IRP_MN_QUERY_POWER, state,
+                                power_request_complete, &power_test, &requested_irp );
+    ok(status == STATUS_PENDING, "PoRequestPowerIrp returned %#lx\n", status);
+    if (status != STATUS_PENDING) return;
+    ok(requested_irp != NULL, "PoRequestPowerIrp did not return an IRP\n");
+
+    timeout.QuadPart = -2 * 1000 * 10000; /* bounded wait; completion may be asynchronous */
+    status = KeWaitForSingleObject( &power_test.event, Executive, KernelMode, FALSE, &timeout );
+    ok(status == STATUS_SUCCESS, "Power completion wait returned %#lx\n", status);
+    if (status != STATUS_SUCCESS) return;
+    ok(power_test.completions == 1, "Got %u power completions\n", power_test.completions);
+    ok(power_test.device == lower_device, "Completion device %p\n", power_test.device);
+    ok(power_test.minor == IRP_MN_QUERY_POWER, "Completion minor %#x\n", power_test.minor);
+    ok(power_test.state.DeviceState == PowerDeviceD0, "Completion state %u\n", power_test.state.DeviceState);
+    ok(power_test.completion_status == STATUS_SUCCESS, "Completion status %#lx\n", power_test.completion_status);
+    ok(power_dispatches == 2, "Power IRP traversed %u stack locations\n", power_dispatches);
+}
+
 static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *stack)
 {
     void *buffer = irp->AssociatedIrp.SystemBuffer;
@@ -2792,6 +2856,7 @@ static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *st
     test_driver_object_extension();
     test_default_security();
     test_device_object();
+    test_power_irps();
 
     IoMarkIrpPending(irp);
     IoQueueWorkItem(work_item, main_test_task, DelayedWorkQueue, irp);
@@ -2965,6 +3030,29 @@ static NTSTATUS completion_ioctl(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCAT
             return STATUS_SUCCESS;
         }
     }
+}
+
+static NTSTATUS WINAPI driver_Power( DEVICE_OBJECT *device, IRP *irp )
+{
+    IO_STACK_LOCATION *stack = IoGetCurrentIrpStackLocation( irp );
+
+    ++power_dispatches;
+    ok(stack->MajorFunction == IRP_MJ_POWER, "Power IRP major %#x\n", stack->MajorFunction);
+    ok(stack->MinorFunction == IRP_MN_QUERY_POWER, "Power IRP minor %#x\n", stack->MinorFunction);
+    ok(stack->Parameters.Power.Type == DevicePowerState, "Power IRP type %u\n",
+       stack->Parameters.Power.Type);
+
+    PoStartNextPowerIrp( irp );
+    if (device == upper_device)
+    {
+        IoCopyCurrentIrpStackLocationToNext( irp );
+        return PoCallDriver( lower_device, irp );
+    }
+
+    ok(device == lower_device, "Power IRP reached unexpected device %p\n", device);
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCompleteRequest( irp, IO_NO_INCREMENT );
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS WINAPI driver_Create(DEVICE_OBJECT *device, IRP *irp)
@@ -3306,6 +3394,7 @@ NTSTATUS WINAPI DriverEntry(DRIVER_OBJECT *driver, PUNICODE_STRING registry)
     driver->MajorFunction[IRP_MJ_QUERY_INFORMATION] = driver_QueryInformation;
     driver->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = driver_QueryVolumeInformation;
     driver->MajorFunction[IRP_MJ_CLOSE]             = driver_Close;
+    driver->MajorFunction[IRP_MJ_POWER]             = driver_Power;
 
     RtlInitUnicodeString(&nameW, L"IoDriverObjectType");
     pIoDriverObjectType = MmGetSystemRoutineAddress(&nameW);

@@ -1398,24 +1398,98 @@ NTSTATUS WINAPI IoOpenDeviceRegistryKey( DEVICE_OBJECT *device, ULONG type, ACCE
     return STATUS_SUCCESS;
 }
 
+struct power_irp_request
+{
+    DEVICE_OBJECT *device;
+    UCHAR minor;
+    POWER_STATE state;
+    PREQUEST_POWER_COMPLETE callback;
+    void *context;
+};
+
+static NTSTATUS WINAPI power_irp_completion( DEVICE_OBJECT *device, IRP *irp, void *context )
+{
+    struct power_irp_request *request = context;
+
+    TRACE("completed power IRP %p for device %p, status %#lx\n", irp, device, irp->IoStatus.Status);
+    if (request->callback)
+        request->callback( request->device, request->minor, request->state,
+                           request->context, &irp->IoStatus );
+    free( request );
+    return STATUS_SUCCESS;
+}
+
 /***********************************************************************
  *           PoRequestPowerIrp   (NTOSKRNL.EXE.@)
  */
 NTSTATUS WINAPI PoRequestPowerIrp( DEVICE_OBJECT *device, UCHAR minor,
         POWER_STATE state, PREQUEST_POWER_COMPLETE complete_cb, void *ctx, IRP **irp )
 {
-    FIXME("device %p, minor %#x, state %u, complete_cb %p, ctx %p, irp %p, stub!\n",
-            device, minor, state.DeviceState, complete_cb, ctx, irp);
-    return STATUS_NOT_IMPLEMENTED;
+    struct power_irp_request *request;
+    DEVICE_OBJECT *top;
+    IO_STACK_LOCATION *stack;
+    IRP *power_irp;
+
+    if (irp) *irp = NULL;
+    if (!device || (minor != IRP_MN_QUERY_POWER && minor != IRP_MN_SET_POWER &&
+                    minor != IRP_MN_WAIT_WAKE))
+        return STATUS_INVALID_PARAMETER;
+
+    top = IoGetAttachedDevice( device );
+    if (top->StackSize < 1 || !top->DriverObject ||
+        !top->DriverObject->MajorFunction[IRP_MJ_POWER])
+        return STATUS_INVALID_DEVICE_REQUEST;
+
+    if (!(request = malloc( sizeof(*request) ))) return STATUS_NO_MEMORY;
+    if (!(power_irp = IoAllocateIrp( top->StackSize, FALSE )))
+    {
+        free( request );
+        return STATUS_NO_MEMORY;
+    }
+
+    request->device = device;
+    request->minor = minor;
+    request->state = state;
+    request->callback = complete_cb;
+    request->context = ctx;
+
+    stack = IoGetNextIrpStackLocation( power_irp );
+    stack->MajorFunction = IRP_MJ_POWER;
+    stack->MinorFunction = minor;
+    stack->Parameters.Power.Type = minor == IRP_MN_WAIT_WAKE ? SystemPowerState : DevicePowerState;
+    stack->Parameters.Power.State = state;
+    power_irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+    IoSetCompletionRoutine( power_irp, power_irp_completion, request, TRUE, TRUE, TRUE );
+
+    /* The completion routine may run before PoCallDriver returns. Do not
+     * touch the request or IRP after dispatch; either can already be freed. */
+    if (irp) *irp = power_irp;
+    PoCallDriver( top, power_irp );
+    return STATUS_PENDING;
 }
 
 /***********************************************************************
  *           PoSetPowerState   (NTOSKRNL.EXE.@)
  */
-POWER_STATE WINAPI PoSetPowerState( DEVICE_OBJECT *device, POWER_STATE_TYPE type, POWER_STATE state)
+POWER_STATE WINAPI PoSetPowerState( DEVICE_OBJECT *device, POWER_STATE_TYPE type, POWER_STATE state )
 {
-    FIXME("device %p, type %u, state %u, stub!\n", device, type, state.DeviceState);
-    return state;
+    struct wine_device *wine_device;
+    POWER_STATE previous;
+
+    previous.DeviceState = PowerDeviceUnspecified;
+    if (!device || type != DevicePowerState || !device->DeviceObjectExtension ||
+        device->DeviceObjectExtension->DeviceObject != device)
+    {
+        WARN("invalid device %p or power state type %u\n", device, type);
+        return previous;
+    }
+
+    /* The NT contract returns the previous state, unlike Win98/Me.
+     * Keep it per device, not in guest-visible DEVICE_OBJECT layout. */
+    wine_device = CONTAINING_RECORD( device, struct wine_device, device_obj );
+    previous.DeviceState = InterlockedExchange( &wine_device->device_power_state, state.DeviceState );
+    TRACE("device %p: power state %u -> %u\n", device, previous.DeviceState, state.DeviceState);
+    return previous;
 }
 
 /*****************************************************

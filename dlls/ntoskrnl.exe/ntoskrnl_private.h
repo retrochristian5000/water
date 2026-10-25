@@ -127,6 +127,7 @@ struct wine_device
     DEVOBJ_EXTENSION devobj_ext;
     DEVICE_RELATIONS *children;
     HKEY dyn_data_key;
+    LONG device_power_state; /* NT power-manager state; initially PowerDeviceUnspecified */
 
     /* Combination of device_id and instance_id. Only set on PDO devices. */
     WCHAR device_instance_id[MAX_DEVICE_ID_LEN];
