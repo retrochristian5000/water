@@ -540,7 +540,15 @@ INT16 WINAPI InitApp16( HINSTANCE16 hInstance )
  */
 BOOL16 WINAPI ExitWindows16( DWORD dwReturnCode, UINT16 wReserved )
 {
-    return ExitWindowsEx( EWX_LOGOFF, 0xffffffff );
+    UINT flags = EWX_LOGOFF;
+
+    /* Win16 applications use distinct exit codes to request a restart.
+     * Restart the emulated Windows session, never the host machine. */
+    if (dwReturnCode == EW_RESTARTWINDOWS || dwReturnCode == EW_REBOOTSYSTEM)
+        flags = EWX_REBOOT;
+
+    TRACE("dwReturnCode %#lx, reserved %#x, flags %#x\n", dwReturnCode, wReserved, flags);
+    return ExitWindowsEx( flags, 0xffffffff );
 }
 
 
