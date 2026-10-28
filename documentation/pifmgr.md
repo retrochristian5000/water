@@ -1,8 +1,9 @@
 # PIFMGR.DLL and Program Information Files (Windows 98 FE)
 
 Status: **HISTORICAL EVIDENCE RECOVERED; SHELL32 NAMED-BLOCK WRITES
-SOURCE-IMPLEMENTED; PIFMGR.DLL, PIPARSE.DLL, DOS VM INTEGRATION
-NOT IMPLEMENTED OR RUNTIME-VERIFIED**.
+AND NTVDM PIF LAUNCH ROUTING SOURCE-IMPLEMENTED; PIFMGR.DLL AND
+PIPARSE.DLL NOT IMPLEMENTED; DOS VM INTEGRATION INCOMPLETE AND
+NOT GUEST-RUNTIME-VERIFIED**.
 
 ## FE provenance and older history
 
@@ -81,6 +82,18 @@ fixed-size updates, persistence, unknown group/size rejection,
 discard-on-close, and preservation of adjacent extension blocks.
 **These tests are committed but not executed.**
 
+The October 25 NTVDM migration moved DOS/PIF launch routing from
+`winevdm.exe` to `ntvdm.exe`. `programs/ntvdm/pif.c` decodes the PIF
+program, title, startup directory, parameters, and selected 386-display
+flags. Its parser now also accepts the original **exactly 0x171-byte**
+PIF without a Microsoft extension chain; a partial extension header,
+an invalid `MICROSOFT PIFEX` signature, or a 386 record whose declared
+payload extends past EOF is rejected. `scripts/tests/test_ntvdm_pif.py`
+compiles the actual parser against portable file-I/O shims and covers
+those cases. This does not prove a real Windows 98 DOS session launches:
+NTVDM's internal DOS EXE loader and several PIF runtime settings remain
+incomplete, and the current execution path can fall back to DOSBox.
+
 ## Outstanding separate components and gates
 
 - `PIFMGR.DLL` (FE module itself): PE exports, icon group IDs,
@@ -90,6 +103,7 @@ discard-on-close, and preservation of adjacent extension blocks.
 - Windows 98 DOS VM: memory (conventional/EMS/XMS), working
   directory, environment, graphics/full-screen, idle scheduling,
   hotkey, CONFIG.SYS/AUTOEXEC.BAT support need actual behavior tests.
+  The NTVDM parser and launcher are only partial integration.
 - Win9x `SHELL32` ordinal differences from NT shell32 5.0,
   16/32-bit thunks, corrupt record chains and random file input
   need separate verification. An exported symbol does not prove
@@ -97,5 +111,6 @@ discard-on-close, and preservation of adjacent extension blocks.
 
 Next: inspect genuine licensed Windows 98 FE binaries, record
 hashes, native exports/resources and compare Win95/98/Me variants.
-Then run Water's PIF tests and a genuine Win98 FE DOS-program
-launch matrix before reporting functional PIFMGR.DLL compatibility.
+Then run Water's Shell32 PIF tests and a genuine Win98 FE DOS-program
+launch matrix before reporting functional PIFMGR.DLL or NTVDM PIF
+compatibility. The portable NTVDM parser test is not a substitute.

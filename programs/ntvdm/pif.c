@@ -58,11 +58,8 @@ BOOL ntvdm_read_pif( const char *path, struct ntvdm_pif *settings )
     file = CreateFileA( path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
     if (file == INVALID_HANDLE_VALUE) return FALSE;
 
-    if (!GetFileSizeEx( file, &length ) ||
-        length.QuadPart < PIF_HEADER_SIZE + PIF_RECORD_SIZE ||
-        !pif_read_at( file, length.QuadPart, 0, header, sizeof(header) ) ||
-        !pif_read_at( file, length.QuadPart, PIF_HEADER_SIZE, record, sizeof(record) ) ||
-        memcmp( record, "MICROSOFT PIFEX", 15 ))
+    if (!GetFileSizeEx( file, &length ) || length.QuadPart < PIF_HEADER_SIZE ||
+        !pif_read_at( file, length.QuadPart, 0, header, sizeof(header) ))
         goto done;
 
     pif_string( settings->program, sizeof(settings->program), header + 0x24, 63 );
@@ -71,6 +68,17 @@ BOOL ntvdm_read_pif( const char *path, struct ntvdm_pif *settings )
     pif_string( settings->parameters, sizeof(settings->parameters), header + 0xa5, 64 );
     settings->text_mode = !!(header[0x63] & 0x02);
     settings->close_on_exit = !!(header[0x63] & 0x10);
+
+    /* The original 0x171-byte PIF has no Microsoft extension records. */
+    if (length.QuadPart == PIF_HEADER_SIZE)
+    {
+        valid = TRUE;
+        goto parsed;
+    }
+    if (length.QuadPart < PIF_HEADER_SIZE + PIF_RECORD_SIZE ||
+        !pif_read_at( file, length.QuadPart, PIF_HEADER_SIZE, record, sizeof(record) ) ||
+        memcmp( record, "MICROSOFT PIFEX", 16 ))
+        goto done;
 
     /* Each linked record supplies a 16-bit absolute file offset.
      * A bounded traversal also rejects cycles and other corrupt chains. */
@@ -94,7 +102,7 @@ BOOL ntvdm_read_pif( const char *path, struct ntvdm_pif *settings )
             WORD offset = pif_word( record + 18 );
             WORD size = pif_word( record + 20 );
 
-            if (size < sizeof(enhanced) ||
+            if (size < sizeof(enhanced) || (LONGLONG)offset + size > length.QuadPart ||
                 !pif_read_at( file, length.QuadPart, offset, enhanced, sizeof(enhanced) ))
                 break;
 
@@ -104,6 +112,7 @@ BOOL ntvdm_read_pif( const char *path, struct ntvdm_pif *settings )
         }
     }
 
+parsed:
     if (valid)
         TRACE( "PIF %s: program %s, directory %s, 386 extension %u\n",
                debugstr_a(path), debugstr_a(settings->program),
