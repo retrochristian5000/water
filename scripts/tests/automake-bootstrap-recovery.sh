@@ -10,6 +10,7 @@ export GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0
 mkdir -p "$tmp/upstream" "$tmp/water/scripts/whp-build" "$tmp/tools"
 cp "$root/scripts/whp-build/ensure-automake.sh" "$tmp/water/scripts/whp-build/"
 cp "$root/scripts/whp-build/m4.sh" "$tmp/water/scripts/whp-build/"
+cp "$root/perl.sh" "$tmp/water/perl.sh"
 
 cat > "$tmp/upstream/bootstrap" <<'EOF'
 #!/bin/sh
@@ -35,8 +36,11 @@ cat > "$tmp/tools/autom4te" <<'EOF'
 EOF
 cat > "$tmp/tools/perl" <<'EOF'
 #!/bin/sh
-echo 'Mock Perl'
-echo 'Perl 5'
+case "${1:-}" in
+    -e) printf 'whp-water-perl-ok\n' ;;
+    --version) printf 'Mock Perl\nPerl 5\n' ;;
+    *) exit 1 ;;
+esac
 EOF
 cat > "$tmp/tools/m4" <<'EOF'
 #!/bin/sh
@@ -106,6 +110,11 @@ prefix=$(/bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0)
 [ "$(wc -l < "$WHP_AUTOMAKE_INSTALL_LOG" | tr -d ' ')" -eq 1 ] || {
     echo 'FAIL: healthy Automake cache was rebuilt' >&2; exit 1
 }
+
+if PERL=/missing/water-perl /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: invalid Perl override reused cached Automake' >&2; exit 1
+fi
+grep -Fq 'explicit PERL override rejected' "$tmp/err"
 
 # Version mismatch must fail before touching the healthy cache.
 cp "$tmp/tools/autom4te" "$tmp/autom4te.saved"

@@ -11,6 +11,7 @@ export GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0
 mkdir -p "$tmp/tools" "$tmp/upstream" "$tmp/water/scripts/whp-build"
 cp "$root/scripts/whp-build/ensure-autoconf.sh" "$tmp/water/scripts/whp-build/"
 cp "$root/scripts/whp-build/m4.sh" "$tmp/water/scripts/whp-build/"
+cp "$root/perl.sh" "$tmp/water/perl.sh"
 
 cat > "$tmp/upstream/bootstrap" <<'EOF'
 #!/bin/sh
@@ -33,7 +34,11 @@ esac
 EOF
 cat > "$tmp/tools/perl" <<'EOF'
 #!/bin/sh
-printf 'Mock Perl\nPerl 5\n'
+case "${1:-}" in
+    -e) printf 'whp-water-perl-ok\n' ;;
+    --version) printf 'Mock Perl\nPerl 5\n' ;;
+    *) exit 1 ;;
+esac
 EOF
 cat > "$tmp/tools/aclocal" <<'EOF'
 #!/bin/sh
@@ -89,6 +94,11 @@ cmd=$(/bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0)
 [ -x "$cmd" ] && [ "$(wc -l < "$WHP_CACHE_INSTALL_LOG" | tr -d ' ')" -eq 1 ]
 prefix=$(dirname "$(dirname "$cmd")")
 [ -f "$prefix/.whp-ready" ] || { echo 'FAIL: ready cache missing' >&2; exit 1; }
+
+if PERL=/missing/water-perl /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: invalid Perl override reused cached Autoconf' >&2; exit 1
+fi
+grep -Fq 'explicit PERL override rejected' "$tmp/err"
 
 # Mismatched stage-0 Automake tools must not reuse a cached Autoconf binary.
 cp "$tmp/tools/automake" "$tmp/automake.saved"

@@ -28,7 +28,10 @@ git -C "$source" cat-file -e "$pin^{commit}" 2>/dev/null ||
 # Automake self-hosts aclocal/automake but needs seed Autoconf/autom4te.
 seed_autoconf=${WHP_AUTOMAKE_SEED_AUTOCONF:-autoconf}
 seed_autom4te=${WHP_AUTOMAKE_SEED_AUTOM4TE:-autom4te}
-perl=${PERL:-perl}
+perl=$(/bin/sh "$root/perl.sh" --print-path) ||
+    fail 'native Perl validation failed (set PERL to a working interpreter)'
+# Generated script shebangs cannot safely contain a Perl path with spaces.
+case "$perl" in *[[:space:]]*) fail "pinned Automake bootstrap cannot use a Perl path with whitespace: $perl" ;; esac
 make=${MAKE:-}
 if [ -z "$make" ]; then
     make=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
@@ -39,7 +42,6 @@ for tool in "$seed_autoconf" "$seed_autom4te" "$perl" "$make" git cksum awk sed 
 done
 seed_autoconf=$(command -v "$seed_autoconf")
 seed_autom4te=$(command -v "$seed_autom4te")
-perl=$(command -v "$perl")
 make=$(command -v "$make")
 ac_version=$("$seed_autoconf" --version 2>/dev/null | sed -n '1p') ||
     fail 'seed Autoconf version probe failed'

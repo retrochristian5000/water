@@ -25,7 +25,10 @@ git -C "$source" cat-file -e "$pin^{commit}" 2>/dev/null ||
 m4=$(/bin/sh "$root/scripts/whp-build/m4.sh" --print-path) ||
     fail 'could not select a compatible GNU M4'
 
-perl=${PERL:-perl}
+perl=$(/bin/sh "$root/perl.sh" --print-path) ||
+    fail 'native Perl validation failed (set PERL to a working interpreter)'
+# Pinned Autoconf bootstrap tokenizes PERL; do not misparse spaced paths.
+case "$perl" in *[[:space:]]*) fail "pinned Autoconf bootstrap cannot use a Perl path with whitespace: $perl" ;; esac
 aclocal=${ACLOCAL:-aclocal}
 automake=${AUTOMAKE:-automake}
 make=${MAKE:-make}
@@ -53,7 +56,7 @@ esac
 # A distinct prefix for each toolchain signature prevents stale binary reuse.
 identity=$(
     printf '%s\n' 'RECIPE=5' "PIN=$pin" "M4=$m4" \
-        "PERL=$(command -v "$perl")" "ACLOCAL=$(command -v "$aclocal")" \
+        "PERL=$perl" "ACLOCAL=$(command -v "$aclocal")" \
         "AUTOMAKE=$(command -v "$automake")" "MAKE=$(command -v "$make")"
     "$m4" --version | sed -n '1p'
     "$perl" --version | sed -n '2p'
