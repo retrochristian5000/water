@@ -154,6 +154,7 @@ Environment:
   WHP_COMPILER_RT_AARCH64_TARGET  Standalone builtins target: aarch64-pc-windows-msvc or aarch64-w64-windows-gnu
   WATER_INSTALL         Post-build install: none, runtime, development, or all (default: none)
   WATER_PREFIX          Install prefix passed to configure (default: /usr/local)
+  WHP_CC_SEED           Native C seed override for cc.sh (must compile/link/run)
   WHP_LLVM_BOOTSTRAP_CC Stage-0 C compiler (default: prefer clang)
   WHP_LLVM_BOOTSTRAP_CXX Stage-0 C++ compiler (default: prefer clang++)
   NINJA_CMD              Explicit Ninja executable shared by LLVM and Water
@@ -563,6 +564,47 @@ prepare_automake_executables()
         fi
     fi
     export AUTOMAKE ACLOCAL
+}
+
+prepare_native_cc_seed()
+{
+    # Validate the native build-machine C compiler once, before Autoconf or
+    # LLVM stage 0. The Windows PE compiler lanes remain independently owned.
+    seed_request=
+    if [ -n "${WHP_CC_SEED:-}" ]; then
+        seed_request=$WHP_CC_SEED
+    elif [ -n "${CC_FOR_BUILD:-}" ]; then
+        seed_request=$CC_FOR_BUILD
+    elif [ -n "${WHP_LLVM_BOOTSTRAP_CC:-}" ]; then
+        seed_request=$WHP_LLVM_BOOTSTRAP_CC
+    elif [ -n "${CC:-}" ]; then
+        seed_request=$CC
+    fi
+
+    if [ -n "$seed_request" ]; then
+        native_cc=$(WHP_CC_SEED="$seed_request" /bin/sh "$SOURCE_DIR/cc.sh" --print-cc) ||
+            die "native C seed failed its compile/link/execute preflight: $seed_request"
+    else
+        native_cc=$(/bin/sh "$SOURCE_DIR/cc.sh" --print-cc) ||
+            die 'no working native C seed compiler'
+    fi
+
+    # An explicit stage-0 or build-tools override must never bypass validation
+    # merely because another compiler took precedence in seed discovery.
+    for seed_override in "${WHP_LLVM_BOOTSTRAP_CC:-}" "${CC_FOR_BUILD:-}"; do
+        [ -n "$seed_override" ] || continue
+        [ "$seed_override" != "$seed_request" ] || continue
+        WHP_CC_SEED="$seed_override" /bin/sh "$SOURCE_DIR/cc.sh" --print-cc >/dev/null ||
+            die "native compiler override failed its preflight: $seed_override"
+    done
+    if [ -z "${WHP_LLVM_BOOTSTRAP_CC:-}" ]; then
+        WHP_LLVM_BOOTSTRAP_CC=$native_cc
+    fi
+    if [ -z "${CC_FOR_BUILD:-}" ]; then
+        CC_FOR_BUILD=$native_cc
+    fi
+    export WHP_LLVM_BOOTSTRAP_CC CC_FOR_BUILD
+    printf 'WHP native C seed: %s\n' "$native_cc" >&2
 }
 
 prepare_autoconf_toolchain()
@@ -3895,6 +3937,7 @@ case "${1:-build}" in
         ;;
 esac
 
+prepare_native_cc_seed
 prepare_autoconf_toolchain
 generate_configure
 init_submodules
