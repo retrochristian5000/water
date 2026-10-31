@@ -62,10 +62,10 @@ compiler_path()
     value=$1
     verbose=$2
     case "$value" in
+        */*) candidate=$value ;;
         *[[:space:]]*)
             [ "$verbose" = 0 ] || error "compiler command must be a single executable: $value"
             exit 1 ;;
-        */*) candidate=$value ;;
         *) candidate=$(command -v "$value" 2>/dev/null || true) ;;
     esac
     if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then

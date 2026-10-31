@@ -22,6 +22,13 @@ WHP_CC_SEED="$cc" sh "$bridge" "$tmp/test.c" -o "$tmp/native"
 mkdir -p "$tmp/path with spaces"
 cp "$bridge" "$tmp/path with spaces/cc.sh"
 [ "$(WHP_CC_SEED="$cc" sh "$tmp/path with spaces/cc.sh" --print-cc)" = "$cc" ]
+# Absolute compiler paths may contain spaces; command-plus-options may not.
+ln -s "$cc" "$tmp/path with spaces/compiler"
+[ "$(WHP_CC_SEED="$tmp/path with spaces/compiler" sh "$bridge" --print-cc)" = "$tmp/path with spaces/compiler" ]
+if WHP_CC_SEED="$cc -m32" sh "$bridge" --print-cc > "$tmp/log" 2>&1; then
+    echo 'compiler command containing extra flags accepted' >&2; exit 1
+fi
+grep -Fq 'single executable' "$tmp/log"
 
 if WHP_CC_SEED="$bridge" sh "$bridge" --print-cc > "$tmp/log" 2>&1; then
     echo 'recursive seed adapter accepted' >&2; exit 1
