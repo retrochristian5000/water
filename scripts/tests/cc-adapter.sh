@@ -28,6 +28,10 @@ ln -s "$cc" "$tmp/path with spaces/compiler"
 if WHP_CC_SEED="$cc -m32" sh "$bridge" --print-cc > "$tmp/log" 2>&1; then
     echo 'compiler command containing extra flags accepted' >&2; exit 1
 fi
+grep -Fq 'not executable' "$tmp/log"
+if WHP_CC_SEED='clang -m32' sh "$bridge" --print-cc > "$tmp/log" 2>&1; then
+    echo 'multiword compiler command accepted' >&2; exit 1
+fi
 grep -Fq 'single executable' "$tmp/log"
 
 if WHP_CC_SEED="$bridge" sh "$bridge" --print-cc > "$tmp/log" 2>&1; then
