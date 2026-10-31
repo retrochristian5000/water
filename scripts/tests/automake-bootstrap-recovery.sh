@@ -45,7 +45,13 @@ EOF
 cat > "$tmp/tools/m4" <<'EOF'
 #!/bin/sh
 case "$1" in
-    --gnu) [ "${2:-}" = --version ] && echo 'm4 (GNU M4) 1.4.20' ;;
+    --gnu)
+        if [ "${2:-}" = --version ]; then
+            echo 'm4 (GNU M4) 1.4.20'
+        else
+            cat >/dev/null
+            printf 'whp-water-m4-ok\n'
+        fi ;;
     --version) echo 'm4 (GNU M4) 1.4.20' ;;
     *) exit 1 ;;
 esac
