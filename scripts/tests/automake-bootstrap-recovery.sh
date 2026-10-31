@@ -117,6 +117,16 @@ prefix=$(/bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0)
     echo 'FAIL: healthy Automake cache was rebuilt' >&2; exit 1
 }
 
+# CDPATH must not add an extra line to a relative build directory.
+(
+    cd "$tmp/water"
+    CDPATH=. /bin/sh "$helper" "$tmp/water" build 0
+) > "$tmp/out"
+[ "$(cat "$tmp/out")" = "$prefix" ] &&
+[ "$(wc -l < "$WHP_AUTOMAKE_INSTALL_LOG" | tr -d ' ')" -eq 1 ] || {
+    echo 'FAIL: CDPATH polluted the Automake cache path' >&2; exit 1
+}
+
 if PERL=/missing/water-perl /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
     echo 'FAIL: invalid Perl override reused cached Automake' >&2; exit 1
 fi
@@ -135,6 +145,23 @@ fi
 grep -q 'versions differ' "$tmp/err" || {
     echo 'FAIL: mismatched seed lacks diagnostic' >&2; exit 1
 }
+mv "$tmp/autom4te.saved" "$tmp/tools/autom4te"
+
+# A fake seed that prints a convincing banner but returns failure is
+# not a usable Autoconf component; do not let sed hide its exit code.
+cp "$tmp/tools/autom4te" "$tmp/autom4te.saved"
+cat > "$tmp/tools/autom4te" <<'EOF'
+#!/bin/sh
+[ "$1" = --version ] || exit 1
+echo 'autom4te (GNU Autoconf) mock'
+exit 17
+EOF
+chmod +x "$tmp/tools/autom4te"
+if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: failed autom4te probe accepted a banner' >&2; exit 1
+fi
+grep -Fq 'seed autom4te version probe failed' "$tmp/err" ||
+    { echo 'FAIL: failed autom4te exit status was hidden' >&2; exit 1; }
 mv "$tmp/autom4te.saved" "$tmp/tools/autom4te"
 
 # A broken or mixed Texinfo implementation must be rejected even if the

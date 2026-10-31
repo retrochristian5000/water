@@ -65,7 +65,8 @@ identity=$(
 )
 fingerprint=$(printf '%s\n' "$identity" | cksum | awk '{print $1 "-" $2}')
 mkdir -p "$build"
-build=$(cd "$build" && pwd)
+build=$(CDPATH= cd -P -- "$build" && pwd -P) ||
+    fail "could not resolve bootstrap build directory: $build"
 cache=$build/autoconf-bootstrap
 prefix=$cache/$pin-$fingerprint
 mkdir -p "$cache"

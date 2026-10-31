@@ -101,6 +101,16 @@ cmd=$(/bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0)
 prefix=$(dirname "$(dirname "$cmd")")
 [ -f "$prefix/.whp-ready" ] || { echo 'FAIL: ready cache missing' >&2; exit 1; }
 
+# Exported CDPATH must not corrupt the absolute cache directory when
+# invoked with a relative build path.
+(
+    cd "$tmp/water"
+    CDPATH=. /bin/sh "$helper" "$tmp/water" build 0
+) > "$tmp/out"
+[ "$(cat "$tmp/out")" = "$cmd" ] &&
+[ "$(wc -l < "$WHP_CACHE_INSTALL_LOG" | tr -d ' ')" -eq 1 ] ||
+    { echo 'FAIL: CDPATH polluted the Autoconf cache path' >&2; exit 1; }
+
 if PERL=/missing/water-perl /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
     echo 'FAIL: invalid Perl override reused cached Autoconf' >&2; exit 1
 fi

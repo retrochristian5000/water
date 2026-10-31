@@ -43,17 +43,23 @@ done
 seed_autoconf=$(command -v "$seed_autoconf")
 seed_autom4te=$(command -v "$seed_autom4te")
 make=$(command -v "$make")
-ac_version=$("$seed_autoconf" --version 2>/dev/null | sed -n '1p') ||
+# Capture the producer's exit status before extracting the first line:
+# piping straight into sed masks a failed seed tool with a valid banner.
+ac_banner=$("$seed_autoconf" --version 2>/dev/null) ||
     fail 'seed Autoconf version probe failed'
-am4_version=$("$seed_autom4te" --version 2>/dev/null | sed -n '1p') ||
+am4_banner=$("$seed_autom4te" --version 2>/dev/null) ||
     fail 'seed autom4te version probe failed'
+ac_version=$(printf '%s\n' "$ac_banner" | sed -n '1p')
+am4_version=$(printf '%s\n' "$am4_banner" | sed -n '1p')
 case "$ac_version:$am4_version" in
     *'GNU Autoconf'*:*'GNU Autoconf'*) ;;
     *) fail "seed Autoconf/autom4te are not GNU Autoconf tools: $ac_version / $am4_version" ;;
 esac
 [ "${ac_version##* }" = "${am4_version##* }" ] ||
     fail "seed Autoconf/autom4te versions differ: $ac_version / $am4_version"
-"$make" --version 2>/dev/null | grep 'GNU Make' >/dev/null ||
+make_banner=$("$make" --version 2>/dev/null) ||
+    fail 'GNU Make version probe failed'
+printf '%s\n' "$make_banner" | grep 'GNU Make' >/dev/null ||
     fail 'GNU Make is required for the pinned Automake bootstrap'
 m4=$(/bin/sh "$root/scripts/whp-build/m4.sh" --print-path) ||
     fail 'could not select GNU M4'
@@ -73,8 +79,9 @@ case "$makeinfo" in
     /*) ;;
     *) fail "makeinfo must resolve to an absolute executable: $makeinfo" ;;
 esac
-makeinfo_version=$("$makeinfo" --version 2>/dev/null | sed -n '1p') ||
+makeinfo_banner=$("$makeinfo" --version 2>/dev/null) ||
     fail 'makeinfo version probe failed'
+makeinfo_version=$(printf '%s\n' "$makeinfo_banner" | sed -n '1p')
 case "$makeinfo_version" in
     *'GNU texinfo'*|*'GNU Texinfo'*) ;;
     *) fail "makeinfo is not GNU Texinfo: $makeinfo_version" ;;
@@ -88,13 +95,14 @@ identity=$(
         "AUTOM4TE=$seed_autom4te:$am4_version" "PERL=$perl" "MAKE=$make" "M4=$m4" \
         "MAKEINFO=$makeinfo:$makeinfo_version"
     "$perl" --version | sed -n '2p'
-    "$make" --version | sed -n '1p'
+    printf '%s\n' "$make_banner" | sed -n '1p'
     "$m4" --version | sed -n '1p'
     cksum < "$0"
 )
 fingerprint=$(printf '%s\n' "$identity" | cksum | awk '{print $1 "-" $2}')
 mkdir -p "$build"
-build=$(cd "$build" && pwd)
+build=$(CDPATH= cd -P -- "$build" && pwd -P) ||
+    fail "could not resolve bootstrap build directory: $build"
 cache=$build/automake-bootstrap
 prefix=$cache/$pin-$fingerprint
 usable()
