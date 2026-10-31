@@ -865,6 +865,23 @@ static void test_enumerator_name(void)
     ok(req_size == sizeof(root), "unexpected size %lu\n", req_size);
     if (status == STATUS_SUCCESS)
         ok(!wcscmp(root, buffer), "unexpected property value '%ls'\n", buffer);
+
+    /* The terminator must fit in the exact-sized buffer, not the next WCHAR. */
+    memset(buffer, 0x5a, sizeof(buffer));
+    req_size = 0;
+    status = IoGetDeviceProperty(bus_pdo, DevicePropertyEnumeratorName, sizeof(root), buffer, &req_size);
+    ok(status == STATUS_SUCCESS, "IoGetDeviceProperty returned %#lx\n", status);
+    ok(req_size == sizeof(root), "unexpected size %lu\n", req_size);
+    if (status == STATUS_SUCCESS)
+        ok(!memcmp(root, buffer, sizeof(root)), "unexpected exact-sized property value\n");
+    ok(buffer[ARRAY_SIZE(root)] == 0x5a5a, "enumerator name overwrote the buffer canary\n");
+
+    memset(buffer, 0x5a, sizeof(buffer));
+    req_size = 0;
+    status = IoGetDeviceProperty(bus_pdo, DevicePropertyEnumeratorName, sizeof(root) - sizeof(WCHAR),
+                                 buffer, &req_size);
+    ok(status == STATUS_BUFFER_TOO_SMALL, "IoGetDeviceProperty returned %#lx\n", status);
+    ok(req_size == sizeof(root), "unexpected size %lu\n", req_size);
 }
 
 static void test_child_enumerator_name(DEVICE_OBJECT *device)
@@ -881,6 +898,15 @@ static void test_child_enumerator_name(DEVICE_OBJECT *device)
     ok(req_size == sizeof(wine), "unexpected size %lu\n", req_size);
     if (status == STATUS_SUCCESS)
         ok(!wcscmp(wine, buffer), "unexpected property value '%ls'\n", buffer);
+
+    memset(buffer, 0x5a, sizeof(buffer));
+    req_size = 0;
+    status = IoGetDeviceProperty(device, DevicePropertyEnumeratorName, sizeof(wine), buffer, &req_size);
+    ok(status == STATUS_SUCCESS, "IoGetDeviceProperty returned %#lx\n", status);
+    ok(req_size == sizeof(wine), "unexpected size %lu\n", req_size);
+    if (status == STATUS_SUCCESS)
+        ok(!memcmp(wine, buffer, sizeof(wine)), "unexpected exact-sized property value\n");
+    ok(buffer[ARRAY_SIZE(wine)] == 0x5a5a, "child enumerator name overwrote the buffer canary\n");
 }
 
 static void test_device_registry_key(void)
