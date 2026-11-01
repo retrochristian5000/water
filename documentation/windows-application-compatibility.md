@@ -665,3 +665,86 @@ https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-inter
 Verification: Source edits and test code pushed on master; no local compiler,
 native IE install, Windows guest runtime, or compiled test result in this pass.
 The URLMON conditional test is a source-level regression guard, not a pass.
+
+## Internet Explorer and Windows Media Player ActiveX bridge (November 1, 2026)
+
+Status: SOURCE REPAIRED and regression tests authored; NOT compiled or guest-runtime verified.
+
+### Historical Windows / IE / player controls
+
+Do not identify the installed media player from the OS name alone. Windows 98
+First Edition had the NetShow player on its original media but it was not
+automatically installed with each default setup. Windows 98 Second Edition
+(1999) bundled Windows Media Player 6; Windows Me, Windows 2000 and Windows
+XP bundled a streaming media player, but revisions could be upgraded later.
+The WMP 6.4 and WMP 7+ ActiveX APIs are separate:
+- CLSID {22D6F312-B0F6-11D0-94AB-0080C74C7E95}: legacy WMP 6.4;
+  Microsoft cites MSDXM.OCX and WMPDXM.DLL in its IEAK re-registration case.
+- CLSID {6BF52A52-394A-11D3-B153-00C04F79FAA6}: WMP 7 and later;
+  ProgID WMPlayer.OCX.7 and version-independent WMPlayer.OCX.
+Microsoft's WMP SDK explicitly describes hosting the newer control in an
+Internet Explorer OBJECT element with PARAM properties, and WMP's separate
+HTMLView display of web content. Installing WMP does not guarantee that every
+legacy codec, streaming format, player binary or browser security option exists.
+Historical / vendor sources:
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/using-html-with-windows-media-player
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/adding-an-embedded-windows-media-player-control
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/about-the-player-object-model
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/using-the-windows-media-player-7-or-later-object-model
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/detecting-windows-media-player-from-an-application
+https://mskb.pkisolutions.com/kb/891736
+https://ec.europa.eu/competition/antitrust/cases/dec_docs/37792/37792_4177_1.pdf
+
+### WATER source ownership and implemented changes
+
+Top-level IEFRAME and SHDOCVW host the browser. MSHTML's pluginhost.c hosts
+HTML OBJECT/ActiveX controls, passing the browser site through IOleObject
+and checking security policies before delivering PARAM properties.
+WMP's dlls/wmp/oleobj.c supplies the newer Windows Media Player control;
+the media rendering path passes through DirectShow/Quartz and the codecs.
+Do not add direct IEFRAME special-cases for a particular media control.
+
+Confirmed defects repaired at the WMP owner:
+1. IOleObject::GetClientSite formerly returned a borrowed IOleClientSite
+   pointer. The COM contract requires AddRef on every successful return;
+   otherwise a caller following the API contract could prematurely free
+   the browser's client site. It now adds the reference and handles null
+   output pointers. SetClientSite also AddRefs the incoming site *before*
+   releasing a prior one to avoid a same-site replacement use-after-free.
+   The existing WMP OLE test tracks GetClientSite reference acquisitions
+   and releases. Microsoft specification:
+   https://learn.microsoft.com/en-us/windows/win32/api/oleidl/nf-oleidl-ioleobject-getclientsite
+2. MSHTML calls IPersistPropertyBag::Load to apply HTML OBJECT/PARAM settings,
+   but WMP previously exposed IPersistStreamInit without IPersistPropertyBag.
+   WMP now exposes the latter COM interface and processes autoStart and URL
+   with autoStart applied first. An absent URL remains valid. This uses the
+   existing WMP settings and player URL setters; it does not invent a new
+   player, shortcut codec or internet protocol. Save remains E_NOTIMPL.
+   A mock property bag verifies that autoStart=false reaches IWMPSettings.
+3. The wmp.rgs ProgID WMPlayer.OCX.7 previously lacked a CLSID association.
+   The registration now links the versioned and version-independent ProgIDs
+   to WMP 7+ and includes CurVer and the reverse CLSID/ProgID links.
+   The test checks CLSIDFromProgID for both spellings. Microsoft COM
+   registration contract: https://learn.microsoft.com/en-us/windows/win32/com/-progid--key
+
+### Remaining gaps and compatibility safeguards
+
+- The WMP 6.4 ActiveX class is NOT implemented or aliased to the WMP 7+
+  control; legacy FileName/Play and newer URL/controls API shapes differ.
+- WMP's uiMode and several player interfaces remain stubs; HTML PARAM
+  support is currently limited to autoStart and URL, not every control
+  property. Browser scripting, event delivery and media layout still
+  need guest-level testing.
+- File MIME associations, URLMON and WinINet, DirectShow/Quartz filters,
+  ASF/WMA/WMV decoders, HTMLView and codec provenance are independent
+  evidence tracks. A registered control does not prove playback works.
+- Keep MSHTML's ActiveX safety checks, Internet security zones and kill-bit
+  rules intact; there is no justification to auto-enable blocked controls
+  or to load obsolete media plugins on the host.
+- Separate Win98/Win98 SE, Me, Win2000, XP, Vista, and newer builds,
+  default vs optional installs, x86/x64 COM registration and genuine
+  controls when creating the runtime comparison matrix.
+
+Verification: GitHub source and test inspection, commits pushed to master.
+No build, test execution, original Windows machine, browser media playback
+or full WMP legacy control compatibility was verified in this pass.
