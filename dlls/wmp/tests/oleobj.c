@@ -1206,6 +1206,88 @@ static void test_extent(IOleObject *oleobj)
     ok(hres == DV_E_DVASPECT, "SetExtent failed: %08lx\n", hres);
 }
 
+
+/* MSHTML passes OBJECT/PARAM values to the media control as a property bag. */
+static HRESULT WINAPI WMPBag_QueryInterface(IPropertyBag *iface, REFIID iid, void **out)
+{
+    if(!out)
+        return E_POINTER;
+    *out = NULL;
+    if(!IsEqualGUID(iid, &IID_IUnknown) && !IsEqualGUID(iid, &IID_IPropertyBag))
+        return E_NOINTERFACE;
+    *out = iface;
+    IPropertyBag_AddRef(iface);
+    return S_OK;
+}
+static ULONG WINAPI WMPBag_AddRef(IPropertyBag *iface) { return 2; }
+static ULONG WINAPI WMPBag_Release(IPropertyBag *iface) { return 1; }
+
+static HRESULT WINAPI WMPBag_Read(IPropertyBag *iface, LPCOLESTR name, VARIANT *v, IErrorLog *log)
+{
+    if(lstrcmpiW(name, L"autoStart"))
+        return E_INVALIDARG;
+
+    V_VT(v) = VT_BSTR;
+    V_BSTR(v) = SysAllocString(L"false");
+    return V_BSTR(v) ? S_OK : E_OUTOFMEMORY;
+}
+
+static HRESULT WINAPI WMPBag_Write(IPropertyBag *iface, LPCOLESTR name, VARIANT *v)
+{
+    return E_NOTIMPL;
+}
+
+static const IPropertyBagVtbl WMPBagVtbl = {
+    WMPBag_QueryInterface,
+    WMPBag_AddRef,
+    WMPBag_Release,
+    WMPBag_Read,
+    WMPBag_Write
+};
+static IPropertyBag web_params = { &WMPBagVtbl };
+
+static void test_web_params(IOleObject *oleobj)
+{
+    IPersistPropertyBag *persist;
+    IWMPSettings *settings;
+    VARIANT_BOOL auto_start;
+    CLSID clsid;
+    HRESULT hr;
+
+    hr = IOleObject_QueryInterface(oleobj, &IID_IPersistPropertyBag, (void **)&persist);
+    ok(hr == S_OK, "Embedded media control lacks IPersistPropertyBag: %#lx\n", hr);
+    if(FAILED(hr))
+        return;
+
+    hr = IPersistPropertyBag_GetClassID(persist, &clsid);
+    ok(hr == S_OK, "GetClassID failed: %#lx\n", hr);
+    if(SUCCEEDED(hr))
+        ok(IsEqualGUID(&clsid, &CLSID_WindowsMediaPlayer), "Unexpected class ID.\n");
+
+    hr = IPersistPropertyBag_InitNew(persist);
+    ok(hr == S_OK, "InitNew failed: %#lx\n", hr);
+
+    hr = IOleObject_QueryInterface(oleobj, &IID_IWMPSettings, (void **)&settings);
+    ok(hr == S_OK, "IWMPSettings query failed: %#lx\n", hr);
+    if(SUCCEEDED(hr))
+    {
+        hr = IWMPSettings_put_autoStart(settings, VARIANT_TRUE);
+        ok(hr == S_OK, "Setting initial autoStart failed: %#lx\n", hr);
+        hr = IPersistPropertyBag_Load(persist, &web_params, NULL);
+        ok(hr == S_OK, "PropertyBag Load failed: %#lx\n", hr);
+
+        auto_start = VARIANT_TRUE;
+        hr = IWMPSettings_get_autoStart(settings, &auto_start);
+        ok(hr == S_OK && auto_start == VARIANT_FALSE,
+                "Embedded autoStart=false PARAM did not take effect: %#lx / %x\n", hr, auto_start);
+
+        IWMPSettings_put_autoStart(settings, VARIANT_TRUE);
+        IWMPSettings_Release(settings);
+    }
+
+    IPersistPropertyBag_Release(persist);
+}
+
 static void test_wmp(void)
 {
     IProvideClassInfo2 *class_info;
@@ -1342,6 +1424,7 @@ static void test_wmp(void)
     test_rect_size(&pos, 300, 310);
 
     test_wmp_ifaces(oleobj);
+    test_web_params(oleobj);
 
     hres = IOleObject_DoVerb(oleobj, OLEIVERB_HIDE, NULL, &ClientSite, 0, container_hwnd, &pos);
     ok(hres == S_OK, "DoVerb failed: %08lx\n", hres);
