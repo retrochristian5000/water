@@ -1493,11 +1493,31 @@ static void create_container_window(void)
     ShowWindow(container_hwnd, SW_SHOW);
 }
 
+
+static void test_wmp_progid(void)
+{
+    static const WCHAR *const names[] = {L"WMPlayer.OCX.7", L"WMPlayer.OCX"};
+    CLSID clsid;
+    HRESULT hr;
+    unsigned int i;
+
+    for (i = 0; i < ARRAY_SIZE(names); i++)
+    {
+        hr = CLSIDFromProgID(names[i], &clsid);
+        ok(hr == S_OK, "CLSIDFromProgID(%s) failed: %#lx\n",
+                wine_dbgstr_w(names[i]), hr);
+        if (SUCCEEDED(hr))
+            ok(IsEqualGUID(&clsid, &CLSID_WindowsMediaPlayer),
+                    "Wrong media control for %s.\n", wine_dbgstr_w(names[i]));
+    }
+}
+
 START_TEST(oleobj)
 {
     CoInitialize(NULL);
     create_container_window();
 
+    test_wmp_progid();
     test_wmp();
 
     DestroyWindow(container_hwnd);
