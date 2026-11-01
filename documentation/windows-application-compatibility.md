@@ -580,3 +580,88 @@ Protected Mode, crash isolation, add-on management UI, kill bits,
 COM bitness isolation, Explorer-specific host support, and complete
 admin policy precedence remain separate work. Never claim native
 security parity or load untrusted historical extensions on the host.
+
+## Internet Explorer registry audit — homepage, security zones and BHO policy (November 1, 2026)
+
+Status: SOURCE REPAIRED, TEST SOURCE ADDED, NOT COMPILED OR RUNTIME VERIFIED.
+Continue the prior IEFRAME exports, BHO host, FTP Shell namespace and Voxware media audits; no reset.
+
+### IEFRAME Home navigation
+
+Microsoft's 2004 Start Page documentation establishes the normal user homepage under
+HKCU\Software\Microsoft\Internet Explorer\Main (REG_SZ, Start Page).
+Beginning with IE7, the policy homepage can also be specified by Start Page under
+HKCU\Software\Policies\Microsoft\Internet Explorer\Main.
+The HomePage control-panel policy does not itself contain the URL.
+References:
+https://devblogs.microsoft.com/scripting/how-can-i-change-the-internet-explorer-home-page/
+https://mskb.pkisolutions.com/kb/2501278
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gppref/8b0fcf80-3401-40cf-b4c5-c086238c7cb1
+
+The former dlls/ieframe/navigate.c go_home read only the ordinary user value,
+used MAX_PATH for the URL and did not ensure null termination after RegQueryValueExW.
+Microsoft explicitly warns that REG_SZ data returned by this API may not be
+terminated. The repair checks IE7+ policy first and the normal user value next;
+it validates type, byte length, capacity and null termination before navigating,
+using INTERNET_MAX_URL_LENGTH as the bound and about:blank as the safe fallback.
+https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regqueryvalueexw
+
+### URLMON protocol-to-security-zone registry
+
+Microsoft's ProtocolDefaults registry contract uses per-protocol REG_DWORD zone IDs
+under both user and machine Internet Settings ZoneMap configuration:
+Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\ProtocolDefaults.
+Historically, the known base zones include Local Machine (0), Local Intranet (1),
+Trusted (2), Internet (3), and Restricted (4). The value represents a security
+decision, so a missing profile key must not produce a spurious E_UNEXPECTED
+or bypass a valid machine-wide default.
+https://www.microsoft.com/en-us/msrc/blog/2008/03/ms08-015-protocol-handler-and-its-default-security-zone
+https://helparchive.huntertur.net/document/17029
+
+The repaired dlls/urlmon/sec_mgr.c get_zone_from_reg now tries HKCU then HKLM,
+validates REG_DWORD type and exact size (including when a value is zero),
+and defaults to URLZONE_INTERNET if no valid protocol default is available.
+No user/machine registry writes are introduced.
+
+New read-only regression probe in dlls/urlmon/tests/sec_mgr.c:
+test_missing_user_protocol_defaults. The probe operates only when the per-user
+ProtocolDefaults key is absent and the machine HTTP DWORD exists; otherwise it
+skips without altering any registry keys. It checks IInternetSecurityManager
+MapUrlToZone against a deterministic .invalid host. Additional domain/host
+overrides must be tested separately and could make this conditional probe
+environment-dependent.
+
+### BHO policy precedence and registry-string validation
+
+The original BHO work created objects from registered CLSID subkeys and used
+IObjectWithSite. A subsequent registry audit found two independent issues:
+(a) it treated a user No as a final disable even when a configured administrator
+policy explicitly enabled extensions; (b) it checked returned REG_SZ buffers
+without placing a terminator at the actual returned data length.
+
+The repaired dlls/ieframe/bho.c reads the machine extension policy, then
+the user policy, then the ordinary user preference; recognized Yes/No
+values follow this precedence. It also terminates per-CLSID text policies
+at the returned size. This preserves explicit administrator disables
+without taking an unrecognized value as permission to bypass a deny.
+https://mskb.pkisolutions.com/kb/298931
+https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-internetexplorer
+
+### Boundary and regression matrix
+
+- IE6 and earlier may interpret homepage policies differently; do not copy
+  IE7+ policy resolution into Win9x SHDOCVW by assuming identical history.
+- Test normal/policy Start Page precedence; values without a NUL;
+  empty, wrong-type, oversized and absent values, and standard pages.
+- Test HKCU ProtocolDefaults missing, value missing, wrong REG type,
+  correctly typed zero, HKLM fallback, both keys absent and custom zones.
+- Test the BHO Yes/No administrator policy precedence versus the user
+  setting and the older per-CLSID disable and allow-list controls.
+- Test the 32/64-bit redirected COM registry views and native IE7/IE8
+  binaries; IEFRAME does not belong in an untouched Windows 98 install.
+- Preserve IE Security Zone and ActiveX kill-bit enforcement; no compatibility
+  measure should quietly weaken security policy.
+
+Verification: Source edits and test code pushed on master; no local compiler,
+native IE install, Windows guest runtime, or compiled test result in this pass.
+The URLMON conditional test is a source-level regression guard, not a pass.
