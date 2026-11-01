@@ -808,11 +808,14 @@ void output_spec16_file( DLLSPEC *spec16 )
  *
  * Create a fake 16-bit binary module.
  */
-static void output_fake_module16_data( DLLSPEC *spec, unsigned int seg_align )
+static void output_fake_module16_data( DLLSPEC *spec, int raw_win16 )
 {
     static const unsigned char dos_stub[] = { 0xb8, 0x01, 0x4c, 0xcd, 0x21 };
     static const unsigned char code_segment[] = { 0x90, 0xc3 };
     static const unsigned char data_segment[16] = { 0 };
+    /* NE shift 0 means 512-byte sectors, not byte offsets. Both compact
+     * images use 2-byte sectors and must encode the corresponding shift. */
+    const unsigned int seg_align = 1;
     const unsigned int cseg = 2;
     const unsigned int lfanew = (0x40 + sizeof(dos_stub) + sizeof(fakedll_signature) + 15) & ~15;
     const unsigned int segtab = lfanew + 0x40;
@@ -839,7 +842,9 @@ static void output_fake_module16_data( DLLSPEC *spec, unsigned int seg_align )
     }
 
     namelen  = strlen( spec->dll_name );
-    modtab   = restab + ((namelen + 3) & ~1);
+    if (namelen > 255) fatal_error( "Win16 module name exceeds the NE 255-byte limit.\n" );
+    /* Counted name, ordinal, explicit zero-length terminator, then padding. */
+    modtab   = restab + ((namelen + 5) & ~1);
     imptab   = modtab;
     enttab   = modtab + 2;
     cbenttab = 1;
@@ -913,7 +918,7 @@ static void output_fake_module16_data( DLLSPEC *spec, unsigned int seg_align )
     /* segment table */
     put_word( codeseg >> seg_align );
     put_word( sizeof(code_segment) );
-    put_word( 0x2000 /* NE_SEGFLAGS_32BIT */ );
+    put_word( raw_win16 ? 0 : 0x2000 /* NE_SEGFLAGS_32BIT */ );
     put_word( sizeof(code_segment) );
     put_word( dataseg >> seg_align );
     put_word( sizeof(data_segment) );
@@ -930,7 +935,8 @@ static void output_fake_module16_data( DLLSPEC *spec, unsigned int seg_align )
     /* resident names table */
     put_byte( namelen );
     for (i = 0; i < namelen; i++) put_byte( toupper(spec->dll_name[i]) );
-    put_byte( 0 );
+    put_byte( 0 ); /* module-name ordinal */
+    put_byte( 0 ); /* resident-name table terminator */
     align_output( 2 );
 
     /* imported names table */
@@ -964,8 +970,8 @@ void output_fake_module16( DLLSPEC *spec )
  *         output_raw_module16
  *
  * Write the Win16 MZ/NE image itself instead of wrapping it in a PE owner.
- * Standalone NE segment offsets are logical-sector offsets; use a 2-byte
- * sector so the compact placeholder image remains naturally aligned.
+ * Both compact NE paths use 2-byte sectors. The standalone Win16 image
+ * must also use a 16-bit code descriptor, unlike the Wine fake-module stub.
  */
 void output_raw_module16( DLLSPEC *spec )
 {
