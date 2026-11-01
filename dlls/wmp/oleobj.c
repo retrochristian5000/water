@@ -237,6 +237,9 @@ static HRESULT WINAPI OleObject_QueryInterface(IOleObject *iface, REFIID riid, v
     }else if(IsEqualGUID(riid, &IID_IPersistStreamInit)) {
         TRACE("(%p)->(IID_IPersistStreamInit %p)\n", This, ppv);
         *ppv = &This->IPersistStreamInit_iface;
+    }else if(IsEqualGUID(riid, &IID_IPersistPropertyBag)) {
+        TRACE("(%p)->(IID_IPersistPropertyBag %p)\n", This, ppv);
+        *ppv = &This->IPersistPropertyBag_iface;
     }else if(IsEqualGUID(riid, &IID_IOleWindow)) {
         TRACE("(%p)->(IID_IOleWindow %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceObjectWindowless_iface;
@@ -897,6 +900,105 @@ static const IPersistStreamInitVtbl PersistStreamInitVtbl = {
     PersistStreamInit_InitNew
 };
 
+
+/* MSHTML initializes OBJECT/PARAM controls through IPersistPropertyBag. */
+static inline WindowsMediaPlayer *impl_from_IPersistPropertyBag(IPersistPropertyBag *iface)
+{
+    return CONTAINING_RECORD(iface, WindowsMediaPlayer, IPersistPropertyBag_iface);
+}
+
+static HRESULT WINAPI PersistPropertyBag_QueryInterface(IPersistPropertyBag *iface, REFIID riid, void **ppv)
+{
+    WindowsMediaPlayer *This = impl_from_IPersistPropertyBag(iface);
+    return IOleObject_QueryInterface(&This->IOleObject_iface, riid, ppv);
+}
+
+static ULONG WINAPI PersistPropertyBag_AddRef(IPersistPropertyBag *iface)
+{
+    WindowsMediaPlayer *This = impl_from_IPersistPropertyBag(iface);
+    return IOleObject_AddRef(&This->IOleObject_iface);
+}
+
+static ULONG WINAPI PersistPropertyBag_Release(IPersistPropertyBag *iface)
+{
+    WindowsMediaPlayer *This = impl_from_IPersistPropertyBag(iface);
+    return IOleObject_Release(&This->IOleObject_iface);
+}
+
+static HRESULT WINAPI PersistPropertyBag_GetClassID(IPersistPropertyBag *iface, CLSID *clsid)
+{
+    if(!clsid)
+        return E_POINTER;
+    *clsid = CLSID_WindowsMediaPlayer;
+    return S_OK;
+}
+
+static HRESULT WINAPI PersistPropertyBag_InitNew(IPersistPropertyBag *iface)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI PersistPropertyBag_Load(IPersistPropertyBag *iface, IPropertyBag *bag,
+                                              IErrorLog *error_log)
+{
+    WindowsMediaPlayer *This = impl_from_IPersistPropertyBag(iface);
+    VARIANT value;
+    HRESULT hr;
+
+    if(!bag)
+        return E_POINTER;
+
+    /* Apply autoStart before URL to avoid unwanted early playback. */
+    VariantInit(&value);
+    V_VT(&value) = VT_BSTR;
+    hr = IPropertyBag_Read(bag, L"autoStart", &value, error_log);
+    if(SUCCEEDED(hr))
+    {
+        VARIANT_BOOL enabled = This->auto_start;
+
+        if(V_VT(&value) == VT_BOOL)
+            enabled = V_BOOL(&value);
+        else if(V_VT(&value) == VT_BSTR && V_BSTR(&value))
+        {
+            if(!lstrcmpiW(V_BSTR(&value), L"false") || !lstrcmpiW(V_BSTR(&value), L"no")
+                    || !lstrcmpW(V_BSTR(&value), L"0"))
+                enabled = VARIANT_FALSE;
+            else if(!lstrcmpiW(V_BSTR(&value), L"true") || !lstrcmpiW(V_BSTR(&value), L"yes")
+                    || !lstrcmpW(V_BSTR(&value), L"1"))
+                enabled = VARIANT_TRUE;
+        }
+        IWMPSettings_put_autoStart(&This->IWMPSettings_iface, enabled);
+    }
+    VariantClear(&value);
+
+    VariantInit(&value);
+    V_VT(&value) = VT_BSTR;
+    hr = IPropertyBag_Read(bag, L"URL", &value, error_log);
+    if(SUCCEEDED(hr) && V_VT(&value) == VT_BSTR && V_BSTR(&value) && *V_BSTR(&value))
+        hr = IWMPPlayer4_put_URL(&This->IWMPPlayer4_iface, V_BSTR(&value));
+    else
+        hr = S_OK;
+    VariantClear(&value);
+    return hr;
+}
+
+static HRESULT WINAPI PersistPropertyBag_Save(IPersistPropertyBag *iface, IPropertyBag *bag,
+                                              BOOL clear_dirty, BOOL save_all)
+{
+    FIXME("(%p)->(%p %x %x) stub\n", iface, bag, clear_dirty, save_all);
+    return E_NOTIMPL;
+}
+
+static const IPersistPropertyBagVtbl PersistPropertyBagVtbl = {
+    PersistPropertyBag_QueryInterface,
+    PersistPropertyBag_AddRef,
+    PersistPropertyBag_Release,
+    PersistPropertyBag_GetClassID,
+    PersistPropertyBag_InitNew,
+    PersistPropertyBag_Load,
+    PersistPropertyBag_Save
+};
+
 HRESULT WINAPI WMPFactory_CreateInstance(IClassFactory *iface, IUnknown *outer,
         REFIID riid, void **ppv)
 {
@@ -914,6 +1016,7 @@ HRESULT WINAPI WMPFactory_CreateInstance(IClassFactory *iface, IUnknown *outer,
     wmp->IOleObject_iface.lpVtbl = &OleObjectVtbl;
     wmp->IProvideClassInfo2_iface.lpVtbl = &ProvideClassInfo2Vtbl;
     wmp->IPersistStreamInit_iface.lpVtbl = &PersistStreamInitVtbl;
+    wmp->IPersistPropertyBag_iface.lpVtbl = &PersistPropertyBagVtbl;
     wmp->IOleInPlaceObjectWindowless_iface.lpVtbl = &OleInPlaceObjectWindowlessVtbl;
     wmp->IOleControl_iface.lpVtbl = &OleControlVtbl;
 
