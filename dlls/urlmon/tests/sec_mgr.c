@@ -2403,6 +2403,64 @@ static void test_PersistentZoneIdentifier(void)
     IUnknown_Release(unk2);
 }
 
+
+/*
+ * Read-only probe: Windows setups without a per-user ProtocolDefaults key
+ * must still use the machine-wide protocol default.
+ */
+static void test_missing_user_protocol_defaults(void)
+{
+    static const WCHAR path[] =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProtocolDefaults";
+    static const WCHAR url[] = L"http://whp-protocol-default-probe.invalid/";
+    IInternetSecurityManager *secmgr;
+    DWORD type, size, machine_zone, zone;
+    HKEY key;
+    HRESULT hr;
+    LONG ret;
+
+    ret = RegOpenKeyExW(HKEY_CURRENT_USER, path, 0, KEY_QUERY_VALUE, &key);
+    if (ret == ERROR_SUCCESS)
+    {
+        RegCloseKey(key);
+        win_skip("Per-user ProtocolDefaults exists; cannot test missing-key fallback.\n");
+        return;
+    }
+    if (ret != ERROR_FILE_NOT_FOUND && ret != ERROR_PATH_NOT_FOUND)
+    {
+        win_skip("Per-user ProtocolDefaults state cannot be inspected.\n");
+        return;
+    }
+
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, path, 0, KEY_QUERY_VALUE, &key)
+            != ERROR_SUCCESS)
+    {
+        win_skip("No machine protocol defaults to test.\n");
+        return;
+    }
+    size = sizeof(machine_zone);
+    ret = RegQueryValueExW(key, L"http", NULL, &type, (BYTE *)&machine_zone, &size);
+    RegCloseKey(key);
+    if (ret != ERROR_SUCCESS || type != REG_DWORD || size != sizeof(machine_zone))
+    {
+        win_skip("Machine HTTP protocol default is unavailable.\n");
+        return;
+    }
+
+    hr = pCoInternetCreateSecurityManager(NULL, &secmgr, 0);
+    ok(hr == S_OK, "Security manager creation failed: %#lx\n", hr);
+    if (FAILED(hr))
+        return;
+
+    zone = URLZONE_INVALID;
+    hr = IInternetSecurityManager_MapUrlToZone(secmgr, url, &zone, 0);
+    ok(hr == S_OK, "Missing HKCU ProtocolDefaults blocked zone mapping: %#lx\n", hr);
+    if (SUCCEEDED(hr))
+        ok(zone == machine_zone, "Got zone %lu; machine default is %lu.\n", zone, machine_zone);
+
+    IInternetSecurityManager_Release(secmgr);
+}
+
 START_TEST(sec_mgr)
 {
     HMODULE hurlmon;
@@ -2445,6 +2503,7 @@ START_TEST(sec_mgr)
     }
 
     test_SecurityManager();
+    test_missing_user_protocol_defaults();
     test_SecurityManagerEx2();
     test_polices();
     test_zone_domains();
