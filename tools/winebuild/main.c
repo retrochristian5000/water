@@ -670,7 +670,7 @@ int main(int argc, char **argv)
             /* A syntactically valid NE DLL is not a linked DLL. Refuse to
              * silently discard named/ordinal exports from a .spec or .def. */
             if (spec->exports.nb_entry_points)
-                fatal_error( "--raw-win16-module cannot link NE exports; use the regular -m16 build path.\n" );
+                fatal_error( "--raw-win16-module cannot emit callable NE exports; it only writes placeholder images.\n" );
             output_raw_module16( spec );
             break;
         }
