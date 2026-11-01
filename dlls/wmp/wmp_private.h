@@ -20,6 +20,7 @@
 
 #include "windows.h"
 #include "ole2.h"
+#include "olectl.h"
 #include "dshow.h"
 #include "wmp.h"
 
@@ -74,6 +75,7 @@ struct WindowsMediaPlayer {
     IOleObject IOleObject_iface;
     IProvideClassInfo2 IProvideClassInfo2_iface;
     IPersistStreamInit IPersistStreamInit_iface;
+    IPersistPropertyBag IPersistPropertyBag_iface;
     IOleInPlaceObjectWindowless IOleInPlaceObjectWindowless_iface;
     IConnectionPointContainer IConnectionPointContainer_iface;
     IOleControl IOleControl_iface;
