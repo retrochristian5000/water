@@ -51,36 +51,45 @@ static BOOL read_reg_dword(HKEY root, const WCHAR *path, const WCHAR *name, DWOR
     return err == ERROR_SUCCESS && type == REG_DWORD && size == sizeof(*value);
 }
 
+/* Returns -1 for no recognized setting, 0 to disable and 1 to enable. */
+static int get_extension_setting(HKEY root, const WCHAR *path)
+{
+    WCHAR value[16];
+    DWORD type, size = sizeof(value);
+    HKEY key;
+    LONG err;
+
+    if (RegOpenKeyExW(root, path, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
+        return -1;
+    err = RegQueryValueExW(key, L"Enable Browser Extensions", NULL, &type,
+            (BYTE *)value, &size);
+    RegCloseKey(key);
+    if (err != ERROR_SUCCESS || type != REG_SZ || size < sizeof(WCHAR)
+            || size > sizeof(value) || size % sizeof(WCHAR))
+        return -1;
+
+    /* RegQueryValueExW does not guarantee a terminating NUL. */
+    value[size < sizeof(value) ? size / sizeof(WCHAR) : ARRAY_SIZE(value) - 1] = 0;
+    if (!lstrcmpiW(value, L"No"))
+        return 0;
+    if (!lstrcmpiW(value, L"Yes"))
+        return 1;
+    return -1;
+}
+
 static BOOL browser_extensions_enabled(void)
 {
     static const WCHAR main_key[] = L"Software\\Microsoft\\Internet Explorer\\Main";
     static const WCHAR policy_key[] = L"Software\\Policies\\Microsoft\\Internet Explorer\\Main";
-    const WCHAR *keys[] = {policy_key, policy_key, main_key};
-    HKEY roots[] = {HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER, HKEY_CURRENT_USER};
-    unsigned int i;
+    int result;
 
-    for (i = 0; i < ARRAY_SIZE(keys); i++)
-    {
-        WCHAR value[16];
-        DWORD type, size = sizeof(value);
-        HKEY key;
-
-        if (RegOpenKeyExW(roots[i], keys[i], 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
-            continue;
-        if (RegQueryValueExW(key, L"Enable Browser Extensions", NULL, &type, (BYTE *)value,
-                &size) == ERROR_SUCCESS && type == REG_SZ && size >= sizeof(WCHAR)
-                && size <= sizeof(value))
-        {
-            value[ARRAY_SIZE(value)-1] = 0;
-            if (!lstrcmpiW(value, L"No"))
-            {
-                RegCloseKey(key);
-                return FALSE;
-            }
-        }
-        RegCloseKey(key);
-    }
-    return TRUE;
+    /* An administrator policy takes precedence over user preferences. */
+    result = get_extension_setting(HKEY_LOCAL_MACHINE, policy_key);
+    if (result == -1)
+        result = get_extension_setting(HKEY_CURRENT_USER, policy_key);
+    if (result == -1)
+        result = get_extension_setting(HKEY_CURRENT_USER, main_key);
+    return result != 0;
 }
 
 static int browser_helper_policy(HKEY root, const WCHAR *clsid)
@@ -106,7 +115,9 @@ static int browser_helper_policy(HKEY root, const WCHAR *clsid)
     }
     if (type == REG_SZ && size >= sizeof(WCHAR) && size <= sizeof(value))
     {
-        value[ARRAY_SIZE(value)-1] = 0;
+        if (size % sizeof(WCHAR))
+            return -1;
+        value[size < sizeof(value) ? size / sizeof(WCHAR) : ARRAY_SIZE(value) - 1] = 0;
         if (!lstrcmpW(value, L"0")) return 0;
         if (!lstrcmpW(value, L"1")) return 1;
         if (!lstrcmpW(value, L"2")) return 2;
