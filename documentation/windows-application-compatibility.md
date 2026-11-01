@@ -533,7 +533,8 @@ site objects, window lifetimes, and NoExplorer filtering differ.
 
 WATER previously had no BHO registry enumeration in its top-level IE
 frame implementation, and IWebBrowser2::Quit returned E_NOTIMPL.
-The new implementation in dlls/ieframe/iexplore.c enumerates CLSID
+The new implementation in dlls/ieframe/bho.c (called from iexplore.c)
+enumerates CLSID
 subkeys under HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\
 Browser Helper Objects, creates in-process COM IObjectWithSite objects,
 passes its own IWebBrowser2 object to SetSite, and stores successfully
@@ -562,6 +563,11 @@ https://www.winhelponline.com/xp/addons.htm
 Reentrant teardown is guarded: the callback to SetSite(NULL) can trigger
 another Quit, so only the outermost detachment is permitted to walk the
 per-browser BHO list, which is drained one entry at a time.
+
+The BHO registry, policy and COM helper ownership is isolated in
+bho.c rather than enlarging the top-level window manager with
+extension policy code. The existing IE host and COM object retain
+the lifecycle entry points.
 
 Verification still needed: compiled and guest-runtime tests on a clean
 IE4/IE5/IE6 and Vista IE7+ baseline, 32/64-bit registration views,
