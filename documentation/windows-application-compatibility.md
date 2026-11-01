@@ -497,3 +497,28 @@ runtime ABI/export list must still be compared against genuine IE7 and
 IE8 32-bit and 64-bit binaries; compiled build, test run and actual
 Internet Explorer application behavior were not validated here.
 Export coverage must not be inflated by fake success stubs.
+
+### InternetShortcut optional icon metadata
+
+The existing `dlls/ieframe/intshcut.c` implementation of
+`IPersistFile::Save` writes the mandatory `[InternetShortcut]` /
+`URL=` contents and then reopens the optional `FMTID_Intshcut`
+property storage to retrieve icon properties. If that second
+`IPropertySetStorage_Open` or subsequent
+`IPropertyStorage_ReadMultiple` failed, the method returned the
+metadata error even though the .url contents were already written.
+The read-failure branch also failed to release the storage interface.
+
+The November 1 repair makes those *optional metadata* failures
+nonfatal and releases the successfully opened property storage,
+without changing failure reporting when `CreateFileW` fails.
+`dlls/ieframe/tests/intshcut.c` already has a test that saves a URL
+before setting icon properties; this is an existing regression control,
+not a newly executed test. The current source still does not check
+each `WriteFile` return/byte count, so complete disk-write error
+handling **remains unverified and is not claimed fixed**. This is
+independent of IEFRAME DLL export presence.
+
+Related contemporary independent reproduction (Wine 11.20; not a
+Water runtime test):
+https://list.winehq.org/hyperkitty/list/wine-bugs%40list.winehq.org/thread/MMXPYR35ZS5D656SYBK3UCT7WPPKLU6V/

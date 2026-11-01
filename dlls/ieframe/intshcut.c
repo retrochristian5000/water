@@ -621,11 +621,14 @@ static HRESULT WINAPI PersistFile_Save(IPersistFile *pFile, LPCOLESTR pszFileNam
                 else
                 {
                     TRACE("Unable to read properties.\n");
+                    IPropertyStorage_Release(pPropStgRead);
+                    hr = S_OK; /* Failed optional metadata cannot invalidate the saved URL. */
                 }
             }
             else
             {
-               TRACE("Unable to get the IPropertyStorage.\n");
+                TRACE("Unable to get the IPropertyStorage.\n");
+                hr = S_OK; /* The URL file is saved; icon properties are optional. */
             }
 
             CloseHandle(file);
