@@ -13,6 +13,118 @@ third-party application, NT System Properties, modern `uxtheme`, or
 Windows 95/98's later storage stacks. No-reset: retain existing Win386,
 INT13, IOS, IFSMGR, 16-bit ABI, and profile-parser boundaries.
 
+## DOS-Windows 3.1 startup stages and release boundaries (November 1, 2026)
+
+This section preserves the distinction between **startup/guest boot** and
+**the Windows shell starting a user application**. The existing CPWIN386
+investigation concerns a running 386-enhanced session; it does not mean
+that a real Windows 3.1 boot sequence is implemented.
+
+### OS and switch matrix
+
+| Target OS | DOS `WIN.COM` operating modes | Kernel / system-loader path | Additional constraints |
+| --- | --- | --- | --- |
+| Windows 3.0 | real (`/R`), standard (`/S` or `/2`), enhanced (`/3`) | real/standard/enhanced paths vary; do not infer one common loader | `/R` exists **only in the older real-mode product line** |
+| Windows 3.1/3.11 | standard (`/S` or `/2`), 386 enhanced (`/3`), auto | standard: WSWAP / DOSX / `KRNL286.EXE`; enhanced: `WIN386.EXE` / VMM / `KRNL386.EXE` | no real mode; `WIN.COM` checks memory, CPU, running instance, required binaries |
+| Windows for Workgroups 3.1 | standard and enhanced | DOSX/KRNL286 or WIN386/KRNL386 with `WFWNET.DRV` | network startup differs before shell, including redirector/NetDDE |
+| Windows for Workgroups 3.11 | **enhanced only** | WIN386/KRNL386 and WfW network VxDs | `WIN /S` is not a valid fallback; `WIN /N` can suppress network startup |
+| Windows 95 | 9x boot from `IO.SYS`, later `WIN.COM`, `VMM32.VXD` | 9x VMM and protected-mode Win9x stack | older `WIN.COM` interception order retained for compatibility, not a Win3.1 VMM or Program Manager boot |
+
+Windows 3.1 WIN.COM selects enhanced mode with an 80386 and sufficient
+XMS (Microsoft KB Q82731 cites at least 1024 KB available); otherwise
+it attempts standard mode, but refuses altogether when available XMS
+is insufficient (about 256 KB minimum). The historical `/B`
+boot-log option and `/D:FSVX` enhanced-mode troubleshooting overrides
+must not be interpreted as arbitrary NT command-line arguments. Neither
+the requested mode nor an INI option proves that an emulator has
+activated that mode.
+
+**Standard mode ownership:** Microsoft KB Q82731 records `WSWAP.EXE`
+as the standard-mode task-switching TSR. The WfW 3.1 standard-mode
+sequence (Q92587) explicitly names `WIN.COM` -> DOS EXEC -> `DOSX` ->
+`KRNL286.EXE` -> system drivers, GDI.EXE, USER.EXE -> shell. Do not
+rename KRNL386 as a true KRNL286 implementation: Water currently maps
+the KRNL286 compatibility filename to its KRNL386 backend.
+
+**Enhanced mode ownership:** WfW 3.1 KB Q90496 describes `WIN.COM`
+-> DOS EXEC -> `WIN386.EXE` -> VMM and SYSTEM.INI VxDs -> WfW
+network VxDs (VNETSUP/VNETBIOS/VREDIR) -> `KRNL386.EXE` ->
+SYSTEM.INI drivers, GDI.EXE and USER.EXE -> `WFWNET.DRV` network
+services -> shell. This is **the WfW 3.1 variant**, not proof that
+plain Windows 3.1 loads those WfW networking components.
+
+**Shell handoff:** `SYSTEM.INI [boot] shell=` (usually
+`PROGMAN.EXE`) determines the initial shell. Shell startup, not
+the INI file parser or the DOS bootstrap, owns `WIN.INI [windows]
+load=` and `run=` and (if Program Manager is the shell)
+`PROGMAN.INI [Settings] Startup=`. An alternate shell can omit them
+(Q85476), which is especially relevant to historical third-party
+installers adding `WIN.INI run=` entries (for example, some
+AOL-associated ISDN components). Do **not** launch those entries
+directly from KRNL386, WIN386, the NT compatibility WIN.COM, or
+Windows 95 IO.SYS.
+
+**Win3.1 Startup-group dispatch is not simply group insertion order.**
+Microsoft Q91204 documents a first pass over Windows applications
+in icon row/column order; those with command-line switches run
+after other Windows applications. DOS programs are processed
+separately, with the first DOS item deferred to the end. The current
+Water `MAIN_AutoStart` instead follows linked-list order. Accurate
+restoration needs genuine program-type detection, icon geometry,
+command-line handling and checks against historical binaries; do not
+guess types solely from `.EXE` (an MZ can hold a DOS or NE program).
+
+**Shift suppression differs by generation:** In Win3.1 holding Shift
+during launch disables the Program Manager Startup group, independent
+of `WIN.INI load/run`. In Windows 95 the documented Shift suppression
+also bypasses WIN.INI load/run. A global check in a shared profile
+parser would erase this important personality difference.
+
+### Current WATER ownership / missing connections
+
+| Existing file | Present capability | Not yet established |
+| --- | --- | --- |
+| `programs/win.com/main.c` | **NT-style PE compatibility launcher** accepts some old-looking switches before launching a command | DOS Win3.1 WIN.COM binary, CPU/XMS gates, WSWAP/DOSX selection and actual guest-mode startup |
+| `programs/win386/win386.c` | Enhanced System-VM session/VM identity and 3.0, 3.1, WfW 3.1/3.11 labels | Real 386 VMM boot and SYSTEM.INI VxD/network initialization order |
+| `dlls/krnl386.exe16/ne_module.c` | Win16 NE loading and KRNL286 filename compatibility | A separate true KRNL286 standard-mode kernel ABI and driver boot |
+| `programs/progman/main.c` | Loads groups and processes WIN.INI load/run and the Startup group | Exact Win3.1 Startup-group ordering, proven shell-selection handoff and a Win3.0/no-Startup personality gate |
+| `dlls/kernel32/profile.c` | Common profile parser | Shell execution (intentionally out of scope) |
+| `programs/io.sys` | Windows 9x boot-policy work | Bootable Win95 IO.SYS, separate from all Win3.x DOS boot procedures |
+
+**Implementation gate:** A Win3.1 startup controller must first
+identify the selected guest release, then validate DOS CPU/XMS/BIOS
+requirements, choose the correct standard/enhanced loader,
+initialize the matched kernel and drivers, honor SYSTEM.INI shell,
+and only then permit the shell to process its application startup
+entries. Failure in an earlier stage must not be papered over by
+launching `progman.exe` under the host's Win32 process model.
+Windows 95 uses its own boot boundary even where it preserves
+historical WIN.COM compatibility hooks.
+
+### Historical evidence (period Microsoft KB / documentation)
+
+- Q58317 (Windows 3.0 real/standard/enhanced modes):
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/58317
+- Q82731 (Windows 3.1 WIN.COM checks, WSWAP, switches):
+  https://jeffpar.github.io/kbarchive/kb/082/Q82731/
+- Q92587 (WfW 3.1 standard-mode DOSX/KRNL286 path):
+  https://jeffpar.github.io/kbarchive/kb/092/Q92587/
+- Q90496 (WfW 3.1 enhanced-mode network startup):
+  https://jeffpar.github.io/kbarchive/kb/090/Q90496/
+- Q126746 and Q107131 (WfW 3.11 enhanced-only, WIN /N):
+  https://jeffpar.github.io/kbarchive/kb/126/Q126746/
+  https://jeffpar.github.io/kbarchive/kb/107/Q107131/
+- Q83386 (SYSTEM.INI [boot] shell=):
+  https://jeffpar.github.io/kbarchive/kb/083/Q83386/
+- Q85476, Q81606 and Q91204 (shell-owned WIN.INI startup,
+  independent Startup group, application ordering, Shift):
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/85476
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/81606
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/91204
+- Windows 95 Q174018 and DOS compatibility design note:
+  https://techshelps.github.io/MSDN/KB/Source/win95x/q174018.htm
+  https://techshelps.github.io/MSDN/DNWIN95/HTML/S70B1.HTM
+
 ## Module identity and distribution evidence
 
 | Historical name | Role | Distribution / ABI | Evidence |
