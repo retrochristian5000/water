@@ -407,7 +407,24 @@ static void run_dialog(void)
 static BOOL is_win9x_shutdown_shell(void)
 {
     struct water_win16_profile profile;
+    char value[32];
+    DWORD length;
+    BOOL selected = FALSE;
 
+    /* WATER defaults its Win16 compatibility APIs to 4.00/950 when no
+     * guest is selected. That fallback must NOT silently change an NT
+     * Explorer desktop's shutdown UI. Require an explicit Win9x
+     * personality or line selection before showing the 9x dialog. */
+    length = GetEnvironmentVariableA(WATER_WIN16_LINE_ENV, value, sizeof(value));
+    if (length && length < sizeof(value) && !strcmp(value, WATER_WIN16_LINE_WIN9X))
+        selected = TRUE;
+
+    length = GetEnvironmentVariableA(WATER_WIN16_PERSONALITY_ENV, value, sizeof(value));
+    if (length && length < sizeof(value) &&
+        !strcmp(value, WATER_WIN16_PERSONALITY_WIN95_OSR2))
+        selected = TRUE;
+
+    if (!selected) return FALSE;
     water_win16_read_profile(&profile);
     return profile.line == WATER_WIN16_LINE_WIN9X_FAMILY && profile.major == 4 &&
            (profile.minor == 0 || profile.minor == 10);
@@ -416,6 +433,7 @@ static BOOL is_win9x_shutdown_shell(void)
 static INT_PTR CALLBACK win9x_shutdown_dlgproc(HWND dialog, UINT message, WPARAM wparam,
                                                 LPARAM lparam)
 {
+    (void)lparam;
     switch (message)
     {
     case WM_INITDIALOG:
