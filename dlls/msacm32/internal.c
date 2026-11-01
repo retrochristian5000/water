@@ -81,7 +81,7 @@ PWINE_ACMDRIVERID MSACM_RegisterDriverFromRegistry(LPCWSTR pszRegEntry)
             if (lRet != ERROR_SUCCESS) {
                 WARN("unable to query requested subkey %s - 0x%08lx\n", debugstr_w(pszRegEntry), lRet);
             } else {
-                MSACM_RegisterDriver(pszRegEntry, buf, 0);
+                padid = MSACM_RegisterDriver(pszRegEntry, buf, 0);
             }
             RegCloseKey( hKey );
         }
