@@ -29,4 +29,10 @@
 #define IDS_EXIT_PROMPT 6
 #define IDS_DESKTOP_TITLE 7
 
+/* Windows 95/98 shell shutdown dialog. Do not expose this for Windows Me. */
+#define IDD_WIN9X_SHUTDOWN 100
+#define IDC_WIN9X_SHUTDOWN 101
+#define IDC_WIN9X_RESTART 102
+#define IDC_WIN9X_DOSMODE 103
+
 #endif
