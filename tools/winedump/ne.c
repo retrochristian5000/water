@@ -89,6 +89,7 @@ typedef struct
 #define NE_SEGFLAGS_SELFLOAD    0x0800
 #define NE_SEGFLAGS_DISCARDABLE 0x1000
 #define NE_SEGFLAGS_32BIT       0x2000
+#define NE_FFLAGS_LIBMODULE      0x8000
 
 #define NE_RSCTYPE_CURSOR             0x8001
 #define NE_RSCTYPE_BITMAP             0x8002
@@ -119,6 +120,8 @@ static void dump_ne_header( const IMAGE_OS2_HEADER *ne )
     printf( "Entry table:         %x len %d\n", ne->ne_enttab, ne->ne_cbenttab );
     printf( "Checksum:            %08x\n", (UINT)ne->ne_crc );
     printf( "Flags:               %04x\n", ne->ne_flags );
+    printf( "Module kind:         %s\n",
+            (ne->ne_flags & NE_FFLAGS_LIBMODULE) ? "DLL/library" : "EXE/program" );
     printf( "Auto data segment:   %x\n", ne->ne_autodata );
     printf( "Heap size:           %d bytes\n", ne->ne_heap );
     printf( "Stack size:          %d bytes\n", ne->ne_stack );
