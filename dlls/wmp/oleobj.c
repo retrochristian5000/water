@@ -320,11 +320,13 @@ static HRESULT WINAPI OleObject_SetClientSite(IOleObject *iface, IOleClientSite 
 
     TRACE("(%p)->(%p)\n", This, pClientSite);
 
+    /* The new site may be the current site: keep it alive during replacement. */
+    if(pClientSite)
+        IOleClientSite_AddRef(pClientSite);
     release_client_site(This);
     if(!pClientSite)
         return S_OK;
 
-    IOleClientSite_AddRef(pClientSite);
     This->client_site = pClientSite;
 
     hres = IOleClientSite_QueryInterface(pClientSite, &IID_IOleControlSite, (void**)&control_site);
@@ -349,8 +351,16 @@ static HRESULT WINAPI OleObject_GetClientSite(IOleObject *iface, IOleClientSite 
 
     TRACE("(%p)->(%p)\n", This, ppClientSite);
 
+    if(!ppClientSite)
+        return E_POINTER;
+
     *ppClientSite = This->client_site;
-    return This->client_site ? S_OK : E_FAIL;
+    if(!This->client_site)
+        return E_FAIL;
+
+    /* GetClientSite transfers a COM reference to the caller. */
+    IOleClientSite_AddRef(This->client_site);
+    return S_OK;
 }
 
 static HRESULT WINAPI OleObject_SetHostNames(IOleObject *iface, LPCOLESTR szContainerApp, LPCOLESTR szContainerObj)
