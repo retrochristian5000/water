@@ -25,6 +25,7 @@
 #include <shobjidl.h>
 #include "wine/debug.h"
 #include "wine/list.h"
+#include "wine/win16_profile.h"
 #include "explorer_private.h"
 #include "resource.h"
 
@@ -400,10 +401,70 @@ static void run_dialog(void)
     FreeLibrary(hShell32);
 }
 
+/* Windows 95/98 exposed three shutdown choices. Windows Me removed the
+ * MS-DOS mode option, and the host/NT shell must not inherit Win9x UI.
+ * Only an explicitly selected 4.00/4.10 Win9x version gets this dialog. */
+static BOOL is_win9x_shutdown_shell(void)
+{
+    struct water_win16_profile profile;
+
+    water_win16_read_profile(&profile);
+    return profile.line == WATER_WIN16_LINE_WIN9X_FAMILY && profile.major == 4 &&
+           (profile.minor == 0 || profile.minor == 10);
+}
+
+static INT_PTR CALLBACK win9x_shutdown_dlgproc(HWND dialog, UINT message, WPARAM wparam,
+                                                LPARAM lparam)
+{
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        CheckRadioButton(dialog, IDC_WIN9X_SHUTDOWN, IDC_WIN9X_DOSMODE, IDC_WIN9X_SHUTDOWN);
+        /* Real-mode DOS is neither Win32 logoff nor reboot. Until the guest
+         * exit-to-DOS state machine is implemented, do not offer an action
+         * that would discard running Windows applications without entering DOS. */
+        EnableWindow(GetDlgItem(dialog, IDC_WIN9X_DOSMODE), FALSE);
+        return TRUE;
+
+    case WM_COMMAND:
+        if (LOWORD(wparam) == IDOK)
+        {
+            if (IsDlgButtonChecked(dialog, IDC_WIN9X_RESTART) == BST_CHECKED)
+                EndDialog(dialog, IDC_WIN9X_RESTART);
+            else if (IsDlgButtonChecked(dialog, IDC_WIN9X_SHUTDOWN) == BST_CHECKED)
+                EndDialog(dialog, IDC_WIN9X_SHUTDOWN);
+            else
+                EndDialog(dialog, IDCANCEL);
+            return TRUE;
+        }
+        if (LOWORD(wparam) == IDCANCEL)
+        {
+            EndDialog(dialog, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
 static void shut_down(HWND hwnd)
 {
     WCHAR prompt[256];
+    INT_PTR action;
     int ret;
+
+    if (is_win9x_shutdown_shell())
+    {
+        action = DialogBoxParamW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDD_WIN9X_SHUTDOWN),
+                                 hwnd, win9x_shutdown_dlgproc, 0);
+        /* Both operations affect the emulated Windows session, not the
+         * host computer. Cancel and unsupported DOS mode are no-ops. */
+        if (action == IDC_WIN9X_SHUTDOWN)
+            ExitWindowsEx(EWX_SHUTDOWN, 0);
+        else if (action == IDC_WIN9X_RESTART)
+            ExitWindowsEx(EWX_REBOOT, 0);
+        return;
+    }
 
     LoadStringW(NULL, IDS_EXIT_PROMPT, prompt, ARRAY_SIZE(prompt));
     ret = MessageBoxW(hwnd, prompt, L"Wine", MB_YESNO|MB_ICONQUESTION|MB_SYSTEMMODAL);
