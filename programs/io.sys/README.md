@@ -33,6 +33,53 @@ The CONFIG.SYS parser was recovered from KRNL386's INT 21h implementation.
 IO.SYS owns that parse; INT 21h now consumes the resulting BUFFERS, LASTDRIVE,
 BREAK and UMB policy instead of opening CONFIG.SYS itself.
 
+## Windows 95/98 startup LOGO.SYS BMP boundary
+
+Windows 95/98 startup logos are **not** RLE4/RLE8 DIBs in the normal
+GDI pipeline. The external `LOGO.SYS` file is a BMP with a 320 x 400
+pixel raster, 8 bits per pixel (256 palette entries) and BI_RGB
+(uncompressed) pixel data. The familiar startup-logo appearance uses
+horizontal display scaling. The original animated color bar also depends
+on palette cycling; successfully decoding the pixels alone does not
+reproduce that effect. The nominal 40-byte BITMAPINFOHEADER + 14-byte
+BMP file header + 1024-byte palette + 128000-byte raster totals 129078
+bytes for that common header layout; validate the actual BMP offsets
+rather than using only this total as a signature.
+
+Boot-owner behavior, not yet executable in Water:
+- Read `[Options] Logo=0|1` from the **boot-root** text `MSDOS.SYS`.
+  `Logo=0` suppresses the startup logo; neither a generic GDI bitmap
+  call nor the Win16 KERNEL loader should be substituted.
+- When enabled, prefer a valid external `LOGO.SYS` from the boot root.
+  The historical fallback is the default image embedded in `IO.SYS`;
+  absence of a separate `LOGO.SYS` does **not** mean a missing logo.
+  With DriveSpace, the boot root may be the **uncompressed host drive**,
+  not the apparent Windows system drive.
+- Validate BMP file header, declared pixel offset, DIB dimensions,
+  8-bit BI_RGB layout, full 256-entry palette and raster bounds before
+  committing to display. Preserve palette ordering and animation.
+- `LOGOW.SYS` and `LOGOS.SYS` are separate shutdown screens associated
+  with the Windows directory; they must not be merged into the IO.SYS
+  startup-logo lookup. The OEM preinstallation `Oemstamp.exe` input
+  logo is a separate 156 x 22 image workflow that generates `LOGO.SYS`.
+
+The existing RLE fixes in `dlls/msrle32/msrle32.c` and
+`dlls/win32u/dib.c` protect **other** compressed graphics but do not
+implement this real-mode boot-logo path. Water currently does **not**
+perform the filesystem lookup, validate the boot BMP, render VGA
+graphics or animate its palette. Do not claim that a Win32 bitmap
+decoder restores the Windows 95/98 startup screen.
+
+Historical references:
+- Windows 95 startup-logo documentation (320 x 400, 256 colors, Logo=0
+  and color cycling):
+  https://www2.isye.gatech.edu/~mgoetsch/cali/Windows%20Configuration/Windows%20Configuration.pdf
+- Period Windows 95 FAQ documenting the boot-root override and IO.SYS
+  embedded-image fallback:
+  https://www.zisman.ca/FAQ/faq95.htm
+- Microsoft KB Q216347, `Oemstamp.exe` and the distinct OEM logo flow:
+  https://helparchive.huntertur.net/document/108106
+
 ## CONFIG.SYS SWITCHES= state
 
 The IO.SYS parser also records `SWITCHES=` (case-insensitive) with the
