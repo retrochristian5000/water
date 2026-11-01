@@ -21,6 +21,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 
+#include <string.h>
 #include "windows.h"
 #include "progman.h"
 #include "mmsystem.h"
@@ -52,7 +53,7 @@ static VOID GRPFILE_ModifyFileName(LPSTR lpszNewName, LPCSTR lpszOrigName,
 {
   lstrcpynA(lpszNewName, lpszOrigName, nSize);
   lpszNewName[nSize-1] = '\0';
-  if (!bModify) return;
+  if (!bModify || strlen(lpszNewName) < 4) return;
   if (!lstrcmpiA(lpszNewName + strlen(lpszNewName) - 4, ".grp"))
     lpszNewName[strlen(lpszNewName) - 1] = '\0';
 }
@@ -114,7 +115,11 @@ static BOOL GRPFILE_ReadFileToBuffer(LPCSTR path, HLOCAL *phBuffer,
 
   size = 0;
   hBuffer = LocalAlloc(LMEM_FIXED, MALLOCHUNK + 1);
-  if (!hBuffer) return FALSE;
+  if (!hBuffer)
+    {
+      _lclose(file);
+      return FALSE;
+    }
   buffer = LocalLock(hBuffer);
 
   while ((len = _lread(file, buffer + size, MALLOCHUNK))
@@ -125,6 +130,7 @@ static BOOL GRPFILE_ReadFileToBuffer(LPCSTR path, HLOCAL *phBuffer,
 				LMEM_MOVEABLE);
       if (!hNewBuffer)
 	{
+	  _lclose(file);
 	  LocalFree(hBuffer);
 	  return FALSE;
 	}
@@ -164,7 +170,8 @@ static HLOCAL GRPFILE_ScanGroup(LPCSTR buffer, INT size,
   INT     number_of_programs;
   BOOL    bOverwriteFileOk;
 
-  if (buffer[0] != 'P' || buffer[1] != 'M') return(0);
+  /* Never read the fixed 34-byte PM header from a truncated group file. */
+  if (size < 34 || buffer[0] != 'P' || buffer[1] != 'M') return(0);
   if (buffer[2] == 'C' && buffer[3] == 'C')
     /* original with checksum */
     bOverwriteFileOk = FALSE;
@@ -175,9 +182,16 @@ static HLOCAL GRPFILE_ScanGroup(LPCSTR buffer, INT size,
 
   /* checksum = GET_USHORT(buffer, 4)   (ignored) */
 
-  extension = buffer + GET_USHORT(buffer, 6);
-  if (extension == buffer + size) extension = 0;
-  else if (extension + 6 > buffer + size) return(0);
+  /* All on-disk offsets are 16-bit; check integer bounds before forming
+   * pointers, not after performing potentially out-of-object arithmetic. */
+  i = GET_USHORT(buffer, 6);
+  if (i > size) return(0);
+  if (i == size) extension = 0;
+  else
+    {
+      if (i > size - 6) return(0);
+      extension = buffer + i;
+    }
 
   nCmdShow = GET_USHORT(buffer,  8);
   x        = GET_SHORT(buffer,  10);
@@ -186,8 +200,9 @@ static HLOCAL GRPFILE_ScanGroup(LPCSTR buffer, INT size,
   height   = GET_USHORT(buffer, 16);
   iconx    = GET_SHORT(buffer,  18);
   icony    = GET_SHORT(buffer,  20);
-  lpszName = buffer + GET_USHORT(buffer, 22);
-  if (lpszName >= buffer + size) return(0);
+  i = GET_USHORT(buffer, 22);
+  if (i >= size || !memchr(buffer + i, 0, size - i)) return(0);
+  lpszName = buffer + i;
 
   /* unknown bytes 24 - 31 ignored */
   /*
@@ -199,19 +214,28 @@ static HLOCAL GRPFILE_ScanGroup(LPCSTR buffer, INT size,
     wReserved   = GET_SHORT(buffer, 30);
     */
 
+  /* Validate the offset table before displaying or linking a group. */
+  number_of_programs = GET_USHORT(buffer, 32);
+  if (number_of_programs > (size - 34) / 2) return(0);
+
   hGroup = GROUP_AddGroup(lpszName, lpszGrpFile, nCmdShow, x, y,
 			  width, height, iconx, icony,
 			  bModifiedFileName, bOverwriteFileOk,
 			  TRUE);
   if (!hGroup) return(0);
 
-  number_of_programs = GET_USHORT(buffer, 32);
-  if (2 * number_of_programs + 34 > size) return(0);
   for (i=0, seqnum=0; i < number_of_programs; i++, seqnum++)
     {
-      LPCSTR program_ptr = buffer + GET_USHORT(buffer, 34 + 2*i);
-      if (program_ptr + 24 > buffer + size) return(0);
-      if (!GET_USHORT(buffer, 34 + 2*i)) continue;
+      INT offset = GET_USHORT(buffer, 34 + 2*i);
+      LPCSTR program_ptr;
+
+      if (!offset) continue;
+      if (offset > size - 24)
+	{
+	  GROUP_DeleteGroup(hGroup);
+	  return(0);
+	}
+      program_ptr = buffer + offset;
       if (!GRPFILE_ScanProgram(buffer, size, program_ptr, seqnum,
 			       extension, hGroup, lpszGrpFile))
 	{
