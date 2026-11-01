@@ -26,6 +26,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "wingdi.h"
+#include "winreg.h"
 #include "winnls.h"
 #include "olectl.h"
 #include "controls.h"
@@ -33,7 +34,125 @@
 static HBRUSH hbrushPattern;
 static HBITMAP hbitmapWallPaper;
 static SIZE bitmapSize;
-static BOOL fTileWallPaper;
+
+enum wallpaper_position
+{
+    WALLPAPER_CENTER,
+    WALLPAPER_TILE,
+    WALLPAPER_STRETCH,
+    WALLPAPER_FIT,
+    WALLPAPER_FILL
+};
+static enum wallpaper_position wallpaper_position;
+
+/* Read the modern per-user REG_SZ style values without modifying them.
+ * A missing value is different from a valid "0" (center/tile). */
+static BOOL DESKTOP_GetStyleValue( HKEY key, const WCHAR *name, WCHAR *value, DWORD chars )
+{
+    DWORD type, bytes = chars * sizeof(WCHAR);
+
+    if (RegQueryValueExW( key, name, NULL, &type, (BYTE *)value, &bytes ) ||
+        type != REG_SZ || bytes < sizeof(WCHAR) || bytes > chars * sizeof(WCHAR) ||
+        (bytes % sizeof(WCHAR)) || value[bytes / sizeof(WCHAR) - 1])
+        return FALSE;
+    return TRUE;
+}
+
+/* Windows 3.1 used WIN.INI [desktop] TileWallpaper=0/1. Later versions
+ * use HKCU\\Control Panel\\Desktop WallpaperStyle and TileWallpaper:
+ * 0=center/tile, 2=stretch, 6=fit and 10=fill. Fit and fill are Win7+
+ * display modes, not features of the original 1992 Control Panel. */
+static void DESKTOP_UpdateWallpaperPosition(void)
+{
+    HKEY key;
+    WCHAR style[32], tile[32];
+    BOOL have_style = FALSE, have_tile = FALSE;
+
+    wallpaper_position = GetProfileIntA( "desktop", "TileWallpaper", 0 ) ?
+                         WALLPAPER_TILE : WALLPAPER_CENTER;
+    if (!RegOpenKeyExW( HKEY_CURRENT_USER, L"Control Panel\\Desktop", 0,
+                        KEY_QUERY_VALUE, &key ))
+    {
+        have_style = DESKTOP_GetStyleValue( key, L"WallpaperStyle",
+                                            style, ARRAY_SIZE(style) );
+        have_tile = DESKTOP_GetStyleValue( key, L"TileWallpaper",
+                                           tile, ARRAY_SIZE(tile) );
+        RegCloseKey( key );
+
+        if (have_style && !lstrcmpW( style, L"10" ))
+            wallpaper_position = WALLPAPER_FILL;
+        else if (have_style && !lstrcmpW( style, L"6" ))
+            wallpaper_position = WALLPAPER_FIT;
+        else if (have_style && !lstrcmpW( style, L"2" ))
+            wallpaper_position = WALLPAPER_STRETCH;
+        else if (have_tile && !lstrcmpW( tile, L"1" ))
+            wallpaper_position = WALLPAPER_TILE;
+        else if (have_tile && !lstrcmpW( tile, L"0" ))
+            wallpaper_position = WALLPAPER_CENTER;
+    }
+}
+
+/* Pure placement arithmetic, also used by the drawing path for clipping.
+ * Work in 64-bit intermediates so even large bitmaps cannot overflow when
+ * scaled against the desktop dimensions. No upscale is invented for center. */
+static void DESKTOP_GetWallpaperRects( enum wallpaper_position position,
+                                      const RECT *desktop, const SIZE *bitmap,
+                                      RECT *dst, RECT *src )
+{
+    const INT width = desktop->right - desktop->left;
+    const INT height = desktop->bottom - desktop->top;
+    LONGLONG size;
+
+    *dst = *desktop;
+    src->left = src->top = 0;
+    src->right = bitmap->cx;
+    src->bottom = bitmap->cy;
+
+    switch (position)
+    {
+    case WALLPAPER_CENTER:
+        dst->left += (width - bitmap->cx) / 2;
+        dst->top += (height - bitmap->cy) / 2;
+        dst->right = dst->left + bitmap->cx;
+        dst->bottom = dst->top + bitmap->cy;
+        break;
+    case WALLPAPER_FIT:
+        if ((LONGLONG)bitmap->cx * height > (LONGLONG)bitmap->cy * width)
+        {
+            size = (LONGLONG)bitmap->cy * width / bitmap->cx;
+            if (size < 1) size = 1;
+            dst->top += (height - size) / 2;
+            dst->bottom = dst->top + size;
+        }
+        else
+        {
+            size = (LONGLONG)bitmap->cx * height / bitmap->cy;
+            if (size < 1) size = 1;
+            dst->left += (width - size) / 2;
+            dst->right = dst->left + size;
+        }
+        break;
+    case WALLPAPER_FILL:
+        if ((LONGLONG)bitmap->cx * height > (LONGLONG)bitmap->cy * width)
+        {
+            size = (LONGLONG)bitmap->cy * width / height;
+            if (size < 1) size = 1;
+            src->left = (bitmap->cx - size) / 2;
+            src->right = src->left + size;
+        }
+        else
+        {
+            size = (LONGLONG)bitmap->cx * height / width;
+            if (size < 1) size = 1;
+            src->top = (bitmap->cy - size) / 2;
+            src->bottom = src->top + size;
+        }
+        break;
+    case WALLPAPER_STRETCH:
+    case WALLPAPER_TILE:
+        break;
+    }
+}
 
 
 /***********************************************************************
@@ -117,6 +236,8 @@ static void init_wallpaper( const WCHAR *wallpaper )
 
     if (hbitmapWallPaper) DeleteObject( hbitmapWallPaper );
     hbitmapWallPaper = hbitmap;
+    bitmapSize.cx = bitmapSize.cy = 0;
+    DESKTOP_UpdateWallpaperPosition();
     if (hbitmap)
     {
 	BITMAP bmp;
@@ -129,7 +250,6 @@ static void init_wallpaper( const WCHAR *wallpaper )
         }
         bitmapSize.cx = bmp.bmWidth ? bmp.bmWidth : 1;
         bitmapSize.cy = bmp.bmHeight ? bmp.bmHeight : 1;
-        fTileWallPaper = GetProfileIntA( "desktop", "TileWallPaper", 0 );
     }
 }
 
@@ -181,50 +301,64 @@ BOOL WINAPI PaintDesktop(HDC hdc)
 {
     HWND hwnd = GetDesktopWindow();
 
-    /* check for an owning thread; otherwise don't paint anything (non-desktop mode) */
+    /* A non-desktop process must not paint the host's background. */
     if (GetWindowThreadProcessId( hwnd, NULL ))
     {
         RECT rect;
+        INT width, height;
 
-        GetClientRect( hwnd, &rect );
+        if (!GetClientRect( hwnd, &rect )) return FALSE;
+        width = rect.right - rect.left;
+        height = rect.bottom - rect.top;
+        if (width <= 0 || height <= 0) return TRUE;
 
-        /* Paint desktop pattern (only if wall paper does not cover everything) */
-
-        if (!hbitmapWallPaper ||
-            (!fTileWallPaper && ((bitmapSize.cx < rect.right) || (bitmapSize.cy < rect.bottom))))
+        /* Center and fit can leave a border. Stretch, fill and tile cover
+         * the entire client area when a wallpaper bitmap is available. */
+        if (!hbitmapWallPaper || wallpaper_position == WALLPAPER_CENTER ||
+            wallpaper_position == WALLPAPER_FIT)
         {
             HBRUSH brush = hbrushPattern;
             if (!brush) brush = (HBRUSH)GetClassLongPtrW( hwnd, GCLP_HBRBACKGROUND );
-            /* Set colors in case pattern is a monochrome bitmap */
             SetBkColor( hdc, RGB(0,0,0) );
             SetTextColor( hdc, GetSysColor(COLOR_BACKGROUND) );
             FillRect( hdc, &rect, brush );
         }
 
-        /* Paint wall paper */
-
-        if (hbitmapWallPaper)
+        if (hbitmapWallPaper && bitmapSize.cx > 0 && bitmapSize.cy > 0)
         {
-            INT x, y;
-            HDC hMemDC = CreateCompatibleDC( hdc );
+            HDC memdc = CreateCompatibleDC( hdc );
+            HGDIOBJ old_bitmap;
+            RECT dst, src;
 
-            SelectObject( hMemDC, hbitmapWallPaper );
-
-            if (fTileWallPaper)
+            if (!memdc) return FALSE;
+            old_bitmap = SelectObject( memdc, hbitmapWallPaper );
+            if (!old_bitmap || old_bitmap == HGDI_ERROR)
             {
-                for (y = 0; y < rect.bottom; y += bitmapSize.cy)
-                    for (x = 0; x < rect.right; x += bitmapSize.cx)
-                        BitBlt( hdc, x, y, bitmapSize.cx, bitmapSize.cy, hMemDC, 0, 0, SRCCOPY );
+                DeleteDC( memdc );
+                return FALSE;
+            }
+
+            if (wallpaper_position == WALLPAPER_TILE)
+            {
+                INT x, y;
+                for (y = rect.top; y < rect.bottom; y += bitmapSize.cy)
+                    for (x = rect.left; x < rect.right; x += bitmapSize.cx)
+                        BitBlt( hdc, x, y, bitmapSize.cx, bitmapSize.cy,
+                                memdc, 0, 0, SRCCOPY );
             }
             else
             {
-                x = (rect.left + rect.right - bitmapSize.cx) / 2;
-                y = (rect.top + rect.bottom - bitmapSize.cy) / 2;
-                if (x < 0) x = 0;
-                if (y < 0) y = 0;
-                BitBlt( hdc, x, y, bitmapSize.cx, bitmapSize.cy, hMemDC, 0, 0, SRCCOPY );
+                DESKTOP_GetWallpaperRects( wallpaper_position, &rect, &bitmapSize, &dst, &src );
+                if (wallpaper_position == WALLPAPER_CENTER)
+                    BitBlt( hdc, dst.left, dst.top, bitmapSize.cx, bitmapSize.cy,
+                            memdc, 0, 0, SRCCOPY );
+                else
+                    StretchBlt( hdc, dst.left, dst.top, dst.right - dst.left,
+                                dst.bottom - dst.top, memdc, src.left, src.top,
+                                src.right - src.left, src.bottom - src.top, SRCCOPY );
             }
-            DeleteDC( hMemDC );
+            SelectObject( memdc, old_bitmap );
+            DeleteDC( memdc );
         }
     }
     return TRUE;
