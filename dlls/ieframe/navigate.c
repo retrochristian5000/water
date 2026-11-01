@@ -1097,21 +1097,40 @@ static HRESULT navigate_hlink(DocHost *This, IMoniker *mon, IBindCtx *bindctx,
 
 HRESULT go_home(DocHost *This)
 {
-    HKEY hkey;
-    DWORD res, type, size;
-    WCHAR wszPageName[MAX_PATH];
+    /* IE7+ checks the policy homepage before the user's normal Start Page. */
+    static const WCHAR *const paths[] = {
+        L"Software\\Policies\\Microsoft\\Internet Explorer\\Main",
+        L"Software\\Microsoft\\Internet Explorer\\Main"
+    };
+    WCHAR page[INTERNET_MAX_URL_LENGTH];
+    DWORD size, type;
+    LONG res;
+    HKEY key;
+    unsigned int i;
 
-    res = RegOpenKeyW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Internet Explorer\\Main", &hkey);
-    if (res != ERROR_SUCCESS)
-        return navigate_url(This, L"about:blank", NULL, NULL, NULL, NULL);
+    for (i = 0; i < ARRAY_SIZE(paths); i++)
+    {
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, paths[i], 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
+            continue;
 
-    size = sizeof(wszPageName);
-    res = RegQueryValueExW(hkey, L"Start Page", NULL, &type, (LPBYTE)wszPageName, &size);
-    RegCloseKey(hkey);
-    if (res != ERROR_SUCCESS || type != REG_SZ)
-        return navigate_url(This, L"about:blank", NULL, NULL, NULL, NULL);
+        /* Reserve room for a terminator: REG_SZ data need not contain one. */
+        size = sizeof(page) - sizeof(WCHAR);
+        res = RegQueryValueExW(key, L"Start Page", NULL, &type, (BYTE *)page, &size);
+        RegCloseKey(key);
 
-    return navigate_url(This, wszPageName, NULL, NULL, NULL, NULL);
+        if (res == ERROR_FILE_NOT_FOUND)
+            continue;
+        if (res != ERROR_SUCCESS || type != REG_SZ || size < sizeof(WCHAR)
+                || size % sizeof(WCHAR))
+            break;
+
+        page[size / sizeof(WCHAR)] = 0;
+        if (!page[0])
+            break;
+        return navigate_url(This, page, NULL, NULL, NULL, NULL);
+    }
+
+    return navigate_url(This, L"about:blank", NULL, NULL, NULL, NULL);
 }
 
 static HRESULT navigate_history(DocHost *This, unsigned travellog_pos)
