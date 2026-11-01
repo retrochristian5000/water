@@ -45,6 +45,94 @@ Check the actual Water helper with synthetic IIS records:
 python3 -m unittest discover -s scripts/tests -p test_iis_ftp_listing.py -v
 ```
 
+## FTP folder-view boundary (audit: 1 November 2026)
+
+The FTP *client transport*, the FTP *URL protocol handler*, and the FTP
+*Shell namespace folder* are three distinct responsibilities. A WinINet
+`FtpFindFirstFileW` implementation is not by itself a working Explorer
+folder, and rendering FTP data inside an HTML browser is not an
+`IShellFolder` implementation.
+
+### Historical personality and installation distinctions
+
+- IE4's FTP browsing was browser-oriented. IE5 introduced an optional FTP
+  Folders shell extension (associated with `MSIEFTP.DLL`), allowing both
+  Internet Explorer and Windows Explorer to browse an FTP server using a
+  folder interface. Windows 98 SE, Me and Windows 2000 included the helper.
+- An IE6 version number alone is insufficient to infer the helper exists:
+  Microsoft KB299893 documents cases where IE6 on Windows 98 RTM or NT4
+  did not install the Graphical FTP Helper. Preserve the installed-feature
+  distinction instead of hard-coding `IE >= 5` as meaning FTP folders.
+- IE7 decoupled IE FTP browsing from the Windows Explorer shell view.
+  KB941896 describes the browser's WinINet-based view and Explorer's
+  separate folder-based implementation. In IE7 and later, the Internet
+  Options setting refers to enabling the folder view *outside* IE.
+- Do not equate passive/active FTP transport settings with the choice of
+  folder versus web-oriented view; the behavior and historical defaults
+  must be checked separately.
+
+### Water's currently identified call paths
+
+- `programs/explorer/explorer.c`: Explorer's address bar calls
+  `ILCreateFromPathW`; its starting-folder path calls
+  `IShellFolder_ParseDisplayName`. Both rely on Shell PIDLs.
+- `dlls/shell32/pidl.c` and `dlls/shell32/shfldr_desktop.c`: Shell path
+  parsing reaches `IEParseDisplayNameWithBCW` for a non-`shell:` URL.
+- `dlls/shdocvw/shdocvw_main.c`: that exported function currently returns
+  `E_FAIL` unconditionally. This is a reproducible *source-level*
+  blocker for `ftp://` Shell navigation; it is not evidence of a
+  completed runtime test.
+- `dlls/ieframe/navigate.c` and `dlls/urlmon/ftp.c`: browser navigation
+  and URLMON FTP transfer paths exist but do not instantiate an FTP
+  namespace folder.
+- `dlls/wininet/ftp.c`: supports FTP client directory enumeration,
+  downloads, uploads, rename, delete and directory operations. Reuse
+  this layer for transport rather than writing another FTP client.
+- No `dlls/msieftp`-style module appears in the audited DLL module
+  listing. `dlls/shell32/shfldr_netplaces.c` owns Network Places,
+  **not** FTP directory contents.
+
+### Implementation and acceptance boundaries
+
+The missing owner is an FTP Shell namespace extension: parse a
+`ftp://` display name into a stable PIDL; bind to an `IShellFolder`
+for the URL and its child directories; enumerate `WIN32_FIND_DATA`
+entries from WinINet; provide an `IShellView` (prefer the existing
+Shell default view where applicable); and preserve parsing names,
+folder attributes, error behavior and navigation state. File operations
+must use appropriate WinINet FTP verbs, not a mapped local filesystem
+path. Do not report success by making `IEParseDisplayNameWithBCW`
+return a fabricated PIDL which cannot bind to a real folder object.
+
+Regression fixtures should use a loopback/offline FTP server and check:
+anonymous versus credential-prompt login; root and assigned-home paths;
+folder traversal and parent navigation; names containing spaces;
+DOS versus UNIX LIST records; empty directories; file download and
+authorized upload; permission failures; and isolation of HTTP browsing.
+Check IE5/IE6 with FTP Folders installed versus absent, then IE7+ browser
+versus Windows Explorer routing. Never expose passwords in debug logs,
+URL bar history, or regression snapshots.
+
+**Status:** source audit only. The Shell folder implementation, end-to-end
+FTP-folder regression tests, a compiled build, and native-version runtime
+comparison remain outstanding. A change to URLMON or WinINet alone must
+not be marked as a fix for Explorer's FTP folder view.
+
+The server-component inventory above is dated 11 October 2026:
+`programs/inetinfo` appears in the 1 November 2026 module list, so
+the earlier server inventory must not be interpreted as a current
+absence finding. This client-folder audit does not evaluate that service.
+
+Additional references:
+- Microsoft KB217888, *How to Install and Use FTP Folders*:
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/217888
+- Microsoft KB299893, IE6 Graphical FTP Helper installation boundary:
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/299893
+- Microsoft KB941896, IE7 and Explorer FTP behavior:
+  https://mskb.pkisolutions.com/kb/941896
+- Microsoft, *Understanding Shell Namespace Extensions*:
+  https://learn.microsoft.com/en-us/windows/win32/shell/nse-works
+
 ## Open implementation work
 
 Recover real NT4, Windows 2000 and Server 2003 IIS binaries/manifests
