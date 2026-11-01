@@ -272,12 +272,36 @@ VOID PROGRAM_CopyMoveProgram(HLOCAL hProgram, BOOL bMove)
 VOID PROGRAM_ExecuteProgram(HLOCAL hProgram)
 {
   PROGRAM *program = LocalLock(hProgram);
-  LPSTR lpszCmdLine = LocalLock(program->hCmdLine);
+  LPCSTR cmdline = LocalLock(program->hCmdLine);
+  LPCSTR workdir = LocalLock(program->hWorkDir);
+  CHAR *previous = NULL;
+  DWORD length, actual;
+  BOOL changed = FALSE;
+  UINT result;
 
-  /* FIXME set working directory from program->hWorkDir */
+  /* Keep WinExec: Win16/DOS .COM, .PIF and .BAT entries must not be forced
+   * through a PE-only CreateProcess path. WinExec has no directory
+   * parameter, so temporarily select the .GRP working directory and
+   * restore the caller's current directory immediately after launching. */
+  if (workdir && *workdir)
+    {
+      length = GetCurrentDirectoryA(0, NULL);
+      if (length && length <= 32768 &&
+          (previous = HeapAlloc(GetProcessHeap(), 0, length)))
+        {
+          actual = GetCurrentDirectoryA(length, previous);
+          if (actual && actual < length && SetCurrentDirectoryA(workdir))
+            changed = TRUE;
+        }
+    }
 
-  WinExec(lpszCmdLine, program->nCmdShow);
-  if (Globals.bMinOnRun) CloseWindow(Globals.hMainWnd);
+  result = WinExec(cmdline, program->nCmdShow);
+  if (changed) SetCurrentDirectoryA(previous);
+  if (previous) HeapFree(GetProcessHeap(), 0, previous);
+
+  /* WinExec values greater than 31 indicate success. Avoid minimizing the
+   * shell when a Startup group contains an unlaunchable program. */
+  if (result > 31 && Globals.bMinOnRun) CloseWindow(Globals.hMainWnd);
 }
 
 /***********************************************************************
