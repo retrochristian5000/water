@@ -1695,8 +1695,8 @@ static void test_winini_quoted_values(void)
         ret = GetPrivateProfileSectionA("windows", entries, sizeof(entries), filename);
         for (item = entries; item < entries + ret && *item; item += strlen(item) + 1)
         {
-            if (!strcmp(item, "load=\\\"ABC\\\"")) have_load = TRUE;
-            if (!strcmp(item, "run=\\\"\\\"")) have_run = TRUE;
+            if (!strcmp(item, "load=\"ABC\"")) have_load = TRUE;
+            if (!strcmp(item, "run=\"\"")) have_run = TRUE;
         }
         ok(ret && have_load && have_run,
            "raw [windows] section lost startup quotes (len %lu, load %d, run %d)\n",
