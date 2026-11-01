@@ -4,6 +4,8 @@ HKCR
     {
         '{6BF52A52-394A-11D3-B153-00C04F79FAA6}'
         {
+            ProgID = s 'WMPlayer.OCX.7'
+            VersionIndependentProgID = s 'WMPlayer.OCX'
             Control
             Insertable
             MiscStatus = s '0'
@@ -15,7 +17,13 @@ HKCR
     }
     'WMPlayer.OCX.7' = s 'Windows Media Player'
     {
+        CLSID = s '{6BF52A52-394A-11D3-B153-00C04F79FAA6}'
         Insertable
+    }
+    'WMPlayer.OCX' = s 'Windows Media Player'
+    {
+        CLSID = s '{6BF52A52-394A-11D3-B153-00C04F79FAA6}'
+        CurVer = s 'WMPlayer.OCX.7'
     }
 }
 
