@@ -522,3 +522,51 @@ independent of IEFRAME DLL export presence.
 Related contemporary independent reproduction (Wine 11.20; not a
 Water runtime test):
 https://list.winehq.org/hyperkitty/list/wine-bugs%40list.winehq.org/thread/MMXPYR35ZS5D656SYBK3UCT7WPPKLU6V/
+
+## Browser Helper Objects — IE host compatibility audit (November 1, 2026)
+
+Browser Helper Objects (BHOs) were supported in Internet Explorer 4 onward.
+The BHO *hosting mechanism* must not be confused with the separate
+installation of any extension (or with the later IEFRAME.DLL module).
+Internet Explorer and Windows Explorer may each host BHOs, but their
+site objects, window lifetimes, and NoExplorer filtering differ.
+
+WATER previously had no BHO registry enumeration in its top-level IE
+frame implementation, and IWebBrowser2::Quit returned E_NOTIMPL.
+The new implementation in dlls/ieframe/iexplore.c enumerates CLSID
+subkeys under HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\
+Browser Helper Objects, creates in-process COM IObjectWithSite objects,
+passes its own IWebBrowser2 object to SetSite, and stores successfully
+sited instances for SetSite(NULL) and Release during close and Quit.
+It does NOT automatically load BHOs in the embeddable WebBrowser
+ActiveX control or in programs/explorer.
+
+Security and compatibility guards checked before CoCreateInstance:
+- The explicit Enable Browser Extensions = No user preference and
+  machine/user IE policy disable.
+- The IE add-on policy list: CLSID deny entries, RestrictToList when
+  not explicitly allowed, and per-user Ext\Settings CLSID Flags bit 0
+  indicating disabled in IE add-on management.
+- A missing/malformed CLSID, failed COM activation or absent
+  IObjectWithSite cannot abort loading other entries.
+- No registry mutation or bundled native BHO DLL is introduced.
+
+References:
+https://techcommunity.microsoft.com/blog/askperf/the-basics-of-browser-helper-objects/372599
+https://learn.microsoft.com/en-us/windows/win32/api/ocidl/nf-ocidl-iobjectwithsite-setsite
+https://mskb.pkisolutions.com/kb/298931
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gppref/8b0fcf80-3401-40cf-b4c5-c086238c7cb1
+https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-internetexplorer
+https://www.winhelponline.com/xp/addons.htm
+
+Verification still needed: compiled and guest-runtime tests on a clean
+IE4/IE5/IE6 and Vista IE7+ baseline, 32/64-bit registration views,
+extension installation identity, benign disposable BHO mock with
+SetSite(non-NULL)/SetSite(NULL) assertions, event subscription,
+navigation, Quit/reentrancy and reference-cycle checks. The added
+IEFRAME test checks that IWebBrowser2::Quit succeeds and hides the
+browser, not complete BHO functionality. IE Protected Mode, Enhanced
+Protected Mode, crash isolation, add-on management UI, kill bits,
+COM bitness isolation, Explorer-specific host support, and complete
+admin policy precedence remain separate work. Never claim native
+security parity or load untrusted historical extensions on the host.

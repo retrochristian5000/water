@@ -388,6 +388,22 @@ static void test_busy(IWebBrowser2 *wb)
     ok(b == VARIANT_FALSE, "Busy = %x\n", b);
 }
 
+
+static void test_browser_quit(IWebBrowser2 *browser)
+{
+    VARIANT_BOOL visible = VARIANT_TRUE;
+    HRESULT hr = IWebBrowser2_Quit(browser);
+
+    ok(hr == S_OK, "Quit failed: %#lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        hr = IWebBrowser2_get_Visible(browser, &visible);
+        ok(hr == S_OK, "get_Visible after Quit failed: %#lx\n", hr);
+        if (SUCCEEDED(hr))
+            ok(visible == VARIANT_FALSE, "Browser is still visible after Quit.\n");
+    }
+}
+
 static void test_InternetExplorer(void)
 {
     IWebBrowser2 *wb;
@@ -422,6 +438,7 @@ static void test_InternetExplorer(void)
     CHECK_CALLED(Invoke_NAVIGATEERROR);
 
     advise_cp(unk, FALSE);
+    test_browser_quit(wb);
 
     IWebBrowser2_Release(wb);
     ref = IUnknown_Release(unk);

@@ -86,6 +86,7 @@ static ULONG WINAPI InternetExplorer_Release(IWebBrowser2 *iface)
     TRACE("(%p) ref=%ld\n", This, ref);
 
     if(!ref) {
+        release_browser_helpers(This);
         deactivate_document(&This->doc_host);
         DocHost_Release(&This->doc_host);
 
@@ -358,8 +359,14 @@ static HRESULT WINAPI InternetExplorer_get_Busy(IWebBrowser2 *iface, VARIANT_BOO
 static HRESULT WINAPI InternetExplorer_Quit(IWebBrowser2 *iface)
 {
     InternetExplorer *This = impl_from_IWebBrowser2(iface);
-    FIXME("(%p)\n", This);
-    return E_NOTIMPL;
+    TRACE("(%p)\n", This);
+
+    IWebBrowser2_AddRef(iface);
+    release_browser_helpers(This);
+    if (This->frame_hwnd)
+        ShowWindow(This->frame_hwnd, SW_HIDE);
+    IWebBrowser2_Release(iface);
+    return S_OK;
 }
 
 static HRESULT WINAPI InternetExplorer_ClientToWindow(IWebBrowser2 *iface, int *pcx, int *pcy)
@@ -768,6 +775,7 @@ DWORD release_extern_ref(InternetExplorer *This, BOOL last_closes)
     }
 
     deactivate_document(&This->doc_host);
+    release_browser_helpers(This);
     return ref;
 }
 

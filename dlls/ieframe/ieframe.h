@@ -240,9 +240,15 @@ struct InternetExplorer {
     HWND toolbar_hwnd;
     HMENU menu;
     BOOL nohome;
+    BOOL bho_active;
+    BOOL bho_loading;
 
+    struct list bhos;
     struct list entry;
 };
+
+void load_browser_helpers(InternetExplorer*);
+void release_browser_helpers(InternetExplorer*);
 
 void WebBrowser_OleObject_Init(WebBrowser*);
 void WebBrowser_ViewObject_Init(WebBrowser*);
