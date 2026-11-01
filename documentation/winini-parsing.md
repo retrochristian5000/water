@@ -84,6 +84,28 @@ invented. Long/truncated section reads are not executed. This is
 **not** evidence that WATER boots DOS Windows 3.x, or that the
 Win95/98 Explorer shell now processes WIN.INI.
 
+**Windows 3.1-specific boundary:** Microsoft Q81606 states that holding
+Shift disables the Program Manager Startup group, not the independent
+WIN.INI load/run lists. In Windows 95, the documented Shift suppression
+also skips WIN.INI load/run. A universal startup-suppression flag would
+lose that release distinction.
+
+**Known Program Manager startup scheduling gap:** Microsoft Q91204
+describes icon-row/column order for Windows programs before DOS programs,
+with Windows command-line switches and the first DOS item having
+special scheduling rules. WATER currently iterates the Startup group's
+linked list in insertion order. Without reliable NE-versus-DOS
+executable classification and icon-position sorting, this is **not
+yet faithful Windows 3.1 startup scheduling**. Do not re-label all
+`.EXE` icons as Windows tasks.
+
+For full boot/stage ownership and the WfW 3.1/3.11 split, see
+`documentation/win31-386-enhanced.md`. The historical
+`SYSTEM.INI [boot] shell=` entry determines whether Program Manager
+even runs. When an alternate shell owns startup, the installer-added
+AOLISDN or OEMcFos WIN.INI entries below may be ignored despite being
+present in the file (Microsoft Q85476).
+
 ## AOL / America Online installation evidence — scoped
 
 AOL-related software really did change WIN.INI on **some** systems,
@@ -122,6 +144,10 @@ Sources:
   https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/85476
 - Microsoft KB Q81606, independent Startup group:
   https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/81606
+- Microsoft KB Q91204, Windows/DOS startup-group ordering:
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/91204
+- Microsoft KB Q83386, SYSTEM.INI shell= owner:
+  https://jeffpar.github.io/kbarchive/kb/083/Q83386/
 - F-Secure, Trojan.AOL.Buddy (negative control for attribution):
   https://www.f-secure.com/v-descs/aolbuddy
 
