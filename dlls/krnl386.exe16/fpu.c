@@ -31,6 +31,38 @@ WINE_DEFAULT_DEBUG_CHANNEL(int);
 
 static void FPU_ModifyCode(I386_CONTEXT *context, BYTE Opcode);
 
+/* Microsoft linked 8087 escape instructions as INT 34h-3Ch and FWAIT as
+ * INT 3Dh. Restore bytes only at a verified INT site within the code segment;
+ * the handler may also be called by an unrelated or malformed guest vector.
+ * This is the hardware-FPU fast path, not a software 8087 emulator. */
+static BYTE *FPU_GetPatchSite(I386_CONTEXT *context, BYTE vector, unsigned int following)
+{
+    WORD sel = context->SegCs;
+    DWORD ip;
+    BYTE *code;
+
+    if (!ldt_is_system(sel) && !ldt_is_valid(sel))
+    {
+        WARN("x87 INT %02x has an invalid code selector %04x\n", vector, sel);
+        return NULL;
+    }
+    ip = ldt_is_32bit(sel) ? context->Eip : LOWORD(context->Eip);
+    /* INT is two bytes. INT 3Ch also needs an encoded ESC and ModR/M. */
+    if (ip < 2 || (following > 1 && ip > 0xffffffffu - (following - 1)) ||
+        (!ldt_is_system(sel) && ip - 1 + following > ldt_get_limit(sel)))
+    {
+        WARN("x87 INT %02x extends beyond code segment at %04x:%08x\n", vector, sel, ip);
+        return NULL;
+    }
+    code = ldt_get_ptr(sel, ip - 2);
+    if (!code || code[0] != 0xcd || code[1] != vector)
+    {
+        WARN("x87 INT %02x call site does not contain CD %02x\n", vector, vector);
+        return NULL;
+    }
+    return code;
+}
+
 
 /**********************************************************************
  *          DOSVM_Int34Handler
@@ -158,23 +190,30 @@ void WINAPI DOSVM_Int3bHandler(I386_CONTEXT *context)
 /**********************************************************************
  *          DOSVM_Int3cHandler
  *
- * Handler for int 3C (FLOATING POINT EMULATION - INSTRUCTIONS WITH SEGMENT OVERRIDE).
- *
- *  Generated code is CD 3C xy mm ... (CD = int | 3C = this interrupt)
- *   xy is a modified ESC code and mm is the modR/M byte.
- *   xy byte seems to be encoded as ss011xxx  or ss000xxx
- *   ss= segment override.
- *     00 -> DS
- *     01 -> SS
- *     10 -> CS
- *     11 -> ES
- *
- *  11011xxx should be the opcode instruction.
+ * Microsoft 8087 emulation rewrites WAIT + segment override + ESC as
+ * CD 3C xx, where the upper two bits of xx identify the segment and
+ * the low three bits retain the original D8h-DFh ESC opcode.
+ *   xx = 18h-1Fh (DS), 58h-5Fh (SS), 98h-9Fh (CS), D8h-DFh (ES).
+ * Reconstruct the original three-byte prefix in place and retry it.
  */
 void WINAPI DOSVM_Int3cHandler(I386_CONTEXT *context)
 {
-    FIXME("Int 3C NOT Implemented\n");
-    INT_BARF(context, 0x3c);
+    static const BYTE prefixes[] = { 0x3e, 0x36, 0x2e, 0x26 };
+    BYTE *code = FPU_GetPatchSite(context, 0x3c, 2);
+    BYTE encoded;
+
+    if (!code) return;
+    encoded = code[2];
+    if ((encoded & 0x38) != 0x18)
+    {
+        WARN("x87 INT 3C contains an invalid encoded ESC opcode %02x\n", encoded);
+        return;
+    }
+    code[0] = 0x9b;                       /* FWAIT */
+    code[1] = prefixes[encoded >> 6];     /* DS, SS, CS, ES */
+    code[2] = 0xd8 | (encoded & 7);       /* x87 ESC opcode */
+    context->Eip -= 2;
+    TRACE("Restored x87 segment override %02x ESC %02x\n", code[1], code[2]);
 }
 
 
@@ -221,16 +260,13 @@ void WINAPI DOSVM_Int3eHandler(I386_CONTEXT *context)
  */
 static void FPU_ModifyCode(I386_CONTEXT *context, BYTE Opcode)
 {
-    BYTE *code = ldt_get_ptr(context->SegCs, context->Eip);
+    BYTE vector = Opcode == 0x90 ? 0x3d : Opcode - 0xa4;
+    BYTE *code = FPU_GetPatchSite(context, vector, 0);
 
-    /*
-     * All *NIX systems should have a real or kernel emulated FPU.
-     */
+    if (!code) return;
+    code[0] = 0x9b;          /* FWAIT */
+    code[1] = Opcode;        /* ESC D8h-DFh, or NOP after standalone FWAIT */
+    context->Eip -= 2;      /* retry the restored instruction */
 
-    code[-2] = 0x9b;          /* The fwait instruction */
-    code[-1] = Opcode;        /* Insert the opcode     */
-
-    context->Eip -= 2; /* back up the return address 2 bytes */
-
-    TRACE("Modified code in FPU int call to 0x9b 0x%x\n",Opcode);
+    TRACE("Restored x87 instruction 9B %02x from INT %02x\n", Opcode, vector);
 }
