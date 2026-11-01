@@ -748,3 +748,125 @@ Confirmed defects repaired at the WMP owner:
 Verification: GitHub source and test inspection, commits pushed to master.
 No build, test execution, original Windows machine, browser media playback
 or full WMP legacy control compatibility was verified in this pass.
+
+## NetMeeting, H.323 and Internet Explorer distribution boundaries (November 1, 2026)
+
+Status: evidence-backed version/component audit; MSCONF invalid-call regressions added.
+No H.323 or T.120 transport was implemented in this pass. Do not infer a
+working conferencing stack from exports, registration, codecs, or TAPI headers.
+
+### Historical distribution control: IE packages versus installed Windows
+
+Microsoft's NetMeeting version distribution list (KB260716) records:
+
+| Distribution | NetMeeting | Build | Provenance |
+| --- | --- | --- | --- |
+| Windows 95 OSR2 | 1.0 | 1133 | Windows baseline |
+| IE4 / Windows 95 OSR2 | 2.1 | 2135 | IE package / later baseline |
+| Windows 98 / IE4.01 SP1 | 2.1 SP1 | 2203-2208 | Windows/IE variants |
+| Internet Explorer 5 | 2.11 | 2520 | IE package |
+| Windows 98 Second Edition | 3.0 | 3345 | Windows baseline |
+| Windows 2000 | 3.01 | 3385 | Windows baseline |
+| Windows XP | 3.01 | 3400 | Windows baseline |
+
+The IE4 Full download package included NetMeeting; Browser Only and
+Standard were separate installation choices (Microsoft, October 1, 1997).
+IE5.5 Full likewise included it whereas Minimal and Typical did not
+(Microsoft KB264149). Do not interpret an IE version as a guarantee that
+NetMeeting was installed. For Windows XP, the binary is conf.exe and
+NetMeeting was normally hidden from the Start menu; registration, optional
+Windows features, service packs and actual executable inventory must be
+measured from each guest rather than guessed.
+Windows XP was the last Windows client version to include NetMeeting.
+Vista did not bundle it; NetMeeting 3.02 was available only as a
+transitional hotfix for selected Vista editions (Microsoft KB927853).
+Version numbers above are NetMeeting product/build values, not an
+Internet Explorer DLL version or the XP OS kernel build.
+
+Sources:
+https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/260716
+https://news.microsoft.com/source/1997/10/01/microsoft-internet-explorer-4-0-now-available-delivers-the-web-the-way-you-want-it-to-users-worldwide/
+https://mskb.pkisolutions.com/kb/264149
+https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/927853
+https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/240954
+
+### Protocol families: do not merge H.323 with T.120
+
+Audio/video calling: H.225.0/Q.931 call signaling typically uses TCP
+port 1720; H.245 negotiates capabilities, media channels and may move
+to dynamically assigned TCP ports. RTP/RTCP carries media over UDP.
+Codec capabilities include G.711 and G.723 audio and H.261/H.263 video
+according to Microsoft's historical IE5 deployment materials; available
+decoders alone are not evidence of negotiated conferencing sessions.
+
+Data collaboration: T.120 (including RFC1006 TPKT, X.224, T.125 MCS,
+T.126 whiteboard, T.127 file transfer). Microsoft's S20 MCS channel
+carries application sharing; chat uses T.125. ILS LDAP uses TCP 389,
+ULS TCP 522, and T.120 commonly TCP 1503. Ports are historical protocol
+defaults, not instructions to open listeners or bypass firewall rules.
+
+Sources:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mnpr/edd16bac-0154-44f0-9576-9d83a1f4267a
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mnpr/25aa2a89-2442-4b77-98c5-db8155eafd9a
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mnpr/88ddac46-d91d-4b15-a25d-fe5c80d36f26
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mnpr/44fb24fb-0f4a-493e-9515-51ccc1d94698
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wpo/2a0574b1-4565-4032-b072-c50a13d2e9ea
+https://download.microsoft.com/download/A/6/0/A609121D-93BF-4168-9887-7595A7B7D9A9/IE5_en-us.pdf
+
+### WATER source audit and missing components
+
+- dlls/msconf (already existing and wired in configure.ac) exports
+  nineteen version-2 conferencing and NetMeeting shell entry points.
+  Its ConferenceConnectA/W, ConferenceListen and other APIs explicitly
+  reject unsupported sessions: there is NO conference transport backend.
+  This avoids fabricated handles, phantom calls or unrequested network
+  initiation. CallToProtocolHandler, OpenConfLink and NewMediaPhone
+  remain nonfunctional shell launchers and must not be advertised as
+  working URL/protocol handlers.
+- dlls/tapi32 implements other telephony API surface but much of line.c
+  is stubbed; this is not an H.323 TSP/MSP implementation.
+- The tree has no H323.tsp, H323msp.dll or NetMeeting conf.exe owner.
+  Microsoft's Windows TAPI documentation identifies H323.tsp and
+  H323msp.dll as distinct telephony service/media service providers
+  available with Windows 2000/XP, removed from Vista and later.
+- dlls/msg711.acm has G.711 conversion code; this does not supply
+  H.225/Q.931, H.245, RTP/RTCP sessions, G.723 negotiation or T.120.
+- IEFRAME and SHDOCVW do not own the call state machine. Do not
+  implement H.323 signaling inside the browser or alias IE protocol
+  handlers to a missing NetMeeting process.
+
+Sources:
+https://learn.microsoft.com/en-us/windows/win32/tapi/h323-tsp
+https://learn.microsoft.com/en-us/windows/win32/tapi/h323-msp
+
+### Tests added to existing MSCONF regression module
+
+The existing dlls/msconf/tests/msconf.c previously checked only export
+presence (nineteen names), which could be mistaken for runtime parity.
+The new test_reject_invalid_calls resolves ConferenceConnectA/W,
+ConferenceDisconnect and ConferenceShareWindow dynamically and verifies
+that invalid inputs never return success. It passes null addresses
+and handles only, does not start a conference, open a socket, mutate
+registry settings, or invoke the shell launchers. It does NOT validate
+H.323 interoperability; no build or test execution has occurred.
+
+### Safe implementation sequencing / evidence required
+
+1. Capture exact file inventories, hashes, build values, 32-bit COM
+   registrations, shell associations and import/export tables from
+   clean IE4 Full, IE5, Win98 SE, Win2000 and XP NetMeeting installs.
+2. Recover TAPI H323 TSP/MSP entry points and ABI from native binaries
+   before designing provider wrappers. Keep OS and IE version gates.
+3. Build separate protocol state machines: H.225 call signaling,
+   H.245 control, RTP/RTCP media, and independent T.120/MCS data.
+   Validate framing, bounds and negotiation with offline captures
+   before allowing connections or sharing desktops/files.
+4. Add isolated guest-to-guest interoperability tests and only then
+   connect a NetMeeting shell/COM object and optional IE association.
+   Preserve real user consent for camera, microphone, desktop share
+   and incoming calls; do not claim compatibility from a registered DLL.
+
+Verification ledger: source inventory, primary Microsoft documentation
+and new source-only MSCONF regression cases. No native DLLs extracted,
+no WinXP/Win98 VM tests, no compile, no call negotiation, no codecs
+integrated with an H.323 transport, and no network ports opened.
