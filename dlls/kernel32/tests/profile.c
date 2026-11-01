@@ -1667,6 +1667,42 @@ static void test_winini_quoted_values(void)
        "single quoted compatibility value returned %lu, %s\n",
        ret, wine_dbgstr_w(wide));
 
+    /* WIN.INI fallback defaults are separate from actual empty values.
+     * All-space defaults previously exercised pointer arithmetic before
+     * the beginning of the string, and empty values could hit the same
+     * code path after a caller supplied NULL. */
+    ret = GetPrivateProfileStringW(L"windows", L"absent", L"",
+                                   wide, ARRAY_SIZE(wide), filenameW);
+    ok(!ret && !wide[0], "empty WCHAR default returned %lu\n", ret);
+    ret = GetPrivateProfileStringW(L"windows", L"absent", L"   ",
+                                   wide, ARRAY_SIZE(wide), filenameW);
+    ok(!ret && !wide[0], "all-space WCHAR default returned %lu\n", ret);
+    ret = GetPrivateProfileStringA("windows", "absent", "   ",
+                                   ansi, sizeof(ansi), filename);
+    ok(!ret && !ansi[0], "all-space ANSI default returned %lu\n", ret);
+    ret = GetPrivateProfileStringW(L"windows", L"absent", L"ABC  ",
+                                   wide, ARRAY_SIZE(wide), filenameW);
+    ok(ret == 3 && !lstrcmpW(wide, L"ABC"),
+       "trailing spaces not trimmed: %lu, %s\n", ret, wine_dbgstr_w(wide));
+
+    /* The whole [windows] section retains quotes around command paths;
+     * GetProfileString alone strips matched outer quotes. */
+    {
+        char entries[128];
+        const char *item;
+        BOOL have_load = FALSE, have_run = FALSE;
+
+        ret = GetPrivateProfileSectionA("windows", entries, sizeof(entries), filename);
+        for (item = entries; item < entries + ret && *item; item += strlen(item) + 1)
+        {
+            if (!strcmp(item, "load=\\\"ABC\\\"")) have_load = TRUE;
+            if (!strcmp(item, "run=\\\"\\\"")) have_run = TRUE;
+        }
+        ok(ret && have_load && have_run,
+           "raw [windows] section lost startup quotes (len %lu, load %d, run %d)\n",
+           ret, have_load, have_run);
+    }
+
     DeleteFileA(filename);
 }
 
