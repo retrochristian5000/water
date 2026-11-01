@@ -67,6 +67,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 
 #include "ntstatus.h"
 #include "windef.h"
@@ -127,9 +128,12 @@ static BOOL is_valid_dib_format( const BITMAPINFOHEADER *info, BOOL allow_compre
 
     if (allow_compression && (info->biCompression == BI_RLE4 || info->biCompression == BI_RLE8))
     {
-        if (info->biHeight < 0) return FALSE;
-        if (!info->biSizeImage) return FALSE;
-        return info->biBitCount == (info->biCompression == BI_RLE4 ? 4 : 8);
+        if (info->biHeight < 0 || info->biPlanes != 1 || info->biSizeImage < 2) return FALSE;
+        if (info->biBitCount != (info->biCompression == BI_RLE4 ? 4 : 8)) return FALSE;
+        /* RLE is expanded to an uncompressed DIB. Check that allocation and
+         * scanline arithmetic fit in an int before calculating either one. */
+        if (info->biWidth > (INT_MAX - 31) / info->biBitCount) return FALSE;
+        return info->biHeight <= INT_MAX / get_dib_stride( info->biWidth, info->biBitCount );
     }
 
     if (!info->biPlanes) return FALSE;
@@ -329,18 +333,39 @@ static void *get_pixel_ptr( const BITMAPINFO *info, void *bits, int x, int y )
         return (char *)bits + y * get_dib_stride( width, bpp ) + x * bpp / 8;
 }
 
+/* Source RLE4 pixels always start with the high nibble, independently of
+ * the destination x coordinate. Preserve the unused nibble of each byte:
+ * otherwise odd-width logo rows can acquire an extra palette index. */
+static void write_rle4_run( BYTE *dst, int x, const BYTE *src, int count, BOOL absolute )
+{
+    int i;
+
+    for (i = 0; i < count; i++)
+    {
+        BYTE pixel = (src[absolute ? i / 2 : 0] >> ((i & 1) ? 0 : 4)) & 0x0f;
+        BYTE *out = dst + (x + i) / 2 - x / 2;
+
+        if ((x + i) & 1) *out = (*out & 0xf0) | pixel;
+        else *out = (*out & 0x0f) | (pixel << 4);
+    }
+}
+
 static BOOL build_rle_bitmap( BITMAPINFO *info, struct gdi_image_bits *bits, HRGN *clip )
 {
+    const DWORD size = info->bmiHeader.biSizeImage;
+    const int bpp = info->bmiHeader.biBitCount;
     DWORD i = 0;
+    unsigned int skip;
     int left, right;
     int x, y, width = info->bmiHeader.biWidth, height = info->bmiHeader.biHeight;
     HRGN run = NULL;
-    BYTE skip, num, data;
+    BYTE num, data;
     BYTE *out_bits, *in_bits = bits->ptr;
 
     if (clip) *clip = NULL;
 
-    assert( info->bmiHeader.biBitCount == 4 || info->bmiHeader.biBitCount == 8 );
+    assert( bpp == 4 || bpp == 8 );
+    if (!in_bits || size < 2) return FALSE;
 
     out_bits = calloc( 1, get_dib_image_size( info ) );
     if (!out_bits) goto fail;
@@ -355,7 +380,7 @@ static BOOL build_rle_bitmap( BITMAPINFO *info, struct gdi_image_bits *bits, HRG
     x = left = right = 0;
     y = height - 1;
 
-    while (i < info->bmiHeader.biSizeImage - 1)
+    while (size - i >= 2)
     {
         num = in_bits[i];
         data = in_bits[i + 1];
@@ -366,94 +391,66 @@ static BOOL build_rle_bitmap( BITMAPINFO *info, struct gdi_image_bits *bits, HRG
             if (x + num > width) num = width - x;
             if (num)
             {
-                BYTE s = data, *out_ptr = get_pixel_ptr( info, out_bits, x, y );
-                if (info->bmiHeader.biBitCount == 8)
-                    memset( out_ptr, s, num );
-                else
-                {
-                    if(x & 1)
-                    {
-                        s = ((s >> 4) & 0x0f) | ((s << 4) & 0xf0);
-                        *out_ptr = (*out_ptr & 0xf0) | (s & 0x0f);
-                        out_ptr++;
-                        x++;
-                        num--;
-                    }
-                    /* this will write one too many if num is odd, but that doesn't matter */
-                    if (num) memset( out_ptr, s, (num + 1) / 2 );
-                }
+                BYTE *out_ptr = get_pixel_ptr( info, out_bits, x, y );
+                if (bpp == 8) memset( out_ptr, data, num );
+                else write_rle4_run( out_ptr, x, &data, num, FALSE );
             }
             x += num;
             right = x;
         }
-        else
+        else if (data < 3)
         {
-            if (data < 3)
+            if (left != right && clip)
             {
-                if(left != right && clip)
-                {
-                    NtGdiSetRectRgn( run, left, y, right, y + 1 );
-                    NtGdiCombineRgn( *clip, run, *clip, RGN_OR );
-                }
-                switch (data)
-                {
-                case 0: /* eol */
-                    left = right = x = 0;
-                    y--;
-                    if(y < 0) goto done;
-                    break;
-
-                case 1: /* eod */
-                    goto done;
-
-                case 2: /* delta */
-                    if (i >= info->bmiHeader.biSizeImage - 1) goto done;
-                    x += in_bits[i];
-                    if (x > width) x = width;
-                    left = right = x;
-                    y -= in_bits[i + 1];
-                    if(y < 0) goto done;
-                    i += 2;
-                }
+                NtGdiSetRectRgn( run, left, y, right, y + 1 );
+                NtGdiCombineRgn( *clip, run, *clip, RGN_OR );
             }
-            else /* data bytes of data */
+            switch (data)
             {
-                num = data;
-                skip = (num * info->bmiHeader.biBitCount + 7) / 8;
-                if (skip > info->bmiHeader.biSizeImage - i) goto done;
-                skip = (skip + 1) & ~1;
-                if (x + num > width) num = width - x;
-                if (num)
-                {
-                    BYTE *out_ptr = get_pixel_ptr( info, out_bits, x, y );
-                    if (info->bmiHeader.biBitCount == 8)
-                        memcpy( out_ptr, in_bits + i, num );
-                    else
-                    {
-                        if(x & 1)
-                        {
-                            const BYTE *in_ptr = in_bits + i;
-                            for ( ; num; num--, x++)
-                            {
-                                if (x & 1)
-                                {
-                                    *out_ptr = (*out_ptr & 0xf0) | ((*in_ptr >> 4) & 0x0f);
-                                    out_ptr++;
-                                }
-                                else
-                                    *out_ptr = (*in_ptr++ << 4) & 0xf0;
-                            }
-                        }
-                        else
-                            memcpy( out_ptr, in_bits + i, (num + 1) / 2);
-                    }
-                }
-                x += num;
-                right = x;
-                i += skip;
+            case 0: /* end of line */
+                left = right = x = 0;
+                if (--y < 0) goto done;
+                break;
+
+            case 1: /* end of bitmap */
+                goto done;
+
+            case 2: /* delta */
+                if (size - i < 2) goto fail;
+                if (in_bits[i] > width - x || in_bits[i + 1] > y) goto fail;
+                x += in_bits[i];
+                left = right = x;
+                y -= in_bits[i + 1];
+                i += 2;
+                break;
             }
         }
+        else
+        {
+            /* Absolute packet: the encoded payload is word-aligned.
+             * A 255-byte RLE8 packet needs 256 bytes including padding,
+             * so the length must not be stored in a BYTE. */
+            unsigned int count = data;
+            skip = (count * bpp + 7) / 8;
+            skip = (skip + 1) & ~1u;
+            if (skip > size - i) goto fail;
+
+            num = count;
+            if (x + num > width) num = width - x;
+            if (num)
+            {
+                BYTE *out_ptr = get_pixel_ptr( info, out_bits, x, y );
+                if (bpp == 8) memcpy( out_ptr, in_bits + i, num );
+                else write_rle4_run( out_ptr, x, in_bits + i, num, TRUE );
+            }
+            x += num;
+            right = x;
+            i += skip;
+        }
     }
+
+    /* Never claim that an incomplete compressed image was decoded. */
+    goto fail;
 
 done:
     if (run) NtGdiDeleteObjectApp( run );
@@ -463,7 +460,6 @@ done:
     bits->is_copy = TRUE;
     bits->free    = free_heap_bits;
     info->bmiHeader.biSizeImage = get_dib_image_size( info );
-
     return TRUE;
 
 fail:
@@ -472,7 +468,6 @@ fail:
     free( out_bits );
     return FALSE;
 }
-
 
 
 INT nulldrv_StretchDIBits( PHYSDEV dev, INT xDst, INT yDst, INT widthDst, INT heightDst,
