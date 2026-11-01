@@ -935,7 +935,7 @@ static void output_fake_module16_data( DLLSPEC *spec, int raw_win16 )
     /* resident names table */
     put_byte( namelen );
     for (i = 0; i < namelen; i++) put_byte( toupper(spec->dll_name[i]) );
-    put_byte( 0 ); /* module-name ordinal */
+    put_word( 0 ); /* 16-bit module-name ordinal */
     put_byte( 0 ); /* resident-name table terminator */
     align_output( 2 );
 
