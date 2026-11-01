@@ -1498,8 +1498,19 @@ static void test_wmp_progid(void)
 {
     static const WCHAR *const names[] = {L"WMPlayer.OCX.7", L"WMPlayer.OCX"};
     CLSID clsid;
+    HKEY key;
     HRESULT hr;
     unsigned int i;
+
+    /* Win98 FE/IE4 and other clean guests may not include WMP 7+. */
+    if (RegOpenKeyExW(HKEY_CLASSES_ROOT,
+            L"CLSID\\{6BF52A52-394A-11D3-B153-00C04F79FAA6}",
+            0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
+    {
+        win_skip("WMP 7+ ActiveX control is not installed.\n");
+        return;
+    }
+    RegCloseKey(key);
 
     for (i = 0; i < ARRAY_SIZE(names); i++)
     {
