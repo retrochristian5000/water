@@ -106,6 +106,71 @@ even runs. When an alternate shell owns startup, the installer-added
 AOLISDN or OEMcFos WIN.INI entries below may be ignored despite being
 present in the file (Microsoft Q85476).
 
+## Desktop wallpaper: Windows 3.x versus later picture positioning
+
+The Windows 3.1 Resource Kit and Microsoft KB Q83433 place these
+settings under `WIN.INI [desktop]`:
+
+- `Wallpaper=<bitmap-filename>`: original BMP filename (including a
+  path if the image is outside the Windows or system directory).
+- `TileWallpaper=0`: center at original size, clipping oversized
+  images symmetrically rather than forcing them into the top-left.
+- `TileWallpaper=1`: repeat at native size across the desktop.
+- `Pattern=`: independent 8x8 background pattern, still visible
+  around a centered image smaller than the desktop.
+
+**Do not attribute Fill or Fit to Windows 3.1.** They are Windows 7+
+picture-positioning modes. The later desktop registry uses
+`HKCU\\Control Panel\\Desktop` REG_SZ `TileWallpaper` and
+`WallpaperStyle` (center/tile: `0`; stretch: `2`; fit: `6`;
+fill-and-crop: `10`). Fill preserves the aspect ratio by cropping,
+whereas Stretch distorts to the destination rectangle.
+
+WATER now has a shared renderer in `dlls/user32/desktop.c`:
+
+- For an **explicit** DOS-Windows 3.x `water_win16_profile` (pre-9x,
+  major 3), read the wallpaper *filename* and tile/center policy from
+  WIN.INI and do not inherit the later registry picture/modes.
+- For other host personalities, use the legacy tile setting as a
+  fallback, then override from valid modern registry settings when
+  present. Reject invalid/non-string registry values.
+- The display path now renders Tile, Center, Stretch, Fit and Fill
+  with 64-bit geometry intermediates for aspect-ratio calculations.
+  It leaves the background pattern visible around center/fit, clips
+  oversized centered images, and crops centered source regions for
+  Fill rather than treating Fill as Stretch.
+
+These changes are **rendering and configuration routing only**.
+A Win3.x desktop process must actually receive the selected guest
+profile; WATER does not yet boot genuine Windows 3.1 DOS/Win16
+shell and driver stages. The modern `desk.cpl` display-settings
+page is not evidence of an authentic Windows 3.1 Control Panel
+Desktop applet or of a working wallpaper-position selection UI.
+
+**Format boundaries:** normal wallpaper loading uses
+`LoadImageW(... IMAGE_BITMAP ... LR_LOADFROMFILE)` with an OLE
+picture fallback for other pictures. `BI_RLE4` / `BI_RLE8`
+compressed BMPs are different from the uncompressed Win95/98
+`LOGO.SYS` boot-logo BMP, and different again from VfW MSRLE32
+video packets. Bitmap loading remains unverified for all indexed
+RLE variants and early Win3.x original media.
+
+A standalone C99 geometry harness reproduced the layout helper and
+checked 11 deterministic center/stretch/fit/fill cases under
+ASan/UBSan, including oversized, letterboxed, source-cropped and
+offset-origin rectangles. **This was not a compiled WATER user32
+module or guest wallpaper runtime test**. Full registry/INI
+integration, actual 4/8-bit BMP palette behavior, display DPI,
+and multi-monitor rendering remain unverified.
+
+Sources:
+- Microsoft KB Q83433 (Windows 3.1 Resource Kit WIN.INI desktop):
+  https://www.infania.net/misc/kbarchive/kb/083/Q83433/index.html
+- Microsoft theme-file wallpaper mappings (Win7+ Fit/Fill):
+  https://learn.microsoft.com/en-us/windows/win32/controls/themesfileformat-overview
+- Separate Windows wallpaper position API:
+  https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-desktop_wallpaper_position
+
 ## AOL / America Online installation evidence — scoped
 
 AOL-related software really did change WIN.INI on **some** systems,
