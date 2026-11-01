@@ -255,112 +255,123 @@ static HLOCAL GRPFILE_ScanGroup(LPCSTR buffer, INT size,
  */
 
 static HLOCAL GRPFILE_ScanProgram(LPCSTR buffer, INT size,
-				  LPCSTR program_ptr, INT seqnum,
-				  LPCSTR extension, HLOCAL hGroup,
-				  LPCSTR lpszGrpFile)
+                                  LPCSTR program_ptr, INT seqnum,
+                                  LPCSTR extension, HLOCAL hGroup,
+                                  LPCSTR lpszGrpFile)
 {
-  INT    icontype;
-  HICON  hIcon;
+  INT icontype;
+  HICON hIcon;
+  HLOCAL hProgram;
   LPCSTR lpszName, lpszCmdLine, lpszIconFile, lpszWorkDir;
-  LPCSTR iconinfo_ptr, iconANDbits_ptr, iconXORbits_ptr;
-  INT    x, y, nIconIndex, iconANDsize, iconXORsize;
-  INT    nHotKey, nCmdShow;
+  LPCSTR iconinfo_ptr;
+  INT x, y, nIconIndex, iconANDsize, iconXORsize;
+  INT iconinfo_offset, iconAND_offset, iconXOR_offset;
+  INT name_offset, cmd_offset, file_offset;
+  INT nHotKey, nCmdShow;
   UINT width, height, planes, bpp;
 
-  x               = GET_SHORT(program_ptr, 0);
-  y               = GET_SHORT(program_ptr, 2);
-  nIconIndex      = GET_USHORT(program_ptr, 4);
+  x          = GET_SHORT(program_ptr, 0);
+  y          = GET_SHORT(program_ptr, 2);
+  nIconIndex = GET_USHORT(program_ptr, 4);
+  icontype   = GET_USHORT(program_ptr, 6);
 
-  /* FIXME is this correct ?? */
-  icontype = GET_USHORT(program_ptr,  6);
+  iconinfo_offset = GET_USHORT(program_ptr, 12);
+  if (iconinfo_offset > size - 12) return(0);
+  iconinfo_ptr = buffer + iconinfo_offset;
+
   switch (icontype)
     {
     default:
       MAIN_MessageBoxIDS_s(IDS_UNKNOWN_FEATURE_s, lpszGrpFile,
-			   IDS_WARNING, MB_OK);
+                           IDS_WARNING, MB_OK);
+      /* Legacy unknown types used the 0x048c offset order. */
     case 0x048c:
-      iconXORsize     = GET_USHORT(program_ptr,  8);
-      iconANDsize     = GET_USHORT(program_ptr, 10) / 8;
-      iconinfo_ptr    = buffer + GET_USHORT(program_ptr, 12);
-      iconXORbits_ptr = buffer + GET_USHORT(program_ptr, 14);
-      iconANDbits_ptr = buffer + GET_USHORT(program_ptr, 16);
-      width           = GET_USHORT(iconinfo_ptr, 4);
-      height          = GET_USHORT(iconinfo_ptr, 6);
-      planes          = GET_USHORT(iconinfo_ptr, 10);
-      bpp             = GET_USHORT(iconinfo_ptr, 11);
+      iconXORsize   = GET_USHORT(program_ptr,  8);
+      iconANDsize   = GET_USHORT(program_ptr, 10) / 8;
+      iconXOR_offset = GET_USHORT(program_ptr, 14);
+      iconAND_offset = GET_USHORT(program_ptr, 16);
       break;
     case 0x000c:
-      iconANDsize     = GET_USHORT(program_ptr,  8);
-      iconXORsize     = GET_USHORT(program_ptr, 10);
-      iconinfo_ptr    = buffer + GET_USHORT(program_ptr, 12);
-      iconANDbits_ptr = buffer + GET_USHORT(program_ptr, 14);
-      iconXORbits_ptr = buffer + GET_USHORT(program_ptr, 16);
-      width           = GET_USHORT(iconinfo_ptr, 4);
-      height          = GET_USHORT(iconinfo_ptr, 6);
-      planes          = GET_USHORT(iconinfo_ptr, 10);
-      bpp             = GET_USHORT(iconinfo_ptr, 11);
+      iconANDsize   = GET_USHORT(program_ptr,  8);
+      iconXORsize   = GET_USHORT(program_ptr, 10);
+      iconAND_offset = GET_USHORT(program_ptr, 14);
+      iconXOR_offset = GET_USHORT(program_ptr, 16);
+      break;
     }
+  width  = GET_USHORT(iconinfo_ptr, 4);
+  height = GET_USHORT(iconinfo_ptr, 6);
+  planes = (BYTE)iconinfo_ptr[10];
+  bpp    = (BYTE)iconinfo_ptr[11];
+  if (!width || !height || !planes || !bpp ||
+      iconAND_offset > size || iconANDsize > size - iconAND_offset ||
+      iconXOR_offset > size || iconXORsize > size - iconXOR_offset)
+    return(0);
 
-  if (iconANDbits_ptr + iconANDsize > buffer + size ||
-      iconXORbits_ptr + iconXORsize > buffer + size) return(0);
+  name_offset = GET_USHORT(program_ptr, 18);
+  cmd_offset  = GET_USHORT(program_ptr, 20);
+  file_offset = GET_USHORT(program_ptr, 22);
+  if (name_offset >= size || cmd_offset >= size || file_offset >= size ||
+      !memchr(buffer + name_offset, 0, size - name_offset) ||
+      !memchr(buffer + cmd_offset, 0, size - cmd_offset) ||
+      !memchr(buffer + file_offset, 0, size - file_offset))
+    return(0);
+  lpszName     = buffer + name_offset;
+  lpszCmdLine  = buffer + cmd_offset;
+  lpszIconFile = buffer + file_offset;
 
-  hIcon = CreateIcon( Globals.hInstance, width, height, planes, bpp, iconANDbits_ptr, iconXORbits_ptr );
-
-  lpszName        = buffer + GET_USHORT(program_ptr, 18);
-  lpszCmdLine     = buffer + GET_USHORT(program_ptr, 20);
-  lpszIconFile    = buffer + GET_USHORT(program_ptr, 22);
-  if (iconinfo_ptr + 6 > buffer + size ||
-      lpszName         > buffer + size ||
-      lpszCmdLine      > buffer + size ||
-      lpszIconFile     > buffer + size) return(0);
-
-  /* Scan Extensions */
+  /* Scan extensions only inside their declared on-disk record bounds. */
   lpszWorkDir = "";
   nHotKey     = 0;
   nCmdShow    = SW_SHOWNORMAL;
   if (extension)
     {
-      LPCSTR ptr = extension;
-      while (ptr + 6 <= buffer + size)
-	{
-	  UINT type   = GET_USHORT(ptr, 0);
-	  UINT number = GET_USHORT(ptr, 2);
-	  UINT skip   = GET_USHORT(ptr, 4);
+      LPCSTR ptr = extension, end = buffer + size;
+      while (end - ptr >= 6)
+        {
+          UINT type = GET_USHORT(ptr, 0);
+          UINT number = GET_USHORT(ptr, 2);
+          UINT skip = GET_USHORT(ptr, 4);
 
-	  if (number == seqnum)
-	    {
-	      switch (type)
-		{
-		case 0x8000:
-		  if (ptr + 10 > buffer + size) return(0);
-		  if (ptr[6] != 'P' || ptr[7] != 'M' ||
-		      ptr[8] != 'C' || ptr[9] != 'C') return(0);
-		  break;
-		case 0x8101:
-		  lpszWorkDir = ptr + 6;
-		  break;
-		case 0x8102:
-		  if (ptr + 8 > buffer + size) return(0);
-		  nHotKey = GET_USHORT(ptr, 6);
-		  break;
-		case 0x8103:
-		  if (ptr + 8 > buffer + size) return(0);
-		  nCmdShow = GET_USHORT(ptr, 6);
-		  break;
-		default:
-		  MAIN_MessageBoxIDS_s(IDS_UNKNOWN_FEATURE_s,
-				       lpszGrpFile, IDS_WARNING, MB_OK);
-		}
-	    }
-	  if (!skip) break;
-	  ptr += skip;
-	}
+          if (!skip) break;
+          if (skip < 6 || skip > end - ptr) return(0);
+          if (number == seqnum)
+            {
+              switch (type)
+                {
+                case 0x8000:
+                  if (skip < 10 || ptr[6] != 'P' || ptr[7] != 'M' ||
+                      ptr[8] != 'C' || ptr[9] != 'C') return(0);
+                  break;
+                case 0x8101:
+                  if (skip < 7 || !memchr(ptr + 6, 0, skip - 6)) return(0);
+                  lpszWorkDir = ptr + 6;
+                  break;
+                case 0x8102:
+                  if (skip < 8) return(0);
+                  nHotKey = GET_USHORT(ptr, 6);
+                  break;
+                case 0x8103:
+                  if (skip < 8) return(0);
+                  nCmdShow = GET_USHORT(ptr, 6);
+                  break;
+                default:
+                  MAIN_MessageBoxIDS_s(IDS_UNKNOWN_FEATURE_s,
+                                       lpszGrpFile, IDS_WARNING, MB_OK);
+                }
+            }
+          ptr += skip;
+        }
     }
 
-  return (PROGRAM_AddProgram(hGroup, hIcon, lpszName, x, y,
-			     lpszCmdLine, lpszIconFile,
-			     nIconIndex, lpszWorkDir,
-			     nHotKey, nCmdShow));
+  hIcon = CreateIcon(Globals.hInstance, width, height, planes, bpp,
+                     buffer + iconAND_offset, buffer + iconXOR_offset);
+  if (!hIcon) return(0);
+  hProgram = PROGRAM_AddProgram(hGroup, hIcon, lpszName, x, y,
+                                lpszCmdLine, lpszIconFile,
+                                nIconIndex, lpszWorkDir,
+                                nHotKey, nCmdShow);
+  if (!hProgram) DestroyIcon(hIcon);
+  return hProgram;
 }
 
 /***********************************************************************
