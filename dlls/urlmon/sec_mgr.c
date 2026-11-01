@@ -112,7 +112,7 @@ static HRESULT get_zone_from_reg(LPCWSTR schema, DWORD *zone)
 {
     static const WCHAR key_name[] =
         L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProtocolDefaults";
-    static const HKEY roots[] = {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    const HKEY roots[] = {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     DWORD value, type, size;
     HKEY key;
     unsigned int i;
