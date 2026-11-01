@@ -94,6 +94,82 @@ those cases. This does not prove a real Windows 98 DOS session launches:
 NTVDM's internal DOS EXE loader and several PIF runtime settings remain
 incomplete, and the current execution path can fall back to DOSBox.
 
+## Windows 95/98 Shut Down -> Restart in MS-DOS mode (November 1, 2026)
+
+**Historical fact:** Windows 95 and 98 include a shutdown-dialog choice
+"Restart the computer in MS-DOS mode". Windows Me removed this built-in
+menu option. It is **not** the same as reboot, logoff, a DOS shell
+window in an enhanced-mode VM, or executing a PIF through NTVDM.
+
+Microsoft KB Q138996 describes at least two cases:
+
+1. **Use current MS-DOS configuration:** Windows terminates graphical
+   programs and returns to a real-mode `COMMAND.COM` command prompt.
+   The Windows-directory `DOSSTART.BAT` is processed if present.
+   An `EXIT` command can return control to the graphical Windows
+   environment. A real-mode TSR loaded by DOSSTART.BAT can require
+   a reboot on exit (Q148795).
+2. **Specify a new MS-DOS configuration:** `Exit to DOS.pif` controls
+   temporary CONFIG.SYS/AUTOEXEC.BAT, may require a **real reboot**,
+   and has a recovery protocol. Q138996 documents
+   `CONFIG.WOS`/`AUTOEXEC.WOS` preserving the original startup files,
+   temporary program launch, `WIN.COM /WX`, and
+   `CONFIG.APP`/`AUTOEXEC.APP` recovery. Never overwrite the
+   guest's originals without a transactional backup/rollback.
+
+Q130329 additionally confirms that `Exit to DOS.pif` must reference
+the matching Windows-directory COMMAND.COM and that a mismatch can
+cause an "Invalid COMMAND.COM" failure. Therefore merely finding a
+PIF or calling `CreateProcess` is **not** sufficient evidence that
+an exit-to-DOS action is safe.
+
+### WATER ownership and implemented guard
+
+- `programs/explorer/startmenu.c` contains the virtual desktop's
+  shutdown UI. It now distinguishes Win9x 4.00/4.10 (explicitly
+  selected by WATER's existing guest-profile variables) from
+  Windows Me 4.90, NT, and no-selection cases.
+- Existing `programs/explorer/explorer.rc` provides a 95/98-style
+  modal selector: Shut down, Restart, and Restart in MS-DOS mode.
+  The first two use `EWX_SHUTDOWN` and `EWX_REBOOT` through
+  WATER/Wine's virtual session lifecycle, **not host power control**.
+  DOS mode is visible but disabled and explicitly labeled as
+  unavailable; cancel performs no operation.
+- `dlls/user.exe16/user.c` USER.246 `ExitWindowsExec16`
+  previously called `ExitWindowsEx(EWX_LOGOFF)` and reported success
+  without running the requested DOS command. It now fails closed with
+  `ERROR_CALL_NOT_IMPLEMENTED` and no shutdown side effects.
+- The ordinary Win16 `ExitWindows16` restart flags, the NT-flavored
+  Win32 `ExitWindowsEx` handler and the existing PIF/NTVDM parser
+  are **not** proof of a functional real-mode handoff.
+
+**Not yet implemented:** 9x VMM returning to real mode; retaining
+the correct DOS command-interpreter state; detecting current versus
+custom `Exit to DOS.pif` configuration and COMMAND.COM ABI; honoring
+DOSSTART.BAT; reversible CONFIG/AUTOEXEC staging; Win.com restart
+handshake; clean exit back to GUI, crash recovery, and a dedicated
+guest-only mode transition with no access to host disks.
+
+Until these stages can be tested in a real 95/98 guest boot, do
+not enable the DOS menu action, quietly remap it to `EWX_REBOOT`,
+or borrow Windows Me/NT behavior as an approximation. Distinguish
+the 9x *hardware reboot* from a historical *return to DOS*.
+
+Sources:
+- Microsoft KB Q138996 — complete DOS-mode and custom PIF sequence:
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/138996
+- Microsoft KB Q141308 — DOSSTART.BAT:
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/141308
+- Microsoft KB Q148795 — DOSSTART real-mode driver restart:
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/148795
+- Microsoft KB Q130329 — Invalid COMMAND.COM:
+  https://helparchive.huntertur.net/document/42775
+- Sony support — Win95/98 option absent in Windows Me:
+  https://www.sony-asia.com/electronics/support/articles/S500022744
+- Raymond Chen, January 19, 2026 — Win95 warm restart and
+  `EW_RESTARTWINDOWS` handshake (distinct from DOS mode):
+  https://devblogs.microsoft.com/oldnewthing/20260119-00/?p=111995
+
 ## Outstanding separate components and gates
 
 - `PIFMGR.DLL` (FE module itself): PE exports, icon group IDs,
