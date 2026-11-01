@@ -30,6 +30,7 @@
 #include "mshtml.h"
 #include "initguid.h"
 #include "ieautomation.h"
+#include "shlwapi.h"
 
 #define DEFINE_EXPECT(func) \
     static BOOL expect_ ## func = FALSE, called_ ## func = FALSE
@@ -447,8 +448,55 @@ static void test_InternetExplorerManager(void)
     ok(!ref, "object not destroyed, ref=%lu\n", ref);
 }
 
+
+static void test_ieframe_version_export(void)
+{
+    HRESULT (WINAPI *get_version)(DLLVERSIONINFO *);
+    DLLVERSIONINFO version = {0};
+    DLLVERSIONINFO2 version2 = {0};
+    HMODULE module;
+    HRESULT hr;
+
+    module = LoadLibraryW(L"ieframe.dll");
+    if (!module)
+    {
+        win_skip("IEFRAME is not installed on this Windows personality.\\n");
+        return;
+    }
+
+    get_version = (void *)GetProcAddress(module, "DllGetVersion");
+    ok(get_version != NULL, "IEFRAME is missing DllGetVersion.\\n");
+    if (get_version)
+    {
+        version.cbSize = sizeof(version);
+        hr = get_version(&version);
+        ok(hr == S_OK, "DllGetVersion returned %#lx.\\n", hr);
+        if (SUCCEEDED(hr))
+        {
+            ok(version.dwMajorVersion >= 7, "Unexpected IEFRAME major version %lu.\\n",
+                    version.dwMajorVersion);
+            ok(version.dwPlatformID == DLLVER_PLATFORM_NT, "Unexpected platform %#lx.\\n",
+                    version.dwPlatformID);
+        }
+
+        version2.info1.cbSize = sizeof(version2);
+        hr = get_version(&version2.info1);
+        ok(hr == S_OK || broken(hr == E_INVALIDARG),
+                "DllGetVersion(DLLVERSIONINFO2) returned %#lx.\\n", hr);
+        if (hr == S_OK)
+        {
+            ok(version2.info1.dwMajorVersion == version.dwMajorVersion,
+                    "Version formats disagree: %lu versus %lu.\\n",
+                    version2.info1.dwMajorVersion, version.dwMajorVersion);
+        }
+    }
+
+    FreeLibrary(module);
+}
+
 START_TEST(ie)
 {
+    test_ieframe_version_export();
     CoInitialize(NULL);
 
     test_InternetExplorerManager();

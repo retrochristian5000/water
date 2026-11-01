@@ -441,3 +441,59 @@ https://www.rfc-editor.org/rfc/rfc2361
 single-line by-name driver ID repair reviewed at source level only.
 No Windows-guest Voxware binary, decoder, player stream, build or
 runtime regression has been validated in this audit.
+
+## IEFRAME export parity audit (November 1, 2026)
+
+**Version boundary:** IEFRAME.DLL was introduced with **Internet Explorer 7**
+(2006) and bundled with **Windows Vista**. IE7/IE8 installations on older
+Windows NT systems can supply IEFRAME as an *IE upgrade*, not as a
+component of the untouched Windows base. IE6 and earlier rely on older
+SHDOCVW/BROWSEUI ownership. Never set IEFRAME present merely from the
+OS personality name.
+
+Historical export evidence:
+- Geoff Chappell, IEFRAME history, native 7.0 versus 8.0 distributions:
+  https://geoffchappell.com/studies/windows/ie/ieframe/history/index.htm
+- IEFRAME 7.0 named exports and ordinal-only exports:
+  https://geoffchappell.com/studies/windows/ie/ieframe/history/names700.htm
+  https://geoffchappell.com/studies/windows/ie/ieframe/history/ords700.htm
+- IEFRAME 8.0 additional named exports:
+  https://geoffchappell.com/studies/windows/ie/ieframe/history/names800.htm
+- Microsoft's DllGetVersion and DLLVERSIONINFO contract:
+  https://learn.microsoft.com/en-us/windows/win32/shell/versions
+  https://learn.microsoft.com/en-us/windows/win32/api/shlwapi/ns-shlwapi-dllversioninfo
+
+### Source comparison and current boundaries
+
+At the start of this audit, `dlls/ieframe/ieframe.spec` exposed
+**9 entries**: `IEWinMain` (ordinal 101), plus eight named exports.
+The real IEFRAME 7.0/8.0 DLLs provide many more; compare actual
+export tables **by target version, bitness, ordinal and name** before
+adding anything. Avoid claiming a Windows 7 IE8 export was shipped
+with unmodified XP IE6 or Windows 98.
+
+| Native export / function | Earliest relevant IEFRAME | Water disposition |
+| --- | --- | --- |
+| `DllGetVersion` | IE7 | **Implemented in this patch**, using module version resources; `DLLVERSIONINFO` and `DLLVERSIONINFO2` |
+| `DllInstall` | IE7 | Missing in IEFRAME export table; SHDOCVW's own `DllInstall` is only a success-returning stub |
+| `DoFileDownload`, `DoAddToFavDlg`, `DoOrganizeFavDlgW` | IE7; earlier SHDOCVW | Missing from IEFRAME; inspect existing SHDOCVW implementations and native forwarding policy |
+| `IEParseDisplayNameWithBCW`, ordinal 218 | IE7; earlier SHDOCVW | Missing from IEFRAME; SHDOCVW ordinal 218 presently returns `E_FAIL`; this is the separate FTP/URL Shell PIDL blocker |
+| `IEIsProtectedModeProcess`, `IEIsProtectedModeURL` | IE7 | Missing; security / integrity-level behavior must not be faked |
+| `IEGetWriteableHKCU` | IE7 | Exported but returns `E_NOTIMPL`; no raw-HKCU shortcut may bypass Protected Mode |
+| `IERefreshElevationPolicy` | IE7 on Vista SP1+ | Exported; version-restricted behavior to verify |
+| `IECreateFile`, `IEDeleteFile`, `IEFindFirstFile` | IE8 | Missing; use Protected Mode-aware semantics, not plain filesystem pass-through |
+
+A version-resource correction also defines `VER_FILEVERSION` alongside
+WATER's existing IE8 `VER_PRODUCTVERSION`. `DllGetVersion` reports
+its own module file version (not `GetVersionEx`, host OS version, or a
+guessed IE update level), returning `E_POINTER` / `E_INVALIDARG`
+for invalid output/size. The export test in
+`dlls/ieframe/tests/ie.c` loads the actual module and checks the
+named export and both version-info structures, skipping clean
+personalities without IEFRAME.
+
+**Verification limit:** source audit and committed test only. The
+runtime ABI/export list must still be compared against genuine IE7 and
+IE8 32-bit and 64-bit binaries; compiled build, test run and actual
+Internet Explorer application behavior were not validated here.
+Export coverage must not be inflated by fake success stubs.

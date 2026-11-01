@@ -23,6 +23,8 @@
 #include "shlguid.h"
 #include "isguids.h"
 #include "ieautomation.h"
+#include "shlwapi.h"
+#include "winver.h"
 
 #include "wine/debug.h"
 
@@ -257,6 +259,60 @@ HRESULT WINAPI DllCanUnloadNow(void)
 {
     TRACE("()\n");
     return module_ref ? S_FALSE : S_OK;
+}
+
+
+/***********************************************************************
+ *              DllGetVersion (ieframe.@)
+ *
+ * Read IEFRAME's own file version rather than inferring it from the OS.
+ */
+HRESULT WINAPI DllGetVersion(DLLVERSIONINFO *info)
+{
+    WCHAR path[MAX_PATH];
+    DWORD path_len, version_len, dummy = 0;
+    VS_FIXEDFILEINFO *fixed;
+    UINT fixed_len;
+    void *data;
+    HRESULT hr = E_FAIL;
+
+    if (!info)
+        return E_POINTER;
+    if (info->cbSize != sizeof(*info) && info->cbSize != sizeof(DLLVERSIONINFO2))
+        return E_INVALIDARG;
+
+    path_len = GetModuleFileNameW(ieframe_instance, path, ARRAY_SIZE(path));
+    if (!path_len || path_len >= ARRAY_SIZE(path))
+        return E_FAIL;
+
+    version_len = GetFileVersionInfoSizeW(path, &dummy);
+    if (!version_len)
+        return E_FAIL;
+    if (!(data = malloc(version_len)))
+        return E_OUTOFMEMORY;
+
+    if (GetFileVersionInfoW(path, 0, version_len, data)
+            && VerQueryValueW(data, L"\\", (void **)&fixed, &fixed_len)
+            && fixed_len >= sizeof(*fixed) && fixed->dwSignature == 0xfeef04bd)
+    {
+        info->dwMajorVersion = HIWORD(fixed->dwFileVersionMS);
+        info->dwMinorVersion = LOWORD(fixed->dwFileVersionMS);
+        info->dwBuildNumber = HIWORD(fixed->dwFileVersionLS);
+        info->dwPlatformID = DLLVER_PLATFORM_NT;
+
+        if (info->cbSize == sizeof(DLLVERSIONINFO2))
+        {
+            DLLVERSIONINFO2 *info2 = (DLLVERSIONINFO2 *)info;
+
+            info2->dwFlags = 0;
+            info2->ullVersion = MAKEDLLVERULL(info->dwMajorVersion, info->dwMinorVersion,
+                    info->dwBuildNumber, LOWORD(fixed->dwFileVersionLS));
+        }
+        hr = S_OK;
+    }
+
+    free(data);
+    return hr;
 }
 
 /***********************************************************************
