@@ -201,6 +201,92 @@ Implement/fix a Water subsystem only after a failing application probe is
 reduced to a supported Windows contract. Keep application-owned formats
 and installation/update provenance outside OS component inventory.
 
+## SVG chronology and separate implementation owners (November 1, 2026)
+
+**Version and provenance must be separated from installed functionality.**
+Scalable Vector Graphics (SVG) is an XML-based W3C vector format,
+not a variant of BMP/RLE, WMF, EMF, .ICO, or a video codec.
+
+| Historical evidence | Date | Correct interpretation |
+| --- | --- | --- |
+| W3C SVG draft series | 1999 AD | Experimental, draft-level tools and markup; no generic Windows 3.1/95 shell support |
+| Adobe SVG Viewer 2.0 build 55 | March 14, 2001 AD | Optional browser plug-in / IE ActiveX viewer; release notes explicitly support Windows 95/98/SE/Me/2000 and NT 4 SP4+ |
+| W3C SVG 1.0 Recommendation | September 4, 2001 AD | Standardized file format; not proof of bundled OS decoder |
+| W3C SVG 1.1 Recommendation | January 14, 2003 AD | Later language version, not a Windows 98 SE built-in graphics upgrade |
+| Internet Explorer 9 | March 15, 2011 AD | Native SVG 1.1 browser document-mode support in IE9 mode; Microsoft explicitly distinguishes IE9+ from older IE implementations |
+
+The Adobe **2001 release notes are unusually strong evidence**:
+they list Windows 95/98/SE/Me and IE 4.0+ or Netscape 4.0-4.75.
+They explicitly describe SVG 2.0 Viewer as implementing much of
+the November 2, 2000 W3C *candidate* SVG specification. Therefore
+do **not** retroactively assign every SVG 1.1 or later feature to
+Adobe 2.0. Native IE9 SVG support does not mean that IE9 runs on
+Windows 9x; it was a separate later browser/OS generation.
+
+### WATER tree ownership
+
+- **Build-time SVG assets, not guest runtime:** `configure.ac`
+  checks for `rsvg-convert`/`rsvg` only when maintainer mode is
+  selected. `dlls/ieframe/ietoolbar.svg` is an SVG 1.1 source
+  graphic listed in that module's Makefile. Rebuilding prepackaged
+  icons must not accidentally require a runtime guest SVG decoder
+  or rewrite Windows 95 shell icon APIs.
+- **Web document SVG:** `dlls/mshtml/svg.c` contains COM wrappers
+  for selected Gecko SVG element interfaces (SVGSVGElement,
+  SVGCircleElement, SVGTextContentElement). Many SVG methods still
+  return `E_NOTIMPL`, so source presence alone is **not proof**
+  of full native SVG 1.1/2 rendering or scripting support.
+  `dlls/mshtml/htmldoc.c` handles `image/svg+xml` as a distinct
+  MIME type rather than folding it into generic XML.
+- **Historical browser-mode guard, repaired:** `HTMLElement_Create`
+  in `dlls/mshtml/htmlelem.c` previously created SVG-specific
+  COM element wrappers whenever Gecko returned an SVG interface,
+  even for pre-IE9 emulated document modes. It now selects these
+  wrappers only at `COMPAT_MODE_IE9` or newer. Older document
+  modes take the existing generic non-HTML element path. This
+  controls the **COM DOM surface**; it does **not** deactivate
+  Gecko's underlying SVG rendering or emulate an actual Adobe
+  ActiveX SVG viewer. Browser engine MIME/rendering behavior still
+  needs a separate version-aware audit.
+- **No inferred wallpaper/OS SVG:** `dlls/user32/desktop.c`
+  uses `LoadImageW(IMAGE_BITMAP)` with an OLE picture fallback,
+  not the MSHTML SVG DOM; `dlls/gdiplus/image.c` lists raster
+  and EMF/WMF/icon codec paths, not a verified SVG decoder.
+  SVG should not be admitted as native Windows 95/98 wallpaper
+  just because modern Wine builds include SVG graphics assets.
+  Keep `documentation/winini-parsing.md` wallpaper and
+  `documentation/win95-rle-graphics.md` RLE paths independent.
+
+### Regression/negative controls
+
+1. IE7/IE8 document-mode SVG nodes must not expose the IE9+ native
+   `ISVGElement`/subtype wrappers merely because Gecko supports SVG.
+2. IE9+ retains its existing wrapper creation, reference release,
+   and error/fallback paths. Mark individual unimplemented methods
+   `E_NOTIMPL`; do not claim complete SVG DOM conformance.
+3. Adobe SVG Viewer is **optional external application/plugin**
+   support, not default Windows 95/98/Me OS support. Distinguish
+   installed plug-in registration from browser-native behavior.
+4. SVG build sources may generate bitmap/ICO artifacts, but this
+   must not make Win9x runtime depend on `rsvg`, GDI RLE, or WIC.
+5. Native SVG wallpaper and complete browser execution remain
+   **NOT TESTED** until genuine media and runtime probes verify them.
+
+No complete `mshtml` build, browser-mode execution, Adobe Viewer
+installation, or 9x guest SVG-file test is claimed.
+
+Primary/contemporary references:
+- W3C official SVG 1.0 Recommendation history:
+  https://www.w3.org/standards/history/SVG/
+- W3C official SVG 1.1 history:
+  https://www.w3.org/standards/history/SVG11/
+- Adobe SVG Viewer 2.0, build 55, dated March 14, 2001, shipped README:
+  https://st1.asflib.net/MEDIA/ASF-CD/ASF-M-00161/ACROREAD/INSTALLER/SVG_FILES/README.HTML
+- Microsoft SVG implementation modes (IE9+):
+  https://learn.microsoft.com/en-us/openspecs/ie_standards/ms-svg/6c6d7a7b-727e-403a-9e39-9db96f2b5353
+- Microsoft IE9 release date:
+  https://learn.microsoft.com/en-us/lifecycle/products/internet-explorer-9
+
 ## Sources and confidence
 
 **Contemporary Microsoft primary documentation, available as KB mirrors:**
