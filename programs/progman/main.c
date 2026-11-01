@@ -254,12 +254,20 @@ static VOID MAIN_RunWinIniList(LPCSTR list, INT show)
           while (*p && *p != '"') p++;
           if (!*p) break; /* malformed quoted filename */
           p++; /* keep the quotes for WinExec */
+          if (*p && *p != ' ' && *p != '\t')
+            {
+              /* A closing quote followed by unseparated characters is
+               * not a filename boundary. Reject the whole invalid item. */
+              while (*p && *p != ' ' && *p != '\t') p++;
+              continue;
+            }
         }
       else
         while (*p && *p != ' ' && *p != '\t') p++;
 
       len = p - start;
-      if (len > 0 && len < sizeof(command))
+      if (len > 0 && len < sizeof(command) &&
+          !(len == 2 && start[0] == '"' && start[1] == '"'))
         {
           memcpy(command, start, len);
           command[len] = 0;
