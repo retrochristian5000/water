@@ -322,3 +322,122 @@ import tables or hardware drivers were inspected for this ledger. The sources
 establish historical requirements, product identities and selected
 user-facing behavior only. Theme distribution evidence does not establish
 installation in any particular Windows 98 guest.
+
+## Voxware codec provenance and IE-era media boundary (November 1, 2026)
+
+**State: source and historical audit; by-name ACM registration repaired;
+Voxware decoding NOT IMPLEMENTED or runtime-verified.** This is a media
+compatibility topic, not an FTP folder or HTML rendering problem.
+Internet Explorer could host media controls that used Windows/NetShow/
+Windows Media Player codecs, but the presence of an IE executable is
+not proof that any particular third-party codec is installed.
+
+### Source-backed product and distribution constraints
+
+- Microsoft KB Q141483 names Voxware (`VOX`) speech compression for
+  *Bookshelf 1996–97* pronunciations. The article explains that
+  multimedia CDs can supply drivers not normally included with Windows:
+  https://jeffpar.github.io/kbarchive/kb/141/Q141483/
+- Microsoft's **7 April 1997** NetShow 2.0 announcement identifies
+  Voxware **MetaVoice** and **MetaSound**, optimized for low-bandwidth
+  speech and audio respectively. Availability within NetShow does not
+  prove inclusion in a clean Windows OS install:
+  https://news.microsoft.com/source/1997/04/07/new-compression-technology-added-to-netshow-2-0-provides-broadcasters-with-widest-range-of-high-quality-codecs/
+- Microsoft KB Q175757 (MSN 2.51, last reviewed 27 October 1997) lists
+  `Voxplay.exe`, version **2.5.13.39**, under components installed by
+  **Typical MSN Setup**; an IE4 installer was separately listed, while
+  a NetShow Player CAB was listed with *Full* MSN installation. Treat
+  these as **MSN setup components**, not as proof that Windows 95 or
+  Internet Explorer 4 installed Voxware by default:
+  https://jeffpar.github.io/kbarchive/kb/175/Q175757/
+- Microsoft KB Q168369 documents a *Netscape ACM wrapper for Voxware
+  RT24 speech* conflict with Microsoft Plus! for Kids on Windows 95/98.
+  A third-party browser codec may affect OS audio without becoming an
+  OS-distributed codec:
+  https://jeffpar.github.io/kbarchive/kb/168/Q168369/
+- Microsoft KB884769 (last modified 5 August 2005) identifies unsigned
+  legacy codec packages for MetaSound and MetaVoice. Their availability
+  from a codec server was not equivalent to having them installed.
+  Its IE unsigned-ActiveX workaround carries an explicit security
+  warning: **do not lower security or auto-install obsolete CABs**
+  just to simulate historical behavior:
+  https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/884769
+- A **February 2005** Windows 98 SE / IE6 SP1 / WMP9 user report
+  identifies a `voxacm.cab` package containing `msms001.vwp`,
+  `mvoice.vwp`, `vct3216.acm`, `vct3216.dll`,
+  `voxacm.inf`, `voxmsdec.ax`, and `voxmvdec.ax`.
+  This is a reported package inventory, **not** a verified original
+  clean-install media manifest or permission to redistribute binaries:
+  https://www.dell.com/community/en/conversations/windows-general/cant-view-video-tutorials-from-the-dell-website/647e52a5f4ccf8a8de326226
+
+### Format-ID and ABI boundaries
+
+RFC 2361, June 1998, gives the relevant WAVE format tags:
+`0x0074` = Voxware RT24 / MetaVoice;
+`0x0075` = Voxware RT29 / MetaSound; and `0x0082` = Microsoft
+MSRT24, the alternate ACM tag referring to MetaVoice. Older Voxware
+tags also exist and must **not** be flattened into one decoder.
+Water already declares `WAVE_FORMAT_VOXWARE_RT24`,
+`WAVE_FORMAT_VOXWARE_RT29`, `WAVE_FORMAT_MSRT24`,
+and related legacy tags in `include/mmreg.h`:
+https://www.rfc-editor.org/rfc/rfc2361
+
+- `dlls/msacm32/internal.c` discovers `msacm.*` driver values in
+  Drivers32 and the system.ini driver section. Its
+  `MSACM_RegisterDriverFromRegistry` previously **discarded** the
+  pointer returned by `MSACM_RegisterDriver`, so
+  `acmDriverAddW(... ACM_DRIVERADDF_NAME)` in
+  `dlls/msacm32/driver.c` incorrectly reported an error even when
+  registration succeeded. The November 1 change returns the actual
+  pointer; this fixes a generic third-party ACM registration contract,
+  **not** the Voxware codec algorithm.
+- `dlls/quartz/acmwrapper.c` already calls `acmStreamOpen` for
+  non-PCM WAVEFORMATEX audio. For installed/compatible ACM drivers,
+  codec selection belongs to ACM, not `programs/iexplore`.
+  An uninstalled decoder must not be advertised as present.
+- `dlls/wmp/player.c`, `dlls/wmvcore`, and
+  `dlls/winegstreamer` contain separate player, ASF, and backend
+  pathways. Their ability to play a particular Voxware stream is not
+  established by the ACM registration fix.
+- FFmpeg has a standalone open-source **MetaSound** decoder and its
+  RIFF mapping identifies `0x0075`. This is a promising independent
+  compatibility reference, not proof that Water's GStreamer/ACM
+  pipeline currently decodes MetaSound or MetaVoice. License,
+  packetization, sample format and bitstream test vectors must be
+  checked before integrating any decoder:
+  https://ffmpeg.org/doxygen/trunk/metasound_8c_source.html
+  https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/riff.c
+
+### Reproduction and implementation criteria
+
+1. Record original Windows 95, Windows 98 FE/SE, Windows Me, Windows
+   2000 and XP installation media separately. For each, capture
+   *on media*, *Setup selected*, *installed*, and *loaded* states.
+   Overlay IE, MSN, NetShow, WMP and application installers as distinct
+   provenance layers. No clean-OS bundled-Voxware claim is yet locked.
+2. Inspect lawful media and extracted INF/ACM/AX/VWP metadata in an
+   offline/disposable guest, recording hashes, machine format
+   (Win16/Win32), registrations, CLSIDs, format tag and installed
+   dependencies. Avoid executing legacy unsigned binaries on the host.
+3. In `msacm32`, exercise `acmDriverAddW` by name with a disposable
+   registered test driver and assert a real driver ID on success and
+   failure on absent names, without global host-registry modification.
+   Then test an actually installed Voxware ACM driver separately.
+4. For `0x0075` MetaSound, establish a real decode route (native
+   clean-room/LGPL-compatible decoder or verified host GStreamer codec),
+   distinct from `0x0074` MetaVoice and `0x0082` MSRT24. Test
+   RIFF/WAV and ASF streams separately with documented golden PCM
+   outputs, headers, channel modes, block boundaries, seeking,
+   truncated inputs and errors.
+5. Exercise WMP and IE-embedded Windows Media playback with a
+   documented control/plug-in installation, checking the graph built
+   by DirectShow/ACM. Do **not** synthesize an ActiveX codec download
+   prompt or bypass IE's zone security to paper over missing codecs.
+6. Validate 16-/32-bit binary and calling-convention boundaries and
+   compare per supported Windows personality. A successful codec tag
+   lookup or registration is not a successful decoder test.
+
+**Verification:** historical references and repository paths inspected;
+single-line by-name driver ID repair reviewed at source level only.
+No Windows-guest Voxware binary, decoder, player stream, build or
+runtime regression has been validated in this audit.
