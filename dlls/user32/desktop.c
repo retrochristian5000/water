@@ -30,6 +30,7 @@
 #include "winnls.h"
 #include "olectl.h"
 #include "controls.h"
+#include "wine/win16_profile.h"
 
 static HBRUSH hbrushPattern;
 static HBITMAP hbitmapWallPaper;
@@ -44,6 +45,17 @@ enum wallpaper_position
     WALLPAPER_FILL
 };
 static enum wallpaper_position wallpaper_position;
+
+/* A selected DOS-Windows 3.x guest uses WIN.INI desktop policy, not a
+ * later Win32 Control Panel wallpaper layout. Don't infer a historical
+ * personality from the host architecture or from a .BMP extension. */
+static BOOL DESKTOP_IsWin3Profile(void)
+{
+    struct water_win16_profile profile;
+
+    water_win16_read_profile( &profile );
+    return profile.line == WATER_WIN16_LINE_PRE9X_FAMILY && profile.major == 3;
+}
 
 /* Read the modern per-user REG_SZ style values without modifying them.
  * A missing value is different from a valid "0" (center/tile). */
@@ -70,6 +82,8 @@ static void DESKTOP_UpdateWallpaperPosition(void)
 
     wallpaper_position = GetProfileIntA( "desktop", "TileWallpaper", 0 ) ?
                          WALLPAPER_TILE : WALLPAPER_CENTER;
+    if (DESKTOP_IsWin3Profile()) return;
+
     if (!RegOpenKeyExW( HKEY_CURRENT_USER, L"Control Panel\\Desktop", 0,
                         KEY_QUERY_VALUE, &key ))
     {
@@ -232,7 +246,20 @@ static HBITMAP DESKTOP_LoadBitmap( const WCHAR *filename )
  */
 static void init_wallpaper( const WCHAR *wallpaper )
 {
-    HBITMAP hbitmap = DESKTOP_LoadBitmap( wallpaper );
+    WCHAR win3_wallpaper[MAX_PATH];
+    HBITMAP hbitmap;
+
+    if (DESKTOP_IsWin3Profile())
+    {
+        /* Windows 3.x reads [desktop] Wallpaper= from WIN.INI. An
+         * explicitly selected Win3 profile must not inherit the Win32
+         * registry's background image when its own setting is empty. */
+        GetProfileStringW( L"desktop", L"Wallpaper", L"", win3_wallpaper,
+                           ARRAY_SIZE(win3_wallpaper) );
+        if (!lstrcmpiW( win3_wallpaper, L"(None)" )) win3_wallpaper[0] = 0;
+        wallpaper = win3_wallpaper;
+    }
+    hbitmap = DESKTOP_LoadBitmap( wallpaper );
 
     if (hbitmapWallPaper) DeleteObject( hbitmapWallPaper );
     hbitmapWallPaper = hbitmap;
