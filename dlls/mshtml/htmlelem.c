@@ -7480,12 +7480,18 @@ HRESULT HTMLElement_Create(HTMLDocumentNode *doc, nsIDOMNode *nsnode, BOOL use_g
 
     nsAString_GetData(&tag_name_str, &tag_name);
 
-    /* Check this first, as Gecko treats svg elements as non-HTML */
-    nsres = nsIDOMElement_QueryInterface(nselem, &IID_nsIDOMSVGElement, (void**)&svg_element);
-    if(NS_SUCCEEDED(nsres)) {
-        hres = create_svg_element(doc, svg_element, tag_name, &elem);
-        nsIDOMSVGElement_Release(svg_element);
-        goto done;
+    /* Gecko can expose native SVG nodes even in older IE document modes.
+     * IE8 and earlier used separately installed viewers / ActiveX plug-ins,
+     * not the IE9+ native SVG DOM interfaces. Do not promote these nodes
+     * to ISVGElement in a legacy compatibility mode. This gate controls
+     * the exposed COM DOM surface, not Gecko's underlying rendering. */
+    if(dispex_compat_mode(&doc->node.event_target.dispex) >= COMPAT_MODE_IE9) {
+        nsres = nsIDOMElement_QueryInterface(nselem, &IID_nsIDOMSVGElement, (void**)&svg_element);
+        if(NS_SUCCEEDED(nsres)) {
+            hres = create_svg_element(doc, svg_element, tag_name, &elem);
+            nsIDOMSVGElement_Release(svg_element);
+            goto done;
+        }
     }
 
     nsres = nsIDOMElement_QueryInterface(nselem, &IID_nsIDOMHTMLElement, (void**)&nshtmlelem);
