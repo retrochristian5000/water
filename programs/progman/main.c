@@ -39,6 +39,7 @@ static ATOM MAIN_RegisterMainWinClass(void);
 static VOID MAIN_CreateMainWindow(void);
 static VOID MAIN_CreateMDIWindow(void);
 static VOID MAIN_AutoStart(void);
+static VOID MAIN_WinIniStart(void);
 
 #define BUFFER_SIZE 1000
 
@@ -94,7 +95,10 @@ int PASCAL WinMain (HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show
   /* Initialize groups */
   MAIN_CreateGroups();
 
-  /* Start initial applications */
+  /* WIN.INI load=/run= and PROGMAN.INI Startup= are independent startup
+   * sources. Program Manager, not KERNEL32's generic profile parser, owns
+   * execution; third-party shells may not process these entries. */
+  MAIN_WinIniStart();
   MAIN_AutoStart();
 
   /* Message loop */
@@ -225,6 +229,65 @@ static VOID MAIN_CreateGroups(void)
   for (ptr = keys; *ptr; ptr += strlen(ptr) + 1)
     if (MAIN_IsIniGroupKey(ptr)) MAIN_LoadIniGroup(ptr);
   HeapFree(GetProcessHeap(), 0, keys);
+}
+
+/* The WIN.INI [windows] load= / run= entries contain filenames rather
+ * than arbitrary command lines. Spaces separate applications; double quotes
+ * protect long paths. Do not interpret commas or additional arguments:
+ * DOS-Windows 3.0 did not support parameters in these lists. */
+static VOID MAIN_RunWinIniList(LPCSTR list, INT show)
+{
+  const char *p = list;
+
+  while (*p)
+    {
+      const char *start;
+      CHAR command[BUFFER_SIZE];
+      size_t len;
+
+      while (*p == ' ' || *p == '\t') p++;
+      if (!*p) break;
+      start = p;
+      if (*p == '"')
+        {
+          p++;
+          while (*p && *p != '"') p++;
+          if (!*p) break; /* malformed quoted filename */
+          p++; /* keep the quotes for WinExec */
+        }
+      else
+        while (*p && *p != ' ' && *p != '\t') p++;
+
+      len = p - start;
+      if (len > 0 && len < sizeof(command))
+        {
+          memcpy(command, start, len);
+          command[len] = 0;
+          WinExec(command, show);
+        }
+    }
+}
+
+static VOID MAIN_WinIniStart(void)
+{
+  CHAR section[8192];
+  LPCSTR load = NULL, run = NULL;
+  const CHAR *entry;
+  DWORD len;
+
+  /* Read the section as raw key=value strings. GetProfileString strips
+   * matched outer quotes, losing the only delimiter around a single
+   * filename containing spaces. This API also handles [windows] comments. */
+  len = GetProfileSectionA("windows", section, sizeof(section));
+  if (len >= sizeof(section) - 2) return; /* incomplete, do not launch */
+  for (entry = section; entry < section + len && *entry;
+       entry += strlen(entry) + 1)
+    {
+      if (!load && !lstrnicmpA(entry, "load=", 5)) load = entry + 5;
+      if (!run && !lstrnicmpA(entry, "run=", 4)) run = entry + 4;
+    }
+  if (load) MAIN_RunWinIniList(load, SW_SHOWMINNOACTIVE);
+  if (run) MAIN_RunWinIniList(run, SW_SHOWNORMAL);
 }
 
 /***********************************************************************
