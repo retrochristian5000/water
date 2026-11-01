@@ -295,13 +295,17 @@ static HRESULT WINAPI ClientSite_QueryInterface(IOleClientSite *iface, REFIID ri
     return cs_qi(riid, ppv);
 }
 
+static LONG client_site_addrefs, client_site_releases;
+
 static ULONG WINAPI ClientSite_AddRef(IOleClientSite *iface)
 {
+    client_site_addrefs++;
     return 2;
 }
 
 static ULONG WINAPI ClientSite_Release(IOleClientSite *iface)
 {
+    client_site_releases++;
     return 1;
 }
 
@@ -1286,9 +1290,20 @@ static void test_wmp(void)
     todo_wine CHECK_CALLED(Invoke_USERMODE);
 
     client_site = NULL;
-    hres = IOleObject_GetClientSite(oleobj, &client_site);
-    ok(hres == S_OK, "GetClientSite failed: %08lx\n", hres);
-    ok(client_site == &ClientSite, "client_site != ClientSite\n");
+    {
+        LONG addrefs_before = client_site_addrefs;
+        LONG releases_before = client_site_releases;
+
+        hres = IOleObject_GetClientSite(oleobj, &client_site);
+        ok(hres == S_OK, "GetClientSite failed: %08lx\n", hres);
+        ok(client_site == &ClientSite, "client_site != ClientSite\n");
+        ok(client_site_addrefs == addrefs_before + 1,
+                "GetClientSite did not AddRef its returned interface.\n");
+        if(client_site)
+            IOleClientSite_Release(client_site);
+        ok(client_site_releases == releases_before + 1,
+                "Returned client site must be released by the caller.\n");
+    }
 
     SET_EXPECT(GetWindow);
     hres = IPersistStreamInit_InitNew(psi);
