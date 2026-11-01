@@ -1596,9 +1596,14 @@ BOOL16 WINAPI EqualRect16( const RECT16* rect1, const RECT16* rect2 )
  */
 BOOL16 WINAPI ExitWindowsExec16( LPCSTR lpszExe, LPCSTR lpszParams )
 {
-    TRACE("Should run the following in DOS-mode: \"%s %s\"\n",
-          lpszExe, lpszParams);
-    return ExitWindowsEx( EWX_LOGOFF, 0xffffffff );
+    /* Win9x USER.246 exits protected-mode Windows and executes a real-mode
+     * DOS command. Calling Win32 EWX_LOGOFF here discards the user's session
+     * without executing anything. The guest DOS/VMM handoff is not ready:
+     * fail explicitly, with no shutdown side effects. */
+    FIXME("real-mode DOS transition not implemented: %s %s\n",
+          wine_dbgstr_a(lpszExe), wine_dbgstr_a(lpszParams));
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
 }
 
 
