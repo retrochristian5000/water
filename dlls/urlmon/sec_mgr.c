@@ -110,37 +110,31 @@ static void get_dword_from_reg(HKEY hcu, HKEY hklm, LPCWSTR name, LPDWORD out)
 
 static HRESULT get_zone_from_reg(LPCWSTR schema, DWORD *zone)
 {
-    DWORD res, size;
-    HKEY hkey;
-
-    static const WCHAR wszZoneMapProtocolKey[] =
+    static const WCHAR key_name[] =
         L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProtocolDefaults";
+    static const HKEY roots[] = {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    DWORD value, type, size;
+    HKEY key;
+    unsigned int i;
+    LONG res;
 
-    res = RegOpenKeyW(HKEY_CURRENT_USER, wszZoneMapProtocolKey, &hkey);
-    if(res != ERROR_SUCCESS) {
-        ERR("Could not open key %s\n", debugstr_w(wszZoneMapProtocolKey));
-        return E_UNEXPECTED;
+    /* An unconfigured per-user key must not hide machine-wide defaults. */
+    for (i = 0; i < ARRAY_SIZE(roots); i++)
+    {
+        if (RegOpenKeyExW(roots[i], key_name, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
+            continue;
+
+        size = sizeof(value);
+        res = RegQueryValueExW(key, schema, NULL, &type, (BYTE *)&value, &size);
+        RegCloseKey(key);
+        if (res == ERROR_SUCCESS && type == REG_DWORD && size == sizeof(value))
+        {
+            *zone = value;
+            return S_OK;
+        }
     }
 
-    size = sizeof(DWORD);
-    res = RegQueryValueExW(hkey, schema, NULL, NULL, (PBYTE)zone, &size);
-    RegCloseKey(hkey);
-    if(res == ERROR_SUCCESS)
-        return S_OK;
-
-    res = RegOpenKeyW(HKEY_LOCAL_MACHINE, wszZoneMapProtocolKey, &hkey);
-    if(res != ERROR_SUCCESS) {
-        ERR("Could not open key %s\n", debugstr_w(wszZoneMapProtocolKey));
-        return E_UNEXPECTED;
-    }
-
-    size = sizeof(DWORD);
-    res = RegQueryValueExW(hkey, schema, NULL, NULL, (PBYTE)zone, &size);
-    RegCloseKey(hkey);
-    if(res == ERROR_SUCCESS)
-        return S_OK;
-
-    *zone = 3;
+    *zone = URLZONE_INTERNET;
     return S_OK;
 }
 
