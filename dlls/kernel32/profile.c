@@ -754,7 +754,14 @@ static BOOL PROFILE_Open( LPCWSTR filename, BOOL write_access )
             SetLastError( ERROR_ACCESS_DENIED );
             return FALSE;
         }
-        GetWindowsDirectoryW( windirW, MAX_PATH );
+        DWORD windir_len = GetWindowsDirectoryW( windirW, ARRAY_SIZE(windirW) );
+
+        if (!windir_len || windir_len >= ARRAY_SIZE(windirW) ||
+            windir_len + 1 + lstrlenW(filename) >= ARRAY_SIZE(buffer))
+        {
+            SetLastError( ERROR_FILENAME_EXCED_RANGE );
+            return FALSE;
+        }
         lstrcpyW(buffer, windirW);
         lstrcatW(buffer, L"\\");
         lstrcatW(buffer, filename);
@@ -762,7 +769,13 @@ static BOOL PROFILE_Open( LPCWSTR filename, BOOL write_access )
     else
     {
         LPWSTR dummy;
-        GetFullPathNameW(filename, ARRAY_SIZE(buffer), buffer, &dummy);
+        DWORD length = GetFullPathNameW(filename, ARRAY_SIZE(buffer), buffer, &dummy);
+
+        if (!length || length >= ARRAY_SIZE(buffer))
+        {
+            SetLastError( ERROR_FILENAME_EXCED_RANGE );
+            return FALSE;
+        }
     }
 
     TRACE("path: %s\n", debugstr_w(buffer));
@@ -1365,7 +1378,6 @@ INT WINAPI GetPrivateProfileStringW( LPCWSTR section, LPCWSTR entry,
 {
     int		ret;
     LPWSTR	defval_tmp = NULL;
-    const WCHAR *p;
     HKEY key;
 
     TRACE("%s,%s,%s,%p,%u,%s\n", debugstr_w(section), debugstr_w(entry),
@@ -1385,19 +1397,24 @@ INT WINAPI GetPrivateProfileStringW( LPCWSTR section, LPCWSTR entry,
         return ret;
     }
 
-    /* strip any trailing ' ' of def_val. */
-    p = def_val + lstrlenW(def_val) - 1;
-
-    while (p > def_val && *p == ' ') p--;
-
-    if (p >= def_val)
+    /* Strip trailing ASCII spaces from the fallback only. An empty
+     * default used to form def_val - 1, and allocation failure used to
+     * dereference NULL. Never modify the caller's shared WIN.INI data. */
     {
-        int vlen = (int)(p - def_val) + 1;
+        UINT len_default = lstrlenW(def_val);
+        UINT trimmed = len_default;
 
-        defval_tmp = HeapAlloc(GetProcessHeap(), 0, (vlen + 1) * sizeof(WCHAR));
-        memcpy(defval_tmp, def_val, vlen * sizeof(WCHAR));
-        defval_tmp[vlen] = '\0';
-        def_val = defval_tmp;
+        while (trimmed && def_val[trimmed - 1] == ' ') trimmed--;
+        if (trimmed != len_default)
+        {
+            defval_tmp = HeapAlloc(GetProcessHeap(), 0, (trimmed + 1) * sizeof(WCHAR));
+            if (defval_tmp)
+            {
+                memcpy(defval_tmp, def_val, trimmed * sizeof(WCHAR));
+                defval_tmp[trimmed] = 0;
+                def_val = defval_tmp;
+            }
+        }
     }
 
     if (get_mapped_section_key( filename, section, entry, FALSE, &key ))
