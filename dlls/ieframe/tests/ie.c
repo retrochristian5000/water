@@ -460,33 +460,33 @@ static void test_ieframe_version_export(void)
     module = LoadLibraryW(L"ieframe.dll");
     if (!module)
     {
-        win_skip("IEFRAME is not installed on this Windows personality.\\n");
+        win_skip("IEFRAME is not installed on this Windows personality.\n");
         return;
     }
 
     get_version = (void *)GetProcAddress(module, "DllGetVersion");
-    ok(get_version != NULL, "IEFRAME is missing DllGetVersion.\\n");
+    ok(get_version != NULL, "IEFRAME is missing DllGetVersion.\n");
     if (get_version)
     {
         version.cbSize = sizeof(version);
         hr = get_version(&version);
-        ok(hr == S_OK, "DllGetVersion returned %#lx.\\n", hr);
+        ok(hr == S_OK, "DllGetVersion returned %#lx.\n", hr);
         if (SUCCEEDED(hr))
         {
-            ok(version.dwMajorVersion >= 7, "Unexpected IEFRAME major version %lu.\\n",
+            ok(version.dwMajorVersion >= 7, "Unexpected IEFRAME major version %lu.\n",
                     version.dwMajorVersion);
-            ok(version.dwPlatformID == DLLVER_PLATFORM_NT, "Unexpected platform %#lx.\\n",
+            ok(version.dwPlatformID == DLLVER_PLATFORM_NT, "Unexpected platform %#lx.\n",
                     version.dwPlatformID);
         }
 
         version2.info1.cbSize = sizeof(version2);
         hr = get_version(&version2.info1);
         ok(hr == S_OK || broken(hr == E_INVALIDARG),
-                "DllGetVersion(DLLVERSIONINFO2) returned %#lx.\\n", hr);
+                "DllGetVersion(DLLVERSIONINFO2) returned %#lx.\n", hr);
         if (hr == S_OK)
         {
             ok(version2.info1.dwMajorVersion == version.dwMajorVersion,
-                    "Version formats disagree: %lu versus %lu.\\n",
+                    "Version formats disagree: %lu versus %lu.\n",
                     version2.info1.dwMajorVersion, version.dwMajorVersion);
         }
     }
