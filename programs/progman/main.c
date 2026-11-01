@@ -19,7 +19,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define OEMRESOURCE
@@ -109,33 +112,119 @@ int PASCAL WinMain (HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show
  *           MAIN_CreateGroups
  */
 
+/* Detect already-loaded GRP files even when GRPFILE_ReadGroupFile chose
+ * an editable .gr copy rather than the original .grp filename. */
+static BOOL MAIN_GroupAlreadyLoaded(LPCSTR path)
+{
+  CHAR alias[MAX_PATHNAME_LEN];
+  size_t len = strlen(path);
+  HLOCAL hGroup;
+
+  alias[0] = 0;
+  if (len >= 4 && len < sizeof(alias) && !lstrcmpiA(path + len - 4, ".grp"))
+    {
+      memcpy(alias, path, len);
+      alias[len - 1] = 0;
+    }
+  for (hGroup = GROUP_FirstGroup(); hGroup; hGroup = GROUP_NextGroup(hGroup))
+    {
+      PROGGROUP *group = LocalLock(hGroup);
+      LPCSTR loaded = LocalLock(group->hGrpFile);
+      if (!lstrcmpiA(loaded, path) || (alias[0] && !lstrcmpiA(loaded, alias)))
+        return TRUE;
+    }
+  return FALSE;
+}
+
+static VOID MAIN_LoadIniGroup(LPCSTR key)
+{
+  CHAR path[MAX_PATHNAME_LEN];
+
+  /* Never attempt to open a truncated group filename. */
+  if (GetPrivateProfileStringA("Groups", key, "", path, sizeof(path),
+                               Globals.lpszIniFile) >= sizeof(path) - 1)
+    return;
+  if (path[0] && !MAIN_GroupAlreadyLoaded(path)) GRPFILE_ReadGroupFile(path);
+}
+
+static BOOL MAIN_IsIniGroupKey(LPCSTR key)
+{
+  static const char prefix[] = "Group";
+  const char *p;
+  unsigned int i;
+
+  if (strlen(key) <= 5) return FALSE;
+  for (i = 0; i < 5; i++)
+    if (tolower((unsigned char)key[i]) != tolower((unsigned char)prefix[i]))
+      return FALSE;
+  p = key + 5;
+  while (*p && isdigit((unsigned char)*p)) p++;
+  return !*p && p > key + 5;
+}
+
+/***********************************************************************
+ *
+ *           MAIN_CreateGroups
+ */
+
 static VOID MAIN_CreateGroups(void)
 {
-  CHAR buffer[BUFFER_SIZE];
-  CHAR szPath[MAX_PATHNAME_LEN];
-  CHAR key[20], *ptr;
+  CHAR order[BUFFER_SIZE], key[24];
+  CHAR *ptr, *next, *keys;
+  DWORD capacity, count;
 
-  /* Initialize groups according the `Order' entry of `progman.ini' */
-  GetPrivateProfileStringA("Settings", "Order", "", buffer, sizeof(buffer), Globals.lpszIniFile);
-  ptr = buffer;
-  while (ptr < buffer + sizeof(buffer))
+  /* Settings/Order controls presentation order; [Groups] is the inventory.
+   * Advance even on missing GroupN entries: the old loop hung forever. */
+  GetPrivateProfileStringA("Settings", "Order", "", order, sizeof(order),
+                           Globals.lpszIniFile);
+  ptr = order;
+  while (*ptr)
     {
-      int num, skip, ret;
-      ret = sscanf(ptr, "%d%n", &num, &skip);
-      if (ret == 0)
-	MAIN_MessageBoxIDS_s(IDS_FILE_READ_ERROR_s, Globals.lpszIniFile, IDS_ERROR, MB_OK);
-      if (ret != 1) break;
+      unsigned long num;
 
-      sprintf(key, "Group%d", num);
-      GetPrivateProfileStringA("Groups", key, "", szPath,
-			      sizeof(szPath), Globals.lpszIniFile);
-      if (!szPath[0]) continue;
-
-      GRPFILE_ReadGroupFile(szPath);
-
-      ptr += skip;
+      while (*ptr && isspace((unsigned char)*ptr)) ptr++;
+      if (!*ptr) break;
+      errno = 0;
+      num = strtoul(ptr, &next, 10);
+      if (next == ptr || errno == ERANGE ||
+          (*next && !isspace((unsigned char)*next)) || !num || num > 65535)
+        {
+          while (*ptr && !isspace((unsigned char)*ptr)) ptr++;
+          continue; /* malformed token */
+        }
+      ptr = next;
+      snprintf(key, sizeof(key), "Group%lu", num);
+      MAIN_LoadIniGroup(key);
     }
-  /* FIXME initialize other groups, not enumerated by `Order' */
+
+  /* Also load Groups/GroupN entries omitted from Order. The list of group
+   * names uses a double-NUL terminated profile buffer, grown as needed. */
+  capacity = 1024;
+  keys = HeapAlloc(GetProcessHeap(), 0, capacity);
+  if (!keys) return;
+  for (;;)
+    {
+      CHAR *grown;
+      count = GetPrivateProfileStringA("Groups", NULL, "", keys, capacity,
+                                       Globals.lpszIniFile);
+      if (count < capacity - 2) break;
+      if (capacity >= 65536)
+        {
+          HeapFree(GetProcessHeap(), 0, keys);
+          return; /* no truncated enumeration */
+        }
+      capacity *= 2;
+      grown = HeapReAlloc(GetProcessHeap(), 0, keys, capacity);
+      if (!grown)
+        {
+          HeapFree(GetProcessHeap(), 0, keys);
+          return;
+        }
+      keys = grown;
+    }
+  for (ptr = keys; *ptr; ptr += strlen(ptr) + 1)
+    if (MAIN_IsIniGroupKey(ptr)) MAIN_LoadIniGroup(ptr);
+  HeapFree(GetProcessHeap(), 0, keys);
 }
 
 /***********************************************************************
@@ -146,16 +235,32 @@ static VOID MAIN_CreateGroups(void)
 VOID MAIN_AutoStart(void)
 {
   CHAR buffer[BUFFER_SIZE];
+  CHAR *name = buffer, *end;
   HLOCAL hGroup, hProgram;
 
-  GetPrivateProfileStringA("Settings", "AutoStart", "Autostart", buffer,
-			  sizeof(buffer), Globals.lpszIniFile);
+  /* Windows 3.1 uses Startup=, not AutoStart=. A blank Startup= disables
+   * the group; a missing key defaults to Startup. Shift skips autostart. */
+  if (GetAsyncKeyState(VK_SHIFT) & 0x8000) return;
+  GetPrivateProfileStringA("Settings", "Startup", "Startup", buffer,
+                           sizeof(buffer), Globals.lpszIniFile);
+  while (*name && isspace((unsigned char)*name)) name++;
+  end = name + strlen(name);
+  while (end > name && isspace((unsigned char)end[-1])) *--end = 0;
+  if (end - name >= 2 && name[0] == '"' && end[-1] == '"')
+    {
+      name++;
+      *--end = 0;
+    }
+  if (!*name) return;
 
   for (hGroup = GROUP_FirstGroup(); hGroup; hGroup = GROUP_NextGroup(hGroup))
-    if (!lstrcmpA(buffer, GROUP_GroupName(hGroup)))
-      for (hProgram = PROGRAM_FirstProgram(hGroup); hProgram;
-	   hProgram = PROGRAM_NextProgram(hProgram))
-	PROGRAM_ExecuteProgram(hProgram);
+    if (!lstrcmpiA(name, GROUP_GroupName(hGroup)))
+      {
+        for (hProgram = PROGRAM_FirstProgram(hGroup); hProgram;
+             hProgram = PROGRAM_NextProgram(hProgram))
+          PROGRAM_ExecuteProgram(hProgram);
+        break;
+      }
 }
 
 /***********************************************************************
