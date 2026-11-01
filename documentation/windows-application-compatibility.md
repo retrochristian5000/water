@@ -559,6 +559,10 @@ https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gppref/8b0fcf80
 https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-internetexplorer
 https://www.winhelponline.com/xp/addons.htm
 
+Reentrant teardown is guarded: the callback to SetSite(NULL) can trigger
+another Quit, so only the outermost detachment is permitted to walk the
+per-browser BHO list, which is drained one entry at a time.
+
 Verification still needed: compiled and guest-runtime tests on a clean
 IE4/IE5/IE6 and Vista IE7+ baseline, 32/64-bit registration views,
 extension installation identity, benign disposable BHO mock with

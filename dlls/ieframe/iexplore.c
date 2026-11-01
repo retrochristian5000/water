@@ -22,6 +22,7 @@
 #define COBJMACROS
 
 #include <stdarg.h>
+#include <string.h>
 
 #include "ieframe.h"
 #include "resource.h"
@@ -179,17 +180,23 @@ static BOOL browser_helper_allowed(const WCHAR *clsid)
 
 void release_browser_helpers(InternetExplorer *ie)
 {
-    struct browser_helper *helper, *next;
+    struct browser_helper *helper;
 
-    /* Keep a reentrant SetSite callback from adding new helpers. */
+    /* SetSite(NULL) can invoke Quit or the browser's release path again. */
     ie->bho_active = FALSE;
-    LIST_FOR_EACH_ENTRY_SAFE(helper, next, &ie->bhos, struct browser_helper, entry)
+    if (ie->bho_releasing)
+        return;
+
+    ie->bho_releasing = TRUE;
+    while (!list_empty(&ie->bhos))
     {
+        helper = LIST_ENTRY(ie->bhos.next, struct browser_helper, entry);
         list_remove(&helper->entry);
         IObjectWithSite_SetSite(helper->site, NULL);
         IObjectWithSite_Release(helper->site);
         free(helper);
     }
+    ie->bho_releasing = FALSE;
 }
 
 void load_browser_helpers(InternetExplorer *ie)
@@ -201,7 +208,7 @@ void load_browser_helpers(InternetExplorer *ie)
     LONG err;
     HKEY key;
 
-    if (ie->bho_active || ie->bho_loading || !browser_extensions_enabled())
+    if (ie->bho_active || ie->bho_loading || ie->bho_releasing || !browser_extensions_enabled())
         return;
     ie->bho_active = TRUE;
     ie->bho_loading = TRUE;

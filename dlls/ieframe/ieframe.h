@@ -242,6 +242,7 @@ struct InternetExplorer {
     BOOL nohome;
     BOOL bho_active;
     BOOL bho_loading;
+    BOOL bho_releasing;
 
     struct list bhos;
     struct list entry;
