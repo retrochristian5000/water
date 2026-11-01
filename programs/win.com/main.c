@@ -52,11 +52,19 @@ int WINAPI WinMain( HINSTANCE instance, HINSTANCE prev_instance, char *cmdline, 
     p = skip_blanks( cmdline );
 
     /*
-     * This binary is the NT-style WIN.COM compatibility launcher. DOS-based
-     * Windows uses /R, /S (/2), and /3 to select the startup path before
-     * KRNL286/KRNL386 runs; WfW 3.11 also defines /N for network suppression.
-     * NT keeps accepting those spellings, but this compatibility owner must
-     * not reinterpret them as DOS-Windows mode selection.
+     * This is an NT-style PE compatibility launcher, NOT the DOS-Windows
+     * WIN.COM loader. Windows 3.0 used /R for real mode, /S (/2) for
+     * standard mode and /3 for enhanced mode. Windows 3.1 removed real
+     * mode; its WIN.COM checks CPU/XMS, selects WSWAP/DOSX/KRNL286 for
+     * standard mode or WIN386/KRNL386 for 386 enhanced mode, and supports
+     * /B boot logging and /D:FSVX troubleshooting. WfW 3.11 requires
+     * enhanced mode and has a separate /N network-suppression option.
+     *
+     * This wrapper intentionally consumes only the historical one-letter
+     * forms listed in is_legacy_mode_switch(), including /R as a legacy
+     * compatibility spelling. It does not model any of these modes,
+     * initialize SYSTEM.INI VxDs or select the SYSTEM.INI shell.
+     * Keep that guest startup responsibility outside NT WIN.COM.
      */
     while (is_legacy_mode_switch( p ))
     {
