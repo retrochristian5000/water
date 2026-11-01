@@ -365,12 +365,14 @@ static HLOCAL GRPFILE_ScanProgram(LPCSTR buffer, INT size,
 
   hIcon = CreateIcon(Globals.hInstance, width, height, planes, bpp,
                      buffer + iconAND_offset, buffer + iconXOR_offset);
-  if (!hIcon) return(0);
+  /* A damaged icon must not make the whole group disappear. Program Manager
+   * can still launch the item using its shared default icon. */
+  if (!hIcon) hIcon = Globals.hDefaultIcon;
   hProgram = PROGRAM_AddProgram(hGroup, hIcon, lpszName, x, y,
                                 lpszCmdLine, lpszIconFile,
                                 nIconIndex, lpszWorkDir,
                                 nHotKey, nCmdShow);
-  if (!hProgram) DestroyIcon(hIcon);
+  if (!hProgram && hIcon != Globals.hDefaultIcon) DestroyIcon(hIcon);
   return hProgram;
 }
 
