@@ -214,7 +214,7 @@ static const char usage_str[] =
 "   -f FLAGS                  Compiler flags (-fPIC and -fasynchronous-unwind-tables are supported)\n"
 "   -F, --filename=DLLFILE    Set the DLL filename (default: from input file name)\n"
 "       --fake-module         Create a fake binary module\n"
-"       --raw-win16-module    Create a standalone Win16 MZ/NE module\n"
+"       --raw-win16-module    Create a standalone Win16 MZ/NE placeholder (no linked exports)\n"
 "   -h, --help                Display this help message\n"
 "   -H, --heap=SIZE           Set the heap size for a Win16 dll\n"
 "   -I DIR                    Ignored for C flags compatibility\n"
@@ -638,7 +638,8 @@ int main(int argc, char **argv)
     switch(exec_mode)
     {
     case MODE_DLL:
-        if (spec->subsystem != IMAGE_SUBSYSTEM_NATIVE)
+        /* The PE native subsystem does not override Win16 NE DLL identity. */
+        if (spec->type == SPEC_WIN16 || spec->subsystem != IMAGE_SUBSYSTEM_NATIVE)
             spec->characteristics |= IMAGE_FILE_DLL;
         /* fall through */
     case MODE_EXE:
@@ -666,6 +667,10 @@ int main(int argc, char **argv)
         {
             if (spec->type != SPEC_WIN16)
                 fatal_error( "--raw-win16-module requires -m16.\n" );
+            /* A syntactically valid NE DLL is not a linked DLL. Refuse to
+             * silently discard named/ordinal exports from a .spec or .def. */
+            if (spec->exports.nb_entry_points)
+                fatal_error( "--raw-win16-module cannot link NE exports; use the regular -m16 build path.\n" );
             output_raw_module16( spec );
             break;
         }
