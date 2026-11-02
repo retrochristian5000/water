@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def function(source, name):
-    pat = r"(?m)^(?:static\s+)?(?:WORD|DWORD|BOOL)\s+" + re.escape(name) + r"\s*\([^;]*\)\s*\{"
+    pat = r"(?m)^(?:static\s+)?(?:inline\s+)?(?:WORD|DWORD|BOOL)\s+" + re.escape(name) + r"\s*\([^;]*\)\s*\{"
     match = re.search(pat, source)
     if not match:
         raise AssertionError("missing function " + name)
@@ -22,7 +22,6 @@ def function(source, name):
         if source[i] == "{":
             depth += 1
         elif source[i] == "}":
-            depth -= 1
             depth -= 1
             if depth == 0:
                 return source[match.start():i + 1]
@@ -122,6 +121,95 @@ class DecoderTests(unittest.TestCase):
             run = subprocess.run([str(exe)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertIn("fat32 parser: passed", run.stdout)
+
+
+PROFILE_HARNESS = r"""
+#include <assert.h>
+#include <stdio.h>
+typedef unsigned short WORD;
+typedef unsigned int DWORD;
+typedef int BOOL;
+#define TRUE 1
+#define FALSE 0
+#define WATER_WIN16_LINE_DOS_FAMILY 1
+#define WATER_WIN16_LINE_PRE9X_FAMILY 2
+#define WATER_WIN16_LINE_WIN9X_FAMILY 3
+#define WATER_WIN16_LINE_NT_FAMILY 4
+struct water_win16_profile
+{
+    int line;
+    WORD major, minor;
+    DWORD build;
+};
+__PROFILE_FUNCTION__
+
+int main(void)
+{
+    const struct water_win16_profile cases[] = {
+        { WATER_WIN16_LINE_DOS_FAMILY, 6, 22, 0 },
+        { WATER_WIN16_LINE_PRE9X_FAMILY, 3, 10, 0 },
+        { WATER_WIN16_LINE_NT_FAMILY, 5, 0, 0 },
+        { WATER_WIN16_LINE_WIN9X_FAMILY, 4, 0, 950 },
+        { WATER_WIN16_LINE_WIN9X_FAMILY, 4, 0, 1110 },
+        { WATER_WIN16_LINE_WIN9X_FAMILY, 4, 0, 1111 },
+        { WATER_WIN16_LINE_WIN9X_FAMILY, 4, 10, 1998 },
+        { WATER_WIN16_LINE_WIN9X_FAMILY, 4, 90, 3000 },
+        { WATER_WIN16_LINE_WIN9X_FAMILY, 5, 0, 0 },
+        { WATER_WIN16_LINE_WIN9X_FAMILY, 4, 20, 0 }
+    };
+    const BOOL expected[] = { 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
+    unsigned i;
+
+    assert(!water_win16_profile_has_fat32(NULL));
+    for (i = 0; i < sizeof(cases)/sizeof(cases[0]); i++)
+        assert(water_win16_profile_has_fat32(&cases[i]) == expected[i]);
+    puts("fat32 guest release policy: passed");
+    return 0;
+}
+"""
+
+
+class GuestFat32PolicyTests(unittest.TestCase):
+    def test_dos_services_gate_raw_fat32(self):
+        source = (ROOT / "programs/ntdos.sys/int21.c").read_text()
+        header = (ROOT / "include/wine/win16_profile.h").read_text()
+        kernel = (ROOT / "dlls/krnl386.exe16/kernel.c").read_text()
+
+        self.assertIn("water_win16_profile_has_fat32", header)
+        self.assertIn("WIN386_QuerySession( NULL )", source)
+        self.assertIn("kernel_is_nt_wow_session()", source)
+        dpb = source[source.index("static BOOL INT21_FillDrivePB"):
+                     source.index("static SEGPTR INT21_GetListOfLists")]
+        self.assertIn("if (have_fat32 && !INT21_GuestHasFat32()) return FALSE;", dpb)
+        self.assertLess(dpb.index("if (have_fat32 && !INT21_GuestHasFat32())"),
+                        dpb.index("if (have_bpb)"))
+        alloc = source[source.index("static BOOL INT21_GetFreeDiskSpace"):
+                       source.index("static BOOL INT21_GetDriveAllocInfo")]
+        self.assertIn("!INT21_GuestHasFat32() && IOSYS_GetFat32BPB(", alloc)
+        fat32 = source[source.index("static BOOL INT21_Fat32"):
+                       source.index("static void INT21_ConvertFindDataWtoA")]
+        self.assertIn("if (!INT21_GuestHasFat32())", fat32)
+        self.assertNotIn("GetVersion16()", fat32)
+        self.assertIn("water_win16_profile_has_fat32( &profile )", kernel)
+
+    def test_release_policy_compiled(self):
+        cmd = shlex.split(os.environ.get("CC", "cc"))
+        if not cmd or not shutil.which(cmd[0]):
+            self.skipTest("C compiler missing")
+        src = (ROOT / "include/wine/win16_profile.h").read_text()
+        policy = function(src, "water_win16_profile_has_fat32")
+        code = PROFILE_HARNESS.replace("__PROFILE_FUNCTION__", policy)
+        with tempfile.TemporaryDirectory(prefix="water-fat32-policy-") as tmp:
+            p = Path(tmp) / "test.c"
+            exe = Path(tmp) / "test"
+            p.write_text(code)
+            build = subprocess.run(cmd + ["-std=c99", "-Wall", "-Wextra", "-Werror",
+                                          str(p), "-o", str(exe)],
+                                   capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            run = subprocess.run([str(exe)], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertIn("fat32 guest release policy: passed", run.stdout)
 
 
 if __name__ == "__main__":

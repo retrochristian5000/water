@@ -34,6 +34,8 @@
 #include "wincon.h"
 #include "winternl.h"
 #include "wine/winbase16.h"
+#include "wine/win16_profile.h"
+#include "../../dlls/krnl386.exe16/win386.h"
 #include "../../dlls/krnl386.exe16/kernel16_private.h"
 #include "../io.sys/io_sys.h"
 #include "../../dlls/krnl386.exe16/dosexe.h"
@@ -58,6 +60,20 @@
  * Forward declarations.
  */
 static BOOL INT21_RenameFile( I386_CONTEXT *context );
+
+/*
+ * NTDOS's Win16 bridge currently carries DOS 7 FAT32 services, but these
+ * must never be offered to an earlier DOS or NT guest. Once the Win9x
+ * real-mode kernel executes, this ownership moves out of NTDOS.
+ */
+static BOOL INT21_GuestHasFat32(void)
+{
+    struct water_win16_profile profile;
+
+    if (WIN386_QuerySession( NULL ) || kernel_is_nt_wow_session()) return FALSE;
+    water_win16_read_profile( &profile );
+    return water_win16_profile_has_fat32( &profile );
+}
 static BYTE INT21_GetBootDrive(void);
 static void INT21_LoadBootConfig(void);
 
@@ -697,6 +713,11 @@ static BOOL INT21_FillDrivePB( BYTE drive )
      */
     have_bpb = IOSYS_GetFat1216BPB( drive, &bpb );
     have_fat32 = !have_bpb && IOSYS_GetFat32BPB( drive, &bpb32 );
+
+    /* A real FAT32 volume is not a DOS 6.x/7.00 disk. Do not synthesize
+     * FAT16 geometry from host statistics for an unsupported guest. */
+    if (have_fat32 && !INT21_GuestHasFat32()) return FALSE;
+
     if (have_bpb)
     {
         DWORD root_sectors = ((DWORD)bpb.root_entries * 32 + bpb.bytes_per_sector - 1) /
@@ -2910,15 +2931,12 @@ static void INT21_Ioctl( I386_CONTEXT *context )
  */
 static BOOL INT21_Fat32( I386_CONTEXT *context )
 {
-    WORD dosver = HIWORD( GetVersion16() );
-
     /*
-     * FAT32 entered the Microsoft DOS/Win9x line with Windows 95 OSR2
-     * (MS-DOS 7.10). Retail Windows 95 reports DOS 7.00 and does not
-     * implement the 73xx FAT32 family. Older DOS returns the traditional
-     * unimplemented-function result: carry clear with AL=00h.
+     * DOS 6.x and Win95 RTM/DOS 7.00 do not expose 73xx. Check the
+     * owning guest profile, not GetVersion16's compatibility tuple:
+     * Windows 98 also owns DOS 7.10, and Windows Me owns DOS 8.00.
      */
-    if (HIBYTE(dosver) < 7 || (HIBYTE(dosver) == 7 && LOBYTE(dosver) < 10))
+    if (!INT21_GuestHasFat32())
     {
         SET_AL( context, 0 );
         RESET_CFLAG( context );
@@ -3425,12 +3443,19 @@ static BOOL INT21_SetDiskSerialNumber( I386_CONTEXT *context )
 static BOOL INT21_GetFreeDiskSpace( I386_CONTEXT *context )
 {
     DWORD cluster_sectors, sector_bytes, free_clusters, total_clusters;
+    struct iosys_fat32_bpb bpb32;
+    BYTE drive = INT21_MapDrive( DL_reg(context) );
     WCHAR root[] = {'A',':','\\',0};
     const DWORD max_clusters = 0x3d83;
     const DWORD max_sectors_per_cluster = 0x7f;
     const DWORD max_bytes_per_sector = 0x200;
 
-    root[0] += INT21_MapDrive(DL_reg(context));
+    /* No DOS 6.x/7.00 allocation info from a genuinely FAT32 raw volume.
+     * Preserve existing host-mapped, non-raw filesystem fallbacks. */
+    if (!INT21_GuestHasFat32() && IOSYS_GetFat32BPB( drive, &bpb32 ))
+        return FALSE;
+
+    root[0] += drive;
     if (!GetDiskFreeSpaceW( root, &cluster_sectors, &sector_bytes,
                             &free_clusters, &total_clusters ))
         return FALSE;

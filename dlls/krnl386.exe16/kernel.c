@@ -126,16 +126,6 @@ static BOOL kernel_is_nt3_wow_session(void)
     return profile.line == WATER_WIN16_LINE_NT_FAMILY && profile.major == 3;
 }
 
-static BOOL kernel_is_win95_osr2_session(void)
-{
-    struct water_win16_profile profile;
-
-    kernel_get_guest_profile( &profile );
-    return profile.line == WATER_WIN16_LINE_WIN9X_FAMILY &&
-           water_win16_profile_is_version( &profile, 4, 0 ) &&
-           profile.build >= 1111;
-}
-
 static BOOL kernel_is_winme_session(void)
 {
     struct water_win16_profile profile;
@@ -540,7 +530,7 @@ DWORD WINAPI GetVersion16(void)
     {
         if (kernel_is_winme_session())
             return MAKELONG( MAKEWORD( 3, 95 ), 0x0800 );
-        if (kernel_is_win95_osr2_session())
+        if (water_win16_profile_has_fat32( &profile ))
             return MAKELONG( MAKEWORD( 3, 95 ), 0x070a );
     }
     return MAKELONG( MAKEWORD( 3, 95 ), 0x0700 );

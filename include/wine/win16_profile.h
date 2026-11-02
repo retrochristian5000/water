@@ -256,6 +256,21 @@ static inline BOOL water_win16_profile_is_version( const struct water_win16_prof
     return profile->major == major && profile->minor == minor;
 }
 
+/*
+ * Native FAT32 belongs to DOS 7.10/8.00 in Win95 OSR2, Win98 and WinMe,
+ * not DOS 6.x, DOS-hosted Windows 3.x, Win95 RTM (DOS 7.00), or NTVDM.
+ * The guest release, not a host FAT32 volume or Win16 compatibility tuple,
+ * decides whether DOS disk services may expose FAT32 geometry and 73xx.
+ */
+static inline BOOL water_win16_profile_has_fat32( const struct water_win16_profile *profile )
+{
+    if (!profile || profile->line != WATER_WIN16_LINE_WIN9X_FAMILY || profile->major != 4)
+        return FALSE;
+
+    if (profile->minor == 0) return profile->build >= 1111; /* Windows 95 OSR2 */
+    return profile->minor == 10 || profile->minor == 90;   /* Windows 98 / Me */
+}
+
 #define WATER_WIN16_KERNEL_ENV                  "WATER_KERNEL16_IMAGE"
 #define WATER_WIN16_KERNEL_KRNL286              "krnl286"
 #define WATER_WIN16_KERNEL_KRNL386              "krnl386"

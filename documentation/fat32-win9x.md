@@ -8,9 +8,12 @@ RAW-SECTOR EMULATION NOT IMPLEMENTED (2026-10-09).
 - Water itself does NOT need to reside on FAT32. Its normal Win32/host
   file system translation already handles mapped host paths on APFS,
   ext4, NTFS, etc., through NTDLL and kernelbase.
-- The DOS 7.1 (Windows 95 OSR2, Windows 98 FE) guest needs a separate
-  FAT32 view for low-level DOS disk services. Windows 95 retail / DOS
-  7.00 and the NT WOW family must not be silently upgraded to DOS 7.1.
+- MS-DOS 6.22 and DOS-hosted Windows 3.x/WfW have no native FAT32,
+  nor does Windows 95 RTM (DOS 7.00). FAT32 begins at Windows 95 OSR2
+  (DOS 7.10), continues in Windows 98 (DOS 7.10), and in Windows Me
+  (DOS 8.00). NT WOW is separate and must not inherit Win9x DOS services.
+- The guest line/build governs FAT32 visibility, not a host FAT32 mount,
+  the Windows compatibility version, or a DOS-version override.
 - Kernelbase volume information already recognizes FAT32 mounts.
   DOS INT 21h / 73xx includes partial FAT32 extended services, but
   its extended DPB previously preferred classic FAT12/FAT16 BPBs
@@ -43,6 +46,14 @@ In programs/ntdos.sys/int21.c:
 - Legacy 16-bit-only FAT fields are not fabricated from 32-bit FAT32
   values. FAT32 free-cluster information is marked unknown until
   real FSInfo/allocator state is read.
+- The explicit guest-release policy rejects FAT32 on DOS 6.x, Win3.x,
+  Win95 RTM and NT. On a recognizable raw FAT32 volume it does not
+  masquerade as FAT16 through host-derived fallback geometry: DOS DPB
+  and legacy free-space operations return failure, and 73xx reports
+  unsupported. Raw BPB decoding remains read-only and independent of
+  guest capability; unrelated host-mapped volumes retain their fallback.
+- Win98's Win16 GetVersion DOS half now reports 7.10 rather than 7.00,
+  using the same release gate as DOS FAT32 services.
 - FAT12/16 logic remains separate. The existing behavior for
   non-FAT host-backed drive mappings is retained.
 
@@ -51,6 +62,11 @@ In programs/ntdos.sys/int21.c:
 Run this test (uses synthetic boot sectors, never accesses real disks):
 
     python3 scripts/tests/test_iosys_fat32.py
+
+This regression also compiles the shared guest capability predicate and
+checks DOS 6.22, Windows 3.x, Win95 RTM and OSR2, Win98, WinMe, and NT.
+It includes source-boundary checks on DOS DPB, legacy free-space and 73xx.
+The tests do not establish a working guest boot or mounted FAT32 volume.
 
 It compiles the actual IO.SYS decoder with minimal portable C stubs and
 tests valid geometry, invalid sizes, FAT12/16 confusion, insufficient
