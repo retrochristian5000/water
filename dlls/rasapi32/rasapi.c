@@ -100,26 +100,27 @@ DWORD WINAPI RasEditPhonebookEntryW(HWND hwnd, LPCWSTR lpszPhonebook, LPCWSTR lp
  *                 RasEnumConnectionsA			[RASAPI32.544]
  */
 DWORD WINAPI RasEnumConnectionsA( LPRASCONNA rca, LPDWORD lpcb, LPDWORD lpcConnections) {
-	/* Remote Access Service stuff is done by underlying OS anyway */
-	FIXME("(%p,%p,%p),stub!\n",rca,lpcb,lpcConnections);
-	FIXME("RAS support is not implemented! Configure program to use LAN connection/winsock instead!\n");
-	*lpcb = 0; /* size of buffer needed to enumerate connections */
-	*lpcConnections = 0; /* no RAS connections available */
+    FIXME("(%p,%p,%p): no RAS connection backend\n", rca, lpcb, lpcConnections);
 
-	return 0;
+    /* The DUN/ISDN UI probes these counters even without an active link. */
+    if (!lpcb || !lpcConnections) return ERROR_INVALID_PARAMETER;
+
+    *lpcb = 0; /* No active RAS connections implemented. */
+    *lpcConnections = 0;
+    return ERROR_SUCCESS;
 }
 
 /**************************************************************************
  *                 RasEnumConnectionsW			[RASAPI32.545]
  */
 DWORD WINAPI RasEnumConnectionsW( LPRASCONNW rcw, LPDWORD lpcb, LPDWORD lpcConnections) {
-	/* Remote Access Service stuff is done by underlying OS anyway */
-	FIXME("(%p,%p,%p),stub!\n",rcw,lpcb,lpcConnections);
-	FIXME("RAS support is not implemented! Configure program to use LAN connection/winsock instead!\n");
-	*lpcb = 0; /* size of buffer needed to enumerate connections */
-	*lpcConnections = 0; /* no RAS connections available */
+    FIXME("(%p,%p,%p): no RAS connection backend\n", rcw, lpcb, lpcConnections);
 
-	return 0;
+    if (!lpcb || !lpcConnections) return ERROR_INVALID_PARAMETER;
+
+    *lpcb = 0;
+    *lpcConnections = 0;
+    return ERROR_SUCCESS;
 }
 
 /**************************************************************************
