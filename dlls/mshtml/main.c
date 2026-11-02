@@ -628,9 +628,9 @@ HRESULT WINAPI DllInstall(BOOL install, const WCHAR *cmdline)
 
     if(cmdline && *cmdline)
         FIXME("unsupported cmdline: %s\n", debugstr_w(cmdline));
-    else if(install)
-        load_gecko();
 
+    /* Installing MSHTML is not consent to install a third-party renderer.
+     * The temporary Gecko backend is loaded only when a document needs it. */
     return S_OK;
 }
 
