@@ -22,6 +22,29 @@ RAW-SECTOR EMULATION NOT IMPLEMENTED (2026-10-09).
   implementation is included in KRNL386 by a temporary source bridge
   until a real IO.SYS boot path is implemented.
 
+## DriveSpace 3: explicit FAT32 exclusion
+
+Period Windows 98 PROGRAMS.TXT says that DriveSpace 3 recognizes FAT32
+but does not compress it. This is a **DriveSpace limitation**, not a
+limitation on DOS 7.1's ability to use FAT32, on Windows 98 ScanDisk, or
+on Windows 98's FAT32 storage stack. Neither the presence of a
+DRVSPACE.000 compressed-volume file nor a host FAT32 path proves
+that the guest volume is a supported compression target.
+
+The dedicated read-only preflight in programs/drvspace/volume_policy.c
+prioritizes verified FAT32 BPB recognition, returning FAT32_REJECTED.
+Only a verified classic FAT12/16 BPB receives CANDIDATE status, never
+automatic permission to compress. Unreadable or unknown layouts fail
+closed. The preflight shares the existing IO.SYS BPB readers rather than
+duplicating FAT decoders. There is not yet a DRVSPACE.EXE or live
+compression operation to which this preflight can be attached.
+
+Regression: python3 scripts/tests/test_drvspace_fat32.py
+
+References: Windows 98 PROGRAMS.TXT
+https://www.betaarchive.com/wiki/index.php/Windows_98/4.10.1546/programs.txt
+and Microsoft KB Q154997 https://helparchive.huntertur.net/document/43322 .
+
 ## Implementation
 
 In programs/io.sys/config.c and io_sys.h:
