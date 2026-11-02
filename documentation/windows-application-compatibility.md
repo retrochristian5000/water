@@ -1148,3 +1148,108 @@ Progress in this bounded pass: 2/2 identified disabled-accessor
 surfaces repaired in source (100% of that scoped feature), 0/1
 compiled/runtime regression suites verified (0%). These are
 scope-specific percentages, not an overall IE CSS completion claim.
+
+## Classic ASP: IIS server execution versus IE HTML response handling (November 1, 2026)
+
+Status: one browser-side HTTP charset parser defect repaired and a
+synthetic IIS-output regression authored. Source changes are pushed;
+no compilation, guest browser run, or classic ASP server execution.
+
+### Server/client ABI and historical versions
+
+Classic Active Server Pages (.asp) executes on a Web server, historically
+Personal Web Server 1.0/4.0, IIS 3/4, IIS 5.0 on Windows 2000, and
+IIS 5.1 with Windows XP Professional. Its ASP engine runs directives
+and server-side VBScript/JScript, Response/Request/Session/Application
+objects, Global.asa and server COM. The browser receives HTTP
+headers plus the already-generated HTML and client-side scripts.
+Windows 98 supported optional Personal Web Server 4.0; Windows Me
+and XP Home did NOT bundle a supported PWS/IIS. Do not mark all
+Windows installations as having ASP server functionality.
+
+ASP.NET (.aspx) is a later, independent ASP.NET server pipeline.
+Neither .asp nor .aspx needs a browser-side script interpreter
+for its server source code. Do not add a magic .asp=HTML rule
+that accidentally renders raw server code from a misconfigured
+HTTP server, nor execute <%...%> blocks inside MSHTML.
+
+Primary Microsoft documentation:
+https://learn.microsoft.com/en-us/previous-versions/iis/6.0-sdk/ms524929(v=vs.90)
+https://learn.microsoft.com/en-us/archive/msdn-magazine/2000/september/cutting-edge-a-client-side-environment-for-asp-pages
+https://learn.microsoft.com/en-us/previous-versions/iis/6.0-sdk/ms525304(v=vs.90)
+https://learn.microsoft.com/en-us/previous-versions/iis/6.0-sdk/ms525789(v=vs.90)
+https://learn.microsoft.com/en-us/iis/application-frameworks/running-classic-asp-applications-on-iis-7-and-iis-8/classic-asp-not-installed-by-default-on-iis
+https://mskb.pkisolutions.com/kb/318287
+https://learn.microsoft.com/en-us/iis/application-frameworks/building-and-running-aspnet-applications/upgrading-aspnet-11-to-iis-on-windows-vista-and-windows-server-2008
+https://www.rfc-editor.org/rfc/rfc9110.html
+
+### WATER component audit
+
+- programs/inetinfo/main.c already provides a Windows 2000 IIS 5
+  service dispatcher stub. It intentionally reports STOPPED
+  (ERROR_CALL_NOT_IMPLEMENTED); the W3SVC, metabase, ISAPI/ASP
+  execution and HTTP/FTP service backends are still absent.
+  A registered IIS-like process is NOT a working ASP server.
+- dlls/wininet/http.c, cookie.c handle HTTP requests and cookies;
+  dlls/urlmon/http.c integrates URL binding; dlls/mshtml/navigate.c
+  processes raw response headers, and dlls/mshtml/script.c plus
+  dlls/vbscript and dlls/jscript support client-side scripts.
+  They must not be conflated with server-side VBScript execution.
+- A local file:///page.asp without a web server cannot execute
+  ASP. The default client behavior must not secretly reinterpret
+  its source as executable browser code.
+
+### Confirmed client-side fix
+
+Classic ASP Response.Charset adds the charset label to the
+Content-Type header. Microsoft explains that IIS Response.CodePage
+controls server encoding while Response.Charset informs the
+browser's decoding; mismatches display the wrong characters.
+The HTTP media-type grammar accepts quoted and unquoted parameter
+values, case-insensitive charset keys, and additional parameters.
+
+Before this pass, MSHTML parse_content_type handled only an
+unquoted charset as the FIRST Content-Type parameter; a quoted
+value was ignored, and a following semicolon or whitespace could
+be passed as part of the supposed charset. This corrupted the
+browser's decoding of some correctly served ASP-generated pages.
+
+The repaired dlls/mshtml/navigate.c parameter scan recognizes
+case-insensitive charset after other parameters, handles quoted
+values and semicolons inside unrelated quoted parameter values,
+and trims whitespace around unquoted values. It validates a
+bounded ASCII charset label before passing it to nsIHttpChannel.
+Malformed or missing labels do not cause untrusted server data
+to be treated as executable code or change zone/script policy.
+
+The existing dlls/mshtml/tests/htmldoc.c now has a guarded
+synthetic HTTP response containing 'Content-Type: text/html;
+boundary="a;b"; Charset="windows-1252"'. During the existing
+hlink document test it supplies raw HTTP headers and checks
+that IHTMLDocument2_get_charset reports Windows-1252, then
+disables the fixture for all other tests. This exercises a
+server-generated HTML RESPONSE, not a working .asp server or
+a real .asp URL navigation. It opens no new listeners and
+does not modify the system registry.
+
+### Follow-up verification controls
+
+1. Build MSHTML and run the htmldoc suite; compare native IE5/6
+   and IE7/8 modes against the same header/value fixtures.
+2. Test charset=UTF-8, charset=Shift_JIS, quoted values, extra
+   parameters, malformed quotes, BOM and META overrides with
+   encoded non-ASCII response bodies; test real HTTP POST, GET,
+   redirect, cache, cookie and error behavior with local fixtures.
+3. On a guest with a real PWS 4.0/IIS 5.x ASP engine, compare
+   Request.Form/QueryString, Response.Write/Redirect/Charset,
+   Session cookies and generated HTML. Keep server and client
+   trace evidence separately; do not trust presence of asp.dll
+   alone without successful execution.
+4. Only after original Microsoft service ABI and installer
+   evidence, implement the optional IIS/PWS request/ASP pipeline
+   in its service owner. Preserve 9x versus 2000/XP boundaries
+   and fail closed on missing server handlers.
+
+Progress: browser header parsing 1/1 targeted defect repaired
+in source (100% of this narrow repair); 0 compiled/runtime
+verification runs (0%). Overall ASP compatibility not quantified.
