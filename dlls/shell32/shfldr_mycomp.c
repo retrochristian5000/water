@@ -315,15 +315,31 @@ static BOOL CreateMyCompEnumList(IEnumIDListImpl *list, DWORD dwFlags)
                     r = RegEnumKeyExW(hkey, i, iid, &size, 0, NULL, NULL, NULL);
                     if (ERROR_SUCCESS == r)
                     {
-                        /* FIXME: shell extensions, shouldn't the type be
-                         * PT_SHELLEXT? */
-                        ret = AddToEnumList(list, _ILCreateGuidFromStrW(iid));
+                        LPITEMIDLIST child;
+
+                        /* An unrelated or damaged NameSpace subkey is not a
+                         * shell CLSID.  Skip it without hiding later entries. */
+                        child = _ILCreateGuidFromStrW(iid);
+                        if (child)
+                            ret = AddToEnumList(list, child);
+                        else
+                            WARN("Ignoring invalid My Computer namespace key %s\n", debugstr_w(iid));
                         i++;
                     }
                     else if (ERROR_NO_MORE_ITEMS == r)
                         break;
+                    else if (ERROR_MORE_DATA == r)
+                    {
+                        /* GUID subkeys must fit iid; a longer name is not a
+                         * CLSID.  Keep enumerating the remaining subkeys. */
+                        WARN("Ignoring oversized My Computer namespace key\n");
+                        i++;
+                    }
                     else
+                    {
+                        WARN("My Computer namespace enumeration failed: %ld\n", r);
                         ret = FALSE;
+                    }
                 }
                 RegCloseKey(hkey);
             }
