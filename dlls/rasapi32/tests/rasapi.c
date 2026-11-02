@@ -191,20 +191,22 @@ static void test_no_ras_connections(void)
         return;
     }
 
-    /* On this implementation the backend reports no active DUN/ISDN link. */
+    /* Native Windows may have live connections; do not assume an empty RAS. */
     needed = 0;
     count = 0xdeadbeef;
     result = pRasEnumConnectionsA(NULL, &needed, &count);
-    ok(result == ERROR_SUCCESS, "RasEnumConnectionsA returned %lu.\n", result);
+    ok(result == ERROR_SUCCESS || result == ERROR_BUFFER_TOO_SMALL,
+            "RasEnumConnectionsA returned %lu.\n", result);
     if (result == ERROR_SUCCESS)
-        ok(!count && !needed, "Unexpected A active links %lu, size %lu.\n", count, needed);
+        ok(!count, "No-buffer enumeration unexpectedly reported %lu links.\n", count);
 
     needed = 0;
     count = 0xdeadbeef;
     result = pRasEnumConnectionsW(NULL, &needed, &count);
-    ok(result == ERROR_SUCCESS, "RasEnumConnectionsW returned %lu.\n", result);
+    ok(result == ERROR_SUCCESS || result == ERROR_BUFFER_TOO_SMALL,
+            "RasEnumConnectionsW returned %lu.\n", result);
     if (result == ERROR_SUCCESS)
-        ok(!count && !needed, "Unexpected W active links %lu, size %lu.\n", count, needed);
+        ok(!count, "No-buffer enumeration unexpectedly reported %lu links.\n", count);
 
     needed = 0;
     count = 0xdeadbeef;
