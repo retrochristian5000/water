@@ -418,9 +418,100 @@ static void test_desktop_displaynameof(void)
     IShellFolder_Release(desktop);
 }
 
+
+/* These are optional 9x/IE5 shell extensions, not mandatory on every OS. */
+static void test_installed_internet_namespace(void)
+{
+    static const WCHAR namespace_key[] =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MyComputer\\NameSpace";
+    static const WCHAR *const clsids[] = {
+        L"{992CFFA0-F557-101A-88EC-00DD010CCC48}", /* Dial-Up Networking */
+        L"{BDEADF00-C265-11D0-BCED-00A0C90AB50F}"  /* Web Folders */
+    };
+    const HKEY roots[] = {HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER};
+    IShellFolder *desktop = NULL, *mycomp = NULL;
+    LPITEMIDLIST root = NULL;
+    HRESULT hr;
+    unsigned int n, hive;
+
+    hr = SHGetDesktopFolder(&desktop);
+    if (FAILED(hr)) return;
+    hr = SHGetSpecialFolderLocation(NULL, CSIDL_DRIVES, &root);
+    if (SUCCEEDED(hr))
+        hr = IShellFolder_BindToObject(desktop, root, NULL,
+                &IID_IShellFolder, (void **)&mycomp);
+    if (root) ILFree(root);
+    IShellFolder_Release(desktop);
+    if (FAILED(hr)) return;
+
+    for (n = 0; n < ARRAY_SIZE(clsids); n++)
+    {
+        BOOL registered = FALSE, seen = FALSE;
+        WCHAR clsid_path[64];
+        HKEY key;
+
+        swprintf(clsid_path, ARRAY_SIZE(clsid_path), L"CLSID\\%s", clsids[n]);
+        if (RegOpenKeyExW(HKEY_CLASSES_ROOT, clsid_path, 0, KEY_READ, &key)
+                != ERROR_SUCCESS)
+            continue;
+        RegCloseKey(key);
+
+        for (hive = 0; hive < ARRAY_SIZE(roots); hive++)
+        {
+            HKEY namespace_root;
+
+            if (RegOpenKeyExW(roots[hive], namespace_key, 0, KEY_READ,
+                    &namespace_root) != ERROR_SUCCESS)
+                continue;
+            if (RegOpenKeyExW(namespace_root, clsids[n], 0, KEY_READ, &key)
+                    == ERROR_SUCCESS)
+            {
+                registered = TRUE;
+                RegCloseKey(key);
+            }
+            RegCloseKey(namespace_root);
+        }
+        if (registered)
+        {
+            IEnumIDList *items = NULL;
+            LPITEMIDLIST child;
+
+            hr = IShellFolder_EnumObjects(mycomp, NULL, SHCONTF_FOLDERS, &items);
+            ok(hr == S_OK, "My Computer EnumObjects failed: %#lx\n", hr);
+            if (SUCCEEDED(hr) && items)
+            {
+                while (IEnumIDList_Next(items, 1, &child, NULL) == S_OK)
+                {
+                    STRRET str;
+                    WCHAR display[MAX_PATH];
+
+                    if (SUCCEEDED(IShellFolder_GetDisplayNameOf(mycomp, child,
+                            SHGDN_FORPARSING, &str)) &&
+                            SUCCEEDED(StrRetToBufW(&str, child, display, ARRAY_SIZE(display))) &&
+                            StrStrIW(display, clsids[n]))
+                        seen = TRUE;
+                    ILFree(child);
+                    if (seen) break;
+                }
+                IEnumIDList_Release(items);
+            }
+            ok(seen, "Registered My Computer namespace item %s was not enumerated.\n",
+                    wine_dbgstr_w(clsids[n]));
+        }
+        else
+        {
+            trace("Optional My Computer namespace %s is not installed.\n",
+                    wine_dbgstr_w(clsids[n]));
+        }
+    }
+
+    IShellFolder_Release(mycomp);
+}
+
 START_TEST(shfldr_special)
 {
     test_parse_for_my_computer();
+    test_installed_internet_namespace();
     test_parse_for_entire_network();
     test_network_places_folder();
     test_parse_for_control_panel();
