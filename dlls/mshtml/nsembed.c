@@ -685,7 +685,14 @@ static WCHAR *check_version(const WCHAR *path)
         return NULL;
     }
 
-    ReadFile(hfile, version, sizeof(version), &read, NULL);
+    /* Reserve space for the terminator even for an oversized VERSION
+     * file; do not let a third-party backend overflow the loader. */
+    if(!ReadFile(hfile, version, sizeof(version) - 1, &read, NULL)) {
+        WARN("Failed to read Gecko VERSION: %lu\n", GetLastError());
+        CloseHandle(hfile);
+        free(file_name);
+        return NULL;
+    }
     version[read] = 0;
     CloseHandle(hfile);
 
