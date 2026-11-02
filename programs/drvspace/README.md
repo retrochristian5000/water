@@ -1,5 +1,26 @@
 # DriveSpace volume eligibility (read-only foundation)
 
+## Host prefix versus guest sectors
+
+The default prefix C: drive is a directory, often on the user's home
+APFS volume, **not** a separate FAT16 partition. 8.3 filename
+compatibility, DOS file attributes, and synthesized free-space data
+do not establish actual FAT16 allocation tables or guest sectors.
+
+Until a guest-owned disk-image backend is explicitly mounted,
+DOS/Win9x KRNL386 and NTVDM DEM raw sector writes **fail closed** for
+every drive and every fake-success setting. INT 26h now asks for genuine
+write results; BIOS INT 13h already does. Normal prefix file access and
+the preexisting raw-read path remain unchanged. This protection is
+specific to these DOS-sector entry points, not all Windows disk APIs.
+
+Do not translate a prefix symlink or \\.\X: device name into a host
+partition write. When introducing virtual disks, verify backend identity,
+sector bounds, exclusive guest storage ownership, and a shared
+file/sector view before allowing any sector write.
+
+Regression: python3 scripts/tests/test_guest_sector_write_safety.py
+
 Windows 98 release notes and PROGRAMS.TXT state that DriveSpace 3 can
 **detect** FAT32 but does **not compress** FAT32 volumes. That limitation
 is independent of Windows 95 OSR2 / Windows 98 / Me being able to mount

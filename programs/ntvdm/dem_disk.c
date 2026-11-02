@@ -52,27 +52,16 @@ BOOL DEM_AbsoluteRead(BYTE drive, DWORD begin, DWORD nr_sect, BYTE *dataptr,
 BOOL DEM_AbsoluteWrite(BYTE drive, DWORD begin, DWORD nr_sect,
                        const BYTE *dataptr, BOOL fake_success)
 {
-    WCHAR root[] = {'\\','\\','.','\\','A',':',0};
-    HANDLE h;
-
-    TRACE("absolute disk write, drive %u, sector %lu, count %lu, buffer %p\n",
-          drive, begin, nr_sect, dataptr);
-
-    root[4] += drive;
-    h = CreateFileW(root, GENERIC_WRITE, FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
-                    0, NULL);
-    if (h != INVALID_HANDLE_VALUE)
-    {
-        DWORD written, size = nr_sect * 512;
-        LARGE_INTEGER offset;
-        BOOL ret;
-
-        offset.QuadPart = (ULONGLONG)begin * 512;
-        ret = SetFilePointerEx(h, offset, NULL, FILE_BEGIN) &&
-              WriteFile(h, dataptr, size, &written, NULL) && written == size;
-        CloseHandle(h);
-        if (ret) return TRUE;
-    }
-
-    return fake_success;
+    /*
+     * NTVDM drive letters may refer to home-directory prefix mappings or
+     * physical devices. Neither proves a guest-owned writable sector image.
+     * Refuse raw writes until an explicit, validated virtual disk is mounted.
+     * A fake-success request is not a write and must not be acknowledged.
+     */
+    (void)drive;
+    (void)begin;
+    (void)nr_sect;
+    (void)dataptr;
+    (void)fake_success;
+    return FALSE;
 }

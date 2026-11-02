@@ -15,7 +15,6 @@
 #include "../../programs/ntvdm/dem_disk.h"
 
 typedef BOOL (__cdecl *w32_dem_absread_proc)(BYTE, DWORD, DWORD, BYTE *, BOOL);
-typedef BOOL (__cdecl *w32_dem_abswrite_proc)(BYTE, DWORD, DWORD, const BYTE *, BOOL);
 
 static HMODULE ntdos_get_wow32(void)
 {
@@ -59,31 +58,6 @@ static BOOL krnl386_legacy_absolute_read(BYTE drive, DWORD begin, DWORD nr_sect,
     return TRUE;
 }
 
-static BOOL krnl386_legacy_absolute_write(BYTE drive, DWORD begin, DWORD nr_sect,
-                                          const BYTE *dataptr, BOOL fake_success)
-{
-    WCHAR root[] = {'\\','\\','.','\\','A',':',0};
-    HANDLE h;
-
-    root[4] += drive;
-    h = CreateFileW(root, GENERIC_WRITE, FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
-                    0, NULL);
-    if (h != INVALID_HANDLE_VALUE)
-    {
-        DWORD written, size = nr_sect * 512;
-        LARGE_INTEGER offset;
-        BOOL ret;
-
-        offset.QuadPart = (ULONGLONG)begin * 512;
-        ret = SetFilePointerEx(h, offset, NULL, FILE_BEGIN) &&
-              WriteFile(h, dataptr, size, &written, NULL) && written == size;
-        CloseHandle(h);
-        if (ret) return TRUE;
-    }
-
-    return fake_success;
-}
-
 BOOL DOSVM_RawRead(BYTE drive, DWORD begin, DWORD nr_sect,
                    BYTE *dataptr, BOOL fake_success)
 {
@@ -102,16 +76,19 @@ BOOL DOSVM_RawRead(BYTE drive, DWORD begin, DWORD nr_sect,
 BOOL DOSVM_RawWrite(BYTE drive, DWORD begin, DWORD nr_sect,
                     const BYTE *dataptr, BOOL fake_success)
 {
-    HMODULE wow32;
-    w32_dem_abswrite_proc proc;
-
-    if (!kernel_is_nt_wow_session())
-        return krnl386_legacy_absolute_write(drive, begin, nr_sect, dataptr, fake_success);
-
-    wow32 = ntdos_get_wow32();
-    if (!wow32) return FALSE;
-    proc = (w32_dem_abswrite_proc)GetProcAddress(wow32, "__wine_W32DemAbsoluteWrite");
-    return proc ? proc(drive, begin, nr_sect, dataptr, fake_success) : FALSE;
+    /*
+     * Directory-backed prefix drives are not guest-owned FAT partitions.
+     * No authenticated guest sector writer exists here, including NT WOW.
+     * Never open \\.\X: for host-sector writes, or let fake_success turn a
+     * missing guest write into success. A future image-backed implementation
+     * must validate volume identity and every sector bound.
+     */
+    (void)drive;
+    (void)begin;
+    (void)nr_sect;
+    (void)dataptr;
+    (void)fake_success;
+    return FALSE;
 }
 
 #define DEM_AbsoluteRead DOSVM_RawRead

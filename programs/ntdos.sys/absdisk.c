@@ -78,7 +78,8 @@ void WINAPI DOSVM_Int26Handler(I386_CONTEXT *context)
         length = CX_reg(context);
     }
 
-    if (!DEM_AbsoluteWrite(AL_reg(context), begin, length, dataptr, TRUE))
+    /* Never report guest write completion from a synthetic fallback. */
+    if (!DEM_AbsoluteWrite(AL_reg(context), begin, length, dataptr, FALSE))
     {
         SET_CFLAG(context);
         SET_AX(context, 0x0201);
