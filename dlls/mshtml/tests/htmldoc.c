@@ -236,6 +236,7 @@ static BOOL asynchronous_binding = FALSE;
 static BOOL support_wbapp, allow_new_window, no_travellog;
 static BOOL report_mime;
 static BOOL testing_submit;
+static BOOL asp_response_header_test;
 static BOOL resetting_document;
 static BOOL is_error_url;
 static BOOL is_mhtml;
@@ -1409,6 +1410,26 @@ static HRESULT WINAPI WinInetHttpInfo_QueryInfo(
         DWORD *pdwReserved)
 {
     ok(pdwReserved == NULL, "pdwReserved != NULL\n");
+
+    if(dwOption == HTTP_QUERY_RAW_HEADERS_CRLF && asp_response_header_test) {
+        /* An IIS-generated .asp response: an unrelated quoted parameter
+         * precedes the charset, which is also quoted. No IIS is needed. */
+        static const char raw_headers[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html; boundary=\"a;b\"; Charset=\"windows-1252\"\r\n"
+            "\r\n";
+
+        if(!pcbBuf)
+            return E_POINTER;
+        if(!pBuffer || *pcbBuf < sizeof(raw_headers)) {
+            *pcbBuf = sizeof(raw_headers);
+            return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+        }
+
+        memcpy(pBuffer, raw_headers, sizeof(raw_headers));
+        *pcbBuf = sizeof(raw_headers);
+        return S_OK;
+    }
 
     if(dwOption == (HTTP_QUERY_STATUS_CODE|HTTP_QUERY_FLAG_NUMBER)) {
         ok(pBuffer != NULL, "pBuffer == NULL\n");
@@ -8714,6 +8735,17 @@ static void test_HTMLDocument_hlink(DWORD status)
 
     status_code = status;
     test_download(DWL_CSS|DWL_TRYCSS);
+    if(asp_response_header_test) {
+        BSTR charset = NULL;
+        HRESULT hr = IHTMLDocument2_get_charset(doc, &charset);
+
+        ok(hr == S_OK, "ASP response charset query failed: %#lx\n", hr);
+        if(SUCCEEDED(hr))
+            ok(charset && !lstrcmpiW(charset, L"windows-1252"),
+                    "ASP-generated HTML decoded using %s, expected windows-1252.\n",
+                    wine_dbgstr_w(charset));
+        SysFreeString(charset);
+    }
     status_code = HTTP_STATUS_OK;
 
     test_IsDirty(doc, S_FALSE);
@@ -9820,7 +9852,9 @@ START_TEST(htmldoc)
     test_HTMLDocument_hlink(HTTP_STATUS_NOT_FOUND);
 
     asynchronous_binding = FALSE;
+    asp_response_header_test = TRUE;
     test_HTMLDocument_hlink(HTTP_STATUS_OK);
+    asp_response_header_test = FALSE;
     test_HTMLDocument(FALSE, TRUE);
     test_HTMLDocument(TRUE, FALSE);
     test_HTMLDocument(TRUE, TRUE);
