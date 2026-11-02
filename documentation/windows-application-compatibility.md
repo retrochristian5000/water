@@ -970,3 +970,96 @@ a default installation.
 
 Verification: GitHub source edits and test sources inspected, not compiled
 or run on Windows 98 SE; no emulator ISDN device or live line was tested.
+
+## My Computer: Dial-Up Networking and Web Folders namespace (November 1, 2026)
+
+Status: registry enumeration guard and read-only conditional tests added;
+neither a new Dial-Up Networking shell folder nor IE5 Web Folders is implemented.
+
+### Windows / IE distribution controls
+
+Windows 95 and Windows 98: when installed, Dial-Up Networking appeared
+inside My Computer as a shell folder. A Microsoft support article
+(KB286192) confirms Windows 98's My Computer access path and
+distinguishes Windows Me (Control Panel). On some 9x installs the
+Communications component was optional, so the presence of an icon
+must be measured rather than assumed.
+
+The 9x DUN namespace CLSID is:
+{992CFFA0-F557-101A-88EC-00DD010CCC48}. A contemporary
+May 1999 registry report places it under:
+HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace.
+Do not confuse this 9x shell CLSID with NT 4.0's RASSHELL classes
+({a4d92740-67cd-11cf-96f2-00aa00a11dd9} and related classes).
+
+IE5 Web Authoring Components: the optional Web Folders shell
+namespace used CLSID {BDEADF00-C265-11D0-BCED-00A0C90AB50F}. It
+also shipped with Office 2000/2002 web publishing components, and
+Windows 98 SE could receive it via an installation/update route.
+Web Folders are distinct from the Windows 98 Explorer 'as Web page'
+folder view, and are not the same as FTP folders. On Windows 2000
+the feature integrated with My Network Places/Add Network Place;
+later systems must not display a hard-coded IE5-era icon in My
+Computer solely because the IE5 registry CLSID is known.
+
+Sources:
+https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/286192
+https://groups.google.com/g/microsoft.public.win95.general.discussion/c/WhT2Ye1OI3c
+https://www.bitsavers.org/pdf/microsoft/windows_NT_4.0/Osborne_-_Windows_NT_Registry_Settings_Reference_1998.pdf
+https://mskb.pkisolutions.com/kb/298637
+https://www.betaarchive.com/wiki/index.php?title=Microsoft_KB_Archive%2F287402
+https://helpwithwindows.com/windows98/ie50-121.html
+https://docs.oracle.com/cd/B14099_19/portal.1012/b10358.pdf
+https://www.geoffchappell.com/studies/windows/shell/shell32/classes/mycomputer.htm
+
+### Existing WATER behavior and bounded repair
+
+dlls/shell32/shfldr_mycomp.c already enumerated both HKLM and HKCU
+Explorer\MyComputer\NameSpace into virtual GUID PIDLs, with
+registered classes bound through SHELL32_BindToChild. There was
+no reason to add IEFRAME branches or force the two CLSIDs into
+shell32.rgs for every installed Windows personality.
+
+Before this audit, the My Computer enumerator passed every subkey
+to _ILCreateGuidFromStrW. If an unrelated/damaged key was not a
+CLSID, the resulting null PIDL was handed to AddToEnumList;
+this could abort enumeration before valid registered items were
+processed. The repair skips invalid GUID subkeys and oversized
+subkey names with a warning, continuing after the bad entry.
+Other registry enumeration failures still abort. The repair
+does not alter the registry, generate shortcut icons, or
+claim to implement unregistered folders.
+
+dlls/shell32/tests/shfldr_special.c now includes a read-only
+check for the DUN and Web Folders CLSIDs. It verifies that
+the optional COM class and a MyComputer NameSpace subkey
+actually exist before checking enumeration by parsing name;
+otherwise it only logs that the optional feature is absent.
+It does not create registry keys, shortcuts, or network calls.
+
+### Further owners to implement and verify
+
+- For Windows 95/98 DUN, distinguish the My Computer folder
+  shell-extension class from RASAPI32 connection APIs,
+  Windows 9x RNAUI/PPPMAC and the installed phonebook data.
+  The current RAS backend and many related APIs are stubs.
+- For IE5 Web Folders, recover the installer, CLSID and class
+  registration, the Web Folders namespace implementation,
+  MSDAIPP/WebDAV persistence and Web Publishing behavior.
+  WATER's dlls/davclnt exists, but its network provider
+  and relevant functions are mostly stubs; it is not
+  evidence that the IE5 shell UI is usable.
+- Distinguish missing registered icon, icon cache damage,
+  absent COM server, incorrect shell enumeration, and
+  correct icon with broken BindToObject or network access.
+- Prefer captured Windows 98, Windows 98 SE + IE5 custom
+  installation, Me, Windows 2000 and XP registry/INF/CAB
+  inventories; keep native icon resources separate from
+  user shortcuts and OS-version-specific installations.
+- Test HKLM and HKCU namespace enumeration, malformed subkeys,
+  COM class registration, GetDisplayNameOf, icon extraction,
+  BindToObject, and actual DUN/WebDAV operations separately.
+
+Verification: committed source and test changes; GitHub inspection
+only. Compilation, native Windows shell comparisons and runtime
+WebDAV/DUN functionality have not been verified.
