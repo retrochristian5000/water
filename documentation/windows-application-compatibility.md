@@ -1253,3 +1253,114 @@ does not modify the system registry.
 Progress: browser header parsing 1/1 targeted defect repaired
 in source (100% of this narrow repair); 0 compiled/runtime
 verification runs (0%). Overall ASP compatibility not quantified.
+
+## MSHTML renderer provenance: Trident versus Gecko (November 1, 2026)
+
+Status: historical ownership verified. Temporary Wine Gecko coupling
+contained in DLL setup and explicitly opt-out capable; this pass
+does not implement a Trident-compatible rendering engine.
+
+### Source and historical boundaries
+
+Microsoft identifies MSHTML (also called Trident) as Internet
+Explorer's native rendering engine. Trident is associated with
+IE4 onward, not a single invariant engine for every IE version.
+Mozilla Gecko is the Mozilla/Firefox rendering engine and is not
+the rendering engine included in a genuine IE installation.
+Wine added Gecko to provide a substitute renderer behind its
+mshtml.dll compatibility implementation; this inherited design
+does not establish the correct architecture for WATER.
+IE11's user-agent may say 'like Gecko', but that token is not
+proof of Gecko engine usage.
+
+References:
+https://www.microsoft.com/en-us/msrc/blog/2009/04/the-mshtml-host-security-faq-part-i-of-ii
+https://learn.microsoft.com/en-us/deployedge/edge-ie-mode
+https://firefox-source-docs.mozilla.org/overview/gecko.html
+https://docs.freebsd.org/en/books/handbook/wine/
+https://download.microsoft.com/download/e/5/3/e5395265-d2cd-4451-a2bb-b4504c000e80/microsoft_press_ebook_introducing_windows_itpro_pdf.pdf
+
+### Existing WATER ownership inventory
+
+- dlls/ieframe and shdocvw: Windows browser shell, COM hosting
+  and navigation interfaces, NOT an HTML layout engine.
+- dlls/mshtml/main.c: COM activation, DLL setup, version/mode
+  infrastructure; DllInstall previously called load_gecko()
+  unconditionally on install. This is not needed to register
+  the Windows MSHTML COM ABI.
+- dlls/mshtml/nsembed.c: Gecko discovery, XUL/XPCOM DLL load,
+  optional installer launch, browser window/editor creation,
+  and lifetime. It is a temporary third-party backend.
+- dlls/mshtml/oleobj.c: HTMLDocumentObj construction currently
+  calls create_gecko_browser(), and then dereferences its
+  content window and DOM. The native backend is NOT present.
+- dlls/mshtml/mshtml_private.h and nsiface.idl: substantial
+  Gecko nsIDOM/nsIWebBrowser type surface used throughout DOM,
+  CSS, layout and mutation wrappers. Do not remove these first.
+- dlls/mshtml/nsio.c and navigate.c: bridge Gecko documents to
+  WinINet/URLMON network protocols; back-end replacement must
+  preserve IE security zones, policy, MIME, cookies and bind
+  semantics independently of Gecko.
+- dlls/mshtml/htmlstyle.c and htmlstylesheet.c: CSSOM COM API
+  wrapped around Gecko CSS declarations; an HTML parser by
+  itself cannot replace this cascade/layout/painting behavior.
+- dlls/mshtml/script.c plus jscript and vbscript: existing
+  Windows ActiveScript hosting; keep distinct from Firefox's
+  SpiderMonkey JavaScript implementation and preserve IE modes.
+
+### Safe containment implemented in this pass
+
+1. mshtml!DllInstall no longer triggers Gecko startup, downloads
+   or installation. DLL setup and Windows-facing COM interfaces
+   do not implicitly grant consent to install a renderer.
+   Historical Windows DllInstall usage is for DLL setup;
+   the separate DllRegisterServer path remains unchanged.
+2. nsembed.c honors WATER_MSHTML_DISABLE_GECKO=1 before probing
+   disk paths, loading XUL or launching a Gecko installer.
+   This is a test/development guard, not a native browser.
+   Without a replacement, HTMLDocument creation returns
+   CLASS_E_CLASSNOTAVAILABLE. In the default setting, the
+   existing Wine Gecko runtime remains available to avoid
+   unexpectedly breaking older WATER functionality.
+3. nsembed.c bounds the Gecko VERSION-file read to leave a
+   terminator byte and detects ReadFile failure. The previous
+   128-byte read plus version[read]=0 could overrun the buffer
+   for a full-length, untrusted VERSION file.
+4. dlls/mshtml/tests/misc.c now tests the opt-out under the
+   Wine/WATER test personality, probes DllInstall, asserts
+   fail-closed HTML document creation and restores the prior
+   environment setting. Native Windows runs skip the
+   WATER-specific opt-out test. This test is source-authored
+   but has not been compiled or run.
+
+### Replacement plan / no-reset rules
+
+Do not remove nsembed.c, nsiface.idl, or the Gecko-backed
+implementation now: HTMLDocument currently dereferences Gecko
+objects and would fail to render and lose DOM/CSS/events.
+Do not call Wine Gecko a native Trident implementation.
+
+Future first step: identify an independent rendering backend
+contract and pin native IE COM/DOM document-mode behavior with
+offline tests. Only then isolate the lifetime, DOM, CSS, layout,
+paint, input and accessibility handlers behind that interface.
+Implement the HTML parser, DOM tree and per-mode CSS semantics
+with validated independent sources, and move URLMON/WinINet
+bridges and ActiveScript/ActiveX security gates onto the new
+backend. A libxml HTML parser alone cannot cover layout,
+scripts, computed styles or the Windows MSHTML COM object model.
+
+Cover IE4/5, IE5.5/6, IE7/8, IE9-11 separately, including
+quirks, standards and X-UA-Compatible document modes. Check
+Windows 98/98 SE, Me, 2000 and XP installed IE upgrades
+against original local guest baselines; no generic 'Firefox'
+behavior may define older IE CSS, DOM or security rules.
+Gate switch-over on real HTML/CSS rendering, DOM/script/events,
+forms, ActiveX security, URLMON data binding and version-mode
+test suites. Only after achieving parity and alternative
+rendering should the Gecko backend code be retired.
+
+Verification: four code/test commits source-reviewed and
+committed. No local build, winetest run, native IE comparison,
+or Gecko-free HTML rendering has been performed. This is a
+dependency-containment stage, NOT an engine replacement.
