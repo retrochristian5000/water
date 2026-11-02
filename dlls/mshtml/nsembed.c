@@ -788,6 +788,20 @@ BOOL load_gecko(void)
 
     TRACE("()\n");
 
+    /* Allow native-MSHTML development and guest comparisons without
+     * loading XPCOM or launching the inherited Wine Gecko installer.
+     * With this guard set, HTML document creation fails explicitly
+     * until a non-Gecko renderer is available. */
+    {
+        WCHAR disabled[2];
+        DWORD len = GetEnvironmentVariableW(L"WATER_MSHTML_DISABLE_GECKO", disabled, ARRAY_SIZE(disabled));
+
+        if(len == 1 && disabled[0] == '1') {
+            WARN("Gecko backend explicitly disabled; no native renderer is available yet.\n");
+            return FALSE;
+        }
+    }
+
     if(!GECKO_ARCH_STRING[0]) {
         FIXME("Wine Gecko is not supported on this architecture.\n");
         return FALSE;
