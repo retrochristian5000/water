@@ -49,11 +49,89 @@ static BYTE drive_number_from_string( const char *value )
  * Windows 95 and later 9x releases use a text MSDOS.SYS in the root of the
  * boot drive. Keep this separate from the pre-Windows-95 binary MSDOS.SYS.
  */
+/*
+ * Only the Win9x file is text. Old MS-DOS MSDOS.SYS is an executable DOS
+ * kernel; a matching basename is not evidence that an INI file is present.
+ * This probe validates configuration structure, not an executable image.
+ */
+static BOOL iosys_ascii_section( const BYTE *actual, DWORD length, const char *expected )
+{
+    DWORD i;
+
+    if (length != (DWORD)strlen( expected )) return FALSE;
+    for (i = 0; i < length; i++)
+    {
+        BYTE a = actual[i], b = expected[i];
+
+        if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+        if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+        if (a != b) return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOL is_win9x_msdos_text( const BYTE *data, DWORD size )
+{
+    DWORD pos = 0;
+    BOOL has_section = FALSE;
+
+    if (!data || !size) return FALSE;
+    while (pos < size)
+    {
+        DWORD start = pos, end;
+
+        while (pos < size && data[pos] != '\r' && data[pos] != '\n')
+        {
+            BYTE ch = data[pos++];
+
+            /* Permit DOS OEM bytes, but never embedded NUL or binary controls. */
+            if (ch == 0x7f || (ch < 0x20 && ch != '\t')) return FALSE;
+        }
+        end = pos;
+        while (start < end && (data[start] == ' ' || data[start] == '\t')) start++;
+        while (end > start && (data[end - 1] == ' ' || data[end - 1] == '\t')) end--;
+
+        if (end - start >= 2 && data[start] == '[' && data[end - 1] == ']')
+        {
+            const BYTE *section = data + start + 1;
+            DWORD length = end - start - 2;
+
+            if (iosys_ascii_section( section, length, "Paths" ) ||
+                iosys_ascii_section( section, length, "Options" ))
+                has_section = TRUE;
+        }
+        while (pos < size && (data[pos] == '\r' || data[pos] == '\n')) pos++;
+    }
+    return has_section;
+}
+
 static BOOL is_msdos_sys_file( const char *path )
 {
-    DWORD attrs = GetFileAttributesA( path );
+    static const DWORD max_config_size = 64 * 1024;
+    DWORD attrs, size, read;
+    HANDLE file;
+    BYTE *data;
+    BOOL is_text = FALSE;
 
-    return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+    attrs = GetFileAttributesA( path );
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
+        return FALSE;
+
+    file = CreateFileA( path, GENERIC_READ,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
+    if (file == INVALID_HANDLE_VALUE) return FALSE;
+
+    size = GetFileSize( file, NULL );
+    if (size != INVALID_FILE_SIZE && size && size <= max_config_size &&
+        (data = HeapAlloc( GetProcessHeap(), 0, size )))
+    {
+        if (ReadFile( file, data, size, &read, NULL ) && read == size)
+            is_text = is_win9x_msdos_text( data, size );
+        HeapFree( GetProcessHeap(), 0, data );
+    }
+    CloseHandle( file );
+    return is_text;
 }
 
 static BOOL try_msdos_sys_drive( char drive, char path[MAX_PATH] )
@@ -415,13 +493,14 @@ BOOL IOSYS_GetFat1216BPB(BYTE drive, struct iosys_fat_bpb *bpb)
  * boot policy such as BootGUI belongs to the Win9x boot owner and must not be
  * inferred from the Water host operating system here.
  */
-static BOOL is_win3_standard_personality(void)
+static BOOL is_win9x_msdos_personality(void)
 {
     struct water_win16_profile profile;
 
     water_win16_read_profile( &profile );
-    return profile.line == WATER_WIN16_LINE_PRE9X_FAMILY &&
-           profile.mode == WATER_WIN16_MODE_STANDARD_FAMILY;
+    return profile.line == WATER_WIN16_LINE_WIN9X_FAMILY &&
+           profile.major == 4 &&
+           (profile.minor == 0 || profile.minor == 10 || profile.minor == 90);
 }
 
 static BOOL is_winme_personality(void)
@@ -442,13 +521,13 @@ void IOSYS_InitConfig(void)
     BOOL have_file;
 
     /*
-     * The guest personality owns this decision. Windows 3.x standard mode
-     * and WIN386 use the pre-Win95 binary MSDOS.SYS model, while NT WOW has
-     * no Win9x MSDOS.SYS boot policy. The default KRNL386 personality remains
-     * the Win9x path.
+     * Only Win95/98/Me use text MSDOS.SYS. DOS 6.x and DOS-hosted Windows 3.x
+     * (standard or enhanced) use a binary DOS kernel loaded by their boot chain.
+     * NTVDM has a different kernel boundary.
      */
     iosys_msdos_double_buffer_mode = 0; /* No stale boot policy across initializations. */
-    if (is_win3_standard_personality() ||
+    iosys_boot_drive = 0;
+    if (!is_win9x_msdos_personality() ||
         WIN386_QuerySession( NULL ) || kernel_is_nt_wow_session())
         return;
 
@@ -459,7 +538,6 @@ void IOSYS_InitConfig(void)
     strcpy( windir, windows );
     strcpy( winbootdir, windows );
 
-    iosys_boot_drive = 0;
     have_file = get_msdos_sys_path( filename );
     if (have_file)
     {

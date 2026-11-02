@@ -81,7 +81,9 @@ class DoubleBufferTests(unittest.TestCase):
         self.assertIn("!is_winme_personality()", init)
         self.assertIn("!IOSYS_ParseDoubleBuffer( double_buffer_value,", init)
         self.assertLess(init.index("iosys_msdos_double_buffer_mode = 0;"),
-                        init.index("if (is_win3_standard_personality()"))
+                        init.index("if (!is_win9x_msdos_personality()"))
+        self.assertLess(init.index("iosys_boot_drive = 0;"),
+                        init.index("if (!is_win9x_msdos_personality()"))
         self.assertLess(init.index("have_file = get_msdos_sys_path( filename );"),
                         init.index('GetPrivateProfileStringA( "Options", "DoubleBuffer", "0"'))
         # Boot policy is not an NT DLL export or a host disk write.
@@ -107,6 +109,103 @@ class DoubleBufferTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("iosys doublebuffer: passed", result.stdout)
 
+
+FORM_HARNESS = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+typedef unsigned char BYTE;
+typedef unsigned short WORD;
+typedef unsigned int DWORD;
+typedef int BOOL;
+#define TRUE 1
+#define FALSE 0
+#define WATER_WIN16_LINE_DOS_FAMILY 1
+#define WATER_WIN16_LINE_PRE9X_FAMILY 2
+#define WATER_WIN16_LINE_WIN9X_FAMILY 3
+#define WATER_WIN16_LINE_NT_FAMILY 4
+struct water_win16_profile { int line; WORD major, minor; };
+static struct water_win16_profile guest;
+static void water_win16_read_profile(struct water_win16_profile *profile)
+{
+    *profile = guest;
+}
+__FUNCTIONS__
+static BOOL is_text(const char *s)
+{
+    return is_win9x_msdos_text((const BYTE *)s, (DWORD)strlen(s));
+}
+int main(void)
+{
+    const BYTE old_kernel[] = { 0xeb, 0x20, 0x90, 0, 'M', 'S', 'D', 'O', 'S' };
+    const BYTE binary_tail[] = { '[', 'P', 'a', 't', 'h', 's', ']', '\n', 0, 'x' };
+
+    assert(is_text("[Paths]\r\nWinDir=C:\\WINDOWS\r\n[Options]\r\nBootGUI=1\r\n"));
+    assert(is_text("; comment\n [oPtIoNs] \nBootGUI=0\n"));
+    assert(is_text(" \t[paths]\t\r\n"));
+    assert(!is_text("DOS 6.22 kernel"));
+    assert(!is_text("[Unrelated]\r\nWinDir=C:\\WINDOWS\r\n"));
+    assert(!is_win9x_msdos_text(old_kernel, sizeof(old_kernel)));
+    assert(!is_win9x_msdos_text(binary_tail, sizeof(binary_tail)));
+    assert(!is_win9x_msdos_text(NULL, 0));
+    assert(!is_win9x_msdos_text((const BYTE *)"", 0));
+
+    guest.line = WATER_WIN16_LINE_DOS_FAMILY;
+    guest.major = 6; guest.minor = 22;
+    assert(!is_win9x_msdos_personality());
+    guest.line = WATER_WIN16_LINE_PRE9X_FAMILY;
+    guest.major = 3; guest.minor = 10;
+    assert(!is_win9x_msdos_personality());
+    guest.line = WATER_WIN16_LINE_NT_FAMILY;
+    guest.major = 5; guest.minor = 0;
+    assert(!is_win9x_msdos_personality());
+    guest.line = WATER_WIN16_LINE_WIN9X_FAMILY;
+    guest.major = 4; guest.minor = 0;
+    assert(is_win9x_msdos_personality());
+    guest.minor = 10;
+    assert(is_win9x_msdos_personality());
+    guest.minor = 90;
+    assert(is_win9x_msdos_personality());
+    guest.major = 3; guest.minor = 10;
+    assert(!is_win9x_msdos_personality());
+    puts("iosys msdos.sys format routing: passed");
+    return 0;
+}
+"""
+
+class MsdosSysFormTests(unittest.TestCase):
+    def test_family_and_content_guards(self):
+        source = (ROOT / "programs/io.sys/config.c").read_text()
+        init = source[source.index("void IOSYS_InitConfig(void)"):
+                      source.index("BYTE IOSYS_GetBootDrive(void)")]
+        reader = c_function(source, "is_msdos_sys_file", "static BOOL")
+        self.assertIn("is_win9x_msdos_text( data, size )", reader)
+        self.assertIn("read == size", reader)
+        self.assertIn("if (!is_win9x_msdos_personality()", init)
+        self.assertLess(init.index("if (!is_win9x_msdos_personality()"),
+                        init.index("have_file = get_msdos_sys_path( filename );"))
+        self.assertNotIn("WriteFile(", reader)
+
+    def test_format_and_guest_probe_compiled(self):
+        compiler = shlex.split(os.environ.get("CC", "cc"))
+        if not compiler or not shutil.which(compiler[0]):
+            self.skipTest("C compiler unavailable")
+        source = (ROOT / "programs/io.sys/config.c").read_text()
+        parts = [c_function(source, name, "static BOOL")
+                 for name in ("iosys_ascii_section", "is_win9x_msdos_text",
+                              "is_win9x_msdos_personality")]
+        code = FORM_HARNESS.replace("__FUNCTIONS__", "\n".join(parts))
+        with tempfile.TemporaryDirectory(prefix="water-msdos-form-") as directory:
+            c_file = Path(directory) / "test.c"
+            exe = Path(directory) / "test"
+            c_file.write_text(code)
+            build = subprocess.run(compiler + ["-std=c99", "-Wall", "-Wextra",
+                                               "-Werror", str(c_file), "-o",
+                                               str(exe)], capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            run = subprocess.run([str(exe)], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertIn("iosys msdos.sys format routing: passed", run.stdout)
 
 if __name__ == "__main__":
     unittest.main()

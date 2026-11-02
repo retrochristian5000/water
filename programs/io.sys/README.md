@@ -33,6 +33,31 @@ The CONFIG.SYS parser was recovered from KRNL386's INT 21h implementation.
 IO.SYS owns that parse; INT 21h now consumes the resulting BUFFERS, LASTDRIVE,
 BREAK and UMB policy instead of opening CONFIG.SYS itself.
 
+## MSDOS.SYS kernel versus text boot configuration
+
+For MS-DOS 6.22 and DOS-hosted Windows 3.x/WfW, MSDOS.SYS is a
+**binary DOS kernel** loaded through the earlier IO.SYS boot stage.
+It is not an INI file, PE image, or Windows component. Windows 95/98
+instead incorporate the DOS kernel into IO.SYS and use **text**
+MSDOS.SYS for [Paths] and [Options]. Windows Me retains a text
+configuration file but has a different reduced real-mode startup.
+Windows 95 dual boot may preserve the earlier kernel as MSDOS.DOS.
+
+The IOSYS_InitConfig compatibility bridge now selects text parsing only
+for explicit Win95/98/Me guest identities. It also rejects binary or
+unrecognizable files rather than treating the MSDOS.SYS filename as
+proof of a text config. Both boot-drive and DoubleBuffer state reset
+before an excluded DOS, Windows 3.x, or NT guest returns.
+
+**Not implemented:** loading/executing the MS-DOS 6.22 MSDOS.SYS
+kernel image, real-mode boot transfer, or authenticating a boot image.
+DOS 6.x boot ownership must not be folded into the Win9x INI parser.
+Regression: python3 -m unittest discover -s scripts/tests -p test_iosys_doublebuffer.py
+
+Sources:
+- https://techshelps.github.io/MSDN/DNWIN95/HTML/S628D.HTM
+- https://techshelps.github.io/MSDN/KB/Source/zMiscellaneous/Q118579.htm
+
 ## Windows 95/98 startup LOGO.SYS BMP boundary
 
 Windows 95/98 startup logos are **not** RLE4/RLE8 DIBs in the normal
