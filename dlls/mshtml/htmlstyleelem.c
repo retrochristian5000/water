@@ -166,15 +166,31 @@ static HRESULT WINAPI HTMLStyleElement_get_styleSheet(IHTMLStyleElement *iface, 
 static HRESULT WINAPI HTMLStyleElement_put_disabled(IHTMLStyleElement *iface, VARIANT_BOOL v)
 {
     HTMLStyleElement *This = impl_from_IHTMLStyleElement(iface);
-    FIXME("(%p)->(%x)\n", This, v);
-    return E_NOTIMPL;
+    nsresult nsres;
+
+    TRACE("(%p)->(%x)\n", This, v);
+
+    nsres = nsIDOMHTMLStyleElement_SetDisabled(This->nsstyle, !!v);
+    return NS_FAILED(nsres) ? E_FAIL : S_OK;
 }
 
 static HRESULT WINAPI HTMLStyleElement_get_disabled(IHTMLStyleElement *iface, VARIANT_BOOL *p)
 {
     HTMLStyleElement *This = impl_from_IHTMLStyleElement(iface);
-    FIXME("(%p)->(%p)\n", This, p);
-    return E_NOTIMPL;
+    cpp_bool disabled;
+    nsresult nsres;
+
+    TRACE("(%p)->(%p)\n", This, p);
+
+    if(!p)
+        return E_POINTER;
+
+    nsres = nsIDOMHTMLStyleElement_GetDisabled(This->nsstyle, &disabled);
+    if(NS_FAILED(nsres))
+        return E_FAIL;
+
+    *p = variant_bool(disabled);
+    return S_OK;
 }
 
 static HRESULT WINAPI HTMLStyleElement_put_media(IHTMLStyleElement *iface, BSTR v)
