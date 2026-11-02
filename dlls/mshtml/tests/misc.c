@@ -28,6 +28,57 @@
 #include "initguid.h"
 #include "optary.h"
 
+
+/* WATER-specific backend opt-out: never attempt a Gecko install or load.
+ * Run before tests that create documents and might initialize Gecko. */
+static void test_gecko_opt_out(void)
+{
+    static const WCHAR opt_out[] = L"WATER_MSHTML_DISABLE_GECKO";
+    WCHAR saved[64];
+    DWORD len;
+    BOOL was_set;
+    HMODULE module;
+    HRESULT (WINAPI *dll_install)(BOOL, const WCHAR *);
+    IHTMLDocument2 *doc = (void *)0xdeadbeef;
+    HRESULT hr;
+
+    if(strcmp(winetest_platform, "wine")) {
+        skip("WATER Gecko backend opt-out is not a native Windows API.\n");
+        return;
+    }
+
+    saved[0] = 0;
+    SetLastError(ERROR_SUCCESS);
+    len = GetEnvironmentVariableW(opt_out, saved, ARRAY_SIZE(saved));
+    if(len >= ARRAY_SIZE(saved)) {
+        skip("Existing WATER_MSHTML_DISABLE_GECKO value too long to preserve.\n");
+        return;
+    }
+    was_set = len || GetLastError() != ERROR_ENVVAR_NOT_FOUND;
+
+    if(!SetEnvironmentVariableW(opt_out, L"1")) {
+        skip("Cannot set isolated Gecko opt-out for test.\n");
+        return;
+    }
+
+    module = GetModuleHandleW(L"mshtml.dll");
+    dll_install = module ? (void *)GetProcAddress(module, "DllInstall") : NULL;
+    if(dll_install) {
+        hr = dll_install(TRUE, NULL);
+        ok(hr == S_OK, "MSHTML DLL setup should not require Gecko: %#lx\n", hr);
+    }
+
+    hr = CoCreateInstance(&CLSID_HTMLDocument, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IHTMLDocument2, (void **)&doc);
+    ok(hr == CLASS_E_CLASSNOTAVAILABLE,
+            "Disabled Gecko with no native backend returned %#lx\n", hr);
+    if(SUCCEEDED(hr) && doc)
+        IHTMLDocument2_Release(doc);
+
+    ok(SetEnvironmentVariableW(opt_out, was_set ? saved : NULL),
+            "Failed to restore MSHTML backend setting.\n");
+}
+
 static void test_HTMLLoadOptions(void)
 {
     IHtmlLoadOptions *loadopts;
@@ -632,6 +683,7 @@ START_TEST(misc)
 {
     CoInitialize(NULL);
 
+    test_gecko_opt_out();
     test_HTMLLoadOptions();
     test_HTMLStorage();
 
