@@ -696,15 +696,12 @@ HRESULT read_stream(BSCallback *This, IStream *stream, void *buf, DWORD size, DW
 static void parse_content_type(nsChannelBSC *This, const WCHAR *value)
 {
     const WCHAR *ptr, *beg, *end;
-    size_t len = wcslen(value);
     char *content_type;
-
-    static const WCHAR charsetW[] = {'c','h','a','r','s','e','t','='};
 
     ptr = wcschr(value, ';');
 
     if(!This->nschannel->content_type || !(This->nschannel->load_flags & LOAD_CALL_CONTENT_SNIFFERS)) {
-        for(end = ptr ? ptr : value + len; end > value; end--)
+        for(end = ptr ? ptr : value + wcslen(value); end > value; end--)
             if(!iswspace(end[-1]))
                 break;
         for(beg = value; beg < end; beg++)
@@ -718,45 +715,81 @@ static void parse_content_type(nsChannelBSC *This, const WCHAR *value)
         }
     }
 
-    if(!ptr)
-        return;
-
-    ptr++;
-    while(*ptr && iswspace(*ptr))
-        ptr++;
-
-    if(ptr + ARRAY_SIZE(charsetW) < value+len && !wcsnicmp(ptr, charsetW, ARRAY_SIZE(charsetW))) {
-        size_t charset_len, lena;
+    /* Classic ASP's Response.Charset is an HTTP Content-Type parameter.
+     * The parameter may be quoted or follow other parameters; never pass
+     * the following semicolon-delimited parameters to the charset decoder. */
+    while(ptr && *ptr == ';') {
+        const WCHAR *name, *name_end, *charset, *charset_end, *check;
+        BOOL quoted = FALSE, valid = TRUE;
         nsACString charset_str;
-        const WCHAR *charset;
         char *charseta;
 
-        ptr += ARRAY_SIZE(charsetW);
+        ptr++;
+        while(iswspace(*ptr))
+            ptr++;
+        name = ptr;
+        while(*ptr && *ptr != '=' && *ptr != ';')
+            ptr++;
+        name_end = ptr;
+        while(name_end > name && iswspace(name_end[-1]))
+            name_end--;
 
-        if(*ptr == '\'') {
-            FIXME("Quoted value\n");
-            return;
+        if(*ptr != '=')
+            continue;
+
+        ptr++;
+        while(iswspace(*ptr))
+            ptr++;
+
+        if(*ptr == '"') {
+            quoted = TRUE;
+            charset = ++ptr;
+            while(*ptr && *ptr != '"')
+                ptr++;
+            if(!*ptr)
+                break; /* Unterminated quoted parameter; ignore it. */
+            charset_end = ptr++;
         }else {
             charset = ptr;
-            while(*ptr && *ptr != ',')
+            while(*ptr && *ptr != ';')
                 ptr++;
-            charset_len = ptr-charset;
+            charset_end = ptr;
+            while(charset_end > charset && iswspace(charset_end[-1]))
+                charset_end--;
         }
 
-        lena = WideCharToMultiByte(CP_ACP, 0, charset, charset_len, NULL, 0, NULL, NULL);
-        charseta = malloc(lena + 1);
-        if(!charseta)
+        /* A quoted value may only be followed by whitespace and ';'. */
+        if(quoted) {
+            while(iswspace(*ptr))
+                ptr++;
+            if(*ptr && *ptr != ';')
+                valid = FALSE;
+        }
+
+        if(name_end - name == 7 && !wcsnicmp(name, L"charset", 7)) {
+            /* Charset labels are ASCII tokens. Reject malformed values
+             * rather than corrupting the encoding of a generated page. */
+            if(charset_end == charset || charset_end - charset > 127)
+                valid = FALSE;
+            for(check = charset; valid && check < charset_end; check++)
+                if(!((*check >= 'a' && *check <= 'z') ||
+                     (*check >= 'A' && *check <= 'Z') ||
+                     (*check >= '0' && *check <= '9') ||
+                     *check == '-' || *check == '_' || *check == '.'))
+                    valid = FALSE;
+
+            if(valid && (charseta = strndupWtoU(charset, charset_end - charset))) {
+                nsACString_InitDepend(&charset_str, charseta);
+                nsIHttpChannel_SetContentCharset(&This->nschannel->nsIHttpChannel_iface, &charset_str);
+                nsACString_Finish(&charset_str);
+                free(charseta);
+            }
             return;
+        }
 
-        WideCharToMultiByte(CP_ACP, 0, charset, charset_len, charseta, lena, NULL, NULL);
-        charseta[lena] = 0;
-
-        nsACString_InitDepend(&charset_str, charseta);
-        nsIHttpChannel_SetContentCharset(&This->nschannel->nsIHttpChannel_iface, &charset_str);
-        nsACString_Finish(&charset_str);
-        free(charseta);
-    }else {
-        FIXME("unhandled: %s\n", debugstr_wn(ptr, len - (ptr-value)));
+        /* Skip non-charset parameters, including quoted parameter values. */
+        while(*ptr && *ptr != ';')
+            ptr++;
     }
 }
 
