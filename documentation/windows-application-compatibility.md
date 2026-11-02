@@ -1063,3 +1063,88 @@ It does not create registry keys, shortcuts, or network calls.
 Verification: committed source and test changes; GitHub inspection
 only. Compilation, native Windows shell comparisons and runtime
 WebDAV/DUN functionality have not been verified.
+
+## Internet Explorer CSS / MSHTML version-mode audit (November 1, 2026)
+
+Status: source-level CSS activation repair and COM regression test committed.
+No compiled mshtml test, IE guest comparison or verified pixel/rendering parity.
+
+### CSS ownership and historical versions
+
+WATER's CSS parsing/layout is primarily handled by its embedded Gecko
+nsIDOM interfaces. dlls/mshtml implements IE-compatible COM/DOM/CSSOM
+interfaces over that engine. The Internet Explorer executable, IEFRAME
+and Explorer shell folders must not grow a duplicate CSS parser.
+
+CSS compatibility depends on both installed MSHTML/IE version AND the
+document's effective rendering mode. Microsoft's MS-IEDOCO documentation
+distinguishes IE7 standards, IE8 mode, IE9 mode, and quirks; DOCTYPE,
+X-UA-Compatible meta or response header, Compatibility View and
+enterprise/policy settings may select a non-default mode. A Windows XP
+machine with IE6 is not equivalent to the same XP machine upgraded to
+IE8, and Windows 98 SE with IE5 must not receive IE8 behaviors simply
+because the shell also supports Internet Explorer navigation.
+
+Microsoft's historical IE5 deployment guide identifies multiple
+CSS classes, CSS positioning and element.currentStyle as IE5-era
+features. CSSOM IHTMLStyleSheet and IHTMLStyleElement::disabled is
+separately documented as controlling whether a stylesheet is applied.
+Later IE versions retain legacy APIs but their CSS parsing, serialization
+and standards compliance differ by document mode.
+
+Primary/version documentation:
+https://learn.microsoft.com/en-us/openspecs/ie_standards/ms-iedoco/d3fffb13-31cc-4dd0-b38c-2b6aaabc153e
+https://learn.microsoft.com/en-us/openspecs/ie_standards/ms-iedoco/3764531c-97c8-4bf2-bdc6-b3623738ea46
+https://learn.microsoft.com/en-us/openspecs/ie_standards/ms-iedoco/380e2488-f5eb-4457-a07a-0cb1b6e4b4b5
+https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/platform-apis/jj160701(v=vs.85)
+https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/platform-apis/aa768661(v=vs.85)
+https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/platform-apis/aa703980(v=vs.85)
+https://www.microsoft.com/en-us/msrc/blog/2006/06/windows-98-98se-and-me-information-about-support-lifecycle-and-ms06-015/
+
+### Confirmed missing CSS behavior repaired
+
+The pre-audit implementation had E_NOTIMPL stubs for both
+IHTMLStyleElement::{get,put}_disabled (htmlstyleelem.c) and
+IHTMLStyleSheet::{get,put}_disabled (htmlstylesheet.c). CSS in
+legacy pages using STYLE.disabled or styleSheet.disabled could not
+be switched on and off via its documented interfaces.
+
+WATER already exposes Gecko's nsIDOMHTMLStyleElement_Get/SetDisabled
+and nsIDOMStyleSheet_Get/SetDisabled methods through nsiface.idl.
+The implementations now forward to their respective nsDOM objects,
+map native booleans to VARIANT_BOOL, return E_POINTER on null
+getters and propagate failed nsresult values as E_FAIL.
+The underlying engine still owns CSS selector parsing and actual
+cascade/layout invalidation. No CSS security policy is changed.
+
+The existing dlls/mshtml/tests/dom.c test_create_stylesheet fixture
+now tests disabled state via both COM interfaces, checking that
+toggling one is reflected in the other, and re-enables the sheet
+after its assertions. This is only regression test source; it has
+not yet run against Windows 98/XP or the local WATER build.
+
+### Outstanding verified stubs / further parity work
+
+- dlls/mshtml/htmlstyle.c still has IHTMLStyle::font shorthand
+  getter/setter stubs and legacy unit/serialization differences.
+- dlls/mshtml/htmlcurstyle.c has unimplemented properties, including
+  backgroundPositionX/Y; compare computed/cascaded values with
+  inline style separately. IE5 introduced currentStyle as a
+  cascaded view, not simply a copy of element.style.
+- dlls/mshtml/htmlstylesheet.c still has incomplete rule
+  selector/style operations and some collection/attribute cases.
+- Distinguish CSS1/CSS2/IE-only expressions and behavior filters
+  from standardized CSS2.1/IE8 standards implementations;
+  do not blindly expose newer properties in older document modes.
+- Compare author styles, disabled sheets, media queries, @import,
+  @page, cascading order, selector quirks, case normalization,
+  shorthand expansion, and visited/pseudo-class security in
+  clean installed IE5/5.5/6/7/8 guest modes with explicit doctype
+  and X-UA-Compatible fixtures. Preserve original binary versions.
+- Gecko behavior cannot be used as evidence of pixel-perfect IE
+  box-model, hasLayout, PNG-alpha and legacy filter parity.
+
+Progress in this bounded pass: 2/2 identified disabled-accessor
+surfaces repaired in source (100% of that scoped feature), 0/1
+compiled/runtime regression suites verified (0%). These are
+scope-specific percentages, not an overall IE CSS completion claim.
