@@ -11863,6 +11863,49 @@ static void test_null_write(IHTMLDocument2 *doc)
        "Expected IHTMLDocument2::writeln to return S_OK, got 0x%08lx\n", hres);
 }
 
+
+/* Both IE CSSOM entry points must enable and disable the same sheet. */
+static void test_stylesheet_disabled(IHTMLStyleSheet *sheet, IHTMLStyleElement *elem)
+{
+    VARIANT_BOOL disabled = VARIANT_TRUE;
+    HRESULT hr;
+
+    hr = IHTMLStyleSheet_get_disabled(sheet, &disabled);
+    ok(hr == S_OK, "styleSheet.disabled get failed: %08lx\n", hr);
+    if(SUCCEEDED(hr))
+        ok(disabled == VARIANT_FALSE, "New stylesheet unexpectedly disabled: %x\n", disabled);
+
+    hr = IHTMLStyleElement_put_disabled(elem, VARIANT_TRUE);
+    ok(hr == S_OK, "STYLE.disabled put true failed: %08lx\n", hr);
+
+    disabled = VARIANT_FALSE;
+    hr = IHTMLStyleSheet_get_disabled(sheet, &disabled);
+    ok(hr == S_OK, "styleSheet.disabled get failed: %08lx\n", hr);
+    if(SUCCEEDED(hr))
+        ok(disabled == VARIANT_TRUE, "STYLE disabling did not affect sheet: %x\n", disabled);
+
+    hr = IHTMLStyleSheet_put_disabled(sheet, VARIANT_FALSE);
+    ok(hr == S_OK, "styleSheet.disabled put false failed: %08lx\n", hr);
+
+    disabled = VARIANT_TRUE;
+    hr = IHTMLStyleElement_get_disabled(elem, &disabled);
+    ok(hr == S_OK, "STYLE.disabled get failed: %08lx\n", hr);
+    if(SUCCEEDED(hr))
+        ok(disabled == VARIANT_FALSE, "Sheet enabling did not affect STYLE: %x\n", disabled);
+
+    hr = IHTMLStyleSheet_put_disabled(sheet, VARIANT_TRUE);
+    ok(hr == S_OK, "styleSheet.disabled put true failed: %08lx\n", hr);
+    disabled = VARIANT_FALSE;
+    hr = IHTMLStyleElement_get_disabled(elem, &disabled);
+    ok(hr == S_OK, "STYLE.disabled get failed: %08lx\n", hr);
+    if(SUCCEEDED(hr))
+        ok(disabled == VARIANT_TRUE, "Sheet disabling did not affect STYLE: %x\n", disabled);
+
+    /* Leave the document's CSS active for subsequent tests. */
+    hr = IHTMLStyleElement_put_disabled(elem, VARIANT_FALSE);
+    ok(hr == S_OK, "STYLE.disabled restore failed: %08lx\n", hr);
+}
+
 static void test_create_stylesheet(IHTMLDocument2 *doc)
 {
     IHTMLStyleSheet *stylesheet, *stylesheet2;
@@ -11921,6 +11964,7 @@ static void test_create_stylesheet(IHTMLDocument2 *doc)
     IHTMLStyleSheet_Release(stylesheet2);
 
     IHTMLStyleElement2_Release(style_elem2);
+    test_stylesheet_disabled(stylesheet, style_elem);
     IHTMLStyleSheet_Release(stylesheet);
 
     IHTMLStyleElement_Release(style_elem);
