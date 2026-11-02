@@ -667,15 +667,31 @@ static HRESULT WINAPI HTMLStyleSheet_get_owningElement(IHTMLStyleSheet *iface, I
 static HRESULT WINAPI HTMLStyleSheet_put_disabled(IHTMLStyleSheet *iface, VARIANT_BOOL v)
 {
     HTMLStyleSheet *This = impl_from_IHTMLStyleSheet(iface);
-    FIXME("(%p)->(%x)\n", This, v);
-    return E_NOTIMPL;
+    nsresult nsres;
+
+    TRACE("(%p)->(%x)\n", This, v);
+
+    nsres = nsIDOMCSSStyleSheet_SetDisabled(This->nsstylesheet, !!v);
+    return NS_FAILED(nsres) ? E_FAIL : S_OK;
 }
 
 static HRESULT WINAPI HTMLStyleSheet_get_disabled(IHTMLStyleSheet *iface, VARIANT_BOOL *p)
 {
     HTMLStyleSheet *This = impl_from_IHTMLStyleSheet(iface);
-    FIXME("(%p)->(%p)\n", This, p);
-    return E_NOTIMPL;
+    cpp_bool disabled;
+    nsresult nsres;
+
+    TRACE("(%p)->(%p)\n", This, p);
+
+    if(!p)
+        return E_POINTER;
+
+    nsres = nsIDOMCSSStyleSheet_GetDisabled(This->nsstylesheet, &disabled);
+    if(NS_FAILED(nsres))
+        return E_FAIL;
+
+    *p = variant_bool(disabled);
+    return S_OK;
 }
 
 static HRESULT WINAPI HTMLStyleSheet_get_readOnly(IHTMLStyleSheet *iface, VARIANT_BOOL *p)
