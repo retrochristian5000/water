@@ -61,11 +61,14 @@ static void test_gecko_opt_out(void)
         return;
     }
 
-    module = GetModuleHandleW(L"mshtml.dll");
+    module = LoadLibraryW(L"mshtml.dll");
+    ok(module != NULL, "Could not load mshtml.dll: %lu\n", GetLastError());
     dll_install = module ? (void *)GetProcAddress(module, "DllInstall") : NULL;
     if(dll_install) {
         hr = dll_install(TRUE, NULL);
         ok(hr == S_OK, "MSHTML DLL setup should not require Gecko: %#lx\n", hr);
+    }else if(module) {
+        ok(0, "Missing MSHTML DllInstall export.\n");
     }
 
     hr = CoCreateInstance(&CLSID_HTMLDocument, NULL, CLSCTX_INPROC_SERVER,
@@ -74,6 +77,8 @@ static void test_gecko_opt_out(void)
             "Disabled Gecko with no native backend returned %#lx\n", hr);
     if(SUCCEEDED(hr) && doc)
         IHTMLDocument2_Release(doc);
+    if(module)
+        FreeLibrary(module);
 
     ok(SetEnvironmentVariableW(opt_out, was_set ? saved : NULL),
             "Failed to restore MSHTML backend setting.\n");
