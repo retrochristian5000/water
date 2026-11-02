@@ -28,6 +28,8 @@
 
 static HMODULE hmodule;
 static DWORD (WINAPI *pRasEnumDevicesA)(LPRASDEVINFOA, LPDWORD, LPDWORD);
+static DWORD (WINAPI *pRasEnumConnectionsA)(LPRASCONNA, LPDWORD, LPDWORD);
+static DWORD (WINAPI *pRasEnumConnectionsW)(LPRASCONNW, LPDWORD, LPDWORD);
 
 #define RASAPI32_GET_PROC(func) \
     p ## func = (void*)GetProcAddress(hmodule, #func); \
@@ -39,6 +41,8 @@ static void InitFunctionPtrs(void)
     hmodule = LoadLibraryA("rasapi32.dll");
 
     RASAPI32_GET_PROC(RasEnumDevicesA)
+    RASAPI32_GET_PROC(RasEnumConnectionsA)
+    RASAPI32_GET_PROC(RasEnumConnectionsW)
 }
 
 static void test_rasenum(void)
@@ -176,11 +180,48 @@ static void test_rasenum(void)
     HeapFree(GetProcessHeap(), 0, rasDevInfo);
 }
 
+
+static void test_no_ras_connections(void)
+{
+    DWORD needed, count, result;
+
+    if (!pRasEnumConnectionsA || !pRasEnumConnectionsW)
+    {
+        win_skip("RasEnumConnectionsA/W not exported.\n");
+        return;
+    }
+
+    /* On this implementation the backend reports no active DUN/ISDN link. */
+    needed = 0;
+    count = 0xdeadbeef;
+    result = pRasEnumConnectionsA(NULL, &needed, &count);
+    ok(result == ERROR_SUCCESS, "RasEnumConnectionsA returned %lu.\n", result);
+    if (result == ERROR_SUCCESS)
+        ok(!count && !needed, "Unexpected A active links %lu, size %lu.\n", count, needed);
+
+    needed = 0;
+    count = 0xdeadbeef;
+    result = pRasEnumConnectionsW(NULL, &needed, &count);
+    ok(result == ERROR_SUCCESS, "RasEnumConnectionsW returned %lu.\n", result);
+    if (result == ERROR_SUCCESS)
+        ok(!count && !needed, "Unexpected W active links %lu, size %lu.\n", count, needed);
+
+    needed = 0;
+    count = 0xdeadbeef;
+    result = pRasEnumConnectionsA(NULL, NULL, &count);
+    ok(result == ERROR_INVALID_PARAMETER, "A missing size returned %lu.\n", result);
+    ok(count == 0xdeadbeef, "A invalid call changed count.\n");
+
+    result = pRasEnumConnectionsW(NULL, &needed, NULL);
+    ok(result == ERROR_INVALID_PARAMETER, "W missing count returned %lu.\n", result);
+}
+
 START_TEST(rasapi)
 {
     InitFunctionPtrs();
 
     test_rasenum();
+    test_no_ras_connections();
 
     FreeLibrary(hmodule);
 }
