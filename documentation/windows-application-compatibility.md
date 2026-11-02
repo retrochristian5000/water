@@ -870,3 +870,103 @@ Verification ledger: source inventory, primary Microsoft documentation
 and new source-only MSCONF regression cases. No native DLLs extracted,
 no WinXP/Win98 VM tests, no compile, no call negotiation, no codecs
 integrated with an H.323 transport, and no network ports opened.
+
+## Windows 98 SE ISDN configuration, Dial-Up Networking and IE transport (November 1, 2026)
+
+Status: source audit plus narrow RASAPI32 invalid-argument repair; no ISDN wizard or line backend implemented.
+
+### Installation history and Start Menu evidence
+
+The user's Win98 SE observation is that ISDN Configuration Wizard appeared as a
+Start Menu shortcut after installing the ISDN components. Independent evidence
+shows this was a conditional hardware/driver/Dial-Up Networking setup path,
+not a feature intrinsically included in IEXPLORE.EXE.
+
+Windows 95 Dial-Up Networking 1.4 release notes (Microsoft KB297774) say its
+ISDN 1.1 Accelerator Pack functionality installs the wizard under
+Start > Programs > Accessories > ISDN Tools. This path is edition/upgrade-
+specific and must not be copied blindly into Windows 98 SE.
+
+Windows 98 documentation, including contemporary IBM International ISDN
+PC Card instructions, describes a separate path:
+Start > Programs > Accessories > Communications > ISDN Configuration Wizard.
+Windows 98 ISDN adapter guides show that Plug-and-Play installs a manufacturer
+driver and triggers an ISDN configuration wizard, after which an ISDN device
+can appear inside Dial-Up Networking. The wizard configures the NDIS WAN
+CAPI driver but does not independently install the adapter or create a
+working Internet connection. Third-party utilities can add separate
+Start Menu items; do not merge them with Microsoft's built-in shortcut.
+
+Sources:
+https://jeffpar.github.io/kbarchive/kb/297/Q297774/
+https://www.manualshelf.com/manual/multi-tech-systems/mt128zlx-nt/multimobile-isdn-pc-card-modem-user-guide-mt128zlx-st-mt128zlx-nt/page-62.html
+https://www.manualshelf.com/manual/avm/fritz-card-pci/operation-manual-english/page-17.html
+https://www.manualslib.com/manual/582873/Avm-Fritz-Card-Usb.html
+
+### Component ownership
+
+ISDN adapter / terminal adapter and switch signaling (D channel) -> vendor
+driver, NDIS WAN miniport and/or CAPI 2.0 controller -> Dial-Up Networking
+and RAS/PPP (optionally Multilink PPP using two B channels) -> Winsock/IP
+-> Internet Explorer, mail clients, and separately NetMeeting's H.323.
+ISDN access is not an IE HTML subsystem. NetMeeting call negotiation is
+not the same as ISDN D-channel switch signaling.
+
+Windows 2000+ NDISWAN and CoNDIS WAN architecture includes NDISWAN,
+TAPI, NDISTAPI/KMDDSP and NDPROXY/NDPTSP as appropriate. This modern
+architecture is useful for component ownership, not proof that Windows
+98 SE contained every later SYS/TSP file or used identical ABI.
+Source: https://learn.microsoft.com/en-us/windows-hardware/drivers/network/ras-architecture-overview
+
+### Existing WATER recovery — do not reimplement
+
+- dlls/capi2032: CAPI 2.0 client API and Unix bridge to libcapi20.
+  This depends on host support and currently does not supply a Win9x
+  vendor ISDN adapter, NDIS WAN driver, or switch-signaling engine.
+  The unixlib.c path still has an explicit FIXME around CAPI message
+  buffer ownership; do not expose it as full native CAPI compatibility.
+- dlls/rasapi32: RasDialA/W, device enumeration and many phonebook
+  operations are present as interfaces but largely stubbed. A DLL export
+  is not an actual line connection.
+- dlls/pppmac.vxd: contains a version/control interface skeleton;
+  PPP framing, LCP, IPCP, authentication and Multilink integration
+  require separate protocol verification.
+- dlls/tapi32 and 16-bit telephony paths must remain version-specific;
+  9x CAPI and RAS should not be mistaken for modern CoNDIS stack.
+- No dedicated ISDN Configuration Wizard, Win98 SE installer section,
+  adapter driver, menu-link registration, or guest ISDN transport was
+  located in the audited repository tree.
+
+### Narrow RAS correction and regression
+
+RasEnumConnectionsA and W previously dereferenced both byte-size and
+connection-count pointers without validation. A NULL argument could
+crash setup and connection-management clients while ISDN is not even
+connected. Source repair now returns ERROR_INVALID_PARAMETER if either
+is NULL; otherwise the current unimplemented-backend path reports
+zero active links without pretending a dial succeeded.
+Existing rasapi32 test code now exercises ANSI and Unicode entry points,
+invalid pointers, and calls with no output buffer. Its expectations allow
+real Windows guests to have live connections, unlike the empty WATER
+backend. No calls, socket connections, drivers or registry keys are
+created by the test.
+Reference: https://learn.microsoft.com/en-us/windows/win32/api/ras/nf-ras-rasenumconnectionsa
+
+### Boundary / evidence ledger
+
+Before implementing a Win98 SE ISDN menu link, recover the Windows 98 SE
+INF installation sections, source CAB file inventory, actual wizard EXE
+name/hash, shortcuts and conditional installation flags. Never create an
+ISDN wizard shortcut unless the corresponding feature is installed.
+Before implementing call capabilities, obtain exact 9x CAPI 2.0/NDIS WAN
+device contracts, adapter model and D-channel switch protocol from
+historical samples. Track 56/64 kbps B-channel variation and MLPPP
+negotiation without claiming universal 128 kbps connections.
+Tests still needed: absent/present adapters; RASENUMDEVICE entries;
+wizard invocation and reconfiguration; switch/SPID/MSN fields;
+two-B-channel Multilink, PPP/ICMP and IE navigation after authenticating.
+Do not enable live calls or arbitrary telephony device passthrough in
+a default installation.
+
+Verification: GitHub source edits and test sources inspected, not compiled
+or run on Windows 98 SE; no emulator ISDN device or live line was tested.
