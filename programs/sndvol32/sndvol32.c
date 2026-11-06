@@ -172,6 +172,8 @@ static BOOL open_mixer( struct sndvol_state *state, UINT device_id )
     MIXERLINEA line;
     MIXERCONTROLA control;
     MIXERCAPSA caps;
+    UINT dest;
+    BOOL found = FALSE;
 
     if (mixerOpen( &state->mixer, device_id, 0, 0, CALLBACK_NULL ) != MMSYSERR_NOERROR)
         return FALSE;
@@ -179,17 +181,31 @@ static BOOL open_mixer( struct sndvol_state *state, UINT device_id )
     state->device_id = device_id;
 
     memset( &caps, 0, sizeof(caps) );
-    if (mixerGetDevCapsA( device_id, &caps, sizeof(caps) ) == MMSYSERR_NOERROR)
-        lstrcpynA( state->device_name, caps.szPname, ARRAY_SIZE(state->device_name) );
-    else
-        wsprintfA( state->device_name, "Mixer %u", device_id );
+    if (mixerGetDevCapsA( device_id, &caps, sizeof(caps) ) != MMSYSERR_NOERROR)
+    {
+        mixerClose( state->mixer );
+        state->mixer = NULL;
+        return FALSE;
+    }
+    lstrcpynA( state->device_name, caps.szPname, ARRAY_SIZE(state->device_name) );
 
-    memset( &line, 0, sizeof(line) );
-    line.cbStruct = sizeof(line);
-    line.dwDestination = 0;
-    if (mixerGetLineInfoA( (HMIXEROBJ)state->mixer, &line,
-                           MIXER_OBJECTF_HMIXER |
-                           MIXER_GETLINEINFOF_DESTINATION ) != MMSYSERR_NOERROR)
+    for (dest = 0; dest < caps.cDestinations; dest++)
+    {
+        memset( &line, 0, sizeof(line) );
+        line.cbStruct = sizeof(line);
+        line.dwDestination = dest;
+        if (mixerGetLineInfoA( (HMIXEROBJ)state->mixer, &line,
+                               MIXER_OBJECTF_HMIXER |
+                               MIXER_GETLINEINFOF_DESTINATION ) == MMSYSERR_NOERROR &&
+            ((state->record && line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_WAVEIN) ||
+             (!state->record && (line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_SPEAKERS ||
+                                 line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_HEADPHONES))))
+        {
+            found = TRUE;
+            break;
+        }
+    }
+    if (!found)
     {
         mixerClose( state->mixer );
         state->mixer = NULL;
@@ -219,25 +235,33 @@ static BOOL find_default_device( BOOL record, UINT *device_id )
 
     for (i = 0; i < count; ++i)
     {
-        MIXERLINEA line;
+        MIXERCAPSA caps;
+        UINT dest;
 
-        memset( &line, 0, sizeof(line) );
-        line.cbStruct = sizeof(line);
-        line.dwDestination = 0;
-
-        if (mixerGetLineInfoA( (HMIXEROBJ)(UINT_PTR)i, &line,
-                               MIXER_OBJECTF_MIXER |
-                               MIXER_GETLINEINFOF_DESTINATION ) != MMSYSERR_NOERROR)
+        if (mixerGetDevCapsA( i, &caps, sizeof(caps) ) != MMSYSERR_NOERROR)
             continue;
-
-        if ((record && line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_WAVEIN) ||
-            (!record && line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_SPEAKERS))
+        for (dest = 0; dest < caps.cDestinations; dest++)
         {
-            *device_id = i;
-            return TRUE;
+            MIXERLINEA line;
+
+            memset( &line, 0, sizeof(line) );
+            line.cbStruct = sizeof(line);
+            line.dwDestination = dest;
+
+            if (mixerGetLineInfoA( (HMIXEROBJ)(UINT_PTR)i, &line,
+                                   MIXER_OBJECTF_MIXER |
+                                   MIXER_GETLINEINFOF_DESTINATION ) != MMSYSERR_NOERROR)
+                continue;
+
+            if ((record && line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_WAVEIN) ||
+                (!record && (line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_SPEAKERS ||
+                             line.dwComponentType == MIXERLINE_COMPONENTTYPE_DST_HEADPHONES)))
+            {
+                *device_id = i;
+                return TRUE;
+            }
         }
     }
-
     return FALSE;
 }
 

@@ -1,0 +1,7 @@
+MODULE    = systray.exe
+IMPORTS   = comctl32 winmm user32 gdi32 shell32 advapi32
+
+EXTRADLLFLAGS = -mwindows
+
+SOURCES = \
+	systray.c

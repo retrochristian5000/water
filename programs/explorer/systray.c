@@ -30,6 +30,7 @@
 #include <wine/list.h>
 
 #include "explorer_private.h"
+#include "wine/win16_profile.h"
 #include "resource.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(systray);
@@ -1484,7 +1485,45 @@ void handle_parent_notify( HWND hwnd, WPARAM wp )
     sync_taskbar_buttons();
 }
 
+/* On a selected Win9x guest, SysTray.exe—not Explorer—owns the speaker
+ * icon and queries winmm for a controllable speaker/headphone mixer.
+ * Do not inherit the default Win9x Win16 API profile for an NT desktop. */
+static BOOL launch_win9x_systray(void)
+{
+    struct water_win16_profile profile;
+    STARTUPINFOW startup = {.cb = sizeof(startup)};
+    PROCESS_INFORMATION process;
+    char value[32];
+    DWORD len;
+    BOOL selected = FALSE;
+    WCHAR command[] = L"systray.exe";
+
+    len = GetEnvironmentVariableA(WATER_WIN16_LINE_ENV, value, sizeof(value));
+    if (len && len < sizeof(value) && !strcmp(value, WATER_WIN16_LINE_WIN9X))
+        selected = TRUE;
+    len = GetEnvironmentVariableA(WATER_WIN16_PERSONALITY_ENV, value, sizeof(value));
+    if (len && len < sizeof(value) &&
+        (!strcmp(value, WATER_WIN16_PERSONALITY_WIN95_OSR2) ||
+         !strcmp(value, WATER_WIN16_PERSONALITY_WINME)))
+        selected = TRUE;
+    if (!selected) return FALSE;
+
+    water_win16_read_profile(&profile);
+    if (profile.line != WATER_WIN16_LINE_WIN9X_FAMILY || profile.major != 4)
+        return FALSE;
+
+    if (!CreateProcessW(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process))
+    {
+        WARN("Could not launch Win9x SysTray volume client, error %lu\n", GetLastError());
+        return FALSE;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return TRUE;
+}
+
 /* this function creates the listener window */
+
 void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_show_systray, BOOL arg_no_tray_items )
 {
     shell_traywnd_class.hIcon = LoadIconW( 0, (const WCHAR *)IDI_WINLOGO );
@@ -1565,6 +1604,7 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
         /* IE 4.0+ shell convention: let already-running applications restore
          * notification icons after Explorer recreates the taskbar. */
         if (message) SendNotifyMessageW(HWND_BROADCAST, message, 0, 0);
+        if (!no_tray_items) launch_win9x_systray();
     }
     else do_hide_systray();
 }
