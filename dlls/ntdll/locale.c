@@ -241,6 +241,78 @@ static PEB64 *get_peb64( void )
     return (PEB64 *)(UINT_PTR)teb64->Peb;
 }
 
+/*
+ * The Win9x guest's system code pages are not its selected input language.
+ * Derive the defaults from the system locale, not the foreground HKL.
+ * Optional WATER_VDM_NLS_ACP / WATER_VDM_NLS_OEMCP selectors let a
+ * historically localized guest choose its installed NLS tables explicitly.
+ *
+ * Keep this in ntdll's locale initialization: GetACP, CP_ACP conversions,
+ * RtlAnsiCharToUnicodeChar and DBCS lead-byte metadata must agree.
+ */
+static BOOL selected_win9x_nls(void)
+{
+    static const WCHAR line_key[] = L"WATER_VDM_LINE";
+    static const WCHAR legacy_key[] = L"WATER_VDM_PERSONALITY";
+    WCHAR value[32];
+    SIZE_T count;
+    NTSTATUS status;
+
+    status = RtlQueryEnvironmentVariable(NULL, line_key, ARRAY_SIZE(line_key) - 1,
+                                          value, ARRAY_SIZE(value), &count);
+    if (!status)
+        return count == 5 && !wcsncmp(value, L"win9x", 5);
+    if (status != STATUS_VARIABLE_NOT_FOUND) return FALSE;
+
+    status = RtlQueryEnvironmentVariable(NULL, legacy_key, ARRAY_SIZE(legacy_key) - 1,
+                                          value, ARRAY_SIZE(value), &count);
+    if (status) return FALSE;
+    return (count == 10 && !wcsncmp(value, L"win95-osr2", 10)) ||
+           (count == 5 && !wcsncmp(value, L"winme", 5));
+}
+
+static UINT read_win9x_codepage(const WCHAR *name, SIZE_T name_len)
+{
+    WCHAR value[16], *end;
+    SIZE_T count;
+    unsigned long cp;
+
+    if (RtlQueryEnvironmentVariable(NULL, name, name_len,
+                                    value, ARRAY_SIZE(value), &count) ||
+        !count || count >= ARRAY_SIZE(value))
+        return 0;
+
+    value[count] = 0;
+    cp = wcstoul(value, &end, 10);
+    if (end == value || *end || !cp || cp > 65535 ||
+        cp == CP_UTF7 || cp == CP_UTF8)
+    {
+        WARN("Ignoring invalid Win9x NLS codepage selector %s\n", debugstr_w(value));
+        return 0;
+    }
+    return cp;
+}
+
+static BOOL win9x_codepage_available(UINT cp)
+{
+    void *mapping = NULL;
+    SIZE_T size = 0;
+    NTSTATUS status;
+    BOOL valid;
+
+    status = NtGetNlsSectionPtr(NLS_SECTION_CODEPAGE, cp, NULL, &mapping, &size);
+    if (status || !mapping)
+    {
+        WARN("Win9x codepage %u is not installed (status %#lx)\n", cp, status);
+        return FALSE;
+    }
+    valid = validate_codepage_section(mapping, size);
+    NtUnmapViewOfSection(GetCurrentProcess(), mapping);
+    if (!valid) WARN("Win9x codepage %u has invalid NLS data\n", cp);
+    return valid;
+}
+
+
 void locale_init(void)
 {
     const NLS_LOCALE_LCID_INDEX *entry;
@@ -299,7 +371,10 @@ void locale_init(void)
     }
     TRACE( "resources: %04lx/%04lx/%04lx\n", user_resource_lcid, user_resource_neutral_lcid, system_lcid );
 
-    if (!RtlQueryActivationContextApplicationSettings( 0, NULL, L"http://schemas.microsoft.com/SMI/2019/WindowsSettings",
+    /* Windows 9x did not support the modern UTF-8 activeCodePage manifest.
+     * Do not project its setting onto a legacy guest's ANSI tables. */
+    if (!selected_win9x_nls() &&
+        !RtlQueryActivationContextApplicationSettings( 0, NULL, L"http://schemas.microsoft.com/SMI/2019/WindowsSettings",
                                                        L"activeCodePage", locale, ARRAY_SIZE(locale), NULL ))
     {
         const NLS_LOCALE_LCNAME_INDEX *entry;
@@ -318,6 +393,36 @@ void locale_init(void)
             ansi_cp = get_locale_data( locale_table, entry->idx )->idefaultansicodepage;
             oem_cp = get_locale_data( locale_table, entry->idx )->idefaultcodepage;
         }
+    }
+
+    if (selected_win9x_nls())
+    {
+        static const WCHAR ansi_key[] = L"WATER_VDM_NLS_ACP";
+        static const WCHAR oem_key[] = L"WATER_VDM_NLS_OEMCP";
+        UINT configured;
+
+        /* UTF-8 is not a native Win9x system code page. Prefer the
+         * installed system-locale tables; fall back only if the configured
+         * system locale itself exposes UTF-8. */
+        if (ansi_cp == CP_UTF8)
+        {
+            WARN("Win9x system locale returned UTF-8 ACP; using legacy 1252
+");
+            ansi_cp = 1252;
+        }
+        if (oem_cp == CP_UTF8)
+        {
+            WARN("Win9x system locale returned UTF-8 OEMCP; using legacy 437
+");
+            oem_cp = 437;
+        }
+
+        configured = read_win9x_codepage(ansi_key, ARRAY_SIZE(ansi_key) - 1);
+        if (configured && win9x_codepage_available(configured))
+            ansi_cp = configured;
+        configured = read_win9x_codepage(oem_key, ARRAY_SIZE(oem_key) - 1);
+        if (configured && win9x_codepage_available(configured))
+            oem_cp = configured;
     }
 
     status = NtGetNlsSectionPtr( NLS_SECTION_CASEMAP, 0, NULL, &case_ptr, &size );
