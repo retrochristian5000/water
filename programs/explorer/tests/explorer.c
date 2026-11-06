@@ -127,9 +127,12 @@ static void test_win8_start(void)
         corner = FindWindowW(L"WaterStartCorner", NULL);
         ok(!!corner, "Windows 8 needs a lower-left Start hot corner.\n");
         if (!corner) return;
+        screen = FindWindowW(L"WaterStartScreen", NULL);
+        ok(!!screen && IsWindowVisible(screen), "Windows 8 RTM did not start on Start screen.\n");
+        if (screen) SendMessageW(screen, WM_KEYDOWN, VK_ESCAPE, 0);
         SendMessageW(corner, WM_LBUTTONUP, 0, 0);
         screen = FindWindowW(L"WaterStartScreen", NULL);
-        ok(!!screen && IsWindowVisible(screen), "Hot corner failed to open Start screen.\n");
+        ok(!!screen && IsWindowVisible(screen), "Hot corner failed to reopen Start screen.\n");
         if (screen)
         {
             SendMessageW(screen, WM_KEYDOWN, VK_ESCAPE, 0);

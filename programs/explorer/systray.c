@@ -1611,6 +1611,9 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
         if (message) SendNotifyMessageW(HWND_BROADCAST, message, 0, 0);
         if (!no_tray_items) launch_win9x_systray();
         initialize_start_corner(tray_window);
+        /* Windows 8 RTM launches into Start, not directly to the desktop.
+         * 8.1 boot-to-desktop policy is a separate configurable feature. */
+        if (start_screen_version() == 2) show_start_screen(tray_window);
     }
     else do_hide_systray();
 }
