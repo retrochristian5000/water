@@ -84,6 +84,8 @@ static HRESULT wait_for_completion(IMediaEvent *event)
             {
                 if (message.message == WM_QUIT)
                 {
+                    /* Preserve the quit signal for the outer StartCenter loop. */
+                    PostQuitMessage((int)message.wParam);
                     hr = E_ABORT;
                     done = TRUE;
                     break;
