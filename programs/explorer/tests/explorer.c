@@ -211,11 +211,45 @@ static void test_input_language_indicator(void)
            "Language indicator overlaps taskbar clock.\n");
 }
 
+
+/* The ShowClock value is WATER-owned, independent of version-specific
+ * StuckRects binary formats. GPO HideClock overrides a user's preference. */
+static BOOL taskbar_policy_flag(HKEY root, const WCHAR *name)
+{
+    static const WCHAR key[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer";
+    DWORD value, size = sizeof(value);
+    return !RegGetValueW(root, key, name, RRF_RT_REG_DWORD, NULL, &value, &size) && !!value;
+}
+
+static void test_taskbar_clock_registry(void)
+{
+    static const WCHAR key[] = L"Software\\Wine\\Explorer\\Taskbar";
+    DWORD value, size = sizeof(value);
+    BOOL expected = TRUE;
+    HWND tray = FindWindowW(L"Shell_TrayWnd", NULL);
+    HWND clock;
+
+    if (!tray || !(GetWindowLongPtrW(tray, GWL_STYLE) & WS_POPUP)) return;
+    if (!RegGetValueW(HKEY_CURRENT_USER, key, L"ShowClock",
+                      RRF_RT_REG_DWORD, NULL, &value, &size))
+        expected = !!value;
+    if (taskbar_policy_flag(HKEY_CURRENT_USER, L"HideClock") ||
+        taskbar_policy_flag(HKEY_LOCAL_MACHINE, L"HideClock"))
+        expected = FALSE;
+
+    clock = FindWindowExW(tray, NULL, L"Static", NULL);
+    ok(!!clock, "Clock window should exist even when configured hidden.\n");
+    if (clock)
+        ok(!!IsWindowVisible(clock) == expected,
+           "Taskbar clock visibility does not match registry/policy.\n");
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
     test_taskbar_appbar();
     test_taskbar_visual();
+    test_taskbar_clock_registry();
     test_input_language_indicator();
     test_win8_start();
     test_account_identity();

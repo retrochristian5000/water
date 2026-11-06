@@ -39,6 +39,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(systray);
 #define TRAY_MINIMIZE_ALL_UNDO 416
 #define TASKBAR_CLOCK_TIMER 3
 #define TASKBAR_LOCK_COMMAND 6100
+#define TASKBAR_CLOCK_COMMAND 6101
 
 enum taskbar_visual_style
 {
@@ -122,6 +123,7 @@ static enum taskbar_visual_style taskbar_visual;
 static HBRUSH taskbar_clock_brush;
 static UINT taskbar_edge = ABE_BOTTOM;
 static BOOL taskbar_locked = TRUE;
+static BOOL taskbar_show_clock = TRUE;
 static BOOL taskbar_dragging;
 static POINT taskbar_drag_start;
 
@@ -1265,11 +1267,68 @@ BOOL get_taskbar_info( RECT *rect, UINT *state, UINT *edge )
     return TRUE;
 }
 
+/* Windows taskbar GPO DWORDs live under the Policies\Explorer key,
+ * independently of the user's selected taskbar settings. Never mirror an
+ * administrator's forced value into HKCU\Software\Wine\Explorer\Taskbar. */
+static BOOL taskbar_policy_enabled( const WCHAR *name )
+{
+    static const WCHAR key[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer";
+    DWORD value, size;
+    HKEY roots[] = { HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE };
+    UINT i;
+
+    for (i = 0; i < ARRAY_SIZE(roots); ++i)
+    {
+        size = sizeof(value);
+        if (!RegGetValueW(roots[i], key, name, RRF_RT_REG_DWORD,
+                          NULL, &value, &size) && value)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOL taskbar_clock_visible(void)
+{
+    return taskbar_show_clock && !taskbar_policy_enabled(L"HideClock");
+}
+
+static BOOL taskbar_is_locked(void)
+{
+    return taskbar_locked || taskbar_policy_enabled(L"LockTaskbar");
+}
+
+static BOOL read_taskbar_show_clock(void)
+{
+    DWORD value, size = sizeof(value);
+
+    if (!RegGetValueW(HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
+                      L"ShowClock", RRF_RT_REG_DWORD, NULL, &value, &size))
+        return !!value;
+    return TRUE; /* Existing installations keep their historical default. */
+}
+
+static void write_taskbar_show_clock(void)
+{
+    HKEY key;
+    DWORD value = taskbar_show_clock;
+
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
+                        0, NULL, 0, KEY_SET_VALUE, NULL, &key, NULL))
+    {
+        WARN("Could not open taskbar settings to save clock visibility\n");
+        return;
+    }
+    if (RegSetValueExW(key, L"ShowClock", 0, REG_DWORD,
+                       (const BYTE *)&value, sizeof(value)))
+        WARN("Could not save taskbar clock visibility\n");
+    RegCloseKey(key);
+}
+
 static void update_taskbar_clock(void)
 {
     WCHAR time[64];
 
-    if (clock_window && GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL, NULL,
+    if (clock_window && taskbar_clock_visible() && GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL, NULL,
                                         time, ARRAY_SIZE(time) ))
         SetWindowTextW( clock_window, time );
 }
@@ -1277,6 +1336,8 @@ static void update_taskbar_clock(void)
 static void read_taskbar_settings(void)
 {
     DWORD value, size = sizeof(value);
+
+    taskbar_show_clock = read_taskbar_show_clock();
 
     if (!RegGetValueW( HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
                        L"Edge", RRF_RT_REG_DWORD, NULL, &value, &size ) &&
@@ -1377,18 +1438,37 @@ static void show_taskbar_menu( HWND hwnd )
     UINT command;
 
     if (!menu) return;
+    if (taskbar_policy_enabled(L"NoTrayContextMenu"))
+    {
+        DestroyMenu(menu);
+        return;
+    }
     if (!LoadStringW( NULL, IDS_TASKBAR_LOCK, label, ARRAY_SIZE(label) ))
         lstrcpyW( label, L"Lock the Taskbar" );
-    AppendMenuW( menu, MF_STRING | (taskbar_locked ? MF_CHECKED : MF_UNCHECKED),
+    AppendMenuW( menu, MF_STRING |
+                 (taskbar_is_locked() ? MF_CHECKED : MF_UNCHECKED) |
+                 (taskbar_policy_enabled(L"LockTaskbar") ? MF_GRAYED : 0),
                  TASKBAR_LOCK_COMMAND, label );
+    if (!LoadStringW(NULL, IDS_TASKBAR_SHOW_CLOCK, label, ARRAY_SIZE(label)))
+        lstrcpyW(label, L"Show the Clock");
+    AppendMenuW(menu, MF_STRING |
+                (taskbar_clock_visible() ? MF_CHECKED : MF_UNCHECKED) |
+                (taskbar_policy_enabled(L"HideClock") ? MF_GRAYED : 0),
+                TASKBAR_CLOCK_COMMAND, label);
     GetCursorPos( &cursor );
     command = TrackPopupMenu( menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
                               cursor.x, cursor.y, 0, hwnd, NULL );
     DestroyMenu( menu );
-    if (command == TASKBAR_LOCK_COMMAND)
+    if (command == TASKBAR_LOCK_COMMAND && !taskbar_policy_enabled(L"LockTaskbar"))
     {
         taskbar_locked = !taskbar_locked;
         write_taskbar_settings();
+    }
+    else if (command == TASKBAR_CLOCK_COMMAND && !taskbar_policy_enabled(L"HideClock"))
+    {
+        taskbar_show_clock = !taskbar_show_clock;
+        write_taskbar_show_clock();
+        do_show_systray(); /* Reclaim or reserve the clock's taskbar slot. */
     }
 }
 
@@ -1429,6 +1509,8 @@ static void do_show_systray(void)
 
         clock_width = 0;
         if (clock_window)
+            ShowWindow(clock_window, taskbar_clock_visible() ? SW_SHOWNOACTIVATE : SW_HIDE);
+        if (clock_window && taskbar_clock_visible())
         {
             sample.wHour = 23;
             sample.wMinute = 59;
@@ -1465,7 +1547,7 @@ static void do_show_systray(void)
         if (taskbar_edge == ABE_BOTTOM) y = screen_height - tray_height;
         SetWindowPos( tray_window, 0, x, y, tray_width, tray_height,
                       SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
-        if (clock_window)
+        if (clock_window && taskbar_clock_visible())
             SetWindowPos( clock_window, 0,
                           vertical ? 0 : tray_width - clock_width,
                           vertical ? tray_height - clock_height : 0,
@@ -1553,13 +1635,18 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_SETTINGCHANGE:
-        /* SPI_SETWORKAREA broadcasts this message; don't re-enter layout. */
-        if (enable_taskbar && wparam != SPI_SETWORKAREA) do_show_systray();
+        /* SPI_SETWORKAREA is emitted by our own docking code. Avoid
+         * rereading settings and recursing into another work-area update. */
+        if (enable_taskbar && wparam != SPI_SETWORKAREA)
+        {
+            taskbar_show_clock = read_taskbar_show_clock();
+            do_show_systray();
+        }
         update_taskbar_clock();
         break;
 
     case WM_LBUTTONDOWN:
-        if (enable_taskbar && !taskbar_locked && GetCursorPos( &taskbar_drag_start ))
+        if (enable_taskbar && !taskbar_is_locked() && GetCursorPos( &taskbar_drag_start ))
         {
             taskbar_dragging = TRUE;
             SetCapture( hwnd );
@@ -1634,6 +1721,7 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_CONTEXTMENU:
+        if (enable_taskbar && taskbar_policy_enabled(L"NoTrayContextMenu")) return 0;
         if (enable_taskbar && (!(HWND)wparam || (HWND)wparam == hwnd || (HWND)wparam == clock_window))
             show_taskbar_menu( hwnd );
         else
@@ -1795,10 +1883,15 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
 
     if (enable_taskbar)
     {
-        clock_window = CreateWindowW( L"Static", L"", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
+        clock_window = CreateWindowW( L"Static", L"", WS_CHILD | SS_CENTER | SS_CENTERIMAGE,
                                       0, 0, 0, 0, tray_window, NULL, NULL, NULL );
         if (!clock_window) WARN( "Could not create taskbar clock\n" );
-        else SendMessageW( clock_window, WM_SETFONT, (WPARAM)GetStockObject( DEFAULT_GUI_FONT ), FALSE );
+        else
+        {
+            SendMessageW( clock_window, WM_SETFONT,
+                          (WPARAM)GetStockObject( DEFAULT_GUI_FONT ), FALSE );
+            if (taskbar_clock_visible()) ShowWindow(clock_window, SW_SHOWNOACTIVATE);
+        }
         SetTimer( tray_window, TASKBAR_CLOCK_TIMER, 30000, NULL );
         update_taskbar_clock();
 
