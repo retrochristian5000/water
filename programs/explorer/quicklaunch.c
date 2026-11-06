@@ -501,8 +501,7 @@ BOOL quicklaunch_click(HWND button)
                                      l->shortcut, -1, pathA, ARRAY_SIZE(pathA),
                                      NULL, &substituted) || substituted)
             {
-                WARN("Cannot encode Win9x Quick Launch shortcut in ACP %u
-", GetACP());
+                WARN("Cannot encode Win9x Quick Launch shortcut in ACP %u\n", GetACP());
                 return TRUE;
             }
             result = ShellExecuteA(launcher_owner, "open", pathA,
