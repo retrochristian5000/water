@@ -112,6 +112,33 @@ UINT quicklaunch_mode(void)
     return launch_mode;
 }
 
+BOOL quicklaunch_can_toggle(void)
+{
+    return select_launch_mode() == 1;
+}
+
+BOOL quicklaunch_is_enabled(void)
+{
+    return quicklaunch_preference();
+}
+
+void quicklaunch_set_enabled(BOOL enabled)
+{
+    HKEY key;
+    DWORD value = !!enabled;
+
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
+                        0, NULL, 0, KEY_SET_VALUE, NULL, &key, NULL))
+    {
+        WARN("Could not save Quick Launch preference\n");
+        return;
+    }
+    if (RegSetValueExW(key, L"ShowQuickLaunch", 0, REG_DWORD,
+                       (const BYTE *)&value, sizeof(value)))
+        WARN("Could not save Quick Launch visibility\n");
+    RegCloseKey(key);
+}
+
 static BOOL get_shortcut_folder(WCHAR *folder, UINT mode)
 {
     WCHAR appdata[MAX_PATH];
