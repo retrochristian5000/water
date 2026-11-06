@@ -406,14 +406,12 @@ void locale_init(void)
          * system locale itself exposes UTF-8. */
         if (ansi_cp == CP_UTF8)
         {
-            WARN("Win9x system locale returned UTF-8 ACP; using legacy 1252
-");
+            WARN("Win9x system locale returned UTF-8 ACP; using legacy 1252\n");
             ansi_cp = 1252;
         }
         if (oem_cp == CP_UTF8)
         {
-            WARN("Win9x system locale returned UTF-8 OEMCP; using legacy 437
-");
+            WARN("Win9x system locale returned UTF-8 OEMCP; using legacy 437\n");
             oem_cp = 437;
         }
 
