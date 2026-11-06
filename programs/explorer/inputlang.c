@@ -164,7 +164,7 @@ static void inputlang_menu(void)
         {
             char languageA[96], descriptionA[128];
 
-            if (!GetLocaleInfoA(locale, LOCALE_SNATIVELANGNAME,
+            if (!GetLocaleInfoA(locale, LOCALE_SNATIVELANGNAME | LOCALE_USE_CP_ACP,
                                 languageA, ARRAY_SIZE(languageA)))
                 lstrcpyA(languageA, "Keyboard");
             wsprintfA(descriptionA, "%s (%04x:%04x)", languageA,
