@@ -40,6 +40,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(systray);
 #define TASKBAR_CLOCK_TIMER 3
 #define TASKBAR_LOCK_COMMAND 6100
 #define TASKBAR_CLOCK_COMMAND 6101
+#define TASKBAR_QUICKLAUNCH_COMMAND 6102
 
 enum taskbar_visual_style
 {
@@ -111,6 +112,7 @@ struct taskbar_button
     struct list entry;
     HWND        hwnd;
     HWND        button;
+    WCHAR       executable[MAX_PATH]; /* App image, never a guessed title match. */
     BOOL        active;
     BOOL        visible;
 };
@@ -851,7 +853,8 @@ static void sync_taskbar_buttons(void)
     struct taskbar_button *win;
     BOOL vertical = taskbar_edge == ABE_LEFT || taskbar_edge == ABE_RIGHT;
     int pos = 0, count = 0;
-    int width = vertical ? taskbar_button_height : taskbar_button_width;
+    int width = quicklaunch_mode() == 2 ? 48 :
+                vertical ? taskbar_button_height : taskbar_button_width;
     int right = (vertical ? tray_height - clock_height : tray_width - clock_width) -
                 nb_displayed * (vertical ? icon_cy : icon_cx) - inputlang_extent(vertical);
     HWND foreground = GetAncestor( GetForegroundWindow(), GA_ROOTOWNER );
@@ -862,6 +865,7 @@ static void sync_taskbar_buttons(void)
      * Reserve their width/height before assigning space to app buttons. */
     inputlang_layout(tray_width, tray_height, clock_width, clock_height,
                      icon_cx, icon_cy, nb_displayed, taskbar_edge);
+    quicklaunch_reset_running();
 
     LIST_FOR_EACH_ENTRY( win, &taskbar_buttons, struct taskbar_button, entry )
     {
@@ -876,8 +880,14 @@ static void sync_taskbar_buttons(void)
         }
         win->active = (win->hwnd == foreground);
         win->visible = IsWindowVisible( win->hwnd ) && !GetWindow( win->hwnd, GW_OWNER );
+        if (win->visible && quicklaunch_bind_window(win->hwnd, win->executable, win->active))
+            win->visible = FALSE; /* The pinned button represents this window. */
         if (win->visible) count++;
     }
+
+    /* Old Quick Launch remains separate; Windows 7+ pinned icons use
+     * these same slots after running-window reconciliation. */
+    pos = quicklaunch_layout(pos, right, vertical, tray_width, tray_height);
 
     if (count && count * width > right - pos)
         width = max( vertical ? taskbar_button_height / 2 : taskbar_button_width / 4,
@@ -1016,8 +1026,23 @@ static void add_taskbar_button( HWND hwnd )
         if (!GetWindowThreadProcessId( hwnd, &process ) || process == GetCurrentProcessId()) return;
     }
 
-    if (!(win = malloc( sizeof(*win) ))) return;
+    if (!(win = calloc(1, sizeof(*win)))) return;
     win->hwnd = hwnd;
+    if (hwnd && quicklaunch_mode() == 2)
+    {
+        DWORD process_id;
+        HANDLE process;
+        DWORD length = ARRAY_SIZE(win->executable);
+
+        GetWindowThreadProcessId(hwnd, &process_id);
+        process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
+        if (process)
+        {
+            if (!QueryFullProcessImageNameW(process, 0, win->executable, &length))
+                win->executable[0] = 0;
+            CloseHandle(process);
+        }
+    }
     win->button = CreateWindowW( WC_BUTTONW, NULL, WS_CHILD | BS_OWNERDRAW,
                                  0, 0, 0, 0, tray_window, (HMENU)hwnd, 0, 0 );
     list_add_tail( &taskbar_buttons, &win->entry );
@@ -1171,13 +1196,49 @@ static void paint_themed_taskbar_button( const DRAWITEMSTRUCT *dis,
     else
     {
         if (start) lstrcpynW( title, start_label, ARRAY_SIZE(title) );
-        else GetWindowTextW( win->hwnd, title, ARRAY_SIZE(title) );
+        else
+        {
+            HICON icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICONSM);
+            if (!icon) icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICON);
+            if (icon)
+            {
+                DrawIconEx(dis->hDC, rect.left + 6, (rect.bottom - 16) / 2,
+                           icon, 16, 16, 0, NULL, DI_NORMAL);
+                rect.left += 22;
+            }
+            GetWindowTextW( win->hwnd, title, ARRAY_SIZE(title) );
+        }
         rect.left += start ? 8 : 10;
         rect.right -= 6;
         DrawTextW( dis->hDC, title, -1, &rect, DT_SINGLELINE | DT_VCENTER |
                    (start ? DT_CENTER : DT_LEFT) | DT_END_ELLIPSIS );
     }
     SelectObject( dis->hDC, old_font );
+}
+
+static void paint_unified_window_button(const DRAWITEMSTRUCT *dis,
+                                        const struct taskbar_button *win, RECT rc)
+{
+    COLORREF background = win->active ? RGB(95, 124, 161) : RGB(58, 70, 86);
+    HBRUSH brush = CreateSolidBrush(background);
+    HICON icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICONSM);
+
+    if (brush)
+    {
+        FillRect(dis->hDC, &rc, brush);
+        DeleteObject(brush);
+    }
+    if (!icon) icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICON);
+    if (!icon) icon = LoadIconW(NULL, IDI_APPLICATION);
+    DrawIconEx(dis->hDC, (rc.right - 32) / 2, (rc.bottom - 32) / 2,
+               icon, 32, 32, 0, NULL, DI_NORMAL);
+    rc.top = rc.bottom - 3;
+    brush = CreateSolidBrush(win->active ? RGB(172, 219, 255) : RGB(104, 159, 207));
+    if (brush)
+    {
+        FillRect(dis->hDC, &rc, brush);
+        DeleteObject(brush);
+    }
 }
 
 static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
@@ -1188,6 +1249,11 @@ static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
 
     if (!win) return;
     GetClientRect( dis->hwndItem, &rect );
+    if (win->hwnd && quicklaunch_mode() == 2)
+    {
+        paint_unified_window_button(dis, win, rect);
+        return;
+    }
     if (taskbar_visual != TASKBAR_VISUAL_CLASSIC)
     {
         paint_themed_taskbar_button( dis, win, rect );
@@ -1455,6 +1521,12 @@ static void show_taskbar_menu( HWND hwnd )
                 (taskbar_clock_visible() ? MF_CHECKED : MF_UNCHECKED) |
                 (taskbar_policy_enabled(L"HideClock") ? MF_GRAYED : 0),
                 TASKBAR_CLOCK_COMMAND, label);
+    if (quicklaunch_can_toggle())
+    {
+        AppendMenuW(menu, MF_STRING |
+                    (quicklaunch_is_enabled() ? MF_CHECKED : MF_UNCHECKED),
+                    TASKBAR_QUICKLAUNCH_COMMAND, L"Show Quick Launch");
+    }
     GetCursorPos( &cursor );
     command = TrackPopupMenu( menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
                               cursor.x, cursor.y, 0, hwnd, NULL );
@@ -1469,6 +1541,12 @@ static void show_taskbar_menu( HWND hwnd )
         taskbar_show_clock = !taskbar_show_clock;
         write_taskbar_show_clock();
         do_show_systray(); /* Reclaim or reserve the clock's taskbar slot. */
+    }
+    else if (command == TASKBAR_QUICKLAUNCH_COMMAND && quicklaunch_can_toggle())
+    {
+        quicklaunch_set_enabled(!quicklaunch_is_enabled());
+        quicklaunch_initialize(tray_window, GetSysColor(COLOR_BTNFACE));
+        sync_taskbar_buttons();
     }
 }
 
@@ -1640,6 +1718,7 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         if (enable_taskbar && wparam != SPI_SETWORKAREA)
         {
             taskbar_show_clock = read_taskbar_show_clock();
+            quicklaunch_initialize(tray_window, GetSysColor(COLOR_BTNFACE));
             do_show_systray();
         }
         update_taskbar_clock();
@@ -1700,6 +1779,7 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
     case WM_DRAWITEM:
         if (((MEASUREITEMSTRUCT*)lparam)->CtlType == ODT_MENU)
             return menu_wndproc(hwnd, msg, wparam, lparam);
+        if (quicklaunch_paint((const DRAWITEMSTRUCT *)lparam)) return TRUE;
         paint_taskbar_button( (const DRAWITEMSTRUCT *)lparam );
         break;
 
@@ -1716,7 +1796,8 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
                 FIXME( "Shell command %u is not supported.\n", LOWORD(wparam) );
                 break;
             }
-            click_taskbar_button( (HWND)lparam );
+            if (!quicklaunch_click((HWND)lparam))
+                click_taskbar_button( (HWND)lparam );
         }
         break;
 
@@ -1880,6 +1961,9 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
     }
 
     LoadStringW( NULL, IDS_START_LABEL, start_label, ARRAY_SIZE( start_label ));
+
+    if (enable_taskbar)
+        quicklaunch_initialize(tray_window, GetSysColor(COLOR_BTNFACE));
 
     if (enable_taskbar)
     {

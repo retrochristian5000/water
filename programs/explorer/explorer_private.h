@@ -30,6 +30,19 @@ extern void notify_appbar_taskbar_moved(void);
 /* A private layout request; only WATER's input-language child posts this. */
 #define WM_WATER_INPUTLANG_LAYOUT (WM_APP + 0x127)
 extern void inputlang_initialize(HWND owner, COLORREF background, COLORREF text);
+
+/* IE4-era Quick Launch versus Windows 7+ unified pinned buttons. */
+extern UINT quicklaunch_mode(void);
+extern BOOL quicklaunch_can_toggle(void);
+extern BOOL quicklaunch_is_enabled(void);
+extern void quicklaunch_set_enabled(BOOL enabled);
+extern void quicklaunch_initialize(HWND owner, COLORREF background);
+extern void quicklaunch_reset_running(void);
+extern BOOL quicklaunch_bind_window(HWND hwnd, const WCHAR *executable, BOOL active);
+extern int quicklaunch_layout(int pos, int right, BOOL vertical,
+                              int full_width, int full_height);
+extern BOOL quicklaunch_paint(const DRAWITEMSTRUCT *draw);
+extern BOOL quicklaunch_click(HWND button);
 extern int inputlang_extent(BOOL vertical);
 extern void inputlang_layout(int width, int height, int clock_width, int clock_height,
                              int icon_width, int icon_height, UINT icon_count, UINT edge);

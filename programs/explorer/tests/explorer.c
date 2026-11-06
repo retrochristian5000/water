@@ -244,6 +244,35 @@ static void test_taskbar_clock_registry(void)
            "Taskbar clock visibility does not match registry/policy.\n");
 }
 
+
+/* Quick Launch must not fabricate shortcuts: all launcher controls correspond
+ * to installed per-user .lnk/.url files, and old shell versions are gated. */
+static void test_quicklaunch_boundaries(void)
+{
+    HWND tray = FindWindowW(L"Shell_TrayWnd", NULL);
+    char line[32] = {0}, version[32] = {0}, update[8] = {0};
+    DWORD n;
+    HWND button;
+    UINT marked = 0;
+
+    if (!tray || !(GetWindowLongPtrW(tray, GWL_STYLE) & WS_POPUP)) return;
+    GetEnvironmentVariableA("WATER_VDM_LINE", line, sizeof(line));
+    GetEnvironmentVariableA("WATER_VDM_VERSION", version, sizeof(version));
+    n = GetEnvironmentVariableA("WATER_SHELL_DESKTOP_UPDATE", update, sizeof(update));
+
+    /* Original Windows 95 and NT 4 have no Quick Launch unless Desktop
+     * Update has been explicitly selected. */
+    if (( (!strcmp(line, "win9x") && !strcmp(version, "4.0")) ||
+          (!strcmp(line, "nt") && !strcmp(version, "4.0")) ) &&
+        (n != 1 || update[0] != '1'))
+    {
+        for (button = FindWindowExW(tray, NULL, L"Button", NULL); button;
+             button = FindWindowExW(tray, button, L"Button", NULL))
+            if (GetPropW(button, L"WaterQuickLaunch")) marked++;
+        ok(!marked, "Unupdated Windows 95/NT4 exposed a Quick Launch button.\n");
+    }
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
@@ -251,6 +280,7 @@ START_TEST(explorer)
     test_taskbar_visual();
     test_taskbar_clock_registry();
     test_input_language_indicator();
+    test_quicklaunch_boundaries();
     test_win8_start();
     test_account_identity();
 }
