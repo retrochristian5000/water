@@ -67,8 +67,11 @@ static void real_account_name( WCHAR *name, UINT count )
 {
     DWORD size = count;
 
+    DWORD len;
+
     if (GetUserNameW(name, &size) && name[0]) return;
-    if (GetEnvironmentVariableW(L"USERNAME", name, count) && name[0]) return;
+    len = GetEnvironmentVariableW(L"USERNAME", name, count);
+    if (len && len < count && name[0]) return;
     lstrcpynW(name, L"User", count);
 }
 
@@ -85,8 +88,13 @@ static BOOL read_account_setting( const WCHAR *keyname, WCHAR *output, DWORD cou
     status = RegQueryValueExW(key, keyname, NULL, &kind, (BYTE *)output, &size);
     RegCloseKey(key);
     if (status || kind != REG_SZ || size < sizeof(WCHAR) ||
-        size > count * sizeof(WCHAR)) { output[0] = 0; return FALSE; }
-    output[count - 1] = 0;
+        size > count * sizeof(WCHAR) || size % sizeof(WCHAR))
+    {
+        output[0] = 0;
+        return FALSE;
+    }
+    /* REG_SZ can be malformed. Never read beyond the registry's byte count. */
+    output[size / sizeof(WCHAR) - 1] = 0;
     return !!output[0];
 }
 
