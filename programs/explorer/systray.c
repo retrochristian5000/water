@@ -1208,8 +1208,11 @@ static void paint_themed_taskbar_button( const DRAWITEMSTRUCT *dis,
         }
         rect.left += start ? 8 : 10;
         rect.right -= 6;
-        DrawTextW( dis->hDC, title, -1, &rect, DT_SINGLELINE | DT_VCENTER |
-                   (start ? DT_CENTER : DT_LEFT) | DT_END_ELLIPSIS );
+        shell_draw_text( dis->hDC, title, &rect, DT_SINGLELINE | DT_VCENTER |
+                         (start ? DT_CENTER : DT_LEFT) | DT_END_ELLIPSIS,
+                         start ? GetUserDefaultUILanguage() :
+                         LOWORD((ULONG_PTR)GetKeyboardLayout(
+                             GetWindowThreadProcessId(win->hwnd, NULL))) );
     }
     SelectObject( dis->hDC, old_font );
 }
@@ -1274,8 +1277,38 @@ static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
                       ((dis->itemState & ODS_SELECTED) ? DFCS_PUSHED : 0 ));
     if (win->hwnd)
     {
-        flags |= win->active ? DC_ACTIVE : DC_INBUTTON;
-        DrawCaptionTempW( win->hwnd, dis->hDC, &rect, 0, 0, NULL, flags );
+        WCHAR title[256];
+        UINT thread;
+        LANGID locale;
+
+        GetWindowTextW(win->hwnd, title, ARRAY_SIZE(title));
+        if (shell_text_needs_cjk(title))
+        {
+            HICON icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICONSM);
+            HFONT old_font = SelectObject(dis->hDC, GetStockObject(DEFAULT_GUI_FONT));
+            RECT caption = rect;
+
+            if (!icon) icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICON);
+            if (!icon) icon = LoadIconW(NULL, IDI_APPLICATION);
+            DrawIconEx(dis->hDC, rect.left + 5, (rect.bottom - 16) / 2,
+                       icon, 16, 16, 0, NULL, DI_NORMAL);
+            caption.left += 26;
+            caption.right -= 5;
+            SetBkMode(dis->hDC, TRANSPARENT);
+            SetTextColor(dis->hDC, GetSysColor(COLOR_BTNTEXT));
+            thread = GetWindowThreadProcessId(win->hwnd, NULL);
+            locale = thread ? LOWORD((ULONG_PTR)GetKeyboardLayout(thread)) :
+                              GetUserDefaultUILanguage();
+            shell_draw_text(dis->hDC, title, &caption,
+                            DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS,
+                            locale);
+            SelectObject(dis->hDC, old_font);
+        }
+        else
+        {
+            flags |= win->active ? DC_ACTIVE : DC_INBUTTON;
+            DrawCaptionTempW(win->hwnd, dis->hDC, &rect, 0, 0, NULL, flags);
+        }
     }
     else if (start_screen_version() == 3)  /* Windows 8.1 Start button */
         DrawIconEx(dis->hDC, (rect.right - 24) / 2, (rect.bottom - 24) / 2,
@@ -1592,7 +1625,7 @@ static void do_show_systray(void)
         SYSTEMTIME sample = {0};
         SIZE clock_size = {0};
 
-        GetTextExtentPointA( hdc, "abcdefghijklmnopqrstuvwxyz", 26, &size );
+        GetTextExtentPointW( hdc, L"abcdefghijklmnopqrstuvwxyz", 26, &size );
         taskbar_button_width = size.cx;
         GetTextExtentPointW( hdc, start_label, lstrlenW(start_label), &size );
 

@@ -147,7 +147,9 @@ static void inputlang_menu(void)
         LCID locale = MAKELCID(id, SORT_DEFAULT);
 
         choices[i] = available[i];
-        if (!GetLocaleInfoW(locale, LOCALE_SENGLISHLANGUAGENAME,
+        /* Render the native language name (中文 / 日本語), not an English-only
+         * translation. Windows' Unicode menu painter handles the text. */
+        if (!GetLocaleInfoW(locale, LOCALE_SNATIVELANGNAME,
                             language, ARRAY_SIZE(language)))
             lstrcpyW(language, L"Keyboard");
         /* The layout identity distinguishes e.g. English US from Dvorak,

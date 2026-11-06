@@ -16,5 +16,6 @@ SOURCES = \
 	startscreen.c \
 	inputlang.c \
 	quicklaunch.c \
+	shelltext.c \
 	userprofile.c \
 	systray.c

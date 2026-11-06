@@ -285,6 +285,29 @@ static void test_quicklaunch_boundaries(void)
     }
 }
 
+
+/* Text transport regression only. Glyph coverage is tested by shelltext.c
+ * against installed fonts; this test must not assume proprietary fonts exist. */
+static void test_cjk_window_title(void)
+{
+    static const WCHAR title[] = L"中文 繁體 日本語 漢字";
+    WCHAR result[ARRAY_SIZE(title)];
+    HWND window;
+
+    window = CreateWindowExW(0, L"STATIC", title, WS_POPUP,
+                             0, 0, 100, 30, NULL, NULL, NULL, NULL);
+    if (!window)
+    {
+        skip("Cannot construct a Unicode CJK test window.\\n");
+        return;
+    }
+    memset(result, 0, sizeof(result));
+    ok(GetWindowTextW(window, result, ARRAY_SIZE(result)) ==
+       ARRAY_SIZE(title) - 1, "CJK window title length changed.\\n");
+    ok(!lstrcmpW(result, title), "Chinese/Japanese CJK title was altered.\\n");
+    DestroyWindow(window);
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
@@ -293,6 +316,7 @@ START_TEST(explorer)
     test_taskbar_clock_registry();
     test_input_language_indicator();
     test_quicklaunch_boundaries();
+    test_cjk_window_title();
     test_win8_start();
     test_account_identity();
 }

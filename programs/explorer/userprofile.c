@@ -272,8 +272,9 @@ void paint_shell_account( HDC dc, const RECT *rect, BOOL start_screen )
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(255, 255, 255));
     old_font = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
-    DrawTextW(dc, name, -1, &text, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS |
-              (start_screen ? DT_RIGHT : DT_LEFT));
+    shell_draw_text(dc, name, &text, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS |
+                    (start_screen ? DT_RIGHT : DT_LEFT),
+                    GetUserDefaultUILanguage());
     SelectObject(dc, old_font);
 }
 

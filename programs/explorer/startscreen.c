@@ -242,8 +242,9 @@ static void paint_screen(HDC dc)
         cell.right -= 8;
         cell.top = cell.bottom - 36;
         cell.bottom -= 7;
-        DrawTextW(dc, tiles[index].label, -1, &cell,
-                  DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+        shell_draw_text(dc, tiles[index].label, &cell,
+                        DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS,
+                        GetUserDefaultUILanguage());
     }
     SelectObject(dc, saved);
 }

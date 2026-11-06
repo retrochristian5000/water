@@ -46,6 +46,9 @@ extern BOOL quicklaunch_click(HWND button);
 extern int inputlang_extent(BOOL vertical);
 extern void inputlang_layout(int width, int height, int clock_width, int clock_height,
                              int icon_width, int icon_height, UINT icon_count, UINT edge);
+/* CJK-aware drawing: preserve original UTF-16 text and native glyphs. */
+extern BOOL shell_text_needs_cjk(const WCHAR *text);
+extern int shell_draw_text(HDC dc, const WCHAR *text, RECT *rect, UINT flags, LANGID locale);
 extern void handle_parent_notify( HWND hwnd, WPARAM wp );
 extern void do_startmenu( HWND owner );
 extern BOOL shell_account_classic_header(void);
