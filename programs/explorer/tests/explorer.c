@@ -184,11 +184,39 @@ static void test_account_identity(void)
     ok(GetUserNameW(name, &count) && name[0], "No current user identity.\n");
 }
 
+static void test_input_language_indicator(void)
+{
+    HWND tray = FindWindowW(L"Shell_TrayWnd", NULL), lang, clock;
+    RECT lang_rect, clock_rect, overlap;
+    int count;
+
+    if (!tray || !(GetWindowLongPtrW(tray, GWL_STYLE) & WS_POPUP)) return;
+    lang = FindWindowExW(tray, NULL, L"WaterInputLanguage", NULL);
+    if (!lang) { skip("Input language indicator is not enabled in this shell.\n"); return; }
+    count = GetKeyboardLayoutList(0, NULL);
+    if (count <= 1)
+    {
+        ok(!IsWindowVisible(lang), "Input language indicator visible with one layout.\n");
+        return;
+    }
+    if (!IsWindowVisible(lang))
+    {
+        skip("Input language indicator is hidden by user preferences.\n");
+        return;
+    }
+    clock = FindWindowExW(tray, NULL, L"Static", NULL);
+    ok(!!GetWindowRect(lang, &lang_rect), "Failed to read indicator geometry.\n");
+    if (clock && GetWindowRect(clock, &clock_rect))
+        ok(!IntersectRect(&overlap, &lang_rect, &clock_rect),
+           "Language indicator overlaps taskbar clock.\n");
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
     test_taskbar_appbar();
     test_taskbar_visual();
+    test_input_language_indicator();
     test_win8_start();
     test_account_identity();
 }

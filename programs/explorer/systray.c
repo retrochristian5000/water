@@ -851,10 +851,15 @@ static void sync_taskbar_buttons(void)
     int pos = 0, count = 0;
     int width = vertical ? taskbar_button_height : taskbar_button_width;
     int right = (vertical ? tray_height - clock_height : tray_width - clock_width) -
-                nb_displayed * icon_cy;
+                nb_displayed * (vertical ? icon_cy : icon_cx) - inputlang_extent(vertical);
     HWND foreground = GetAncestor( GetForegroundWindow(), GA_ROOTOWNER );
 
     if (!enable_taskbar || !IsWindowVisible( tray_window )) return;
+
+    /* Both the language control and icons occupy the notification strip.
+     * Reserve their width/height before assigning space to app buttons. */
+    inputlang_layout(tray_width, tray_height, clock_width, clock_height,
+                     icon_cx, icon_cy, nb_displayed, taskbar_edge);
 
     LIST_FOR_EACH_ENTRY( win, &taskbar_buttons, struct taskbar_button, entry )
     {
@@ -1480,6 +1485,10 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
     case WM_COPYDATA:
         return handle_incoming((HWND)wparam, (COPYDATASTRUCT *)lparam);
 
+    case WM_WATER_INPUTLANG_LAYOUT:
+        if (enable_taskbar) sync_taskbar_buttons();
+        return 0;
+
     case WM_ERASEBKGND:
         if (enable_taskbar && taskbar_visual != TASKBAR_VISUAL_CLASSIC) return 1;
         break;
@@ -1792,6 +1801,18 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
         else SendMessageW( clock_window, WM_SETFONT, (WPARAM)GetStockObject( DEFAULT_GUI_FONT ), FALSE );
         SetTimer( tray_window, TASKBAR_CLOCK_TIMER, 30000, NULL );
         update_taskbar_clock();
+
+        /* Only an installed second layout activates the indicator.
+         * Its HWND stays alive while hidden so new layouts are detected. */
+        if (!no_tray_items)
+        {
+            COLORREF background = taskbar_visual == TASKBAR_VISUAL_LUNA_BLUE ?
+                     RGB(34, 103, 195) : taskbar_visual == TASKBAR_VISUAL_VISTA_AERO ?
+                     RGB(39, 43, 51) : GetSysColor(COLOR_BTNFACE);
+            COLORREF foreground = taskbar_visual == TASKBAR_VISUAL_CLASSIC ?
+                     GetSysColor(COLOR_BTNTEXT) : RGB(255, 255, 255);
+            inputlang_initialize(tray_window, background, foreground);
+        }
     }
 
     /* Windows 8 RTM has a Start hot corner, not a taskbar Start button. */

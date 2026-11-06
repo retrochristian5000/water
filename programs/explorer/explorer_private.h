@@ -26,6 +26,13 @@ extern void initialize_systray( BOOL using_root, BOOL enable_shell, BOOL show_sy
 extern void initialize_appbar(void);
 extern BOOL get_taskbar_info( RECT *rect, UINT *state, UINT *edge );
 extern void notify_appbar_taskbar_moved(void);
+
+/* A private layout request; only WATER's input-language child posts this. */
+#define WM_WATER_INPUTLANG_LAYOUT (WM_APP + 0x127)
+extern void inputlang_initialize(HWND owner, COLORREF background, COLORREF text);
+extern int inputlang_extent(BOOL vertical);
+extern void inputlang_layout(int width, int height, int clock_width, int clock_height,
+                             int icon_width, int icon_height, UINT icon_count, UINT edge);
 extern void handle_parent_notify( HWND hwnd, WPARAM wp );
 extern void do_startmenu( HWND owner );
 extern BOOL shell_account_classic_header(void);

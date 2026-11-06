@@ -14,5 +14,6 @@ SOURCES = \
 	explorer.rc \
 	startmenu.c \
 	startscreen.c \
+	inputlang.c \
 	userprofile.c \
 	systray.c
