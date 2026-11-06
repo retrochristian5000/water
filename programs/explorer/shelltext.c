@@ -39,6 +39,18 @@ static enum cjk_script detect_cjk(const WCHAR *text)
     {
         WCHAR ch = *p;
 
+        /* Extension B and later Han ideographs use UTF-16 surrogate
+         * pairs. Detect them without slicing a code point in two. */
+        if (ch >= 0xd800 && ch <= 0xdbff && p[1] >= 0xdc00 &&
+            p[1] <= 0xdfff)
+        {
+            DWORD point = 0x10000 + (((DWORD)ch - 0xd800) << 10) +
+                          ((DWORD)p[1] - 0xdc00);
+            if (point >= 0x20000 && point <= 0x33479) han = TRUE;
+            p++;
+            continue;
+        }
+
         if ((ch >= 0x3040 && ch <= 0x30ff) ||
             (ch >= 0x31f0 && ch <= 0x31ff) ||
             (ch >= 0xff66 && ch <= 0xff9f))
@@ -86,6 +98,14 @@ static BOOL font_covers_text(HDC dc, const WCHAR *text)
         WORD glyph;
         DWORD result;
 
+        /* GetGlyphIndicesW maps individual UTF-16 code units, not a
+         * dependable supplementary-plane character shape. Do not claim
+         * that a candidate font supports Extension B from this probe;
+         * leave intact pairs to DrawTextW and the platform text engine. */
+        if (*p >= 0xd800 && *p <= 0xdbff &&
+            p[1] >= 0xdc00 && p[1] <= 0xdfff)
+            return FALSE;
+
         if (!((*p >= 0x1100 && *p <= 0x11ff) ||
               (*p >= 0x3040 && *p <= 0x318f) ||
               (*p >= 0x3400 && *p <= 0x9fff) ||
@@ -97,6 +117,39 @@ static BOOL font_covers_text(HDC dc, const WCHAR *text)
         if (result == GDI_ERROR || glyph == 0xffff) return FALSE;
     }
     return TRUE;
+}
+
+/* Probe only installed font faces; CreateFontIndirectW may silently
+ * substitute another face, so compare the real selected family as well. */
+static HFONT probe_font_families(HDC dc, const WCHAR *text, LOGFONTW *spec,
+                                const WCHAR *const *families)
+{
+    UINT i;
+
+    for (i = 0; families[i]; ++i)
+    {
+        HGDIOBJ previous;
+        HFONT candidate;
+        WCHAR face[LF_FACESIZE] = {0};
+        BOOL matched;
+
+        lstrcpynW(spec->lfFaceName, families[i], ARRAY_SIZE(spec->lfFaceName));
+        candidate = CreateFontIndirectW(spec);
+        if (!candidate) continue;
+
+        previous = SelectObject(dc, candidate);
+        if (!previous || previous == HGDI_ERROR)
+        {
+            DeleteObject(candidate);
+            continue;
+        }
+        GetTextFaceW(dc, ARRAY_SIZE(face), face);
+        matched = !lstrcmpiW(face, families[i]) && font_covers_text(dc, text);
+        SelectObject(dc, previous);
+        if (matched) return candidate;
+        DeleteObject(candidate);
+    }
+    return NULL;
 }
 
 static HFONT find_cjk_font(HDC dc, const WCHAR *text, LANGID locale)
@@ -120,16 +173,29 @@ static HFONT find_cjk_font(HDC dc, const WCHAR *text, LANGID locale)
     {
         L"Malgun Gothic", L"Gulim", L"Noto Sans CJK KR", NULL
     };
+    static const WCHAR *const *const fallback[] =
+    {
+        japanese, traditional, simplified, korean
+    };
     enum cjk_script script = detect_cjk(text);
     const WCHAR *const *faces;
     LOGFONTW spec;
-    HGDIOBJ base, previous;
+    HGDIOBJ base;
     HFONT candidate;
-    WCHAR selected_name[LF_FACESIZE];
     UINT i;
+    BOOL known_locale;
 
     if (script == CJK_NONE) return NULL;
     if (!locale) locale = GetUserDefaultUILanguage();
+
+    known_locale = PRIMARYLANGID(locale) == LANG_CHINESE ||
+                   PRIMARYLANGID(locale) == LANG_JAPANESE ||
+                   PRIMARYLANGID(locale) == LANG_KOREAN;
+
+    /* Han-only text is ambiguous when the active locale is not CJK:
+     * if the existing typeface covers it, preserve its glyph variant. */
+    if (script == CJK_HAN && !known_locale && font_covers_text(dc, text))
+        return NULL;
 
     if (script == CJK_JAPANESE ||
         (script == CJK_HAN && PRIMARYLANGID(locale) == LANG_JAPANESE))
@@ -143,62 +209,22 @@ static HFONT find_cjk_font(HDC dc, const WCHAR *text, LANGID locale)
         faces = simplified;
 
     base = GetCurrentObject(dc, OBJ_FONT);
-    if (!base || GetObjectW(base, sizeof(spec), &spec) != sizeof(spec)) return NULL;
+    if (!base || GetObjectW(base, sizeof(spec), &spec) != sizeof(spec))
+        return NULL;
     spec.lfCharSet = DEFAULT_CHARSET;
 
-    for (i = 0; faces[i]; i++)
-    {
-        lstrcpynW(spec.lfFaceName, faces[i], ARRAY_SIZE(spec.lfFaceName));
-        candidate = CreateFontIndirectW(&spec);
-        if (!candidate) continue;
+    candidate = probe_font_families(dc, text, &spec, faces);
+    if (candidate) return candidate;
 
-        previous = SelectObject(dc, candidate);
-        if (!previous || previous == HGDI_ERROR)
-        {
-            DeleteObject(candidate);
-            continue;
-        }
-        selected_name[0] = 0;
-        GetTextFaceW(dc, ARRAY_SIZE(selected_name), selected_name);
-        if (!lstrcmpiW(selected_name, faces[i]) && font_covers_text(dc, text))
-        {
-            SelectObject(dc, previous);
-            return candidate;
-        }
-        SelectObject(dc, previous);
-        DeleteObject(candidate);
-    }
-
-    /* A different locale may supply the only installed CJK font. Attempt
-     * fallback families without misrepresenting native glyph provenance. */
-    if (script == CJK_HAN && !font_covers_text(dc, text))
+    /* Let the installed fallback families rescue glyphs even if the
+     * locale-specific face is missing; never invent an installed font. */
+    if (!font_covers_text(dc, text))
     {
-        const WCHAR *const *other[] = {japanese, traditional, simplified};
-        UINT j;
-        for (j = 0; j < ARRAY_SIZE(other); j++)
+        for (i = 0; i < ARRAY_SIZE(fallback); ++i)
         {
-            for (i = 0; other[j][i]; i++)
-            {
-                lstrcpynW(spec.lfFaceName, other[j][i], ARRAY_SIZE(spec.lfFaceName));
-                candidate = CreateFontIndirectW(&spec);
-                if (!candidate) continue;
-                previous = SelectObject(dc, candidate);
-                if (!previous || previous == HGDI_ERROR)
-                {
-                    DeleteObject(candidate);
-                    continue;
-                }
-                selected_name[0] = 0;
-                GetTextFaceW(dc, ARRAY_SIZE(selected_name), selected_name);
-                if (!lstrcmpiW(selected_name, other[j][i]) &&
-                    font_covers_text(dc, text))
-                {
-                    SelectObject(dc, previous);
-                    return candidate;
-                }
-                SelectObject(dc, previous);
-                DeleteObject(candidate);
-            }
+            if (fallback[i] == faces) continue;
+            candidate = probe_font_families(dc, text, &spec, fallback[i]);
+            if (candidate) return candidate;
         }
     }
     return NULL;
