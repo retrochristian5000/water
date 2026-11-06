@@ -1477,11 +1477,24 @@ static void write_taskbar_show_clock(void)
 
 static void update_taskbar_clock(void)
 {
-    WCHAR time[64];
+    if (!clock_window || !taskbar_clock_visible()) return;
 
-    if (clock_window && taskbar_clock_visible() && GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL, NULL,
-                                        time, ARRAY_SIZE(time) ))
-        SetWindowTextW( clock_window, time );
+    if (shell_text_is_win9x())
+    {
+        char time[64];
+
+        if (GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL, NULL,
+                           time, ARRAY_SIZE(time)))
+            SetWindowTextA(clock_window, time);
+    }
+    else
+    {
+        WCHAR time[64];
+
+        if (GetTimeFormatW(LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL, NULL,
+                           time, ARRAY_SIZE(time)))
+            SetWindowTextW(clock_window, time);
+    }
 }
 
 static void read_taskbar_settings(void)
@@ -1678,8 +1691,16 @@ static void do_show_systray(void)
             sample.wHour = 23;
             sample.wMinute = 59;
             SelectObject( hdc, GetStockObject( DEFAULT_GUI_FONT ));
-            if (GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, &sample, NULL,
-                                label, ARRAY_SIZE(label) ))
+            if (shell_text_is_win9x())
+            {
+                char labelA[64];
+
+                if (GetTimeFormatA(LOCALE_USER_DEFAULT, TIME_NOSECONDS, &sample, NULL,
+                                   labelA, ARRAY_SIZE(labelA)))
+                    GetTextExtentPointA(hdc, labelA, lstrlenA(labelA), &clock_size);
+            }
+            else if (GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, &sample, NULL,
+                                     label, ARRAY_SIZE(label) ))
                 GetTextExtentPointW( hdc, label, lstrlenW(label), &clock_size );
             clock_width = max( clock_size.cx + 20, 64 );
         }

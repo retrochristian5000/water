@@ -52,6 +52,17 @@ static void inputlang_name(HKL layout, WCHAR *name, UINT length)
 {
     LANGID language = LOWORD((ULONG_PTR)layout);
     LCID locale = MAKELCID(language, SORT_DEFAULT);
+    if (shell_text_is_win9x())
+    {
+        char code[16];
+
+        if (!GetLocaleInfoA(locale, LOCALE_SISO639LANGNAME, code, sizeof(code)))
+            lstrcpyA(code, "??");
+        CharUpperBuffA(code, lstrlenA(code));
+        if (!MultiByteToWideChar(CP_ACP, 0, code, -1, name, length))
+            lstrcpynW(name, L"??", length);
+        return;
+    }
     if (!GetLocaleInfoW(locale, LOCALE_SISO639LANGNAME, name, length) || !name[0])
         lstrcpynW(name, L"??", length);
     CharUpperBuffW(name, lstrlenW(name));
@@ -147,18 +158,32 @@ static void inputlang_menu(void)
         LCID locale = MAKELCID(id, SORT_DEFAULT);
 
         choices[i] = available[i];
-        /* Render the native language name (中文 / 日本語), not an English-only
-         * translation. Windows' Unicode menu painter handles the text. */
-        if (!GetLocaleInfoW(locale, LOCALE_SNATIVELANGNAME,
-                            language, ARRAY_SIZE(language)))
-            lstrcpyW(language, L"Keyboard");
-        /* The layout identity distinguishes e.g. English US from Dvorak,
-         * even when both display 'EN' in the compact indicator. */
-        wsprintfW(description, L"%s (%04x:%04x)", language,
-                  HIWORD((ULONG_PTR)choices[i]), id);
-        AppendMenuW(menu, MF_STRING |
-                    (choices[i] == selected ? MF_CHECKED : MF_UNCHECKED),
-                    INPUTLANG_MENU_FIRST + i, description);
+        /* Win9x locale strings are code-page encoded, while NT may use
+         * native Unicode Hanzi/kanji. Keep both paths independent. */
+        if (shell_text_is_win9x())
+        {
+            char languageA[96], descriptionA[128];
+
+            if (!GetLocaleInfoA(locale, LOCALE_SNATIVELANGNAME,
+                                languageA, ARRAY_SIZE(languageA)))
+                lstrcpyA(languageA, "Keyboard");
+            wsprintfA(descriptionA, "%s (%04x:%04x)", languageA,
+                      HIWORD((ULONG_PTR)choices[i]), id);
+            AppendMenuA(menu, MF_STRING |
+                        (choices[i] == selected ? MF_CHECKED : MF_UNCHECKED),
+                        INPUTLANG_MENU_FIRST + i, descriptionA);
+        }
+        else
+        {
+            if (!GetLocaleInfoW(locale, LOCALE_SNATIVELANGNAME,
+                                language, ARRAY_SIZE(language)))
+                lstrcpyW(language, L"Keyboard");
+            wsprintfW(description, L"%s (%04x:%04x)", language,
+                      HIWORD((ULONG_PTR)choices[i]), id);
+            AppendMenuW(menu, MF_STRING |
+                        (choices[i] == selected ? MF_CHECKED : MF_UNCHECKED),
+                        INPUTLANG_MENU_FIRST + i, description);
+        }
     }
 
     command = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
@@ -213,8 +238,9 @@ static LRESULT CALLBACK inputlang_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, text_color);
         old = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
-        DrawTextW(dc, indicator_label, -1, &rect,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        shell_draw_text(dc, indicator_label, &rect,
+                        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+                        LOWORD((ULONG_PTR)selected));
         SelectObject(dc, old);
         EndPaint(hwnd, &paint);
         return 0;
