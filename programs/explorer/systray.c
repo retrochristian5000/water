@@ -1042,7 +1042,10 @@ static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
         flags |= win->active ? DC_ACTIVE : DC_INBUTTON;
         DrawCaptionTempW( win->hwnd, dis->hDC, &rect, 0, 0, NULL, flags );
     }
-    else  /* start button */
+    else if (start_screen_version() == 3)  /* Windows 8.1 Start button */
+        DrawIconEx(dis->hDC, (rect.right - 24) / 2, (rect.bottom - 24) / 2,
+                   shell_traywnd_class.hIcon, 24, 24, 0, NULL, DI_NORMAL);
+    else  /* classic Start button */
         DrawCaptionTempW( 0, dis->hDC, &rect, 0, 0, start_label, flags | DC_INBUTTON | DC_ICON );
 }
 
@@ -1298,7 +1301,8 @@ static void do_show_systray(void)
                                    max( icon_cy, size.cy );
         int x = 0, y = 0;
 
-        start_button_width = size.cx;
+        start_button_width = start_screen_version() == 3 ? 48 : size.cx;
+        if (start_screen_version() == 3) start_button_height = 38;
         tray_width = vertical ? thickness : screen_width;
         tray_height = vertical ? screen_height : thickness;
         if (taskbar_edge == ABE_RIGHT) x = screen_width - tray_width;
@@ -1594,7 +1598,8 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
         update_taskbar_clock();
     }
 
-    add_taskbar_button( 0 );
+    /* Windows 8 RTM has a Start hot corner, not a taskbar Start button. */
+    if (start_screen_version() != 2) add_taskbar_button( 0 );
 
     if (enable_taskbar)
     {
@@ -1605,6 +1610,7 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
          * notification icons after Explorer recreates the taskbar. */
         if (message) SendNotifyMessageW(HWND_BROADCAST, message, 0, 0);
         if (!no_tray_items) launch_win9x_systray();
+        initialize_start_corner(tray_window);
     }
     else do_hide_systray();
 }

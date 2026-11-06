@@ -20,6 +20,7 @@
 
 #include <windows.h>
 #include <shellapi.h>
+#include <string.h>
 #include "wine/test.h"
 
 static void test_taskbar(void)
@@ -110,8 +111,39 @@ static void test_taskbar_appbar(void)
     }
 }
 
+static void test_win8_start(void)
+{
+    char line[32], version[32];
+    DWORD len;
+    HWND corner, screen;
+
+    len = GetEnvironmentVariableA("WATER_VDM_LINE", line, sizeof(line));
+    if (!len || len >= sizeof(line) || strcmp(line, "nt")) return;
+    len = GetEnvironmentVariableA("WATER_VDM_VERSION", version, sizeof(version));
+    if (!len || len >= sizeof(version)) return;
+
+    if (!strcmp(version, "6.2") || !strncmp(version, "6.2.", 4))
+    {
+        corner = FindWindowW(L"WaterStartCorner", NULL);
+        ok(!!corner, "Windows 8 needs a lower-left Start hot corner.\n");
+        if (!corner) return;
+        SendMessageW(corner, WM_LBUTTONUP, 0, 0);
+        screen = FindWindowW(L"WaterStartScreen", NULL);
+        ok(!!screen && IsWindowVisible(screen), "Hot corner failed to open Start screen.\n");
+        if (screen)
+        {
+            SendMessageW(screen, WM_KEYDOWN, VK_ESCAPE, 0);
+            ok(!IsWindowVisible(screen), "Escape failed to close Start screen.\n");
+        }
+    }
+    else if (!strcmp(version, "6.3") || !strncmp(version, "6.3.", 4))
+        ok(!FindWindowW(L"WaterStartCorner", NULL),
+           "Windows 8.1 must use its restored taskbar Start button.\n");
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
     test_taskbar_appbar();
+    test_win8_start();
 }

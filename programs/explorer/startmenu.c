@@ -561,6 +561,12 @@ void do_startmenu(HWND hwnd)
     TPMPARAMS tpm;
     WCHAR label[64];
 
+    if (start_screen_version())
+    {
+        show_start_screen(hwnd);
+        return;
+    }
+
     destroy_menus();
 
     TRACE( "creating start menu\n" );

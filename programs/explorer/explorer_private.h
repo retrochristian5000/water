@@ -28,6 +28,9 @@ extern BOOL get_taskbar_info( RECT *rect, UINT *state, UINT *edge );
 extern void notify_appbar_taskbar_moved(void);
 extern void handle_parent_notify( HWND hwnd, WPARAM wp );
 extern void do_startmenu( HWND owner );
+extern UINT start_screen_version(void);
+extern void show_start_screen(HWND owner);
+extern void initialize_start_corner(HWND owner);
 extern LRESULT menu_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
 #endif  /* __WINE_EXPLORER_PRIVATE_H */
