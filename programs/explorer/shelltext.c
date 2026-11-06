@@ -123,7 +123,8 @@ static HFONT find_cjk_font(HDC dc, const WCHAR *text, LANGID locale)
     enum cjk_script script = detect_cjk(text);
     const WCHAR *const *faces;
     LOGFONTW spec;
-    HFONT base, candidate, previous;
+    HGDIOBJ base, previous;
+    HFONT candidate;
     WCHAR selected_name[LF_FACESIZE];
     UINT i;
 
@@ -205,7 +206,8 @@ static HFONT find_cjk_font(HDC dc, const WCHAR *text, LANGID locale)
 
 int shell_draw_text(HDC dc, const WCHAR *text, RECT *rect, UINT flags, LANGID locale)
 {
-    HFONT fallback, previous = NULL;
+    HFONT fallback;
+    HGDIOBJ previous = NULL;
     int result;
 
     if (!text) return 0;
