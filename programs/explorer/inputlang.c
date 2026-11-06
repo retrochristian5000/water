@@ -30,6 +30,7 @@ static HWND indicator, tray_owner, focused_target;
 static HKL available[INPUTLANG_MAX], selected;
 static UINT available_count;
 static WCHAR indicator_label[4];
+static COLORREF background_color, text_color;
 
 static BOOL inputlang_enabled(void)
 {
@@ -51,11 +52,9 @@ static void inputlang_name(HKL layout, WCHAR *name, UINT length)
 {
     LANGID language = LOWORD((ULONG_PTR)layout);
     LCID locale = MAKELCID(language, SORT_DEFAULT);
-    UINT i;
-
     if (!GetLocaleInfoW(locale, LOCALE_SISO639LANGNAME, name, length) || !name[0])
         lstrcpynW(name, L"??", length);
-    for (i = 0; name[i]; i++) name[i] = (WCHAR)CharUpperW((LPWSTR)(ULONG_PTR)name[i]);
+    CharUpperBuffW(name, lstrlenW(name));
 }
 
 /* Keep the last real application target while interacting with the shell.
@@ -132,10 +131,11 @@ static void inputlang_menu(void)
     HMENU menu;
     UINT i, command;
     POINT point;
-    HWND target = focused_target;
+    HWND target;
     HKL choices[INPUTLANG_MAX];
 
     inputlang_refresh();
+    target = focused_target;
     if (available_count < 2 || !GetCursorPos(&point)) return;
     if (!(menu = CreatePopupMenu())) return;
 
@@ -203,13 +203,13 @@ static LRESULT CALLBACK inputlang_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
         HDC dc = BeginPaint(hwnd, &paint);
         RECT rect;
         HFONT old;
-        HBRUSH brush = CreateSolidBrush(GetSysColor(COLOR_BTNFACE));
+        HBRUSH brush = CreateSolidBrush(background_color);
 
         GetClientRect(hwnd, &rect);
         FillRect(dc, &rect, brush);
         DeleteObject(brush);
         SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+        SetTextColor(dc, text_color);
         old = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
         DrawTextW(dc, indicator_label, -1, &rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -226,13 +226,15 @@ static LRESULT CALLBACK inputlang_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-void inputlang_initialize(HWND owner)
+void inputlang_initialize(HWND owner, COLORREF background, COLORREF text)
 {
     static const WCHAR name[] = L"WaterInputLanguage";
     WNDCLASSW wc = {0};
 
     if (indicator) return;
     tray_owner = owner;
+    background_color = background;
+    text_color = text;
     wc.lpfnWndProc = inputlang_proc;
     wc.hInstance = GetModuleHandleW(NULL);
     wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
