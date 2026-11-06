@@ -72,6 +72,13 @@ static UINT select_launch_mode(void)
     if (len && len < sizeof(legacy)) explicit_profile = TRUE;
     if (!explicit_profile) return 0;
 
+    /* Never derive an NT/Win9x taskbar version from the Win16 parser's
+     * default 4.00/950 profile. Require an explicit version or a legacy
+     * personality which itself defines the release. */
+    if (GetEnvironmentVariableA(WATER_WIN16_VERSION_ENV, NULL, 0) == 0 &&
+        GetEnvironmentVariableA(WATER_WIN16_PERSONALITY_ENV, NULL, 0) == 0)
+        return 0;
+
     water_win16_read_profile(&profile);
     if (profile.line == WATER_WIN16_LINE_NT_FAMILY)
     {
@@ -254,7 +261,11 @@ static void clear_launcher_buttons(void)
     UINT i;
     for (i = 0; i < launcher_count; ++i)
     {
-        if (launchers[i].button) DestroyWindow(launchers[i].button);
+        if (launchers[i].button)
+        {
+            RemovePropW(launchers[i].button, L"WaterQuickLaunch");
+            DestroyWindow(launchers[i].button);
+        }
         if (launchers[i].icon) DestroyIcon(launchers[i].icon);
     }
     ZeroMemory(launchers, sizeof(launchers));
@@ -287,6 +298,7 @@ void quicklaunch_initialize(HWND owner, COLORREF background)
         if (!l->button)
             WARN("Could not create Quick Launch button for %s\n",
                  debugstr_w(l->shortcut));
+        else SetPropW(l->button, L"WaterQuickLaunch", (HANDLE)1);
     }
 }
 
