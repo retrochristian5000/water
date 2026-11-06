@@ -325,7 +325,7 @@ static void startcenter_open_media(HWND hwnd)
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
 
     if (!GetOpenFileNameA(&ofn)) return;
-    if (!MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, filename, -1,
+    if (!MultiByteToWideChar(CP_ACP, 0, filename, -1,
                              target, ARRAY_SIZE(target)))
     {
         WARN("Failed to convert selected media filename\n");
@@ -418,7 +418,7 @@ static int run_g2_startcenter(void)
     if (!RegisterClassW(&wc))
         return 1;
 
-    taskbar_created_message = RegisterWindowMessageW(L"TaskbarCreated");
+    taskbar_created_message = RegisterWindowMessageA("TaskbarCreated");
     hwnd = CreateWindowW(class_name, L"RealPlayer G2 StartCenter", WS_OVERLAPPED,
                          0, 0, 0, 0, NULL, NULL, instance, NULL);
     if (!hwnd) return 1;

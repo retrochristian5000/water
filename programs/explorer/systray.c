@@ -1557,6 +1557,14 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
 
     add_taskbar_button( 0 );
 
-    if (enable_taskbar) do_show_systray();
+    if (enable_taskbar)
+    {
+        UINT message = RegisterWindowMessageA("TaskbarCreated");
+
+        do_show_systray();
+        /* IE 4.0+ shell convention: let already-running applications restore
+         * notification icons after Explorer recreates the taskbar. */
+        if (message) SendNotifyMessageW(HWND_BROADCAST, message, 0, 0);
+    }
     else do_hide_systray();
 }
