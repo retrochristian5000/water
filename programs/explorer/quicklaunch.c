@@ -207,6 +207,60 @@ static void add_launcher(const WCHAR *name, const WCHAR *path)
     launcher_count++;
 }
 
+/* Win9x uses ACP/DBCS file names in FindFirstFileA and SHGetFileInfoA.
+ * The internal Unicode copies are for COM (which did use Unicode on 9x)
+ * and for sharing the NT pinned-taskbar data model, not native W file APIs. */
+static void load_ansi_launchers(void)
+{
+    static const char subdir[] = "Microsoft\\Internet Explorer\\Quick Launch";
+    char folder[MAX_PATH], search[MAX_PATH], path[MAX_PATH], title[MAX_PATH];
+    WCHAR titleW[MAX_PATH], pathW[MAX_PATH];
+    WIN32_FIND_DATAA found;
+    HANDLE handle;
+    UINT len;
+
+    if (!SHGetSpecialFolderPathA(NULL, folder, CSIDL_APPDATA, FALSE)) return;
+    len = lstrlenA(folder);
+    if (len + sizeof(subdir) + 2 >= MAX_PATH) return;
+    lstrcatA(folder, "\\");
+    lstrcatA(folder, subdir);
+    len = lstrlenA(folder);
+
+    lstrcpyA(search, folder);
+    lstrcatA(search, "\\*");
+    handle = FindFirstFileA(search, &found);
+    if (handle == INVALID_HANDLE_VALUE) return;
+    do
+    {
+        const char *extension;
+        int suffix;
+
+        if (found.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN |
+                                     FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_REPARSE_POINT))
+            continue;
+        extension = PathFindExtensionA(found.cFileName);
+        if (lstrcmpiA(extension, ".lnk") && lstrcmpiA(extension, ".url"))
+            continue;
+        if (len + lstrlenA(found.cFileName) + 2 >= MAX_PATH) continue;
+
+        lstrcpyA(path, folder);
+        lstrcatA(path, "\\");
+        lstrcatA(path, found.cFileName);
+        lstrcpynA(title, found.cFileName, ARRAY_SIZE(title));
+        suffix = lstrlenA(title);
+        if (suffix <= 4) continue;
+        title[suffix - 4] = 0;
+
+        if (!MultiByteToWideChar(CP_ACP, 0, title, -1,
+                                 titleW, ARRAY_SIZE(titleW)) ||
+            !MultiByteToWideChar(CP_ACP, 0, path, -1,
+                                 pathW, ARRAY_SIZE(pathW)))
+            continue;
+        add_launcher(titleW, pathW);
+    } while (launcher_count < MAX_LAUNCHERS && FindNextFileA(handle, &found));
+    FindClose(handle);
+}
+
 static void load_launchers(void)
 {
     WCHAR directory[MAX_PATH], search[MAX_PATH], path[MAX_PATH], title[MAX_PATH];
@@ -215,7 +269,13 @@ static void load_launchers(void)
     int length;
 
     launcher_count = 0;
-    if (!launch_mode || !get_shortcut_folder(directory, launch_mode)) return;
+    if (!launch_mode) return;
+    if (shell_text_is_win9x())
+    {
+        load_ansi_launchers();
+        return;
+    }
+    if (!get_shortcut_folder(directory, launch_mode)) return;
     length = lstrlenW(directory);
     if (length + 3 >= MAX_PATH) return;
     lstrcpyW(search, directory);
@@ -287,14 +347,35 @@ void quicklaunch_initialize(HWND owner, COLORREF background)
     load_launchers();
     for (i = 0; i < launcher_count; i++)
     {
-        SHFILEINFOW info = {0};
         struct launcher *l = &launchers[i];
 
-        if (SHGetFileInfoW(l->shortcut, 0, &info, sizeof(info),
-                           SHGFI_ICON | SHGFI_SMALLICON))
-            l->icon = info.hIcon;
-        l->button = CreateWindowW(WC_BUTTONW, l->title, WS_CHILD | BS_OWNERDRAW,
-                                   0, 0, 0, 0, owner, NULL, NULL, NULL);
+        if (shell_text_is_win9x())
+        {
+            char pathA[MAX_PATH], titleA[ARRAY_SIZE(l->title) * 2];
+            SHFILEINFOA infoA = {0};
+            BOOL substituted = FALSE;
+
+            if (WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, l->shortcut,
+                                    -1, pathA, ARRAY_SIZE(pathA), NULL, &substituted) &&
+                !substituted && SHGetFileInfoA(pathA, 0, &infoA, sizeof(infoA),
+                                               SHGFI_ICON | SHGFI_SMALLICON))
+                l->icon = infoA.hIcon;
+            if (!WideCharToMultiByte(CP_ACP, 0, l->title, -1,
+                                     titleA, ARRAY_SIZE(titleA), NULL, NULL))
+                titleA[0] = 0;
+            l->button = CreateWindowA("Button", titleA, WS_CHILD | BS_OWNERDRAW,
+                                       0, 0, 0, 0, owner, NULL, NULL, NULL);
+        }
+        else
+        {
+            SHFILEINFOW info = {0};
+
+            if (SHGetFileInfoW(l->shortcut, 0, &info, sizeof(info),
+                               SHGFI_ICON | SHGFI_SMALLICON))
+                l->icon = info.hIcon;
+            l->button = CreateWindowW(WC_BUTTONW, l->title, WS_CHILD | BS_OWNERDRAW,
+                                       0, 0, 0, 0, owner, NULL, NULL, NULL);
+        }
         if (!l->button)
             WARN("Could not create Quick Launch button for %s\n",
                  debugstr_w(l->shortcut));
@@ -411,8 +492,24 @@ BOOL quicklaunch_click(HWND button)
     }
     else
     {
-        result = ShellExecuteW(launcher_owner, L"open", l->shortcut,
-                               NULL, NULL, SW_SHOWNORMAL);
+        if (shell_text_is_win9x())
+        {
+            char pathA[MAX_PATH];
+            BOOL substituted = FALSE;
+
+            if (!WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS,
+                                     l->shortcut, -1, pathA, ARRAY_SIZE(pathA),
+                                     NULL, &substituted) || substituted)
+            {
+                WARN("Cannot encode Win9x Quick Launch shortcut in ACP %u
+", GetACP());
+                return TRUE;
+            }
+            result = ShellExecuteA(launcher_owner, "open", pathA,
+                                   NULL, NULL, SW_SHOWNORMAL);
+        }
+        else result = ShellExecuteW(launcher_owner, L"open", l->shortcut,
+                                    NULL, NULL, SW_SHOWNORMAL);
         if ((INT_PTR)result <= 32)
             WARN("Cannot open launcher shortcut %s (%Id)\n",
                  debugstr_w(l->shortcut), (INT_PTR)result);
