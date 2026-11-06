@@ -144,9 +144,40 @@ static void test_win8_start(void)
            "Windows 8.1 must use its restored taskbar Start button.\n");
 }
 
+
+/* Verify that theme selection never bleeds between guest OS personalities.
+ * Classic shells keep a class background brush; XP/Vista paint their own. */
+static void test_taskbar_visual(void)
+{
+    char line[32], version[32];
+    DWORD len;
+    HWND hwnd;
+    BOOL expected_themed = FALSE;
+    HBRUSH background;
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+
+    if (!ntdll || !GetProcAddress(ntdll, "wine_get_version")) return;
+
+    hwnd = FindWindowA("Shell_TrayWnd", NULL);
+    if (!hwnd || !(GetWindowLongW(hwnd, GWL_STYLE) & WS_POPUP)) return;
+
+    len = GetEnvironmentVariableA("WATER_VDM_LINE", line, sizeof(line));
+    if (len && len < sizeof(line) && !strcmp(line, "nt"))
+    {
+        len = GetEnvironmentVariableA("WATER_VDM_VERSION", version, sizeof(version));
+        if (len && len < sizeof(version))
+            expected_themed = !strcmp(version, "5.1") || !strncmp(version, "5.1.", 4) ||
+                              !strcmp(version, "6.0") || !strncmp(version, "6.0.", 4);
+    }
+    background = (HBRUSH)GetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND);
+    ok(expected_themed ? !background : !!background,
+       "Unexpected taskbar class background for selected Windows version.\n");
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
     test_taskbar_appbar();
+    test_taskbar_visual();
     test_win8_start();
 }

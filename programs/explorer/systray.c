@@ -40,6 +40,13 @@ WINE_DEFAULT_DEBUG_CHANNEL(systray);
 #define TASKBAR_CLOCK_TIMER 3
 #define TASKBAR_LOCK_COMMAND 6100
 
+enum taskbar_visual_style
+{
+    TASKBAR_VISUAL_CLASSIC,
+    TASKBAR_VISUAL_LUNA_BLUE,
+    TASKBAR_VISUAL_VISTA_AERO
+};
+
 struct notify_data_icon
 {
     /* data for the icon bitmap */
@@ -111,6 +118,8 @@ static struct list taskbar_buttons = LIST_INIT( taskbar_buttons );
 
 static HWND tray_window;
 static HWND clock_window;
+static enum taskbar_visual_style taskbar_visual;
+static HBRUSH taskbar_clock_brush;
 static UINT taskbar_edge = ABE_BOTTOM;
 static BOOL taskbar_locked = TRUE;
 static BOOL taskbar_dragging;
@@ -155,7 +164,7 @@ static BOOL delete_icon( struct icon *icon );
 static WNDCLASSEXW shell_traywnd_class =
 {
     .cbSize = sizeof(WNDCLASSEXW),
-    .style = CS_DBLCLKS | CS_HREDRAW,
+    .style = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW,
     .lpfnWndProc = shell_traywnd_proc,
     .hbrBackground = (HBRUSH)COLOR_WINDOW,
     .lpszClassName = L"Shell_TrayWnd",
@@ -1027,6 +1036,143 @@ static void remove_taskbar_button( HWND hwnd )
     free( win );
 }
 
+/* Default visual identities only. Custom OS theme selection and native DWM
+ * transparency are separate capabilities; Vista's palette is opaque for now.
+ * Require explicit NT identity: never map the Win9x fallback to XP/Vista. */
+static enum taskbar_visual_style get_default_taskbar_visual(void)
+{
+    char line[32], version[32];
+    DWORD len, build;
+    WORD major, minor;
+
+    len = GetEnvironmentVariableA( WATER_WIN16_LINE_ENV, line, sizeof(line) );
+    if (!len || len >= sizeof(line) || strcmp( line, WATER_WIN16_LINE_NT ))
+        return TASKBAR_VISUAL_CLASSIC;
+
+    len = GetEnvironmentVariableA( WATER_WIN16_VERSION_ENV, version, sizeof(version) );
+    if (!len || len >= sizeof(version) ||
+        !water_win16_parse_version( version, &major, &minor, &build ))
+        return TASKBAR_VISUAL_CLASSIC;
+
+    if (major == 5 && minor == 1) return TASKBAR_VISUAL_LUNA_BLUE;
+    if (major == 6 && minor == 0) return TASKBAR_VISUAL_VISTA_AERO;
+    return TASKBAR_VISUAL_CLASSIC;
+}
+
+static COLORREF taskbar_color_mix( COLORREF first, COLORREF second, int index, int count )
+{
+    if (!count) return first;
+    return RGB( (GetRValue(first) * (count - index) + GetRValue(second) * index) / count,
+                (GetGValue(first) * (count - index) + GetGValue(second) * index) / count,
+                (GetBValue(first) * (count - index) + GetBValue(second) * index) / count );
+}
+
+/* Paint along taskbar thickness, which is horizontal for side docking. */
+static void paint_taskbar_gradient( HDC dc, RECT rect, COLORREF top, COLORREF bottom,
+                                    BOOL side_docked )
+{
+    int thickness = side_docked ? rect.right - rect.left : rect.bottom - rect.top;
+    int bands = min( 32, max( 1, thickness ) );
+    int index;
+
+    for (index = 0; index < bands; index++)
+    {
+        RECT band = rect;
+        HBRUSH brush;
+        COLORREF color = taskbar_color_mix( top, bottom, index, max( 1, bands - 1 ) );
+
+        if (side_docked)
+        {
+            band.left = rect.left + thickness * index / bands;
+            band.right = rect.left + thickness * (index + 1) / bands;
+        }
+        else
+        {
+            band.top = rect.top + thickness * index / bands;
+            band.bottom = rect.top + thickness * (index + 1) / bands;
+        }
+        brush = CreateSolidBrush( color );
+        if (brush)
+        {
+            FillRect( dc, &band, brush );
+            DeleteObject( brush );
+        }
+    }
+}
+
+static void paint_themed_taskbar( HWND hwnd, HDC dc )
+{
+    RECT rect;
+
+    GetClientRect( hwnd, &rect );
+    if (taskbar_visual == TASKBAR_VISUAL_LUNA_BLUE)
+        paint_taskbar_gradient( dc, rect, RGB(74, 147, 241), RGB(24, 75, 179),
+                                taskbar_edge == ABE_LEFT || taskbar_edge == ABE_RIGHT );
+    else if (taskbar_visual == TASKBAR_VISUAL_VISTA_AERO)
+        paint_taskbar_gradient( dc, rect, RGB(84, 87, 95), RGB(22, 24, 29),
+                                taskbar_edge == ABE_LEFT || taskbar_edge == ABE_RIGHT );
+}
+
+static void paint_themed_taskbar_button( const DRAWITEMSTRUCT *dis,
+                                         const struct taskbar_button *win, RECT rect )
+{
+    COLORREF top, bottom;
+    BOOL start = !win->hwnd;
+    BOOL pressed = !!(dis->itemState & ODS_SELECTED) || win->active;
+    BOOL side_docked = taskbar_edge == ABE_LEFT || taskbar_edge == ABE_RIGHT;
+    HFONT old_font;
+    WCHAR title[256] = {0};
+
+    if (taskbar_visual == TASKBAR_VISUAL_LUNA_BLUE)
+    {
+        top = start ? RGB(101, 199, 69) :
+              pressed ? RGB(22, 65, 150) : RGB(73, 138, 233);
+        bottom = start ? RGB(30, 122, 30) :
+                 pressed ? RGB(28, 88, 178) : RGB(38, 94, 197);
+    }
+    else
+    {
+        top = start ? RGB(43, 47, 54) :
+              pressed ? RGB(75, 85, 104) : RGB(88, 93, 103);
+        bottom = start ? RGB(17, 20, 25) :
+                 pressed ? RGB(38, 49, 67) : RGB(34, 38, 46);
+    }
+
+    paint_taskbar_gradient( dis->hDC, rect, top, bottom, side_docked );
+    SetBkMode( dis->hDC, TRANSPARENT );
+    SetTextColor( dis->hDC, RGB(255, 255, 255) );
+    old_font = SelectObject( dis->hDC, GetStockObject( DEFAULT_GUI_FONT ) );
+
+    if (start && taskbar_visual == TASKBAR_VISUAL_VISTA_AERO)
+    {
+        HBRUSH circle = CreateSolidBrush( RGB(23, 135, 208) );
+        HBRUSH previous = SelectObject( dis->hDC, circle );
+        RECT badge = rect;
+        int size = min( 30, min( rect.right - rect.left - 4, rect.bottom - rect.top - 4 ) );
+
+        badge.left = (rect.right - size) / 2;
+        badge.top = (rect.bottom - size) / 2;
+        badge.right = badge.left + size;
+        badge.bottom = badge.top + size;
+        Ellipse( dis->hDC, badge.left, badge.top, badge.right, badge.bottom );
+        SelectObject( dis->hDC, previous );
+        DeleteObject( circle );
+        DrawIconEx( dis->hDC, badge.left + (size - 18) / 2,
+                    badge.top + (size - 18) / 2, shell_traywnd_class.hIcon,
+                    18, 18, 0, NULL, DI_NORMAL );
+    }
+    else
+    {
+        if (start) lstrcpynW( title, start_label, ARRAY_SIZE(title) );
+        else GetWindowTextW( win->hwnd, title, ARRAY_SIZE(title) );
+        rect.left += start ? 8 : 10;
+        rect.right -= 6;
+        DrawTextW( dis->hDC, title, -1, &rect, DT_SINGLELINE | DT_VCENTER |
+                   (start ? DT_CENTER : DT_LEFT) | DT_END_ELLIPSIS );
+    }
+    SelectObject( dis->hDC, old_font );
+}
+
 static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
 {
     RECT rect;
@@ -1035,6 +1181,11 @@ static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
 
     if (!win) return;
     GetClientRect( dis->hwndItem, &rect );
+    if (taskbar_visual != TASKBAR_VISUAL_CLASSIC)
+    {
+        paint_themed_taskbar_button( dis, win, rect );
+        return;
+    }
     DrawFrameControl( dis->hDC, &rect, DFC_BUTTON, DFCS_BUTTONPUSH | DFCS_ADJUSTRECT |
                       ((dis->itemState & ODS_SELECTED) ? DFCS_PUSHED : 0 ));
     if (win->hwnd)
@@ -1329,6 +1480,32 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
     case WM_COPYDATA:
         return handle_incoming((HWND)wparam, (COPYDATASTRUCT *)lparam);
 
+    case WM_ERASEBKGND:
+        if (enable_taskbar && taskbar_visual != TASKBAR_VISUAL_CLASSIC) return 1;
+        break;
+
+    case WM_PAINT:
+        if (enable_taskbar && taskbar_visual != TASKBAR_VISUAL_CLASSIC)
+        {
+            PAINTSTRUCT paint;
+            HDC dc = BeginPaint( hwnd, &paint );
+            paint_themed_taskbar( hwnd, dc );
+            EndPaint( hwnd, &paint );
+            return 0;
+        }
+        break;
+
+    case WM_CTLCOLORSTATIC:
+        if (enable_taskbar && (HWND)lparam == clock_window &&
+            taskbar_visual != TASKBAR_VISUAL_CLASSIC && taskbar_clock_brush)
+        {
+            SetTextColor( (HDC)wparam, RGB(255, 255, 255) );
+            SetBkColor( (HDC)wparam, taskbar_visual == TASKBAR_VISUAL_LUNA_BLUE ?
+                        RGB(50, 137, 211) : RGB(33, 37, 44) );
+            return (LRESULT)taskbar_clock_brush;
+        }
+        break;
+
     case WM_DISPLAYCHANGE:
         if (!enable_taskbar && (!show_systray || !nb_displayed)) do_hide_systray();
         else do_show_systray();
@@ -1356,6 +1533,10 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
             update_taskbar_clock();
             return 0;
         }
+        break;
+
+    case WM_SYSCOLORCHANGE:
+        if (enable_taskbar) InvalidateRect( hwnd, NULL, TRUE );
         break;
 
     case WM_TIMECHANGE:
@@ -1403,6 +1584,14 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
 
     case WM_CAPTURECHANGED:
         taskbar_dragging = FALSE;
+        break;
+
+    case WM_DESTROY:
+        if (taskbar_clock_brush)
+        {
+            DeleteObject( taskbar_clock_brush );
+            taskbar_clock_brush = NULL;
+        }
         break;
 
     case WM_CLOSE:
@@ -1553,6 +1742,13 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
 
     no_tray_items = arg_no_tray_items;
 
+    taskbar_visual = enable_taskbar ? get_default_taskbar_visual() : TASKBAR_VISUAL_CLASSIC;
+    shell_traywnd_class.hbrBackground =
+        taskbar_visual == TASKBAR_VISUAL_CLASSIC ? (HBRUSH)(COLOR_BTNFACE + 1) : NULL;
+    if (taskbar_visual != TASKBAR_VISUAL_CLASSIC)
+        taskbar_clock_brush = CreateSolidBrush( taskbar_visual == TASKBAR_VISUAL_LUNA_BLUE ?
+                                                RGB(50, 137, 211) : RGB(33, 37, 44) );
+
     /* register the systray listener window class */
     if (!RegisterClassExW( &shell_traywnd_class ))
     {
@@ -1570,7 +1766,7 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
         read_taskbar_settings();
         /* do_show_systray() applies the saved edge after creating the clock. */
         tray_window = CreateWindowExW( WS_EX_NOACTIVATE, shell_traywnd_class.lpszClassName,
-                                       NULL, WS_POPUP, 0, 0, 0, 0, 0, 0, 0, 0 );
+                                       NULL, WS_POPUP | WS_CLIPCHILDREN, 0, 0, 0, 0, 0, 0, 0, 0 );
     }
     else
     {
