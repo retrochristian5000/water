@@ -35,7 +35,7 @@ struct volume_state
     HICON icon;
     UINT taskbar_created;
     DWORD volume_id, mute_id, min_volume, max_volume;
-    UINT channels;
+    UINT channels, mute_channels;
     BOOL have_mute, icon_added;
 };
 
@@ -82,8 +82,8 @@ static BOOL get_control_value(DWORD id, BOOL is_boolean, DWORD *value)
     MIXERCONTROLDETAILS details;
     MIXERCONTROLDETAILS_UNSIGNED *items;
     BOOL success = FALSE;
-    UINT count = volume.channels, i;
-    DWORD total = 0;
+    UINT count = is_boolean ? volume.mute_channels : volume.channels, i;
+    ULONGLONG total = 0;
 
     if (!volume.mixer || !count || count > 32) return FALSE;
     if (!(items = calloc(count, sizeof(*items)))) return FALSE;
@@ -106,11 +106,11 @@ static BOOL get_control_value(DWORD id, BOOL is_boolean, DWORD *value)
     return success;
 }
 
-static BOOL set_control_value(DWORD id, DWORD value)
+static BOOL set_control_value(DWORD id, BOOL is_boolean, DWORD value)
 {
     MIXERCONTROLDETAILS details;
     MIXERCONTROLDETAILS_UNSIGNED *items;
-    UINT count = volume.channels, i;
+    UINT count = is_boolean ? volume.mute_channels : volume.channels, i;
     BOOL success;
 
     if (!volume.mixer || !count || count > 32) return FALSE;
@@ -135,6 +135,7 @@ static void close_mixer(void)
     volume.mixer = NULL;
     volume.channels = 0;
     volume.have_mute = FALSE;
+    volume.mute_channels = 0;
 }
 
 static BOOL open_playback_mixer(void)
@@ -184,7 +185,13 @@ static BOOL open_playback_mixer(void)
             }
             volume.have_mute = query_control(mixer, line.dwLineID,
                                              MIXERCONTROL_CONTROLTYPE_MUTE, &mute);
-            if (volume.have_mute) volume.mute_id = mute.dwControlID;
+            if (volume.have_mute)
+            {
+                volume.mute_id = mute.dwControlID;
+                volume.mute_channels = (mute.fdwControl & MIXERCONTROL_CONTROLF_UNIFORM)
+                                     ? 1 : max(1, line.cChannels);
+                if (volume.mute_channels > 32) volume.have_mute = FALSE;
+            }
             return TRUE;
         }
         mixerClose(mixer);
@@ -279,7 +286,7 @@ static LRESULT CALLBACK popup_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         {
             DWORD pos = SendMessageA(volume.slider, TBM_GETPOS, 0, 0);
             DWORD range = volume.max_volume - volume.min_volume;
-            set_control_value(volume.volume_id,
+            set_control_value(volume.volume_id, FALSE,
                               volume.min_volume + pos * range / SLIDER_MAX);
         }
         return 0;
@@ -288,7 +295,7 @@ static LRESULT CALLBACK popup_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (LOWORD(wp) == IDC_MUTE_CHECK && HIWORD(wp) == BN_CLICKED && volume.have_mute)
         {
             BOOL checked = SendMessageA(volume.mute_box, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            set_control_value(volume.mute_id, checked);
+            set_control_value(volume.mute_id, TRUE, checked);
         }
         return 0;
 
@@ -365,7 +372,7 @@ static void show_context_menu(void)
         PostMessageA(volume.hwnd, WM_NULL, 0, 0);
         if (action == CMD_OPEN_VOLUME) open_full_volume();
         else if (action == CMD_MUTE && volume.have_mute)
-            set_control_value(volume.mute_id, !mute);
+            set_control_value(volume.mute_id, TRUE, !mute);
     }
     DestroyMenu(menu);
 }
