@@ -55,9 +55,11 @@ static void test_taskbar_appbar(void)
     HWND hwnd, clock;
     UINT_PTR state;
     BOOL ret, water_shell;
+    HMODULE ntdll;
     WCHAR time[64];
 
-    water_shell = !!GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version");
+    ntdll = GetModuleHandleA("ntdll.dll");
+    water_shell = ntdll && !!GetProcAddress(ntdll, "wine_get_version");
     hwnd = FindWindowA("Shell_TrayWnd", NULL);
     if (!hwnd)
     {
