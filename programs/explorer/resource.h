@@ -30,6 +30,12 @@
 #define IDS_DESKTOP_TITLE 7
 #define IDS_TASKBAR_LOCK 8
 
+#define IDD_ACCOUNT_PREFERENCES 110
+#define IDC_ACCOUNT_DISPLAY_NAME 111
+#define IDC_ACCOUNT_PICTURE_PATH 112
+#define IDC_ACCOUNT_PICTURE_BROWSE 113
+#define IDC_ACCOUNT_PICTURE_RESET 114
+
 /* Windows 95/98 shell shutdown dialog. Do not expose this for Windows Me. */
 #define IDD_WIN9X_SHUTDOWN 100
 #define IDC_WIN9X_SHUTDOWN 101

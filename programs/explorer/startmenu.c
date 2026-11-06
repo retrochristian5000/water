@@ -57,6 +57,7 @@ static struct menu_item user_startmenu;
 
 #define MENU_ID_RUN 1
 #define MENU_ID_EXIT 2
+#define MENU_ID_ACCOUNT 3
 
 static ULONG copy_pidls(struct menu_item* item, LPITEMIDLIST dest)
 {
@@ -524,6 +525,8 @@ LRESULT menu_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
             if (item)
                 exec_item(item);
+            else if (mii.wID == MENU_ID_ACCOUNT)
+                edit_shell_account(hwnd);
             else if (mii.wID == MENU_ID_RUN)
                 run_dialog();
             else if (mii.wID == MENU_ID_EXIT)
@@ -535,6 +538,12 @@ LRESULT menu_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         }
 
     case WM_MEASUREITEM:
+        if (((MEASUREITEMSTRUCT*)lparam)->itemID == MENU_ID_ACCOUNT)
+        {
+            ((MEASUREITEMSTRUCT*)lparam)->itemWidth = 205;
+            ((MEASUREITEMSTRUCT*)lparam)->itemHeight = 58;
+            return TRUE;
+        }
         ((MEASUREITEMSTRUCT*)lparam)->itemWidth = GetSystemMetrics(SM_CXSMICON) + 5;
         ((MEASUREITEMSTRUCT*)lparam)->itemHeight = GetSystemMetrics(SM_CYSMICON);
         return TRUE;
@@ -544,6 +553,11 @@ LRESULT menu_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             DRAWITEMSTRUCT *dis = (DRAWITEMSTRUCT*)lparam;
             struct menu_item* item = (struct menu_item*)dis->itemData;
 
+            if (dis->itemID == MENU_ID_ACCOUNT)
+            {
+                paint_shell_account(dis->hDC, &dis->rcItem, FALSE);
+                return TRUE;
+            }
             ImageList_Draw(item->icon_himl, item->icon_i, dis->hDC, dis->rcItem.left - 2, dis->rcItem.top, ILD_NORMAL);
             return TRUE;
         }
@@ -575,6 +589,17 @@ void do_startmenu(HWND hwnd)
     if (!root_menu.menuhandle)
     {
         return;
+    }
+
+    if (shell_account_classic_header())
+    {
+        /* A selectable owner-drawn header shows the current account and its
+         * chosen BMP; clicking it edits only HKCU presentation settings. */
+        mii.cbSize = sizeof(mii);
+        mii.fMask = MIIM_FTYPE | MIIM_ID;
+        mii.fType = MFT_OWNERDRAW;
+        mii.wID = MENU_ID_ACCOUNT;
+        InsertMenuItemW(root_menu.menuhandle, 0, TRUE, &mii);
     }
 
     user_startmenu.parent = public_startmenu.parent = &root_menu;

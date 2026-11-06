@@ -210,6 +210,11 @@ static void paint_screen(HDC dc)
     SetRect(&cell, TILE_LEFT, 111, rc.right - 30, 145);
     DrawTextW(dc, caption, -1, &cell, DT_LEFT | DT_SINGLELINE);
 
+    /* The signed-in account's chosen picture and display name appear at
+     * the upper right, independent of shortcut tile ownership. */
+    SetRect(&cell, max(TILE_LEFT + 250, rc.right - 300), 24, rc.right - 40, 92);
+    paint_shell_account(dc, &cell, TRUE);
+
     for (n = offset_columns * rows; n < count; n++)
     {
         int index = tile_number(n);
@@ -265,7 +270,17 @@ static LRESULT CALLBACK screen_proc(HWND hwnd, UINT message, WPARAM wp, LPARAM l
     case WM_LBUTTONUP:
     {
         POINT point = {(short)LOWORD(lp), (short)HIWORD(lp)};
+        RECT rc;
         int x = point.x - TILE_LEFT, y = point.y - TILE_TOP;
+
+        GetClientRect(hwnd, &rc);
+        if (point.y >= 24 && point.y < 92 &&
+            point.x >= max(TILE_LEFT + 250, rc.right - 300) && point.x < rc.right - 40)
+        {
+            edit_shell_account(hwnd);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        }
         UINT row, col;
         if (x < 0 || y < 0 || x % TILE_STEP_X >= TILE_W ||
             y % TILE_STEP_Y >= TILE_H) return 0;

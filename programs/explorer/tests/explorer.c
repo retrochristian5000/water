@@ -174,10 +174,21 @@ static void test_taskbar_visual(void)
        "Unexpected taskbar class background for selected Windows version.\n");
 }
 
+/* Verify profile UI is never required for classic Win9x guests. The
+ * actual account identity remains managed by Windows, not Explorer. */
+static void test_account_identity(void)
+{
+    WCHAR name[256];
+    DWORD count = ARRAY_SIZE(name);
+
+    ok(GetUserNameW(name, &count) && name[0], "No current user identity.\n");
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
     test_taskbar_appbar();
     test_taskbar_visual();
     test_win8_start();
+    test_account_identity();
 }
