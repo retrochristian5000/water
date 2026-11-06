@@ -19,6 +19,7 @@
  */
 
 #include <assert.h>
+#include <stdlib.h>
 
 #include <windows.h>
 #include <ntuser.h>
@@ -1136,7 +1137,7 @@ static void write_taskbar_settings(void)
     if (RegCreateKeyExW( HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
                          0, NULL, 0, KEY_SET_VALUE, NULL, &key, NULL ))
     {
-        WARN( "Could not save taskbar settings\\n" );
+        WARN( "Could not save taskbar settings\n" );
         return;
     }
     RegSetValueExW( key, L"Edge", 0, REG_DWORD, (const BYTE *)&edge, sizeof(edge) );
@@ -1162,7 +1163,7 @@ static void update_taskbar_workarea(void)
     if (SystemParametersInfoW( SPI_GETWORKAREA, 0, &current, 0 ) && EqualRect( &current, &area ))
         return;
     if (!SystemParametersInfoW( SPI_SETWORKAREA, 0, &area, SPIF_SENDCHANGE ))
-        WARN( "Could not update taskbar work area\\n" );
+        WARN( "Could not update taskbar work area\n" );
 }
 
 static UINT closest_taskbar_edge( POINT point )
@@ -1430,7 +1431,7 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_CONTEXTMENU:
-        if (enable_taskbar && (!(HWND)wparam || (HWND)wparam == hwnd))
+        if (enable_taskbar && (!(HWND)wparam || (HWND)wparam == hwnd || (HWND)wparam == clock_window))
             show_taskbar_menu( hwnd );
         else
             show_taskbar_contextmenu( (HWND)wparam, lparam );
