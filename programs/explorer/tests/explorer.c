@@ -54,17 +54,26 @@ static void test_taskbar_appbar(void)
     RECT rect;
     HWND hwnd, clock;
     UINT_PTR state;
-    BOOL ret;
+    BOOL ret, water_shell;
     WCHAR time[64];
 
+    water_shell = !!GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version");
     hwnd = FindWindowA("Shell_TrayWnd", NULL);
-    if (!hwnd || !(GetWindowLongW(hwnd, GWL_STYLE) & WS_POPUP))
+    if (!hwnd)
     {
-        skip("No docked taskbar; standalone notification windows do not support taskbar geometry.\n");
+        skip("No taskbar or notification window found.\n");
         return;
     }
 
     abd.cbSize = sizeof(abd);
+    if (!(GetWindowLongW(hwnd, GWL_STYLE) & WS_POPUP))
+    {
+        if (water_shell)
+            ok(!SHAppBarMessage(ABM_GETTASKBARPOS, &abd),
+               "Standalone notification window was reported as a docked taskbar.\n");
+        skip("Standalone notification area; no docked taskbar.\n");
+        return;
+    }
     ret = SHAppBarMessage(ABM_GETTASKBARPOS, &abd);
     ok(ret, "ABM_GETTASKBARPOS failed.\n");
     if (ret)
@@ -72,11 +81,11 @@ static void test_taskbar_appbar(void)
         GetWindowRect(hwnd, &rect);
         ok(EqualRect(&abd.rc, &rect), "Expected %s, got %s.\n",
            wine_dbgstr_rect(&rect), wine_dbgstr_rect(&abd.rc));
-        ok(abd.uEdge == ABE_BOTTOM, "Expected bottom edge, got %u.\n", abd.uEdge);
+        if (water_shell) ok(abd.uEdge == ABE_BOTTOM, "Expected bottom edge, got %u.\n", abd.uEdge);
     }
 
     /* Water's taskbar does not yet implement autohide or the configurable clock. */
-    if (!GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version")) return;
+    if (!water_shell) return;
     state = SHAppBarMessage(ABM_GETSTATE, &abd);
     ok(!(state & ABS_AUTOHIDE), "Autohide was advertised without an implementation.\n");
 
