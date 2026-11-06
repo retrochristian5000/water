@@ -286,28 +286,55 @@ static void test_quicklaunch_boundaries(void)
 }
 
 
-/* Text transport regression only. Glyph coverage is tested by shelltext.c
- * against installed fonts; this test must not assume proprietary fonts exist. */
+static BOOL test_win9x_selected(void);
+
+/* An NT shell can preserve a UTF-16 CJK title. In Win9x, construct an
+ * ANSI window and compare its code-page bytes without demanding a W API. */
 static void test_cjk_window_title(void)
 {
-    static const WCHAR title[] = L"中文 繁體 日本語 漢字";
-    WCHAR result[ARRAY_SIZE(title)];
+    static const WCHAR unicode_title[] = L"中文 繁體 日本語 漢字";
     HWND window;
 
-    window = CreateWindowExW(0, L"STATIC", title, WS_POPUP,
-                             0, 0, 100, 30, NULL, NULL, NULL, NULL);
-    if (!window)
+    if (test_win9x_selected())
     {
-        skip("Cannot construct a Unicode CJK test window.\\n");
-        return;
+        static const WCHAR japanese[] = L"日本語";
+        char title[64] = "Sample", actual[64] = {0};
+        BOOL substituted = FALSE;
+        int length;
+
+        /* Use a CJK example only when this guest system ACP encodes it. */
+        length = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS,
+                                     japanese, -1, title, sizeof(title),
+                                     NULL, &substituted);
+        if (!length || substituted) lstrcpyA(title, "Sample");
+        window = CreateWindowExA(0, "STATIC", title, WS_POPUP,
+                                 0, 0, 100, 30, NULL, NULL, NULL, NULL);
+        if (!window)
+        {
+            skip("Cannot construct Win9x ANSI test window.\n");
+            return;
+        }
+        GetWindowTextA(window, actual, ARRAY_SIZE(actual));
+        ok(!lstrcmpA(actual, title), "Win9x ANSI/DBCS title bytes changed.\n");
     }
-    memset(result, 0, sizeof(result));
-    ok(GetWindowTextW(window, result, ARRAY_SIZE(result)) ==
-       ARRAY_SIZE(title) - 1, "CJK window title length changed.\\n");
-    ok(!lstrcmpW(result, title), "Chinese/Japanese CJK title was altered.\\n");
+    else
+    {
+        WCHAR actual[ARRAY_SIZE(unicode_title)];
+
+        window = CreateWindowExW(0, L"STATIC", unicode_title, WS_POPUP,
+                                 0, 0, 100, 30, NULL, NULL, NULL, NULL);
+        if (!window)
+        {
+            skip("Cannot construct NT Unicode CJK test window.\n");
+            return;
+        }
+        memset(actual, 0, sizeof(actual));
+        ok(GetWindowTextW(window, actual, ARRAY_SIZE(actual)) ==
+           ARRAY_SIZE(unicode_title) - 1, "Unicode title length changed.\n");
+        ok(!lstrcmpW(actual, unicode_title), "NT CJK title was altered.\n");
+    }
     DestroyWindow(window);
 }
-
 
 /* In Win9x, CP_ACP is never UTF-8 and DBCS lead-byte detection must use
  * the same table as the A/W conversion routines. The current keyboard HKL
