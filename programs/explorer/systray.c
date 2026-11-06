@@ -35,6 +35,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(systray);
 
 #define TRAY_MINIMIZE_ALL 419
 #define TRAY_MINIMIZE_ALL_UNDO 416
+#define TASKBAR_CLOCK_TIMER 3
 
 struct notify_data_icon
 {
@@ -106,6 +107,7 @@ struct taskbar_button
 static struct list taskbar_buttons = LIST_INIT( taskbar_buttons );
 
 static HWND tray_window;
+static HWND clock_window;
 
 static unsigned int nb_displayed;
 
@@ -115,7 +117,7 @@ static BOOL enable_dock; /* allow systray icons to be docked in the host systray
 static BOOL no_tray_items; /* hide the systray and all systray icons */
 
 static int icon_cx, icon_cy, tray_width, tray_height;
-static int start_button_width, taskbar_button_width;
+static int start_button_width, taskbar_button_width, clock_width;
 static WCHAR start_label[50];
 
 static struct icon *balloon_icon;
@@ -342,7 +344,7 @@ static POINT get_icon_pos( struct icon *icon )
 
     if (enable_taskbar)
     {
-        pos.x = tray_width - icon_cx * (icon->display + 1);
+        pos.x = tray_width - clock_width - icon_cx * (icon->display + 1);
         pos.y = (tray_height - icon_cy) / 2;
     }
     else
@@ -352,6 +354,22 @@ static POINT get_icon_pos( struct icon *icon )
     }
 
     return pos;
+}
+
+/* Reposition existing notification icons after the taskbar size changes. */
+static void layout_systray_icons(void)
+{
+    struct icon *icon;
+
+    LIST_FOR_EACH_ENTRY( icon, &icon_list, struct icon, entry )
+    {
+        POINT pos;
+
+        if (!icon->window || icon->display < 0) continue;
+        pos = get_icon_pos( icon );
+        SetWindowPos( icon->window, 0, pos.x, pos.y, 0, 0,
+                      SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER );
+    }
 }
 
 /* get the size of the stand-alone tray window */
@@ -805,7 +823,7 @@ static void sync_taskbar_buttons(void)
     struct taskbar_button *win;
     int pos = 0, count = 0;
     int width = taskbar_button_width;
-    int right = tray_width - nb_displayed * icon_cx;
+    int right = tray_width - nb_displayed * icon_cx - clock_width;
     HWND foreground = GetAncestor( GetForegroundWindow(), GA_ROOTOWNER );
 
     if (!enable_taskbar) return;
@@ -1054,6 +1072,26 @@ static void show_taskbar_contextmenu( HWND button, LPARAM lparam )
     if (id) SendNotifyMessageW( (HWND)id, WM_POPUPSYSTEMMENU, 0, lparam );
 }
 
+/* Expose only the docked taskbar, never the standalone notification window. */
+BOOL get_taskbar_info( RECT *rect, UINT *state )
+{
+    if (!enable_taskbar || !tray_window || !IsWindow( tray_window )) return FALSE;
+    if (rect && !GetWindowRect( tray_window, rect )) return FALSE;
+    if (state)
+        *state = (GetWindowLongW( tray_window, GWL_EXSTYLE ) & WS_EX_TOPMOST) ? ABS_ALWAYSONTOP : 0;
+    /* Autohide is not implemented; do not advertise ABS_AUTOHIDE. */
+    return TRUE;
+}
+
+static void update_taskbar_clock(void)
+{
+    WCHAR time[64];
+
+    if (clock_window && GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL, NULL,
+                                        time, ARRAY_SIZE(time) ))
+        SetWindowTextW( clock_window, time );
+}
+
 static void do_hide_systray(void)
 {
     ShowWindow( tray_window, SW_HIDE );
@@ -1079,10 +1117,29 @@ static void do_show_systray(void)
     SystemParametersInfoW( SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICSW), &ncm, 0 );
     font = CreateFontIndirectW( &ncm.lfCaptionFont );
     /* FIXME: Implement BCM_GETIDEALSIZE and use that instead. */
-    SelectObject( hdc, font );
-    GetTextExtentPointA( hdc, "abcdefghijklmnopqrstuvwxyz", 26, &size );
-    taskbar_button_width = size.cx;
-    GetTextExtentPointW( hdc, start_label, lstrlenW(start_label), &size );
+    {
+        HFONT old_font = SelectObject( hdc, font );
+        WCHAR label[64];
+        SYSTEMTIME sample = {0};
+        SIZE clock_size = {0};
+
+        GetTextExtentPointA( hdc, "abcdefghijklmnopqrstuvwxyz", 26, &size );
+        taskbar_button_width = size.cx;
+        GetTextExtentPointW( hdc, start_label, lstrlenW(start_label), &size );
+
+        clock_width = 0;
+        if (clock_window)
+        {
+            sample.wHour = 23;
+            sample.wMinute = 59;
+            SelectObject( hdc, GetStockObject( DEFAULT_GUI_FONT ));
+            if (GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, &sample, NULL,
+                                label, ARRAY_SIZE(label) ))
+                GetTextExtentPointW( hdc, label, lstrlenW(label), &clock_size );
+            clock_width = max( clock_size.cx + 20, 64 );
+        }
+        SelectObject( hdc, old_font );
+    }
     /* add some margins (FIXME) */
     size.cx += 12 + GetSystemMetrics( SM_CXSMICON );
     size.cy += 4;
@@ -1094,6 +1151,10 @@ static void do_show_systray(void)
     start_button_width = size.cx;
     SetWindowPos( tray_window, 0, 0, GetSystemMetrics( SM_CYSCREEN ) - tray_height,
                   tray_width, tray_height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
+    if (clock_window)
+        SetWindowPos( clock_window, 0, tray_width - clock_width, 0, clock_width, tray_height,
+                      SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
+    layout_systray_icons();
     sync_taskbar_buttons();
 }
 
@@ -1123,6 +1184,23 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
 
     case WM_MOVE:
         update_systray_balloon_position();
+        break;
+
+    case WM_TIMER:
+        if (enable_taskbar && wparam == TASKBAR_CLOCK_TIMER)
+        {
+            update_taskbar_clock();
+            return 0;
+        }
+        break;
+
+    case WM_TIMECHANGE:
+        update_taskbar_clock();
+        break;
+
+    case WM_SETTINGCHANGE:
+        if (enable_taskbar) do_show_systray();
+        update_taskbar_clock();
         break;
 
     case WM_CLOSE:
@@ -1271,6 +1349,16 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
     }
 
     LoadStringW( NULL, IDS_START_LABEL, start_label, ARRAY_SIZE( start_label ));
+
+    if (enable_taskbar)
+    {
+        clock_window = CreateWindowW( L"Static", L"", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
+                                      0, 0, 0, 0, tray_window, NULL, NULL, NULL );
+        if (!clock_window) WARN( "Could not create taskbar clock\n" );
+        else SendMessageW( clock_window, WM_SETFONT, (WPARAM)GetStockObject( DEFAULT_GUI_FONT ), FALSE );
+        SetTimer( tray_window, TASKBAR_CLOCK_TIMER, 30000, NULL );
+        update_taskbar_clock();
+    }
 
     add_taskbar_button( 0 );
 

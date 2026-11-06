@@ -198,15 +198,14 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
         }
         return TRUE;
     case ABM_GETSTATE:
-        FIXME( "SHAppBarMessage(ABM_GETSTATE): stub\n" );
-        return ABS_ALWAYSONTOP | ABS_AUTOHIDE;
+    {
+        UINT state = 0;
+        get_taskbar_info( NULL, &state );
+        return state;
+    }
     case ABM_GETTASKBARPOS:
-        FIXME( "SHAppBarMessage(ABM_GETTASKBARPOS, hwnd=%p): stub\n", hwnd );
-        /* Report the taskbar is at the bottom of the screen. */
-        abd->rc.left = 0;
-        abd->rc.right = GetSystemMetrics(SM_CXSCREEN);
-        abd->rc.bottom = GetSystemMetrics(SM_CYSCREEN);
-        abd->rc.top = abd->rc.bottom-1;
+        if (!get_taskbar_info( &abd->rc, NULL )) return FALSE;
+        /* The current Water taskbar is docked at the bottom. */
         abd->uEdge = ABE_BOTTOM;
         return TRUE;
     case ABM_ACTIVATE:
@@ -217,7 +216,8 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
     case ABM_SETAUTOHIDEBAR:
         FIXME( "SHAppBarMessage(ABM_SETAUTOHIDEBAR, hwnd=%p, edge=%x, lparam=%s): stub\n", hwnd,
                abd->uEdge, wine_dbgstr_longlong( abd->lParam ) );
-        return TRUE;
+        /* An unsupported autohide registration must not report success. */
+        return FALSE;
     case ABM_WINDOWPOSCHANGED:
         return TRUE;
     default:

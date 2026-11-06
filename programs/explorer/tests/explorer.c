@@ -19,6 +19,7 @@
  */
 
 #include <windows.h>
+#include <shellapi.h>
 #include "wine/test.h"
 
 static void test_taskbar(void)
@@ -47,7 +48,49 @@ static void test_taskbar(void)
        wine_dbgstr_rect(&expected_rect), wine_dbgstr_rect(&taskbar_rect));
 }
 
+static void test_taskbar_appbar(void)
+{
+    APPBARDATA abd = {0};
+    RECT rect;
+    HWND hwnd, clock;
+    UINT_PTR state;
+    BOOL ret;
+    WCHAR time[64];
+
+    hwnd = FindWindowA("Shell_TrayWnd", NULL);
+    if (!hwnd || !(GetWindowLongW(hwnd, GWL_STYLE) & WS_POPUP))
+    {
+        skip("No docked taskbar; standalone notification windows do not support taskbar geometry.\n");
+        return;
+    }
+
+    abd.cbSize = sizeof(abd);
+    ret = SHAppBarMessage(ABM_GETTASKBARPOS, &abd);
+    ok(ret, "ABM_GETTASKBARPOS failed.\n");
+    if (ret)
+    {
+        GetWindowRect(hwnd, &rect);
+        ok(EqualRect(&abd.rc, &rect), "Expected %s, got %s.\n",
+           wine_dbgstr_rect(&rect), wine_dbgstr_rect(&abd.rc));
+        ok(abd.uEdge == ABE_BOTTOM, "Expected bottom edge, got %u.\n", abd.uEdge);
+    }
+
+    /* Water's taskbar does not yet implement autohide or the configurable clock. */
+    if (!GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version")) return;
+    state = SHAppBarMessage(ABM_GETSTATE, &abd);
+    ok(!(state & ABS_AUTOHIDE), "Autohide was advertised without an implementation.\n");
+
+    clock = FindWindowExW(hwnd, NULL, L"Static", NULL);
+    ok(!!clock, "Classic taskbar clock was not created.\n");
+    if (clock)
+    {
+        ret = GetWindowTextW(clock, time, ARRAY_SIZE(time));
+        ok(ret, "Classic taskbar clock has no displayed time.\n");
+    }
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
+    test_taskbar_appbar();
 }
