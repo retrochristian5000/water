@@ -18,6 +18,7 @@
 
 #include "wine/debug.h"
 #include "explorer_private.h"
+#include "wine/win16_profile.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(explorer);
 
@@ -230,6 +231,54 @@ static HFONT find_cjk_font(HDC dc, const WCHAR *text, LANGID locale)
     return NULL;
 }
 
+/* Win9x is ANSI-first. Only explicit guest selection activates this path;
+ * the Win16 profile's internal default must not affect an NT desktop. */
+BOOL shell_text_is_win9x(void)
+{
+    char value[32];
+    DWORD len;
+
+    len = GetEnvironmentVariableA(WATER_WIN16_LINE_ENV, value, sizeof(value));
+    if (len) return len < sizeof(value) && !strcmp(value, WATER_WIN16_LINE_WIN9X);
+
+    len = GetEnvironmentVariableA(WATER_WIN16_PERSONALITY_ENV, value, sizeof(value));
+    return len && len < sizeof(value) &&
+           (!strcmp(value, WATER_WIN16_PERSONALITY_WIN95_OSR2) ||
+            !strcmp(value, WATER_WIN16_PERSONALITY_WINME));
+}
+
+/* Conversion at the legacy shell boundary, using the same system ACP as
+ * kernelbase/ntdll. Win9x will substitute for non-representable chars;
+ * the NT path below preserves the original UTF-16 glyph sequence. */
+static int draw_win9x_ansi_text(HDC dc, const WCHAR *text, RECT *rect, UINT flags)
+{
+    char stack[512], *bytes = stack;
+    BOOL substituted = FALSE;
+    int required, count, drawn;
+
+    required = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS,
+                                   text, -1, NULL, 0, NULL, NULL);
+    if (!required) return 0;
+    if (required > sizeof(stack))
+    {
+        bytes = HeapAlloc(GetProcessHeap(), 0, required);
+        if (!bytes) return 0;
+    }
+
+    count = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, text, -1,
+                                bytes, required, NULL, &substituted);
+    if (!count)
+    {
+        if (bytes != stack) HeapFree(GetProcessHeap(), 0, bytes);
+        return 0;
+    }
+    if (substituted)
+        TRACE("Win9x ACP %u substituted unsupported characters in shell caption\n", GetACP());
+    drawn = DrawTextA(dc, bytes, -1, rect, flags);
+    if (bytes != stack) HeapFree(GetProcessHeap(), 0, bytes);
+    return drawn;
+}
+
 int shell_draw_text(HDC dc, const WCHAR *text, RECT *rect, UINT flags, LANGID locale)
 {
     HFONT fallback;
@@ -237,6 +286,7 @@ int shell_draw_text(HDC dc, const WCHAR *text, RECT *rect, UINT flags, LANGID lo
     int result;
 
     if (!text) return 0;
+    if (shell_text_is_win9x()) return draw_win9x_ansi_text(dc, text, rect, flags);
     fallback = find_cjk_font(dc, text, locale);
     if (fallback) previous = SelectObject(dc, fallback);
     result = DrawTextW(dc, text, -1, rect, flags);

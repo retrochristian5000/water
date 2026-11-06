@@ -308,6 +308,74 @@ static void test_cjk_window_title(void)
     DestroyWindow(window);
 }
 
+
+/* In Win9x, CP_ACP is never UTF-8 and DBCS lead-byte detection must use
+ * the same table as the A/W conversion routines. The current keyboard HKL
+ * does not change the machine's ANSI system code page. */
+static BOOL test_win9x_selected(void)
+{
+    char line[32], legacy[32];
+    DWORD len;
+
+    len = GetEnvironmentVariableA("WATER_VDM_LINE", line, sizeof(line));
+    if (len) return len < sizeof(line) && !strcmp(line, "win9x");
+
+    len = GetEnvironmentVariableA("WATER_VDM_PERSONALITY", legacy, sizeof(legacy));
+    return len && len < sizeof(legacy) &&
+           (!strcmp(legacy, "win95-osr2") || !strcmp(legacy, "winme"));
+}
+
+static void test_legacy_nls(void)
+{
+    static const struct
+    {
+        UINT codepage;
+        BYTE bytes[2];
+        WCHAR decoded;
+    } examples[] =
+    {
+        { 932, {0x82, 0xa0}, 0x3042 }, /* Shift-JIS Japanese あ */
+        { 936, {0xd6, 0xd0}, 0x4e2d }, /* GBK Chinese 中 */
+        { 950, {0xa4, 0xa4}, 0x4e2d }  /* Big5 Chinese 中 */
+    };
+    UINT i;
+
+    if (test_win9x_selected())
+    {
+        ok(GetACP() != CP_UTF8, "Win9x guest incorrectly exposes UTF-8 as ACP.\n");
+        ok(IsDBCSLeadByte(0x82) == IsDBCSLeadByteEx(CP_ACP, 0x82),
+           "Win9x ACP DBCS metadata differs between NLS entrypoints.\n");
+    }
+
+    for (i = 0; i < ARRAY_SIZE(examples); i++)
+    {
+        CPINFO info;
+        WCHAR decoded = 0;
+        char encoded[4] = {0};
+        BOOL substituted = FALSE;
+        int ret;
+
+        if (!GetCPInfo(examples[i].codepage, &info))
+        {
+            skip("Code page %u is not installed.\n", examples[i].codepage);
+            continue;
+        }
+        ok(info.MaxCharSize >= 2, "Code page %u lost its DBCS metadata.\n", examples[i].codepage);
+        ok(IsDBCSLeadByteEx(examples[i].codepage, examples[i].bytes[0]),
+           "Code page %u missing expected lead byte.\n", examples[i].codepage);
+        ret = MultiByteToWideChar(examples[i].codepage, 0,
+                                  (const char *)examples[i].bytes, 2, &decoded, 1);
+        ok(ret == 1 && decoded == examples[i].decoded,
+           "Code page %u did not decode the historical sample.\n", examples[i].codepage);
+        ret = WideCharToMultiByte(examples[i].codepage, WC_NO_BEST_FIT_CHARS,
+                                  &examples[i].decoded, 1, encoded, sizeof(encoded),
+                                  NULL, &substituted);
+        ok(ret == 2 && !substituted &&
+           !memcmp(encoded, examples[i].bytes, 2),
+           "Code page %u failed its exact DBCS round trip.\n", examples[i].codepage);
+    }
+}
+
 START_TEST(explorer)
 {
     test_taskbar();
@@ -317,6 +385,7 @@ START_TEST(explorer)
     test_input_language_indicator();
     test_quicklaunch_boundaries();
     test_cjk_window_title();
+    test_legacy_nls();
     test_win8_start();
     test_account_identity();
 }

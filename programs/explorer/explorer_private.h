@@ -48,6 +48,7 @@ extern void inputlang_layout(int width, int height, int clock_width, int clock_h
                              int icon_width, int icon_height, UINT icon_count, UINT edge);
 /* CJK-aware drawing: preserve original UTF-16 text and native glyphs. */
 extern BOOL shell_text_needs_cjk(const WCHAR *text);
+extern BOOL shell_text_is_win9x(void);
 extern int shell_draw_text(HDC dc, const WCHAR *text, RECT *rect, UINT flags, LANGID locale);
 extern void handle_parent_notify( HWND hwnd, WPARAM wp );
 extern void do_startmenu( HWND owner );

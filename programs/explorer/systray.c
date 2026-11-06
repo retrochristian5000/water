@@ -1242,6 +1242,42 @@ static void paint_unified_window_button(const DRAWITEMSTRUCT *dis,
     }
 }
 
+/* Use real Win9x ANSI messages and GDI, not GetWindowTextW or
+ * DrawCaptionTempW. This retains DBCS byte pairs in the active ACP. */
+static void paint_win9x_taskbar_caption(const DRAWITEMSTRUCT *dis,
+                                       const struct taskbar_button *win, RECT rect)
+{
+    char caption[512] = {0};
+    RECT text_rect = rect;
+    HICON icon;
+    HGDIOBJ previous;
+
+    if (win->hwnd)
+    {
+        GetWindowTextA(win->hwnd, caption, ARRAY_SIZE(caption));
+        icon = (HICON)GetClassLongPtrA(win->hwnd, GCLP_HICONSM);
+        if (!icon) icon = (HICON)GetClassLongPtrA(win->hwnd, GCLP_HICON);
+    }
+    else
+    {
+        WideCharToMultiByte(CP_ACP, 0, start_label, -1, caption,
+                            ARRAY_SIZE(caption), NULL, NULL);
+        icon = shell_traywnd_class.hIcon;
+    }
+    if (!icon) icon = LoadIconA(NULL, IDI_APPLICATION);
+
+    DrawIconEx(dis->hDC, rect.left + 5, (rect.bottom - 16) / 2,
+               icon, 16, 16, 0, NULL, DI_NORMAL);
+    text_rect.left += 25;
+    text_rect.right -= 6;
+    previous = SelectObject(dis->hDC, GetStockObject(DEFAULT_GUI_FONT));
+    SetBkMode(dis->hDC, TRANSPARENT);
+    SetTextColor(dis->hDC, GetSysColor(COLOR_BTNTEXT));
+    DrawTextA(dis->hDC, caption, -1, &text_rect,
+              DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+    if (previous && previous != HGDI_ERROR) SelectObject(dis->hDC, previous);
+}
+
 static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
 {
     RECT rect;
@@ -1275,6 +1311,11 @@ static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
     }
     DrawFrameControl( dis->hDC, &rect, DFC_BUTTON, DFCS_BUTTONPUSH | DFCS_ADJUSTRECT |
                       ((dis->itemState & ODS_SELECTED) ? DFCS_PUSHED : 0 ));
+    if (shell_text_is_win9x())
+    {
+        paint_win9x_taskbar_caption(dis, win, rect);
+        return;
+    }
     if (win->hwnd)
     {
         WCHAR title[256];
