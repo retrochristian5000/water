@@ -1200,12 +1200,10 @@ static void paint_themed_taskbar_button( const DRAWITEMSTRUCT *dis,
         {
             HICON icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICONSM);
             if (!icon) icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICON);
-            if (icon)
-            {
-                DrawIconEx(dis->hDC, rect.left + 6, (rect.bottom - 16) / 2,
-                           icon, 16, 16, 0, NULL, DI_NORMAL);
-                rect.left += 22;
-            }
+            if (!icon) icon = LoadIconW(NULL, IDI_APPLICATION);
+            DrawIconEx(dis->hDC, rect.left + 6, (rect.bottom - 16) / 2,
+                       icon, 16, 16, 0, NULL, DI_NORMAL);
+            rect.left += 22;
             GetWindowTextW( win->hwnd, title, ARRAY_SIZE(title) );
         }
         rect.left += start ? 8 : 10;
@@ -1219,7 +1217,7 @@ static void paint_themed_taskbar_button( const DRAWITEMSTRUCT *dis,
 static void paint_unified_window_button(const DRAWITEMSTRUCT *dis,
                                         const struct taskbar_button *win, RECT rc)
 {
-    COLORREF background = win->active ? RGB(95, 124, 161) : RGB(58, 70, 86);
+    COLORREF background = win->active ? RGB(140, 171, 211) : GetSysColor(COLOR_BTNFACE);
     HBRUSH brush = CreateSolidBrush(background);
     HICON icon = (HICON)GetClassLongPtrW(win->hwnd, GCLP_HICONSM);
 
@@ -1249,6 +1247,19 @@ static void paint_taskbar_button( const DRAWITEMSTRUCT *dis )
 
     if (!win) return;
     GetClientRect( dis->hwndItem, &rect );
+    if (!win->hwnd && quicklaunch_mode() == 2)
+    {
+        /* Windows 7+ Start is an icon, not a labeled task button. */
+        HBRUSH brush = CreateSolidBrush(GetSysColor(COLOR_BTNFACE));
+        if (brush)
+        {
+            FillRect(dis->hDC, &rect, brush);
+            DeleteObject(brush);
+        }
+        DrawIconEx(dis->hDC, (rect.right - 28) / 2, (rect.bottom - 28) / 2,
+                   shell_traywnd_class.hIcon, 28, 28, 0, NULL, DI_NORMAL);
+        return;
+    }
     if (win->hwnd && quicklaunch_mode() == 2)
     {
         paint_unified_window_button(dis, win, rect);

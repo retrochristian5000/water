@@ -252,7 +252,8 @@ static void test_quicklaunch_boundaries(void)
     HWND tray = FindWindowW(L"Shell_TrayWnd", NULL);
     char line[32] = {0}, version[32] = {0}, update[8] = {0};
     DWORD n;
-    HWND button;
+    HWND button, clock;
+    RECT button_rect, clock_rect, overlap;
     UINT marked = 0;
 
     if (!tray || !(GetWindowLongPtrW(tray, GWL_STYLE) & WS_POPUP)) return;
@@ -260,15 +261,26 @@ static void test_quicklaunch_boundaries(void)
     GetEnvironmentVariableA("WATER_VDM_VERSION", version, sizeof(version));
     n = GetEnvironmentVariableA("WATER_SHELL_DESKTOP_UPDATE", update, sizeof(update));
 
+    /* Every visible launcher must have an independent slot and must not
+     * collide with the notification-area clock. */
+    clock = FindWindowExW(tray, NULL, L"Static", NULL);
+    for (button = FindWindowExW(tray, NULL, L"Button", NULL); button;
+         button = FindWindowExW(tray, button, L"Button", NULL))
+    {
+        if (!GetPropW(button, L"WaterQuickLaunch") || !IsWindowVisible(button)) continue;
+        marked++;
+        if (clock && IsWindowVisible(clock) && GetWindowRect(button, &button_rect) &&
+            GetWindowRect(clock, &clock_rect))
+            ok(!IntersectRect(&overlap, &button_rect, &clock_rect),
+               "Quick Launch button overlaps taskbar clock.\n");
+    }
+
     /* Original Windows 95 and NT 4 have no Quick Launch unless Desktop
      * Update has been explicitly selected. */
     if (( (!strcmp(line, "win9x") && !strcmp(version, "4.0")) ||
           (!strcmp(line, "nt") && !strcmp(version, "4.0")) ) &&
         (n != 1 || update[0] != '1'))
     {
-        for (button = FindWindowExW(tray, NULL, L"Button", NULL); button;
-             button = FindWindowExW(tray, button, L"Button", NULL))
-            if (GetPropW(button, L"WaterQuickLaunch")) marked++;
         ok(!marked, "Unupdated Windows 95/NT4 exposed a Quick Launch button.\n");
     }
 }
