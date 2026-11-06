@@ -83,7 +83,17 @@ static void test_taskbar_appbar(void)
         GetWindowRect(hwnd, &rect);
         ok(EqualRect(&abd.rc, &rect), "Expected %s, got %s.\n",
            wine_dbgstr_rect(&rect), wine_dbgstr_rect(&abd.rc));
-        if (water_shell) ok(abd.uEdge == ABE_BOTTOM, "Expected bottom edge, got %u.\n", abd.uEdge);
+        if (water_shell)
+        {
+            DWORD edge, size = sizeof(edge);
+            LONG status;
+
+            ok(abd.uEdge <= ABE_BOTTOM, "Invalid taskbar edge %u.\n", abd.uEdge);
+            status = RegGetValueW( HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
+                                   L"Edge", RRF_RT_REG_DWORD, NULL, &edge, &size );
+            if (!status && edge <= ABE_BOTTOM)
+                ok(abd.uEdge == edge, "Saved edge %lu, reported edge %u.\n", edge, abd.uEdge);
+        }
     }
 
     /* Water's taskbar does not yet implement autohide or the configurable clock. */

@@ -36,6 +36,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(systray);
 #define TRAY_MINIMIZE_ALL 419
 #define TRAY_MINIMIZE_ALL_UNDO 416
 #define TASKBAR_CLOCK_TIMER 3
+#define TASKBAR_LOCK_COMMAND 6100
 
 struct notify_data_icon
 {
@@ -108,6 +109,10 @@ static struct list taskbar_buttons = LIST_INIT( taskbar_buttons );
 
 static HWND tray_window;
 static HWND clock_window;
+static UINT taskbar_edge = ABE_BOTTOM;
+static BOOL taskbar_locked = TRUE;
+static BOOL taskbar_dragging;
+static POINT taskbar_drag_start;
 
 static unsigned int nb_displayed;
 
@@ -117,7 +122,9 @@ static BOOL enable_dock; /* allow systray icons to be docked in the host systray
 static BOOL no_tray_items; /* hide the systray and all systray icons */
 
 static int icon_cx, icon_cy, tray_width, tray_height;
-static int start_button_width, taskbar_button_width, clock_width;
+static int start_button_width, start_button_height;
+static int taskbar_button_width, taskbar_button_height;
+static int clock_width, clock_height;
 static WCHAR start_label[50];
 
 static struct icon *balloon_icon;
@@ -344,8 +351,16 @@ static POINT get_icon_pos( struct icon *icon )
 
     if (enable_taskbar)
     {
-        pos.x = tray_width - clock_width - icon_cx * (icon->display + 1);
-        pos.y = (tray_height - icon_cy) / 2;
+        if (taskbar_edge == ABE_LEFT || taskbar_edge == ABE_RIGHT)
+        {
+            pos.x = (tray_width - icon_cx) / 2;
+            pos.y = tray_height - clock_height - icon_cy * (icon->display + 1);
+        }
+        else
+        {
+            pos.x = tray_width - clock_width - icon_cx * (icon->display + 1);
+            pos.y = (tray_height - icon_cy) / 2;
+        }
     }
     else
     {
@@ -821,21 +836,24 @@ static void cleanup_systray_window( HWND hwnd )
 static void sync_taskbar_buttons(void)
 {
     struct taskbar_button *win;
+    BOOL vertical = taskbar_edge == ABE_LEFT || taskbar_edge == ABE_RIGHT;
     int pos = 0, count = 0;
-    int width = taskbar_button_width;
-    int right = tray_width - nb_displayed * icon_cx - clock_width;
+    int width = vertical ? taskbar_button_height : taskbar_button_width;
+    int right = (vertical ? tray_height - clock_height : tray_width - clock_width) -
+                nb_displayed * icon_cy;
     HWND foreground = GetAncestor( GetForegroundWindow(), GA_ROOTOWNER );
 
-    if (!enable_taskbar) return;
-    if (!IsWindowVisible( tray_window )) return;
+    if (!enable_taskbar || !IsWindowVisible( tray_window )) return;
 
     LIST_FOR_EACH_ENTRY( win, &taskbar_buttons, struct taskbar_button, entry )
     {
-        if (!win->hwnd)  /* start button */
+        if (!win->hwnd)
         {
-            SetWindowPos( win->button, 0, pos, 0, start_button_width, tray_height,
+            int length = vertical ? start_button_height : start_button_width;
+            SetWindowPos( win->button, 0, 0, 0, vertical ? tray_width : length,
+                          vertical ? length : tray_height,
                           SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
-            pos += start_button_width;
+            pos += length;
             continue;
         }
         win->active = (win->hwnd == foreground);
@@ -843,21 +861,23 @@ static void sync_taskbar_buttons(void)
         if (win->visible) count++;
     }
 
-    /* shrink buttons if space is tight */
-    if (count && (count * width > right - pos))
-        width = max( taskbar_button_width / 4, (right - pos) / count );
+    if (count && count * width > right - pos)
+        width = max( vertical ? taskbar_button_height / 2 : taskbar_button_width / 4,
+                     (right - pos) / count );
 
     LIST_FOR_EACH_ENTRY( win, &taskbar_buttons, struct taskbar_button, entry )
     {
-        if (!win->hwnd) continue;  /* start button */
+        if (!win->hwnd) continue;
         if (win->visible && right - pos >= width)
         {
-            SetWindowPos( win->button, 0, pos, 0, width, tray_height,
+            SetWindowPos( win->button, 0, vertical ? 0 : pos, vertical ? pos : 0,
+                          vertical ? tray_width : width, vertical ? width : tray_height,
                           SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
             InvalidateRect( win->button, NULL, TRUE );
             pos += width;
         }
-        else SetWindowPos( win->button, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW );
+        else SetWindowPos( win->button, 0, 0, 0, 0, 0,
+                           SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW );
     }
 }
 
@@ -1073,10 +1093,11 @@ static void show_taskbar_contextmenu( HWND button, LPARAM lparam )
 }
 
 /* Expose only the docked taskbar, never the standalone notification window. */
-BOOL get_taskbar_info( RECT *rect, UINT *state )
+BOOL get_taskbar_info( RECT *rect, UINT *state, UINT *edge )
 {
     if (!enable_taskbar || !tray_window || !IsWindow( tray_window )) return FALSE;
     if (rect && !GetWindowRect( tray_window, rect )) return FALSE;
+    if (edge) *edge = taskbar_edge;
     if (state)
         *state = (GetWindowLongW( tray_window, GWL_EXSTYLE ) & WS_EX_TOPMOST) ? ABS_ALWAYSONTOP : 0;
     /* Autohide is not implemented; do not advertise ABS_AUTOHIDE. */
@@ -1090,6 +1111,124 @@ static void update_taskbar_clock(void)
     if (clock_window && GetTimeFormatW( LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL, NULL,
                                         time, ARRAY_SIZE(time) ))
         SetWindowTextW( clock_window, time );
+}
+
+static void read_taskbar_settings(void)
+{
+    DWORD value, size = sizeof(value);
+
+    if (!RegGetValueW( HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
+                       L"Edge", RRF_RT_REG_DWORD, NULL, &value, &size ) &&
+        value <= ABE_BOTTOM)
+        taskbar_edge = value;
+
+    size = sizeof(value);
+    if (!RegGetValueW( HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
+                       L"Locked", RRF_RT_REG_DWORD, NULL, &value, &size ))
+        taskbar_locked = !!value;
+}
+
+static void write_taskbar_settings(void)
+{
+    HKEY key;
+    DWORD edge = taskbar_edge, locked = taskbar_locked;
+
+    if (RegCreateKeyExW( HKEY_CURRENT_USER, L"Software\\Wine\\Explorer\\Taskbar",
+                         0, NULL, 0, KEY_SET_VALUE, NULL, &key, NULL ))
+    {
+        WARN( "Could not save taskbar settings\\n" );
+        return;
+    }
+    RegSetValueExW( key, L"Edge", 0, REG_DWORD, (const BYTE *)&edge, sizeof(edge) );
+    RegSetValueExW( key, L"Locked", 0, REG_DWORD, (const BYTE *)&locked, sizeof(locked) );
+    RegCloseKey( key );
+}
+
+/* Reserve primary monitor workspace for the current taskbar edge. */
+static void update_taskbar_workarea(void)
+{
+    RECT area, current;
+
+    if (!enable_taskbar) return;
+
+    SetRect( &area, 0, 0, GetSystemMetrics( SM_CXSCREEN ), GetSystemMetrics( SM_CYSCREEN ) );
+    switch (taskbar_edge)
+    {
+    case ABE_LEFT:   area.left += tray_width; break;
+    case ABE_TOP:    area.top += tray_height; break;
+    case ABE_RIGHT:  area.right -= tray_width; break;
+    case ABE_BOTTOM: area.bottom -= tray_height; break;
+    }
+    if (SystemParametersInfoW( SPI_GETWORKAREA, 0, &current, 0 ) && EqualRect( &current, &area ))
+        return;
+    if (!SystemParametersInfoW( SPI_SETWORKAREA, 0, &area, SPIF_SENDCHANGE ))
+        WARN( "Could not update taskbar work area\\n" );
+}
+
+static UINT closest_taskbar_edge( POINT point )
+{
+    const int right = GetSystemMetrics( SM_CXSCREEN );
+    const int bottom = GetSystemMetrics( SM_CYSCREEN );
+    int distances[4], best;
+    UINT edge;
+
+    point.x = max( 0, min( point.x, right ) );
+    point.y = max( 0, min( point.y, bottom ) );
+    distances[ABE_LEFT] = point.x;
+    distances[ABE_TOP] = point.y;
+    distances[ABE_RIGHT] = right - point.x;
+    distances[ABE_BOTTOM] = bottom - point.y;
+    best = distances[taskbar_edge];
+    edge = taskbar_edge;
+    for (UINT i = ABE_LEFT; i <= ABE_BOTTOM; i++)
+    {
+        if (distances[i] < best)
+        {
+            best = distances[i];
+            edge = i;
+        }
+    }
+    return edge;
+}
+
+static void move_taskbar_from_cursor(void)
+{
+    POINT point;
+    UINT edge;
+
+    if (!taskbar_dragging || !GetCursorPos( &point )) return;
+    if (abs( point.x - taskbar_drag_start.x ) < GetSystemMetrics( SM_CXDRAG ) &&
+        abs( point.y - taskbar_drag_start.y ) < GetSystemMetrics( SM_CYDRAG ))
+        return;
+
+    edge = closest_taskbar_edge( point );
+    if (edge == taskbar_edge) return;
+    taskbar_edge = edge;
+    do_show_systray();
+    notify_appbar_taskbar_moved();
+}
+
+static void show_taskbar_menu( HWND hwnd )
+{
+    WCHAR label[64];
+    HMENU menu = CreatePopupMenu();
+    POINT cursor;
+    UINT command;
+
+    if (!menu) return;
+    if (!LoadStringW( NULL, IDS_TASKBAR_LOCK, label, ARRAY_SIZE(label) ))
+        lstrcpyW( label, L"Lock the Taskbar" );
+    AppendMenuW( menu, MF_STRING | (taskbar_locked ? MF_CHECKED : MF_UNCHECKED),
+                 TASKBAR_LOCK_COMMAND, label );
+    GetCursorPos( &cursor );
+    command = TrackPopupMenu( menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                              cursor.x, cursor.y, 0, hwnd, NULL );
+    DestroyMenu( menu );
+    if (command == TASKBAR_LOCK_COMMAND)
+    {
+        taskbar_locked = !taskbar_locked;
+        write_taskbar_settings();
+    }
 }
 
 static void do_hide_systray(void)
@@ -1143,19 +1282,38 @@ static void do_show_systray(void)
     /* add some margins (FIXME) */
     size.cx += 12 + GetSystemMetrics( SM_CXSMICON );
     size.cy += 4;
+    start_button_height = max( icon_cy + 4, size.cy );
+    taskbar_button_height = start_button_height;
+    clock_height = max( icon_cy + 4, 28 );
     ReleaseDC( 0, hdc );
     DeleteObject( font );
 
-    tray_width = GetSystemMetrics( SM_CXSCREEN );
-    tray_height = max( icon_cy, size.cy );
-    start_button_width = size.cx;
-    SetWindowPos( tray_window, 0, 0, GetSystemMetrics( SM_CYSCREEN ) - tray_height,
-                  tray_width, tray_height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
-    if (clock_window)
-        SetWindowPos( clock_window, 0, tray_width - clock_width, 0, clock_width, tray_height,
+    {
+        int screen_width = GetSystemMetrics( SM_CXSCREEN );
+        int screen_height = GetSystemMetrics( SM_CYSCREEN );
+        BOOL vertical = taskbar_edge == ABE_LEFT || taskbar_edge == ABE_RIGHT;
+        int thickness = vertical ? min( max( 144, taskbar_button_width / 2 ), screen_width / 2 ) :
+                                   max( icon_cy, size.cy );
+        int x = 0, y = 0;
+
+        start_button_width = size.cx;
+        tray_width = vertical ? thickness : screen_width;
+        tray_height = vertical ? screen_height : thickness;
+        if (taskbar_edge == ABE_RIGHT) x = screen_width - tray_width;
+        if (taskbar_edge == ABE_BOTTOM) y = screen_height - tray_height;
+        SetWindowPos( tray_window, 0, x, y, tray_width, tray_height,
                       SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
+        if (clock_window)
+            SetWindowPos( clock_window, 0,
+                          vertical ? 0 : tray_width - clock_width,
+                          vertical ? tray_height - clock_height : 0,
+                          vertical ? tray_width : clock_width,
+                          vertical ? clock_height : tray_height,
+                          SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW );
+    }
     layout_systray_icons();
     sync_taskbar_buttons();
+    update_taskbar_workarea();
 }
 
 static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
@@ -1199,8 +1357,46 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_SETTINGCHANGE:
-        if (enable_taskbar) do_show_systray();
+        /* SPI_SETWORKAREA broadcasts this message; don't re-enter layout. */
+        if (enable_taskbar && wparam != SPI_SETWORKAREA) do_show_systray();
         update_taskbar_clock();
+        break;
+
+    case WM_LBUTTONDOWN:
+        if (enable_taskbar && !taskbar_locked && GetCursorPos( &taskbar_drag_start ))
+        {
+            taskbar_dragging = TRUE;
+            SetCapture( hwnd );
+            return 0;
+        }
+        break;
+
+    case WM_MOUSEMOVE:
+        if (taskbar_dragging)
+        {
+            if (wparam & MK_LBUTTON) move_taskbar_from_cursor();
+            else
+            {
+                taskbar_dragging = FALSE;
+                if (GetCapture() == hwnd) ReleaseCapture();
+            }
+            return 0;
+        }
+        break;
+
+    case WM_LBUTTONUP:
+        if (taskbar_dragging)
+        {
+            move_taskbar_from_cursor();
+            taskbar_dragging = FALSE;
+            if (GetCapture() == hwnd) ReleaseCapture();
+            write_taskbar_settings();
+            return 0;
+        }
+        break;
+
+    case WM_CAPTURECHANGED:
+        taskbar_dragging = FALSE;
         break;
 
     case WM_CLOSE:
@@ -1234,7 +1430,10 @@ static LRESULT WINAPI shell_traywnd_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_CONTEXTMENU:
-        show_taskbar_contextmenu( (HWND)wparam, lparam );
+        if (enable_taskbar && (!(HWND)wparam || (HWND)wparam == hwnd))
+            show_taskbar_menu( hwnd );
+        else
+            show_taskbar_contextmenu( (HWND)wparam, lparam );
         break;
 
     case WM_MOUSEACTIVATE:
@@ -1287,8 +1486,6 @@ void handle_parent_notify( HWND hwnd, WPARAM wp )
 /* this function creates the listener window */
 void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_show_systray, BOOL arg_no_tray_items )
 {
-    RECT work_rect, primary_rect, taskbar_rect;
-
     shell_traywnd_class.hIcon = LoadIconW( 0, (const WCHAR *)IDI_WINLOGO );
     shell_traywnd_class.hCursor = LoadCursorW( 0, (const WCHAR *)IDC_ARROW );
     tray_icon_class.hIcon = shell_traywnd_class.hIcon;
@@ -1326,13 +1523,10 @@ void initialize_systray( BOOL arg_using_root, BOOL arg_enable_shell, BOOL arg_sh
 
     if (enable_taskbar)
     {
-        SystemParametersInfoW( SPI_GETWORKAREA, 0, &work_rect, 0 );
-        SetRect( &primary_rect, 0, 0, GetSystemMetrics( SM_CXSCREEN ), GetSystemMetrics( SM_CYSCREEN ) );
-        SubtractRect( &taskbar_rect, &primary_rect, &work_rect );
-
-        tray_window = CreateWindowExW( WS_EX_NOACTIVATE, shell_traywnd_class.lpszClassName, NULL, WS_POPUP,
-                                       taskbar_rect.left, taskbar_rect.top, taskbar_rect.right - taskbar_rect.left,
-                                       taskbar_rect.bottom - taskbar_rect.top, 0, 0, 0, 0 );
+        read_taskbar_settings();
+        /* do_show_systray() applies the saved edge after creating the clock. */
+        tray_window = CreateWindowExW( WS_EX_NOACTIVATE, shell_traywnd_class.lpszClassName,
+                                       NULL, WS_POPUP, 0, 0, 0, 0, 0, 0, 0, 0 );
     }
     else
     {

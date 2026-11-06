@@ -35,6 +35,7 @@ STRINGTABLE
     IDS_EXIT_LABEL      "E&xit desktop"
     IDS_EXIT_PROMPT     "Are you sure you want to close all programs and exit the virtual desktop?"
     IDS_DESKTOP_TITLE   "Wine Desktop"
+    IDS_TASKBAR_LOCK    "Lock the Taskbar"
 }
 
 /* Windows 95/98 Shutdown dialog: the DOS option is visible for historical

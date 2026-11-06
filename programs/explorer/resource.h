@@ -28,6 +28,7 @@
 #define IDS_EXIT_LABEL 5
 #define IDS_EXIT_PROMPT 6
 #define IDS_DESKTOP_TITLE 7
+#define IDS_TASKBAR_LOCK 8
 
 /* Windows 95/98 shell shutdown dialog. Do not expose this for Windows Me. */
 #define IDD_WIN9X_SHUTDOWN 100

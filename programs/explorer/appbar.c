@@ -100,6 +100,11 @@ static void send_poschanged(HWND hwnd)
 }
 
 /* appbar_cliprect: cut out parts of the rectangle that interfere with existing appbars */
+void notify_appbar_taskbar_moved(void)
+{
+    send_poschanged( NULL );
+}
+
 static void appbar_cliprect( HWND hwnd, RECT *rect )
 {
     struct appbar_data* data;
@@ -200,14 +205,11 @@ static UINT_PTR handle_appbarmessage(DWORD msg, struct appbar_data_msg *abd)
     case ABM_GETSTATE:
     {
         UINT state = 0;
-        get_taskbar_info( NULL, &state );
+        get_taskbar_info( NULL, &state, NULL );
         return state;
     }
     case ABM_GETTASKBARPOS:
-        if (!get_taskbar_info( &abd->rc, NULL )) return FALSE;
-        /* The current Water taskbar is docked at the bottom. */
-        abd->uEdge = ABE_BOTTOM;
-        return TRUE;
+        return get_taskbar_info( &abd->rc, NULL, &abd->uEdge );
     case ABM_ACTIVATE:
         return TRUE;
     case ABM_GETAUTOHIDEBAR:
