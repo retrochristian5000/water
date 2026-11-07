@@ -154,7 +154,8 @@ Environment:
   WATER_AUTOMAKE_PROVIDER pinned (default) or host Bash macro source
   WATER_AUTOMAKE_EXEC_PROVIDER auto (default), pinned, or host bootstrap executables
   WHP_AUTOMAKE_SEED_AUTOCONF  Seed Autoconf used to bootstrap pinned Automake
-  WHP_AUTOMAKE_SEED_AUTOM4TE  Matching seed autom4te executable
+  WHP_AUTOMAKE_SEED_AUTOM4TE  Native seed autom4te (validated by ./autom4te.sh)
+  AUTOM4TE              Native autom4te override when no WHP seed is set
   PERL                  Native Perl override for pinned Autotools (validated by ./perl.sh)
   M4                    GNU M4 executable for pinned Autoconf bootstrap
                         Auto-detected by scripts/whp-build/m4.sh (gm4, then m4)

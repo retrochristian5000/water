@@ -9,6 +9,7 @@ command -v git >/dev/null 2>&1 || { echo 'SKIP: git unavailable'; exit 0; }
 export GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0
 mkdir -p "$tmp/upstream" "$tmp/water/scripts/whp-build" "$tmp/tools"
 cp "$root/scripts/whp-build/ensure-automake.sh" "$tmp/water/scripts/whp-build/"
+cp "$root/autom4te.sh" "$tmp/water/autom4te.sh"
 cp "$root/scripts/whp-build/m4.sh" "$tmp/water/scripts/whp-build/"
 cp "$root/perl.sh" "$tmp/water/perl.sh"
 
@@ -32,7 +33,22 @@ cat > "$tmp/tools/autoconf" <<'EOF'
 EOF
 cat > "$tmp/tools/autom4te" <<'EOF'
 #!/bin/sh
-[ "${1:-}" = --version ] && echo 'autom4te (GNU Autoconf) mock'
+case "${1:-}" in
+    --version) echo 'autom4te (GNU Autoconf) mock' ;;
+    --language=Autoconf)
+        output=
+        input=
+        for arg do
+            case "$arg" in
+                --output=*) output=${arg#--output=} ;;
+                *) input=$arg ;;
+            esac
+        done
+        [ -n "$output" ] && [ -f "$input" ] || exit 1
+        grep -Fq 'AC_INIT' "$input" || exit 1
+        printf '#!/bin/sh\n# whp-water-autom4te\n' > "$output" ;;
+    *) exit 1 ;;
+esac
 EOF
 cat > "$tmp/tools/perl" <<'EOF'
 #!/bin/sh
@@ -134,10 +150,8 @@ grep -Fq 'explicit PERL override rejected' "$tmp/err"
 
 # Version mismatch must fail before touching the healthy cache.
 cp "$tmp/tools/autom4te" "$tmp/autom4te.saved"
-cat > "$tmp/tools/autom4te" <<'EOF'
-#!/bin/sh
-[ "${1:-}" = --version ] && echo 'autom4te (GNU Autoconf) different'
-EOF
+sed 's/GNU Autoconf) mock/GNU Autoconf) different/' \
+    "$tmp/autom4te.saved" > "$tmp/tools/autom4te"
 chmod +x "$tmp/tools/autom4te"
 if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
     echo 'FAIL: mismatched seed Autoconf accepted' >&2; exit 1
@@ -145,6 +159,26 @@ fi
 grep -q 'versions differ' "$tmp/err" || {
     echo 'FAIL: mismatched seed lacks diagnostic' >&2; exit 1
 }
+mv "$tmp/autom4te.saved" "$tmp/tools/autom4te"
+
+# A broken explicit choice must not reuse a previously healthy cache.
+if WHP_AUTOMAKE_SEED_AUTOM4TE="$tmp/nonexistent-autom4te" \
+    /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: missing explicit autom4te was silently replaced' >&2; exit 1
+fi
+grep -Fq 'WHP_AUTOMAKE_SEED_AUTOM4TE is not a functional GNU autom4te' "$tmp/err"
+
+# A version-only fake passes a banner test but not real configure generation.
+cp "$tmp/tools/autom4te" "$tmp/autom4te.saved"
+cat > "$tmp/tools/autom4te" <<'EOF'
+#!/bin/sh
+[ "${1:-}" = --version ] && echo 'autom4te (GNU Autoconf) mock'
+EOF
+chmod +x "$tmp/tools/autom4te"
+if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: version-only autom4te bypassed semantic probe' >&2; exit 1
+fi
+grep -Fq 'functional generator unavailable' "$tmp/err"
 mv "$tmp/autom4te.saved" "$tmp/tools/autom4te"
 
 # A fake seed that prints a convincing banner but returns failure is
