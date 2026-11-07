@@ -128,6 +128,31 @@ def ensure_ninja_source() -> str:
     return current_revision
 
 
+def host_command_argv(command: str) -> List[str]:
+    """Preserve a pathname containing spaces; parse intentional argv otherwise."""
+    if not command:
+        raise RuntimeError('empty host tool command')
+    if pathlib.Path(command).is_file():
+        argv = [command]
+    else:
+        try:
+            argv = shlex.split(command)
+        except ValueError as exc:
+            raise RuntimeError(f'invalid host tool command: {command}') from exc
+    if not argv:
+        raise RuntimeError('empty host tool command')
+    executable = shutil.which(argv[0])
+    if not executable or not os.path.isfile(executable) or not os.access(executable, os.X_OK):
+        raise RuntimeError(f'host tool is not executable: {argv[0]}')
+    argv[0] = executable
+    return argv
+
+
+def host_shell_command(command: str) -> str:
+    """Ninja's configure.py runs CXX and AR through a shell."""
+    return ' '.join(shlex.quote(arg) for arg in host_command_argv(command))
+
+
 def select_host_cxx() -> str:
     requested = os.environ.get('CXX_FOR_BUILD')
     if requested:
@@ -143,15 +168,18 @@ def select_host_cxx() -> str:
         if candidate:
             return candidate
 
-    requested = os.environ.get('CXX')
-    if requested:
-        return requested
-
+    # WATER's CXX may target Windows PE; do not treat it as a native host
+    # compiler when an ordinary host compiler is available.
     for name in ('c++', 'clang++', 'g++'):
         path = shutil.which(name)
         if path:
             return path
-    raise RuntimeError('a host C++17 compiler is required to bootstrap bundled Ninja')
+
+    # Retain an explicit CXX fallback on unusual systems with no host c++ name.
+    requested = os.environ.get('CXX')
+    if requested:
+        return requested
+    raise RuntimeError('a native C++17 compiler is required (set CXX_FOR_BUILD to override)')
 
 
 def select_host_sdkroot() -> str:
@@ -166,8 +194,10 @@ def select_host_sdkroot() -> str:
 
 
 def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:
-    argv = shlex.split(cxx)
-    if not argv or platform.system() != 'Darwin' or not sdkroot:
+    if platform.system() != 'Darwin' or not sdkroot:
+        return False
+    argv = host_command_argv(cxx)
+    if not argv:
         return False
 
     with tempfile.TemporaryDirectory(prefix='whp-ninja-arch-') as tmp:
@@ -237,12 +267,12 @@ def select_host_macos_arch(cxx: str, sdkroot: str) -> str:
 def select_compiler_cache() -> str:
     explicit = os.environ.get('WHP_COMPILER_CACHE_CMD', '')
     if explicit:
-        argv = shlex.split(explicit)
+        argv = [explicit] if pathlib.Path(explicit).is_file() else shlex.split(explicit)
         if len(argv) != 1:
             raise RuntimeError('WHP_COMPILER_CACHE_CMD must name exactly one executable')
         candidate = argv[0]
         path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
-        if not path or not pathlib.Path(path).exists():
+        if not path or not os.path.isfile(path) or not os.access(path, os.X_OK):
             raise RuntimeError(f'compiler cache is not executable: {candidate}')
         if pathlib.Path(path).name not in ('ccache', 'sccache'):
             raise RuntimeError(f'unsupported compiler cache command: {path}')
@@ -267,12 +297,7 @@ def select_compiler_cache() -> str:
 
 
 def compiler_version(command: str) -> str:
-    argv = shlex.split(command)
-    if not argv:
-        raise RuntimeError('empty host C++ compiler command')
-    executable = shutil.which(argv[0]) if not pathlib.Path(argv[0]).is_absolute() else argv[0]
-    if not executable or not pathlib.Path(executable).exists():
-        raise RuntimeError(f'host C++ compiler is not executable: {argv[0]}')
+    argv = host_command_argv(command)
     completed = subprocess.run(
         [*argv, '--version'],
         text=True,
@@ -284,6 +309,55 @@ def compiler_version(command: str) -> str:
     if completed.returncode != 0 or not first:
         raise RuntimeError(f'could not identify host C++ compiler: {command}')
     return first
+
+
+def validate_native_cxx(command: str, bootstrap_env: dict[str, str]) -> None:
+    """A version banner cannot prove a compiler produces runnable host tools."""
+    argv = host_command_argv(command)
+    flags = shlex.split(bootstrap_env.get('CXXFLAGS', ''))
+    ldflags = shlex.split(bootstrap_env.get('LDFLAGS', ''))
+    with tempfile.TemporaryDirectory(prefix='whp-ninja-cxx-') as tmp:
+        source = pathlib.Path(tmp) / 'native.cc'
+        binary = pathlib.Path(tmp) / 'native'
+        source.write_text(
+            '#include <vector>\n'
+            '#include <type_traits>\n'
+            'int main() { if constexpr (std::is_same_v<int, int>) '
+            'return std::vector<int>{1}.front() - 1; return 1; }\n',
+            encoding='utf-8',
+        )
+        compiled = subprocess.run(
+            [*argv, *flags, '-std=c++17', str(source), *ldflags, '-o', str(binary)],
+            env=bootstrap_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if compiled.returncode != 0 or not binary.is_file():
+            message = (compiled.stderr or compiled.stdout).strip()
+            raise RuntimeError(
+                'host C++17 compiler failed native Ninja compile/link probe: '
+                f'{command}' + (f' ({message[-900:]})' if message else '')
+            )
+        try:
+            launched = subprocess.run(
+                [str(binary)],
+                env=bootstrap_env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError as exc:
+            raise RuntimeError(
+                'host C++17 compiler generated a non-executable host binary '
+                f'(possible PE target or architecture mismatch): {command}'
+            ) from exc
+        if launched.returncode != 0:
+            raise RuntimeError(
+                'host C++17 compiler generated a binary that cannot run '
+                f'on this host (exit {launched.returncode}): {command}'
+            )
 
 
 def marker_text(
@@ -397,12 +471,12 @@ def bootstrap_environment(
     ):
         bootstrap_env.pop(key, None)
 
-    bootstrap_env['CXX'] = cxx
+    bootstrap_env['CXX'] = host_shell_command(cxx)
     if compiler_cache:
         cache_name = pathlib.Path(compiler_cache).name
         if cache_name not in ('ccache', 'sccache'):
             raise RuntimeError(f'unsupported compiler cache command: {compiler_cache}')
-        bootstrap_env['CXX'] = f'{shlex.quote(compiler_cache)} {cxx}'
+        bootstrap_env['CXX'] = f'{shlex.quote(compiler_cache)} {host_shell_command(cxx)}'
         if compiler_cache_dir is not None:
             if cache_name == 'ccache':
                 bootstrap_env['CCACHE_DIR'] = str(compiler_cache_dir)
@@ -425,13 +499,13 @@ def bootstrap_environment(
             link_flags += ' -Wl,-O2 -Wl,-dead_strip'
         bootstrap_env['LDFLAGS'] = link_flags
     if os.environ.get('AR_FOR_BUILD'):
-        bootstrap_env['AR'] = os.environ['AR_FOR_BUILD']
+        bootstrap_env['AR'] = host_shell_command(os.environ['AR_FOR_BUILD'])
     return bootstrap_env
 
 
 def ensure_bundled_ninja(water_build_dir: pathlib.Path) -> pathlib.Path:
     revision = ensure_ninja_source()
-    cxx = select_host_cxx()
+    cxx = host_shell_command(select_host_cxx())
     sdkroot = select_host_sdkroot()
     macos_arch = select_host_macos_arch(cxx, sdkroot)
     compiler_cache = select_compiler_cache()
@@ -453,15 +527,6 @@ def ensure_bundled_ninja(water_build_dir: pathlib.Path) -> pathlib.Path:
         print(f'Reused bundled Ninja: {binary}', file=sys.stderr)
         return binary.resolve()
 
-    host_tools_root.mkdir(parents=True, exist_ok=True)
-    staging = host_tools_root / f'{final_dir.name}.new.{os.getpid()}'
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True)
-    staged_source = staging / 'source'
-    bootstrap_dir = staging / 'bootstrap'
-    copy_ninja_source(staged_source)
-    bootstrap_dir.mkdir()
-
     compiler_cache_dir = None
     if compiler_cache:
         cache_name = pathlib.Path(compiler_cache).name
@@ -476,6 +541,16 @@ def ensure_bundled_ninja(water_build_dir: pathlib.Path) -> pathlib.Path:
         compiler_cache_dir,
         macos_arch,
     )
+    # Validate the native C++ toolchain before copying/building the Ninja
+    # source.  This catches Windows-targeting compilers and missing C++ headers.
+    validate_native_cxx(cxx, bootstrap_env)
+
+    host_tools_root.mkdir(parents=True, exist_ok=True)
+    staging = pathlib.Path(tempfile.mkdtemp(
+        prefix=f'{final_dir.name}.new.', dir=str(host_tools_root),
+    ))
+    staged_source = staging / 'source'
+    bootstrap_dir = staging / 'bootstrap'
 
     print(
         f'Bootstrapping bundled Ninja {revision[:12]} with {cxx_version}',
@@ -491,6 +566,8 @@ def ensure_bundled_ninja(water_build_dir: pathlib.Path) -> pathlib.Path:
             file=sys.stderr,
         )
     try:
+        copy_ninja_source(staged_source)
+        bootstrap_dir.mkdir()
         subprocess.run(
             [sys.executable, str(staged_source / 'configure.py'), '--bootstrap'],
             cwd=bootstrap_dir,
