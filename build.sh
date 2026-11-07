@@ -194,6 +194,8 @@ Environment:
   LDFLAGS_FOR_BUILD      Host link flags for bootstrap/build tools
   LIBS_FOR_BUILD         Host libraries for bootstrap/build tools
   WHP_GIT_SEED          Host Git override shared by source updater and bootstrap
+  WHP_PYTHON_SEED       Native Python override (validated by ./python.sh)
+  PYTHON                Native Python override if WHP_PYTHON_SEED is unset
   WHP_GIT_UPDATE        Source refresh: auto (default), 1 (strict), or 0 (offline)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
@@ -218,24 +220,24 @@ CC/CXX/AR/NM/RANLIB/LD and linker flags remain authoritative when explicitly set
 EOF
 }
 
-find_python()
+select_python()
 {
-    for name in python3 python; do
-        path=$(command -v "$name" 2>/dev/null || true)
-        if [ -n "$path" ] &&
-           "$path" -c 'import sys; raise SystemExit(0 if sys.version_info[0] >= 3 else 1)' >/dev/null 2>&1
-        then
-            printf '%s\n' "$path"
-            return 0
-        fi
-    done
+    # Python is optional for menuconfig and the shell config parser, but
+    # explicit user selections are authoritative rather than silently ignored.
+    if python=$(/bin/sh "$SOURCE_DIR/python.sh" --print-path); then
+        return 0
+    fi
+    if [ -n "${WHP_PYTHON_SEED:-}" ] || [ -n "${PYTHON:-}" ]; then
+        die 'explicit Python interpreter failed its native bootstrap probe'
+    fi
+    python=
     return 1
 }
 
 run_menuconfig()
 {
     shift
-    python=$(find_python || true)
+    select_python || true
     if [ -n "$python" ]; then
         exec "$python" "$WHP_MENUCONFIG_TOOL" "$WHP_USER_CONFIG" "$@"
     fi
@@ -246,7 +248,7 @@ load_whp_config()
 {
     [ -f "$WHP_USER_CONFIG" ] || return 0
 
-    python=$(find_python || true)
+    select_python || true
     if [ -n "$python" ]; then
         config_env=$("$python" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") ||
             die "failed to read $WHP_USER_CONFIG"
@@ -1151,9 +1153,9 @@ prepare_ninja()
     else
         case "$BOOTSTRAP_NINJA" in
             y|1)
-                python=$(find_python || true)
+                select_python || true
                 [ -n "$python" ] ||
-                    die "BOOTSTRAP_NINJA=y requires Python 3 to bootstrap the pinned Ninja fork"
+                    die "BOOTSTRAP_NINJA=y requires native Python 3.7+ to bootstrap the pinned Ninja fork"
                 ninja_cmd=$(WATER_COMPILER_CACHE="$WATER_COMPILER_CACHE" WHP_SUBMODULES="$WHP_SUBMODULES" \
                     "$python" "$NINJA_BOOTSTRAP_TOOL" --build-dir "$BUILD_DIR") ||
                     die "pinned WHP Ninja bootstrap failed"
@@ -1162,7 +1164,7 @@ prepare_ninja()
                 ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
                 ;;
             auto)
-                python=$(find_python || true)
+                select_python || true
                 case "$(uname -s 2>/dev/null || true)" in
                     Darwin)
                         if [ -n "$python" ]; then
@@ -2778,8 +2780,8 @@ audit_llvm_libcxx_arm64ec_symbols()
     whp_ec_nm=$7
     whp_ec_object="$whp_ec_build/.whp-arm64ec-libcxx-exports.obj"
 
-    command -v python3 >/dev/null 2>&1 ||
-        die "ARM64EC libc++ symbol audit requires python3"
+    whp_ec_python=$(/bin/sh "$SOURCE_DIR/python.sh" --print-path) ||
+        die "ARM64EC libc++ symbol audit requires a working native Python interpreter"
     [ -f "$SOURCE_DIR/scripts/check-libcxx-symbols.py" ] &&
     [ -f "$SOURCE_DIR/scripts/tests/libcxx-arm64ec-exports.cpp" ] ||
         die "ARM64EC libc++ export-audit sources are missing"
@@ -2798,14 +2800,14 @@ audit_llvm_libcxx_arm64ec_symbols()
             return 1
         }
 
-    python3 "$SOURCE_DIR/scripts/check-libcxx-symbols.py" \
+    "$whp_ec_python" "$SOURCE_DIR/scripts/check-libcxx-symbols.py" \
         "$whp_ec_archive" "$whp_ec_target" "$whp_ec_object" \
         --nm "$whp_ec_nm" \
         --manifest "$whp_ec_build/.whp-arm64ec-libcxx-symbols.json"
     whp_ec_status=$?
     rm -f "$whp_ec_object"
     unset whp_ec_archive whp_ec_target whp_ec_build whp_ec_headers \
-        whp_ec_sdk whp_ec_crt whp_ec_nm whp_ec_object
+        whp_ec_sdk whp_ec_crt whp_ec_nm whp_ec_object whp_ec_python
     return "$whp_ec_status"
 }
 
