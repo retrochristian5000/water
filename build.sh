@@ -661,9 +661,7 @@ prepare_autoconf_toolchain()
 
 generate_configure()
 {
-    validate_configure_rules
-    validate_makefile_source_continuations
-
+    # Configure source was validated before entering host-tool bootstraps.
     if [ "${AUTOCONF_REUSE_CONFIGURE:-0}" = 1 ]; then
         printf 'WHP configure script: verified cached\n' >&2
         return 0
@@ -755,7 +753,7 @@ init_submodules()
     [ -n "${WHP_GIT_SEED:-}" ] || water_select_git_seed ||
         die 'Git is required to initialize WATER submodules'
     # Only essential sources are initialized here. Optional tools remain lazy.
-    whp_submodules="libs/fluidsynth libs/zlib/source"
+    whp_submodules="libs/zlib/source libs/fluidsynth"
     if [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
@@ -3956,13 +3954,25 @@ case "${1:-build}" in
         ;;
 esac
 
+# Source-only validations run first: don't bootstrap native tools for malformed
+# configure rules or broken Makefile SOURCES continuations.
+validate_configure_rules
+validate_makefile_source_continuations
+
+# Ninja is a smaller independent host bootstrap. Resolve it before rebuilding
+# the Autotools chain or initializing larger build inputs (LLVM/Fluidsynth).
 prepare_native_cc_seed
+prepare_ninja
+
+# Autoconf may require Automake stage-0 seeds; generate configure before
+# starting the large target toolchain builds.
 prepare_autoconf_toolchain
 generate_configure
 init_submodules
-prepare_ninja
 prepare_llvm_toolchain
 setup_toolchain
+
+# Bash depends on the selected native toolchain and feeds libc++ parallelism.
 prepare_bash_toolchain
 prepare_libcxx_provider
 
