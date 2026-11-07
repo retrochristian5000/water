@@ -2,6 +2,9 @@
 # Bootstrap the fork at Water's pinned gitlink, not a moving branch tip.
 # Keep all generated files out of the tracked source and submodule.
 set -eu
+git() {
+    if [ -n "${WHP_GIT_SEED:-}" ]; then "$WHP_GIT_SEED" "$@"; else command git "$@"; fi
+}
 [ "$#" -eq 3 ] || { echo 'usage: ensure-autoconf.sh SOURCE_DIR BUILD_DIR SUBMODULES' >&2; exit 2; }
 root=$1
 build=$2
@@ -12,11 +15,9 @@ pin=$(git -C "$root" ls-tree HEAD -- toolchains/autoconf 2>/dev/null |
     awk '$2 == "commit" { print $3; exit }')
 [ -n "$pin" ] || fail 'missing toolchains/autoconf gitlink'
 if [ "$submodules" = 1 ]; then
-    git -C "$root" submodule sync -- toolchains/autoconf ||
-        fail 'cannot sync Autoconf submodule'
-    git -C "$root" submodule update --init --depth 1 -- toolchains/autoconf ||
-        git -C "$root" submodule update --init -- toolchains/autoconf ||
-        fail 'cannot initialize Autoconf submodule'
+    /bin/sh "$root/scripts/whp-build/ensure-submodule.sh" \
+        "$root" toolchains/autoconf ||
+        fail 'cannot safely initialize autoconf submodule'
 fi
 git -C "$source" cat-file -e "$pin^{commit}" 2>/dev/null ||
     fail 'pinned Autoconf unavailable; initialize toolchains/autoconf (WHP_SUBMODULES=1)'

@@ -2,6 +2,9 @@
 # Bootstrap Water's pinned Automake executables using seed Autoconf.
 # Called only when generated configure needs rebuilding; no tracked source writes.
 set -eu
+git() {
+    if [ -n "${WHP_GIT_SEED:-}" ]; then "$WHP_GIT_SEED" "$@"; else command git "$@"; fi
+}
 [ "$#" -eq 3 ] || {
     echo 'usage: ensure-automake.sh SOURCE_DIR BUILD_DIR SUBMODULES' >&2
     exit 2
@@ -16,11 +19,9 @@ pin=$(git -C "$root" ls-tree HEAD -- toolchains/automake 2>/dev/null |
     awk '$2 == "commit" { print $3; exit }')
 [ -n "$pin" ] || fail 'missing toolchains/automake gitlink'
 if [ "$submodules" = 1 ]; then
-    git -C "$root" submodule sync -- toolchains/automake ||
-        fail 'cannot sync Automake submodule'
-    git -C "$root" submodule update --init --depth 1 -- toolchains/automake ||
-        git -C "$root" submodule update --init -- toolchains/automake ||
-        fail 'cannot initialize pinned Automake submodule'
+    /bin/sh "$root/scripts/whp-build/ensure-submodule.sh" \
+        "$root" toolchains/automake ||
+        fail 'cannot safely initialize automake submodule'
 fi
 git -C "$source" cat-file -e "$pin^{commit}" 2>/dev/null ||
     fail 'pinned Automake unavailable; initialize toolchains/automake (WHP_SUBMODULES=1)'

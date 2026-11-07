@@ -27,9 +27,11 @@ done
 git init -q -b master "$tmp/source"
 git -C "$tmp/source" config user.name 'Water updater test'
 git -C "$tmp/source" config user.email 'test@example.invalid'
-mkdir -p "$tmp/source/scripts"
+mkdir -p "$tmp/source/scripts/whp-build"
 cp "$source_script" "$tmp/source/build.sh"
 cp "$source_helper" "$tmp/source/scripts/update-source.sh"
+cp "$root/git.sh" "$tmp/source/git.sh"
+cp "$root/scripts/whp-build/ensure-submodule.sh" "$tmp/source/scripts/whp-build/ensure-submodule.sh"
 git -C "$tmp/source" submodule add -q "$tmp/fluidsynth" libs/fluidsynth
 git -C "$tmp/source" submodule add -q "$tmp/bash" toolchains/bash
 git -C "$tmp/source" submodule add -q "$tmp/zlib" libs/zlib/source
@@ -67,10 +69,12 @@ WHP_AUTOMAKE_SOURCE_DIR="$tmp/no-automake" WHP_LLVM_SOURCE_DIR="$tmp/no-llvm" \
 }
 grep -Fq 'WHP source update: re-entering refreshed build.sh' "$tmp/update.log"
 [ "$(git -C "$tmp/work" rev-parse HEAD)" = "$(git -C "$tmp/source" rev-parse HEAD)" ]
-for path in libs/fluidsynth libs/zlib/source toolchains/bash; do
+for path in libs/fluidsynth libs/zlib/source; do
     expected=$(git -C "$tmp/work" ls-tree HEAD -- "$path" | awk '{print $3}')
     [ "$expected" = "$(git -C "$tmp/work/$path" rev-parse HEAD)" ]
 done
+# Bash is a lazy optional bootstrap source, not an eager runtime dependency.
+[ ! -e "$tmp/work/toolchains/bash/.git" ]
 
 WHP_AUTOMAKE_SOURCE_DIR="$tmp/no-automake" WHP_LLVM_SOURCE_DIR="$tmp/no-llvm" \
     sh "$tmp/work/build.sh" update > "$tmp/current.log" 2>&1 || {
@@ -79,6 +83,19 @@ WHP_AUTOMAKE_SOURCE_DIR="$tmp/no-automake" WHP_LLVM_SOURCE_DIR="$tmp/no-llvm" \
 }
 grep -Fq 'upstream unchanged; fetch skipped' "$tmp/current.log"
 [ "$(grep -Fc 'WHP source update: master <- ' "$tmp/current.log")" -eq 1 ]
+
+# A locally advanced submodule must not be reset to the older parent gitlink.
+git -C "$tmp/work/libs/zlib/source" config user.name 'Water updater test'
+git -C "$tmp/work/libs/zlib/source" config user.email 'test@example.invalid'
+git -C "$tmp/work/libs/zlib/source" checkout -q -b local-newer
+printf 'local-next\n' >> "$tmp/work/libs/zlib/source/content.txt"
+git -C "$tmp/work/libs/zlib/source" add content.txt
+git -C "$tmp/work/libs/zlib/source" commit -qm 'newer local submodule'
+local_newer=$(git -C "$tmp/work/libs/zlib/source" rev-parse HEAD)
+/bin/sh "$tmp/work/scripts/whp-build/ensure-submodule.sh" \
+    "$tmp/work" libs/zlib/source > "$tmp/newer.log" 2>&1
+[ "$(git -C "$tmp/work/libs/zlib/source" rev-parse HEAD)" = "$local_newer" ]
+grep -Fq 'keeping newer checkout' "$tmp/newer.log"
 
 # A dirty tracked checkout is left intact in automatic mode and rejected in
 # strict mode. Neither path may discard or modify the user's source changes.

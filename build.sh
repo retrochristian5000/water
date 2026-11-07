@@ -97,6 +97,26 @@ case "$WHP_RECONFIGURE" in
     *) die "WHP_RECONFIGURE must be 0 or 1" ;;
 esac
 
+water_select_git_seed()
+{
+    WHP_GIT_SEED=$(/bin/sh "$SOURCE_DIR/git.sh" --print-seed) || return 1
+    [ -n "$WHP_GIT_SEED" ] || return 1
+    export WHP_GIT_SEED
+    printf 'WATER seed git: %s\n' "$WHP_GIT_SEED" >&2
+}
+git()
+{
+    if [ -n "${WHP_GIT_SEED:-}" ]; then "$WHP_GIT_SEED" "$@"; else command git "$@"; fi
+}
+if [ "${WHP_GIT_UPDATE_DONE:-0}" != 1 ] && [ "$WHP_GIT_UPDATE" != 0 ]; then
+    if ! water_select_git_seed; then
+        [ "$WHP_GIT_UPDATE" != 1 ] ||
+            die 'strict WATER source refresh requires a usable Git seed'
+        printf 'warning: WATER seed Git unavailable; skipping automatic source refresh\n' >&2
+        WHP_GIT_UPDATE=0
+    fi
+fi
+
 # Refresh the tracked Water branch *before* discovering build tools or
 # interpreting configuration from the old revision. The one-time reentry
 # guard prevents a second network check when the updated script starts.
@@ -172,6 +192,7 @@ Environment:
   CROSSLDFLAGS           Default PE link flags when per-arch LDFLAGS are unset
   LDFLAGS_FOR_BUILD      Host link flags for bootstrap/build tools
   LIBS_FOR_BUILD         Host libraries for bootstrap/build tools
+  WHP_GIT_SEED          Host Git override shared by source updater and bootstrap
   WHP_GIT_UPDATE        Source refresh: auto (default), 1 (strict), or 0 (offline)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
@@ -730,20 +751,16 @@ update_dependency_pins()
 init_submodules()
 {
     [ "$WHP_SUBMODULES" = 1 ] || return 0
-    command -v git >/dev/null 2>&1 || die "git is required to initialize Water submodules"
-
-    # Ninja initializes its own source lazily only when its bootstrap path
-    # is selected. Keep unconditional submodule work to build-required modules.
+    [ -n "${WHP_GIT_SEED:-}" ] || water_select_git_seed ||
+        die 'Git is required to initialize WATER submodules'
+    # Only essential sources are initialized here. Optional tools remain lazy.
     whp_submodules="libs/fluidsynth libs/zlib/source"
     if [ "$LLVM_SOURCE_DIR" = "$SOURCE_DIR/toolchains/llvm-project" ]; then
         whp_submodules="$whp_submodules toolchains/llvm-project"
     fi
-
-    # Bash and Automake are optional host-bootstrap dependencies. The Bash
-    # bootstrap initializes its own pinned source and validates Automake
-    # macro provenance only if that executor is actually needed.
-    git -C "$SOURCE_DIR" submodule sync --recursive
-    git -C "$SOURCE_DIR" submodule update --init --recursive $whp_submodules
+    /bin/sh "$SOURCE_DIR/scripts/whp-build/ensure-submodule.sh" \
+        "$SOURCE_DIR" $whp_submodules ||
+        die 'failed to reconcile required WATER submodules'
     unset whp_submodules
 }
 

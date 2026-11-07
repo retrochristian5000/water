@@ -18,7 +18,8 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path('toolchains/ninja-builder')
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-NINJA_BOOTSTRAP_SCHEMA='5'
+NINJA_BOOTSTRAP_SCHEMA='6'
+GIT_BIN = os.environ.get('WHP_GIT_SEED') or 'git'
 
 
 def run_text(command: List[str], cwd: pathlib.Path | None = None) -> str:
@@ -37,7 +38,7 @@ def run_text(command: List[str], cwd: pathlib.Path | None = None) -> str:
 
 
 def git_checkout_available() -> bool:
-    return shutil.which('git') is not None and (ROOT / '.git').exists()
+    return shutil.which(GIT_BIN) is not None and (ROOT / '.git').exists()
 
 
 def archive_source_signature() -> str:
@@ -62,7 +63,7 @@ def ensure_ninja_source() -> str:
         return archive_source_signature()
 
     expected_line = run_text(
-        ['git', '-C', str(ROOT), 'ls-tree', 'HEAD', '--', str(SUBMODULE_REL)]
+        [GIT_BIN, '-C', str(ROOT), 'ls-tree', 'HEAD', '--', str(SUBMODULE_REL)]
     )
     fields = expected_line.split()
     if len(fields) < 3 or fields[1] != 'commit':
@@ -72,41 +73,59 @@ def ensure_ninja_source() -> str:
     current_revision = ''
     if (SUBMODULE_DIR / '.git').exists():
         try:
-            current_revision = run_text(['git', '-C', str(SUBMODULE_DIR), 'rev-parse', 'HEAD'])
+            current_revision = run_text([GIT_BIN, '-C', str(SUBMODULE_DIR), 'rev-parse', 'HEAD'])
         except RuntimeError:
             current_revision = ''
 
     if current_revision != expected_revision:
-        if os.environ.get('WHP_SUBMODULES', '1') == '0':
+        if os.environ.get('WHP_SUBMODULES', '1') != '0':
+            subprocess.run(
+                [
+                    '/bin/sh', str(ROOT / 'scripts/whp-build/ensure-submodule.sh'),
+                    str(ROOT), str(SUBMODULE_REL),
+                ],
+                stdout=sys.stderr,
+                stderr=sys.stderr,
+                check=True,
+            )
+            current_revision = run_text(
+                [GIT_BIN, '-C', str(SUBMODULE_DIR), 'rev-parse', 'HEAD']
+            )
+        elif not current_revision:
             raise RuntimeError(
                 f'bundled Ninja source is not initialized and WHP_SUBMODULES=0: {SUBMODULE_DIR}'
             )
-        subprocess.run(
-            [
-                'git', '-C', str(ROOT), 'submodule', 'update', '--init', '--depth', '1',
-                str(SUBMODULE_REL),
-            ],
-            stdout=sys.stderr,
-            stderr=sys.stderr,
-            check=True,
-        )
-        current_revision = run_text(['git', '-C', str(SUBMODULE_DIR), 'rev-parse', 'HEAD'])
 
     if current_revision != expected_revision:
-        raise RuntimeError(
-            'bundled Ninja checkout does not match the Water gitlink: '
-            f'{current_revision} != {expected_revision}'
+        ancestry = subprocess.run(
+            [GIT_BIN, '-C', str(SUBMODULE_DIR), 'merge-base', '--is-ancestor',
+             expected_revision, current_revision],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if ancestry.returncode != 0:
+            raise RuntimeError(
+                'bundled Ninja checkout is not provably newer than the Water gitlink; '
+                f'preserving {current_revision} (pin {expected_revision}); '
+                'repair source history or advance the parent gitlink explicitly'
+            )
+        print(
+            f'WATER Ninja: using newer local source {current_revision} '
+            f'(parent pin {expected_revision} retained)',
+            file=sys.stderr,
         )
 
     dirty = run_text(
-        ['git', '-C', str(SUBMODULE_DIR), 'status', '--porcelain', '--untracked-files=no']
+        [GIT_BIN, '-C', str(SUBMODULE_DIR), 'status', '--porcelain', '--untracked-files=no']
     )
     if dirty:
         raise RuntimeError(
             'bundled Ninja submodule has tracked changes; commit them in the Ninja fork '
             'and update the Water gitlink'
         )
-    return expected_revision
+    return current_revision
 
 
 def select_host_cxx() -> str:
