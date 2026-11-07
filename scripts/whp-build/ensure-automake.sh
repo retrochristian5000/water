@@ -27,11 +27,15 @@ git -C "$source" cat-file -e "$pin^{commit}" 2>/dev/null ||
     fail 'pinned Automake unavailable; initialize toolchains/automake (WHP_SUBMODULES=1)'
 
 # Automake self-hosts aclocal/automake but needs seed Autoconf/autom4te.
-seed_autoconf=${WHP_AUTOMAKE_SEED_AUTOCONF:-autoconf}
-# Resolve a functional native autom4te before beginning the pinned Automake
-# build. The bridge prefers the autom4te beside the selected seed Autoconf,
-# and validates actual configure generation rather than a version banner.
-seed_autom4te=$(/bin/sh "$root/autom4te.sh" --print-path) ||
+# Select a working stage-0 generator without depending on WATER's own
+# pinned Autoconf, which requires Automake and would create a cycle.
+seed_autoconf=$(/bin/sh "$root/autoconf.sh" --print-path) ||
+    fail 'seed Autoconf functional generator unavailable'
+printf 'WHP Automake stage-0 Autoconf: %s\n' "$seed_autoconf" >&2
+# Bind the paired autom4te to the resolved Autoconf rather than rediscovering
+# a potentially unrelated Autoconf from PATH.
+seed_autom4te=$(WHP_AUTOMAKE_SEED_AUTOCONF="$seed_autoconf" \
+    /bin/sh "$root/autom4te.sh" --print-path) ||
     fail 'seed autom4te version probe failed or functional generator unavailable'
 printf 'WHP Automake stage-0 autom4te: %s\n' "$seed_autom4te" >&2
 perl=$(/bin/sh "$root/perl.sh" --print-path) ||

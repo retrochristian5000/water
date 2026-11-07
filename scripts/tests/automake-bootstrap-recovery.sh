@@ -10,6 +10,7 @@ export GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0
 mkdir -p "$tmp/upstream" "$tmp/water/scripts/whp-build" "$tmp/tools"
 cp "$root/scripts/whp-build/ensure-automake.sh" "$tmp/water/scripts/whp-build/"
 cp "$root/autom4te.sh" "$tmp/water/autom4te.sh"
+cp "$root/autoconf.sh" "$tmp/water/autoconf.sh"
 cp "$root/scripts/whp-build/m4.sh" "$tmp/water/scripts/whp-build/"
 cp "$root/perl.sh" "$tmp/water/perl.sh"
 
@@ -29,7 +30,14 @@ chmod +x configure
 EOF
 cat > "$tmp/tools/autoconf" <<'EOF'
 #!/bin/sh
-[ "${1:-}" = --version ] && echo 'autoconf (GNU Autoconf) mock'
+case "${1:-}" in
+    --version) echo 'autoconf (GNU Autoconf) mock' ;;
+    --output=*)
+        output=${1#--output=}
+        [ -f "$2" ] && grep -Fq 'AC_INIT' "$2" || exit 1
+        printf '#!/bin/sh\n# whp-water-autoconf\n' > "$output" ;;
+    *) exit 1 ;;
+esac
 EOF
 cat > "$tmp/tools/autom4te" <<'EOF'
 #!/bin/sh
@@ -147,6 +155,48 @@ if PERL=/missing/water-perl /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 
     echo 'FAIL: invalid Perl override reused cached Automake' >&2; exit 1
 fi
 grep -Fq 'explicit PERL override rejected' "$tmp/err"
+
+# Explicit Autoconf failures must not reuse a previously healthy Automake cache.
+if WHP_AUTOMAKE_SEED_AUTOCONF="$tmp/nonexistent-autoconf" \
+    /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: missing explicit Autoconf was silently replaced' >&2; exit 1
+fi
+grep -Fq 'WHP_AUTOMAKE_SEED_AUTOCONF is not a functional GNU Autoconf' "$tmp/err"
+
+# Version-only Autoconf must fail the actual configure-generation probe.
+cp "$tmp/tools/autoconf" "$tmp/autoconf.saved"
+cat > "$tmp/tools/autoconf" <<'EOF'
+#!/bin/sh
+[ "${1:-}" = --version ] && echo 'autoconf (GNU Autoconf) mock'
+EOF
+chmod +x "$tmp/tools/autoconf"
+if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: version-only Autoconf bypassed semantic probe' >&2; exit 1
+fi
+grep -Fq 'seed Autoconf functional generator unavailable' "$tmp/err"
+mv "$tmp/autoconf.saved" "$tmp/tools/autoconf"
+
+# A banner with an unsuccessful exit status must also be rejected.
+cp "$tmp/tools/autoconf" "$tmp/autoconf.saved"
+cat > "$tmp/tools/autoconf" <<'EOF'
+#!/bin/sh
+[ "${1:-}" = --version ] || exit 1
+echo 'autoconf (GNU Autoconf) mock'
+exit 17
+EOF
+chmod +x "$tmp/tools/autoconf"
+if /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: failing Autoconf version probe accepted' >&2; exit 1
+fi
+grep -Fq 'seed Autoconf functional generator unavailable' "$tmp/err"
+mv "$tmp/autoconf.saved" "$tmp/tools/autoconf"
+
+# The bridge cannot select itself, even if explicitly requested.
+if WHP_AUTOMAKE_SEED_AUTOCONF="$tmp/water/autoconf.sh" \
+    /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0 > "$tmp/out" 2> "$tmp/err"; then
+    echo 'FAIL: recursive Autoconf bridge accepted' >&2; exit 1
+fi
+grep -Fq 'seed Autoconf functional generator unavailable' "$tmp/err"
 
 # Version mismatch must fail before touching the healthy cache.
 cp "$tmp/tools/autom4te" "$tmp/autom4te.saved"

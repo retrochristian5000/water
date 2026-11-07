@@ -153,7 +153,7 @@ Environment:
   WATER_AUTOCONF_PROVIDER pinned (default), host, or cached (verified-only; no generator)
   WATER_AUTOMAKE_PROVIDER pinned (default) or host Bash macro source
   WATER_AUTOMAKE_EXEC_PROVIDER auto (default), pinned, or host bootstrap executables
-  WHP_AUTOMAKE_SEED_AUTOCONF  Seed Autoconf used to bootstrap pinned Automake
+  WHP_AUTOMAKE_SEED_AUTOCONF  Host seed Autoconf (validated by ./autoconf.sh)
   WHP_AUTOMAKE_SEED_AUTOM4TE  Native seed autom4te (validated by ./autom4te.sh)
   AUTOM4TE              Native autom4te override when no WHP seed is set
   PERL                  Native Perl override for pinned Autotools (validated by ./perl.sh)
