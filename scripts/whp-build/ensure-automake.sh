@@ -44,7 +44,8 @@ perl=$(/bin/sh "$root/perl.sh" --print-path) ||
 case "$perl" in *[[:space:]]*) fail "pinned Automake bootstrap cannot use a Perl path with whitespace: $perl" ;; esac
 make=${MAKE:-}
 if [ -z "$make" ]; then
-    make=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
+    make=$(/bin/sh "$root/scripts/whp-build/find-host-tool.sh" gmake make ||
+        /bin/sh "$root/scripts/whp-build/find-host-tool.sh" make make || true)
 fi
 for tool in "$seed_autoconf" "$seed_autom4te" "$perl" "$make" git cksum awk sed grep; do
     [ -n "$tool" ] && command -v "$tool" >/dev/null 2>&1 ||
@@ -77,24 +78,26 @@ m4=$(/bin/sh "$root/scripts/whp-build/m4.sh" --print-path) ||
 # A Git checkout regenerates the Automake Texinfo manual during make.
 # Homebrew's texinfo formula may be keg-only on macOS; locate its
 # makeinfo without changing the user's shell or installing packages.
-makeinfo=$(command -v makeinfo 2>/dev/null || true)
-if [ -z "$makeinfo" ] && command -v brew >/dev/null 2>&1; then
-    texinfo_prefix=$(brew --prefix texinfo 2>/dev/null || true)
-    if [ -n "$texinfo_prefix" ] && [ -x "$texinfo_prefix/bin/makeinfo" ]; then
-        makeinfo=$texinfo_prefix/bin/makeinfo
-    fi
-fi
+makeinfo=$(/bin/sh "$root/scripts/whp-build/find-host-tool.sh" makeinfo texinfo || true)
 [ -n "$makeinfo" ] || fail 'GNU Texinfo makeinfo required (macOS: brew install texinfo)'
-case "$makeinfo" in
-    /*) ;;
-    *) fail "makeinfo must resolve to an absolute executable: $makeinfo" ;;
-esac
-makeinfo_banner=$("$makeinfo" --version 2>/dev/null) ||
-    fail 'makeinfo version probe failed'
+makeinfo_banner=$("$makeinfo" --version 2>/dev/null || true)
 makeinfo_version=$(printf '%s\n' "$makeinfo_banner" | sed -n '1p')
 case "$makeinfo_version" in
     *'GNU texinfo'*|*'GNU Texinfo'*) ;;
-    *) fail "makeinfo is not GNU Texinfo: $makeinfo_version" ;;
+    *)
+        # A non-GNU PATH tool must not hide a functional keg-only Texinfo.
+        brewed=$(/bin/sh "$root/scripts/whp-build/find-host-tool.sh" --brew-only makeinfo texinfo || true)
+        if [ -n "$brewed" ]; then
+            makeinfo=$brewed
+            makeinfo_banner=$("$makeinfo" --version 2>/dev/null) ||
+                fail 'makeinfo version probe failed'
+            makeinfo_version=$(printf '%s\n' "$makeinfo_banner" | sed -n '1p')
+        fi
+        case "$makeinfo_version" in
+            *'GNU texinfo'*|*'GNU Texinfo'*) ;;
+            *) fail "makeinfo is not GNU Texinfo: $makeinfo_version" ;;
+        esac
+        ;;
 esac
 PATH="$(dirname "$makeinfo"):$PATH"
 export PATH

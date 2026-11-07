@@ -94,4 +94,22 @@ EOF
 chmod +x "$sandbox/bin/gm4"
 actual=$(PATH="$sandbox/bin:$PATH" M4= /bin/sh "$adapter" --print-path)
 [ "$actual" = "$sandbox/bin/m4" ] || { echo 'm4 fallback failed' >&2; exit 1; }
-printf 'PASS: M4 functional probe, overrides, symlink guard and argument forwarding\n'
+# A hidden Homebrew GNU M4 must win after both PATH candidates prove unusable.
+mkdir -p "$sandbox/homebrew/opt/m4/bin"
+cp "$sandbox/explicit with spaces/m4-real" "$sandbox/homebrew/opt/m4/bin/m4"
+cat > "$sandbox/bin/m4" <<'EOF'
+#!/bin/sh
+printf 'BSD m4\n'
+exit 1
+EOF
+cat > "$sandbox/bin/uname" <<'EOF'
+#!/bin/sh
+case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; esac
+EOF
+chmod +x "$sandbox/bin/m4" "$sandbox/bin/uname"
+actual=$(PATH="$sandbox/bin:$PATH" HOMEBREW_PREFIX="$sandbox/homebrew" \
+    M4= /bin/sh "$adapter" --print-path)
+[ "$actual" = "$sandbox/homebrew/opt/m4/bin/m4" ] || {
+    echo 'hidden Homebrew GNU M4 not selected' >&2; exit 1
+}
+printf 'PASS: M4 functional probe, Homebrew keg discovery, overrides, symlink guard and arguments\n'

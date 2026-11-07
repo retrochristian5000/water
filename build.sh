@@ -196,6 +196,7 @@ Environment:
   WHP_GIT_SEED          Host Git override shared by source updater and bootstrap
   WHP_PYTHON_SEED       Native Python override (validated by ./python.sh)
   PYTHON                Native Python override if WHP_PYTHON_SEED is unset
+  HOMEBREW_PREFIX       Optional macOS formula prefix for PATH-independent tool discovery
   WHP_GIT_UPDATE        Source refresh: auto (default), 1 (strict), or 0 (offline)
   WHP_SUBMODULES        Initialize pinned submodules: 1 or 0 (default: 1)
   WHP_RECONFIGURE       Re-run configure before building: 1 or 0 (default: 0)
@@ -785,6 +786,18 @@ detect_jobs()
     printf '%s\n' "$jobs"
 }
 
+# A missing PATH entry is not evidence that a macOS Homebrew tool is absent.
+# The lookup is read-only and does not change the caller's environment.
+find_host_tool()
+{
+    /bin/sh "$SOURCE_DIR/scripts/whp-build/find-host-tool.sh" "$@"
+}
+
+find_system_ninja()
+{
+    find_host_tool ninja ninja || find_host_tool ninja-build ninja
+}
+
 find_existing_ninja()
 {
     if [ -n "${NINJA_CMD:-}" ]; then
@@ -809,7 +822,7 @@ find_existing_ninja()
         fi
     done
 
-    whp_ninja_candidate=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+    whp_ninja_candidate=$(find_system_ninja || true)
     printf '%s\n' "$whp_ninja_candidate"
     unset whp_ninja_system whp_ninja_machine whp_ninja_dir whp_ninja_candidate
 }
@@ -1161,7 +1174,7 @@ prepare_ninja()
                     die "pinned WHP Ninja bootstrap failed"
                 ;;
             n|0)
-                ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+                ninja_cmd=$(find_system_ninja || true)
                 ;;
             auto)
                 select_python || true
@@ -1172,10 +1185,10 @@ prepare_ninja()
                                 "$python" "$NINJA_BOOTSTRAP_TOOL" --build-dir "$BUILD_DIR" || true)
                         fi
                         [ -n "$ninja_cmd" ] ||
-                            ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+                            ninja_cmd=$(find_system_ninja || true)
                         ;;
                     *)
-                        ninja_cmd=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+                        ninja_cmd=$(find_system_ninja || true)
                         if [ -z "$ninja_cmd" ] && [ -n "$python" ]; then
                             ninja_cmd=$(WATER_COMPILER_CACHE="$WATER_COMPILER_CACHE" WHP_SUBMODULES="$WHP_SUBMODULES" \
                                 "$python" "$NINJA_BOOTSTRAP_TOOL" --build-dir "$BUILD_DIR" || true)
@@ -1306,11 +1319,11 @@ select_llvm_cache()
     llvm_cache=
     case "$WATER_COMPILER_CACHE" in
         auto)
-            llvm_cache=$(command -v sccache 2>/dev/null || true)
-            [ -n "$llvm_cache" ] || llvm_cache=$(command -v ccache 2>/dev/null || true)
+            llvm_cache=$(find_host_tool sccache sccache || true)
+            [ -n "$llvm_cache" ] || llvm_cache=$(find_host_tool ccache ccache || true)
             ;;
         sccache|ccache)
-            llvm_cache=$(command -v "$WATER_COMPILER_CACHE" 2>/dev/null || true)
+            llvm_cache=$(find_host_tool "$WATER_COMPILER_CACHE" "$WATER_COMPILER_CACHE" || true)
             [ -n "$llvm_cache" ] ||
                 die "requested compiler cache is not installed: $WATER_COMPILER_CACHE"
             ;;
@@ -1545,7 +1558,7 @@ bootstrap_llvm()
     [ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ] ||
         die "LLVM source tree is missing: $LLVM_SOURCE_DIR"
 
-    cmake_cmd=$(command -v cmake 2>/dev/null || true)
+    cmake_cmd=$(find_host_tool cmake cmake || true)
     [ -n "$cmake_cmd" ] || die "CMake is required to bootstrap LLVM"
 
     case "$WATER_LLVM_ASSERTIONS" in
@@ -2392,7 +2405,7 @@ bootstrap_bash()
 
     whp_bash_make=${MAKE:-}
     if [ -z "$whp_bash_make" ]; then
-        whp_bash_make=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
+        whp_bash_make=$(find_host_tool gmake make || find_host_tool make make || true)
     fi
     [ -n "$whp_bash_make" ] || die "make is required to bootstrap WHP Bash"
 
@@ -3873,7 +3886,7 @@ run_build()
 
     make_cmd=${MAKE:-}
     if [ -z "$make_cmd" ]; then
-        make_cmd=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
+        make_cmd=$(find_host_tool gmake make || find_host_tool make make || true)
     fi
     [ -n "$make_cmd" ] || die "make was not found"
     if [ "$WATER_KEEP_GOING" = y ] || [ "$WATER_KEEP_GOING" = 1 ]; then

@@ -12,6 +12,7 @@ cp "$root/scripts/whp-build/ensure-automake.sh" "$tmp/water/scripts/whp-build/"
 cp "$root/autom4te.sh" "$tmp/water/autom4te.sh"
 cp "$root/autoconf.sh" "$tmp/water/autoconf.sh"
 cp "$root/scripts/whp-build/m4.sh" "$tmp/water/scripts/whp-build/"
+cp "$root/scripts/whp-build/find-host-tool.sh" "$tmp/water/scripts/whp-build/"
 cp "$root/perl.sh" "$tmp/water/perl.sh"
 
 cat > "$tmp/upstream/bootstrap" <<'EOF'
@@ -286,4 +287,22 @@ rmdir "$prefix.lock"
 [ "$(wc -l < "$WHP_AUTOMAKE_INSTALL_LOG" | tr -d ' ')" -eq 3 ] || {
     echo 'FAIL: post-lock cache not recovered' >&2; exit 1
 }
-echo 'PASS: Automake seed, reuse, mismatch and cache recovery'
+# A bad PATH makeinfo must not hide a valid keg-only Homebrew Texinfo.
+mkdir -p "$tmp/homebrew/opt/texinfo/bin"
+cp "$tmp/tools/makeinfo" "$tmp/homebrew/opt/texinfo/bin/makeinfo"
+cat > "$tmp/tools/makeinfo" <<'EOF'
+#!/bin/sh
+echo 'makeinfo (unrelated vendor) mock'
+EOF
+cat > "$tmp/tools/uname" <<'EOF'
+#!/bin/sh
+case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; esac
+EOF
+chmod +x "$tmp/tools/makeinfo" "$tmp/tools/uname"
+brew_prefix=$(HOMEBREW_PREFIX="$tmp/homebrew" \
+    /bin/sh "$helper" "$tmp/water" "$tmp/water/build" 0)
+[ -f "$brew_prefix/.whp-ready" ] &&
+[ "$(wc -l < "$WHP_AUTOMAKE_INSTALL_LOG" | tr -d ' ')" -eq 4 ] || {
+    echo 'FAIL: valid keg-only Texinfo did not satisfy Automake' >&2; exit 1
+}
+echo 'PASS: Automake seed, Homebrew Texinfo recovery, version matching and cache repair'

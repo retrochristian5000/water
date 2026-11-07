@@ -52,4 +52,23 @@ selected=$(PATH="$tmp/bin:$PATH" WHP_PYTHON_SEED= PYTHON= sh "$bridge" --print-p
     echo 'FAIL: unusable generic python blocked a valid fallback' >&2; exit 1
 }
 
-echo 'PASS: native Python bridge probes runtime/modules, preserves overrides, falls back safely, and forwards arguments'
+
+# Homebrew Python can be installed in an opt keg even when both python and
+# brew are absent from PATH; the generic bridge must still find it on macOS.
+mkdir -p "$tmp/water/scripts/whp-build" "$tmp/brew/opt/python@3.15/bin"
+cp "$bridge" "$tmp/water/python.sh"
+cp "$root/scripts/whp-build/find-host-tool.sh" "$tmp/water/scripts/whp-build/"
+ln -s "$real" "$tmp/brew/opt/python@3.15/bin/python3.15"
+ln -s "$(command -v dirname)" "$tmp/bin/dirname"
+cat > "$tmp/bin/uname" <<'EOF'
+#!/bin/sh
+case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; esac
+EOF
+chmod +x "$tmp/bin/uname"
+selected=$(PATH="$tmp/bin" HOMEBREW_PREFIX="$tmp/brew" WHP_PYTHON_SEED= PYTHON= \
+    /bin/sh "$tmp/water/python.sh" --print-path)
+[ "$selected" = "$tmp/brew/opt/python@3.15/bin/python3.15" ] || {
+    echo 'FAIL: keg-only Homebrew Python was not found' >&2; exit 1
+}
+
+echo 'PASS: native Python bridge probes runtime/modules, preserves overrides, Homebrew fallback, and forwards arguments'

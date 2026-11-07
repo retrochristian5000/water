@@ -70,6 +70,16 @@ else
     for name in gm4 m4; do
         selected=$(try_m4 "$name") && break
     done
+    if [ -z "$selected" ]; then
+        # Homebrew GNU M4 can be installed but unavailable on PATH. Use the
+        # shared read-only locator, then retain M4's functional validation.
+        helper=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/find-host-tool.sh
+        for name in gm4 m4; do
+            brewed=$(/bin/sh "$helper" --brew-only "$name" m4 2>/dev/null || true)
+            [ -n "$brewed" ] || continue
+            if selected=$(try_m4 "$brewed"); then break; fi
+        done
+    fi
     [ -n "$selected" ] ||
         error 'GNU M4 with working macro expansion is required (install gm4 or set M4)'
 fi

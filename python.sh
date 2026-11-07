@@ -78,8 +78,18 @@ select_python()
         }
         return 0
     fi
-    for name in python python3 python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 python3.7; do
+    for name in python python3 python3.15 python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 python3.7; do
         if resolve_python "$name" 0; then return 0; fi
+    done
+    # A keg-only Homebrew Python may be installed but not on PATH.
+    # Keep the explicit overrides strict, and probe only installed binaries.
+    root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+    for item in python3:python python3.15:python@3.15 python3.14:python@3.14 python3.13:python@3.13 python3.12:python@3.12 python3.11:python@3.11 python3.10:python@3.10 python3.9:python@3.9 python3.8:python@3.8 python3.7:python@3.7; do
+        name=${item%%:*}
+        formula=${item#*:}
+        brewed=$(/bin/sh "$root/scripts/whp-build/find-host-tool.sh" --brew-only "$name" "$formula" 2>/dev/null || true)
+        [ -n "$brewed" ] || continue
+        if resolve_python "$brewed" 0; then return 0; fi
     done
     error 'no working native Python 3.7+ interpreter with required standard library modules found'
     return 1
