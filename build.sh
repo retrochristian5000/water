@@ -29,7 +29,7 @@ case "${1:-build}" in
         [ -n "$WHP_GIT_UPDATE_EXPLICIT" ] || WHP_GIT_UPDATE=0
         [ -n "$WHP_SUBMODULES_EXPLICIT" ] || WHP_SUBMODULES=0
         ;;
-    menuconfig|clean|distclean|update-deps|-h|--help|help|__libcxx_one)
+    dos-mz|menuconfig|clean|distclean|update-deps|-h|--help|help|__libcxx_one)
         [ -n "$WHP_GIT_UPDATE_EXPLICIT" ] || WHP_GIT_UPDATE=0
         ;;
     update)
@@ -139,7 +139,9 @@ fi
 usage()
 {
     cat <<EOF
-Usage: ./build.sh [build|incremental|configure|reconfigure|compiler-rt-aarch64|menuconfig|update|update-deps|clean|distclean|install-lib|install-dev|install|test|TARGET...]
+Usage: ./build.sh [build|incremental|configure|reconfigure|dos-mz|compiler-rt-aarch64|menuconfig|update|update-deps|clean|distclean|install-lib|install-dev|install|test|TARGET...]
+
+  dos-mz INPUT.s|INPUT.obj OUTPUT.exe   Build a standalone real-mode DOS MZ executable
 
 Environment:
   WHP_BUILD_DIR         Out-of-tree build directory (default: ./build)
@@ -3911,6 +3913,25 @@ run_profile_install()
 }
 
 case "${1:-build}" in
+    dos-mz)
+        [ "$#" -eq 3 ] || die 'usage: ./build.sh dos-mz INPUT.s|INPUT.obj OUTPUT.exe'
+        [ -f "$2" ] || die "missing DOS input: $2"
+        python=$(/bin/sh "$SOURCE_DIR/python.sh" --print-path) || die 'dos-mz requires Python 3'
+        case "$2" in
+            *.obj) exec "$python" "$SOURCE_DIR/scripts/build-dos-mz.py" -- "$2" "$3" ;;
+            *.s) ;;
+            *) die 'dos-mz requires a .s assembly source or an i386 .obj file' ;;
+        esac
+        [ ! -e "$3" ] || [ ! "$2" -ef "$3" ] || die 'input and output paths must differ'
+        llvm_bin=$(find_llvm_bin) || die 'dos-mz requires Clang with the X86 backend (set WHP_LLVM_PREFIX)'
+        mz_tmp=$(mktemp -d "${TMPDIR:-/tmp}/water-dos-mz.XXXXXXXX") || die 'cannot create temporary directory'
+        trap 'rm -rf -- "$mz_tmp"' 0
+        trap 'exit 1' HUP INT TERM
+        "$llvm_bin/clang" --target=i386-pc-windows-msvc -fintegrated-as -x assembler \
+            -c -o "$mz_tmp/input.obj" -- "$2"
+        "$python" "$SOURCE_DIR/scripts/build-dos-mz.py" -- "$mz_tmp/input.obj" "$3"
+        exit 0
+        ;;
     compiler-rt-aarch64)
         [ "$#" -eq 1 ] || die "compiler-rt-aarch64 accepts no positional arguments"
         load_whp_config

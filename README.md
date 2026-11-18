@@ -257,6 +257,34 @@ resolution, read the rest of this file, the Wine man page, and
 especially the wealth of information found at https://www.winehq.org.
 
 
+## Building a real-mode DOS MZ executable
+
+From the source tree, with an existing Clang build that includes the X86 backend:
+
+```sh
+./build.sh dos-mz scripts/tests/dos/mz-exit.s mz-exit.exe
+```
+
+Set `WHP_LLVM_PREFIX` to select a particular LLVM installation. Clang's
+integrated assembler produces an intermediate i386 COFF object. WATER writes
+the DOS header, relocation table, and load image. An already assembled object
+can be passed as `./build.sh dos-mz input.obj output.exe`.
+
+This target accepts a single self-contained assembly module. Put `.code16`
+instructions and initialized data in `.text` (up to 64 KiB), with the entry
+instruction at byte zero. Select instructions for the intended CPU yourself.
+Use label differences from the image start for near offsets. To request a DOS
+load-time segment fixup, put its 16-bit offset in `.mzrel`, as in the sample.
+At load time DOS adds the image load segment to each listed word. The header
+requests a separate 256-byte stack. DOS initializes DS and ES to the PSP.
+
+Multi-object linking, external references, separate data/BSS sections, and a
+DOS C runtime are outside this target. WATER rejects outstanding COFF
+relocations. The existing Win16 NE and Windows PE paths remain separate.
+The sample checks its relocated word against CS and exits via DOS INT 21h
+with status 42 on a match or 1 on a mismatch. WATER's internal NTVDM
+currently recognizes MZ but lacks an EXE relocation loader.
+
 ## REQUIREMENTS
 
 To compile and run Wine, you must have one of the following:
