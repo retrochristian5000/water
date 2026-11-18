@@ -122,6 +122,17 @@ static void IDirectSoundCapture_test(LPDIRECTSOUNDCAPTURE dsco,
         IDirectSoundCapture_Release(dsc);
 
     if (initialized == FALSE) {
+        DSCBUFFERDESC desc = {sizeof(desc)};
+        IDirectSoundCaptureBuffer *buffer = NULL;
+        WAVEFORMATEX format;
+
+        init_format(&format, WAVE_FORMAT_PCM, 44100, 16, 1);
+        desc.dwBufferBytes = format.nAvgBytesPerSec;
+        desc.lpwfxFormat = &format;
+        rc = IDirectSoundCapture_CreateCaptureBuffer(dsco, &desc, &buffer, NULL);
+        ok(rc == DSERR_UNINITIALIZED, "Unexpected CreateCaptureBuffer result %#lx.\n", rc);
+        if (SUCCEEDED(rc)) IDirectSoundCaptureBuffer_Release(buffer);
+
         /* try uninitialized object */
         rc=IDirectSoundCapture_GetCaps(dsco,0);
         ok(rc==DSERR_UNINITIALIZED||rc==E_INVALIDARG,
@@ -731,6 +742,35 @@ static void test_enumerate(void)
     ok(rc==DS_OK,"DirectSoundCaptureEnumerateA() failed: %08lx\n", rc);
 }
 
+static void test_entire_capture_buffer(IDirectSoundCaptureBuffer *buffer, DWORD size)
+{
+    DWORD first_size, second_size;
+    void *first, *second;
+    HRESULT hr;
+
+    hr = IDirectSoundCaptureBuffer_Lock(buffer, 0, 0, &first, &first_size, &second, &second_size,
+                                        DSCBLOCK_ENTIREBUFFER);
+    ok(hr == DS_OK, "Unexpected whole-buffer lock result %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(first && first_size == size && !second && !second_size,
+           "Unexpected regions %p/%lu and %p/%lu.\n", first, first_size, second, second_size);
+        hr = IDirectSoundCaptureBuffer_Unlock(buffer, first, first_size, second, second_size);
+        ok(hr == DS_OK, "Unexpected unlock result %#lx.\n", hr);
+    }
+
+    hr = IDirectSoundCaptureBuffer_Lock(buffer, 2, 1, &first, &first_size, &second, &second_size,
+                                        DSCBLOCK_ENTIREBUFFER);
+    ok(hr == DS_OK, "Unexpected wrapped lock result %#lx.\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(second && first == (BYTE *)second + 2 && first_size == size - 2 && second_size == 2,
+           "Unexpected regions %p/%lu and %p/%lu.\n", first, first_size, second, second_size);
+        hr = IDirectSoundCaptureBuffer_Unlock(buffer, first, first_size, second, second_size);
+        ok(hr == DS_OK, "Unexpected unlock result %#lx.\n", hr);
+    }
+}
+
 static void test_COM(void)
 {
     IDirectSoundCapture *dsc = (IDirectSoundCapture*)0xdeadbeef;
@@ -784,6 +824,15 @@ static void test_COM(void)
 
     hr = IDirectSoundCapture_CreateCaptureBuffer(dsc, &bufdesc, &buffer, NULL);
     ok(hr == DS_OK, "IDirectSoundCapture_CreateCaptureBuffer failed: %08lx, expected DS_OK\n", hr);
+
+    if (FAILED(hr))
+    {
+        IDirectSoundCapture_Release(dsc);
+        return;
+    }
+    hr = IDirectSoundCaptureBuffer_Initialize(buffer, dsc, &bufdesc);
+    ok(hr == DSERR_ALREADYINITIALIZED, "Unexpected buffer Initialize result %#lx.\n", hr);
+    test_entire_capture_buffer(buffer, bufdesc.dwBufferBytes);
 
     /* IDirectSoundCaptureBuffer and IDirectSoundNotify have separate refcounts */
     IDirectSoundCaptureBuffer_AddRef(buffer);

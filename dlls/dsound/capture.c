@@ -415,11 +415,8 @@ static HRESULT WINAPI IDirectSoundCaptureBufferImpl_GetStatus(IDirectSoundCaptur
 static HRESULT WINAPI IDirectSoundCaptureBufferImpl_Initialize(IDirectSoundCaptureBuffer8 *iface,
         IDirectSoundCapture *lpDSC, const DSCBUFFERDESC *lpcDSCBDesc)
 {
-    IDirectSoundCaptureBufferImpl *This = impl_from_IDirectSoundCaptureBuffer8(iface);
-
-    FIXME( "(%p,%p,%p): stub\n", This, lpDSC, lpcDSCBDesc );
-
-    return DS_OK;
+    TRACE("(%p,%p,%p) already initialized.\n", iface, lpDSC, lpcDSCBDesc);
+    return DSERR_ALREADYINITIALIZED;
 }
 
 static HRESULT WINAPI IDirectSoundCaptureBufferImpl_Lock(IDirectSoundCaptureBuffer8 *iface,
@@ -451,6 +448,8 @@ static HRESULT WINAPI IDirectSoundCaptureBufferImpl_Lock(IDirectSoundCaptureBuff
     EnterCriticalSection(&(This->device->lock));
 
     if (This->device->client) {
+        if (dwFlags & DSCBLOCK_ENTIREBUFFER)
+            dwReadBytes = This->device->buflen;
         if ( dwReadCusor >= This->device->buflen || !dwReadBytes || dwReadBytes > This->device->buflen) {
             *lpdwAudioBytes1 = 0;
             *lplpvAudioPtr1 = NULL;
@@ -1190,6 +1189,12 @@ static HRESULT WINAPI IDirectSoundCaptureImpl_CreateCaptureBuffer(IDirectSoundCa
     if (lplpDSCaptureBuffer == NULL) {
 	WARN("invalid parameter: lplpDSCaptureBuffer == NULL\n");
 	return DSERR_INVALIDPARAM;
+    }
+
+    if (!This->device)
+    {
+        *lplpDSCaptureBuffer = NULL;
+        return DSERR_UNINITIALIZED;
     }
 
     /* FIXME: We can only have one buffer so what do we do here? */
