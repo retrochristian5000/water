@@ -370,6 +370,30 @@ static void test_physical_memory_ranges(void)
     ExFreePool(ranges);
 }
 
+static void test_bitmap_bits(void)
+{
+    ULONG words[] = {0x40000001, 0xaaaaaaa8};
+    RTL_BITMAP bitmap;
+
+    RtlInitializeBitMap(&bitmap, words, 33);
+    ok(!RtlTestBit(&bitmap, 31), "Bit 31 should start clear.\n");
+    ok(!RtlTestBit(&bitmap, 32), "Bit 32 should start clear.\n");
+
+    RtlSetBit(&bitmap, 31);
+    RtlSetBit(&bitmap, 32);
+    RtlSetBit(&bitmap, 32);
+    ok(words[0] == 0xc0000001 && words[1] == 0xaaaaaaa9,
+       "Unexpected words after set: %#lx, %#lx.\n", words[0], words[1]);
+    ok(RtlTestBit(&bitmap, 31) && RtlTestBit(&bitmap, 32), "Expected both bits set.\n");
+
+    RtlClearBit(&bitmap, 31);
+    ok(!RtlTestBit(&bitmap, 31) && RtlTestBit(&bitmap, 32), "Expected only bit 32 of the pair set.\n");
+    RtlClearBit(&bitmap, 32);
+    RtlClearBit(&bitmap, 32);
+    ok(words[0] == 0x40000001 && words[1] == 0xaaaaaaa8,
+       "Unexpected words after clear: %#lx, %#lx.\n", words[0], words[1]);
+}
+
 static void test_init_funcs(void)
 {
     KTIMER timer, timer2;
@@ -2832,6 +2856,7 @@ static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *st
     test_critical_region(TRUE);
     test_mdl_map();
     test_physical_memory_ranges();
+    test_bitmap_bits();
     test_init_funcs();
     test_load_driver();
     test_sync();

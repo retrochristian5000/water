@@ -4750,6 +4750,21 @@ BOOLEAN WINAPI IoIs32bitProcess(IRP *irp)
 }
 #endif
 
+void WINAPI RtlClearBit( RTL_BITMAP *bitmap, ULONG bit )
+{
+    RtlClearBits( bitmap, bit, 1 );
+}
+
+void WINAPI RtlSetBit( RTL_BITMAP *bitmap, ULONG bit )
+{
+    RtlSetBits( bitmap, bit, 1 );
+}
+
+BOOLEAN WINAPI RtlTestBit( RTL_BITMAP *bitmap, ULONG bit )
+{
+    return RtlAreBitsSet( bitmap, bit, 1 );
+}
+
 /***********************************************************************
  *           RtlIsNtDdiVersionAvailable   (NTOSKRNL.EXE.@)
  */

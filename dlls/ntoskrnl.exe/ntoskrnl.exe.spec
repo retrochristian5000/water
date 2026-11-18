@@ -1026,7 +1026,7 @@
 @ stdcall RtlCharToInteger(ptr long ptr)
 @ stdcall RtlCheckRegistryKey(long ptr)
 @ stdcall RtlClearAllBits(ptr)
-@ stub RtlClearBit
+@ stdcall RtlClearBit(ptr long)
 @ stdcall RtlClearBits(ptr long long)
 @ stdcall RtlCompareMemory(ptr ptr long)
 @ stdcall RtlCompareMemoryUlong(ptr long long)
@@ -1263,7 +1263,7 @@
 @ stub RtlSelfRelativeToAbsoluteSD2
 @ stdcall RtlSelfRelativeToAbsoluteSD(ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr)
 @ stdcall RtlSetAllBits(ptr)
-@ stub RtlSetBit
+@ stdcall RtlSetBit(ptr long)
 @ stdcall RtlSetBits(ptr long long)
 @ stdcall RtlSetControlSecurityDescriptor(ptr long long)
 @ stdcall RtlSetDaclSecurityDescriptor(ptr long ptr long)
@@ -1281,7 +1281,7 @@
 @ stdcall RtlSubtreePredecessor(ptr)
 @ stdcall RtlSubtreeSuccessor(ptr)
 @ stdcall RtlSystemTimeToLocalTime(ptr ptr)
-@ stub RtlTestBit
+@ stdcall RtlTestBit(ptr long)
 @ stdcall RtlTimeFieldsToTime(ptr ptr)
 @ stdcall RtlTimeToElapsedTimeFields(ptr ptr)
 @ stdcall RtlTimeToSecondsSince1970(ptr ptr)
