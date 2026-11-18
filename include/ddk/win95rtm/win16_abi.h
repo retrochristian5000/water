@@ -11,7 +11,13 @@
 
 #include <windows.h>
 
-#define WHP_WIN95_RTM_DISPLAY_VERSION 0x0400u
+/* Shared Win16 ABI version name for audio and display; retain the
+ * historical display-specific macro for existing callers.
+ * 0x0400 is a compile-time Windows 95 RTM ABI reference, not proof
+ * of runtime presence or a full historical DDK.
+ */
+#define WHP_WIN95_RTM_VERSION          0x0400u
+#define WHP_WIN95_RTM_DISPLAY_VERSION WHP_WIN95_RTM_VERSION
 
 /* Compile-time checks: 16-bit Windows has 16-bit int/WORD, 32-bit
  * long/DWORD, and 16:16 far pointers. This file is a compile probe,
