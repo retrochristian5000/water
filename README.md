@@ -103,6 +103,15 @@ component. The Automake fork also runs native macOS Apple Silicon and Intel
 bootstrap/build/test/install smoke jobs; their CI result is independent of
 Water's own complete build verification.
 
+The bundled Ninja bootstrap honors `SDKROOT` in the same way as Water's
+main build: an existing SDK directory is used directly, an SDK name is
+resolved with `xcrun`, and an unset value selects `macosx` from the active
+developer tools. An invalid selection fails instead of choosing a different
+SDK. The resolved path is part of Ninja's cache identity and is passed to its
+native compiler probes and build. Run
+`python3 scripts/tests/ninja-bootstrap-host.py` for the host-tool regression
+checks; these do not establish that Water builds or runs on macOS.
+
 Water records the source checksums, pinned Autoconf gitlink and generated
 `configure` checksum under `build/.whp-autoconf-inputs` after successful
 generation. Subsequent builds with unchanged inputs reuse that verified

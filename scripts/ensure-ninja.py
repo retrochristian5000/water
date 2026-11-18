@@ -185,12 +185,19 @@ def select_host_cxx() -> str:
 def select_host_sdkroot() -> str:
     if platform.system() != 'Darwin':
         return ''
+    # Match Water's SDK selection so host tools and the main build do not
+    # silently use different SDKs. A supplied directory needs no xcrun lookup.
+    requested = os.environ.get('SDKROOT', '')
+    if requested and pathlib.Path(requested).is_dir():
+        return str(pathlib.Path(requested).resolve())
     if not shutil.which('xcrun'):
         raise RuntimeError('xcrun is required to locate the macOS SDK for bundled Ninja')
-    sdkroot = run_text(['xcrun', '--sdk', 'macosx', '--show-sdk-path'])
+    sdkroot = run_text(['xcrun', '--sdk', requested or 'macosx', '--show-sdk-path'])
     if not sdkroot:
         raise RuntimeError('xcrun did not return a macOS SDK path for bundled Ninja')
-    return sdkroot
+    if not pathlib.Path(sdkroot).is_dir():
+        raise RuntimeError(f'macOS SDK directory does not exist: {sdkroot}')
+    return str(pathlib.Path(sdkroot).resolve())
 
 
 def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:

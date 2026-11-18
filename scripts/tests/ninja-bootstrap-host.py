@@ -21,6 +21,75 @@ NINJA = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(NINJA)
 
 
+class NinjaHostSDK(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='water ninja SDK ')
+        self.addCleanup(self.tmp.cleanup)
+        self.sdk = pathlib.Path(self.tmp.name) / 'MacOSX.sdk'
+        self.sdk.mkdir()
+        patches = ExitStack()
+        self.addCleanup(patches.close)
+        patches.enter_context(mock.patch.object(NINJA.platform, 'system', return_value='Darwin'))
+        patches.enter_context(mock.patch.dict(os.environ, {'SDKROOT': ''}))
+        self.xcrun = patches.enter_context(mock.patch.object(NINJA, 'run_text'))
+        self.xcrun.return_value = str(self.sdk)
+        self.which = patches.enter_context(mock.patch.object(NINJA.shutil, 'which'))
+        self.which.return_value = '/usr/bin/xcrun'
+
+    def test_explicit_sdk_path_does_not_require_xcrun(self):
+        alias = self.sdk.parent / 'selected SDK'
+        alias.symlink_to(self.sdk, target_is_directory=True)
+        self.which.return_value = None
+        with mock.patch.dict(os.environ, {'SDKROOT': str(alias)}):
+            self.assertEqual(NINJA.select_host_sdkroot(), str(self.sdk.resolve()))
+            self.assertEqual(os.environ['SDKROOT'], str(alias))
+        self.xcrun.assert_not_called()
+
+    def test_explicit_sdk_name_is_resolved(self):
+        with mock.patch.dict(os.environ, {'SDKROOT': 'macosx14.5'}):
+            self.assertEqual(NINJA.select_host_sdkroot(), str(self.sdk.resolve()))
+        self.xcrun.assert_called_once_with(
+            ['xcrun', '--sdk', 'macosx14.5', '--show-sdk-path']
+        )
+
+    def test_default_sdk_uses_active_developer_tools(self):
+        self.assertEqual(NINJA.select_host_sdkroot(), str(self.sdk.resolve()))
+        self.xcrun.assert_called_once_with(['xcrun', '--sdk', 'macosx', '--show-sdk-path'])
+
+    def test_missing_explicit_sdk_does_not_fall_back(self):
+        self.xcrun.side_effect = RuntimeError('selected SDK not found')
+        with mock.patch.dict(os.environ, {'SDKROOT': 'macosx-missing'}):
+            with self.assertRaisesRegex(RuntimeError, 'selected SDK not found'):
+                NINJA.select_host_sdkroot()
+        self.xcrun.assert_called_once_with(
+            ['xcrun', '--sdk', 'macosx-missing', '--show-sdk-path']
+        )
+
+    def test_missing_xcrun_for_sdk_name_fails(self):
+        self.which.return_value = None
+        with self.assertRaisesRegex(RuntimeError, 'xcrun is required'):
+            NINJA.select_host_sdkroot()
+
+    def test_empty_xcrun_result_fails(self):
+        self.xcrun.return_value = ''
+        with self.assertRaisesRegex(RuntimeError, 'did not return a macOS SDK path'):
+            NINJA.select_host_sdkroot()
+
+    def test_unusable_xcrun_path_fails(self):
+        for path in (self.sdk / 'missing', self.sdk / 'not-a-directory'):
+            with self.subTest(path=path):
+                if path.name == 'not-a-directory':
+                    path.touch()
+                self.xcrun.return_value = str(path)
+                with self.assertRaisesRegex(RuntimeError, 'SDK directory does not exist'):
+                    NINJA.select_host_sdkroot()
+
+    def test_non_darwin_host_does_not_resolve_sdk(self):
+        with mock.patch.object(NINJA.platform, 'system', return_value='Linux'):
+            self.assertEqual(NINJA.select_host_sdkroot(), '')
+        self.xcrun.assert_not_called()
+
+
 class NinjaHostBootstrap(unittest.TestCase):
     def setUp(self):
         # Host-side override variables must not bleed into deterministic tests.
