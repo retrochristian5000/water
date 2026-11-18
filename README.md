@@ -27,6 +27,15 @@ This ledger records requirements and proposed probes; it does not claim
 that either original program has been executed successfully.
 
 
+## DOS API coverage and compatibility boundaries
+
+Water's DOS work spans the MS-DOS 6.22, Windows 9x DOS 7.x/8.0, and
+NTVDM personalities, which must not be collapsed into a single kernel ABI.
+The [DOS API coverage and ownership register](documentation/dos-api-coverage.md)
+indexes existing interrupt handlers, source-confirmed gaps, release gates
+and tests. It is an audit ledger, **not** a claim that the full DOS API,
+real-mode boot path, or device-driver runtime is implemented.
+
 ## Windows 95 RTM DDK compatibility reference headers
 
 The `include/ddk/win95rtm/` headers are WHP-authored, version-scoped
