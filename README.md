@@ -42,6 +42,15 @@ conventions, a driver runtime, or Windows 95 RTM import libraries. Do not
 substitute NT/WDM headers or Water's Win32 libraries for those components.
 The separate `network/ndis31.h` boundary can opt into a verified NT 3.51
 NDIS DDK. Its API is not replaced by the generic `include/ddk/ndis.h`.
+The portable `audio/hda_regs.h` additionally records the Intel HD
+Audio controller's PCI class tuple, global register offsets, and
+CORB/RIRB size masks; it is **not** part of the 1995 Windows 95 DDK.
+HDA controller registers belong to mapped MMIO, not to a Win16
+multimedia `.DRV` header or PCI configuration space. Water does not
+supply an HDA codec, VxD/NDIS interface, or playable Win95 driver.
+`win16_abi.h` now exposes `WHP_WIN95_RTM_VERSION` for both audio
+and display, with its existing display-specific version alias retained.
+
 The driver-only `minivdd.h` legacy-name adapter and device-specific headers
 remain in WHP-Drivers. The consumer must pin Water by gitlink revision.
 
