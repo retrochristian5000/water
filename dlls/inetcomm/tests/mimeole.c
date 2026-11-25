@@ -1696,6 +1696,48 @@ static void test_GetTextBody(void)
     IMimeMessage_Release(msg);
 }
 
+static void test_singlepart_message_extent(void)
+{
+    static const char message[] =
+        "MIME-Version: 1.0\r\n"
+        "Content-Type: text/plain; charset=us-ascii\r\n\r\n"
+        "Hello";
+    IMimeMessage *msg;
+    IStream *source, *stream = NULL;
+    STATSTG stat;
+    HBODY body = NULL;
+    ULONG count;
+    char buf[16];
+    HRESULT hr;
+
+    hr = MimeOleCreateMessage(NULL, &msg);
+    ok(hr == S_OK, "MimeOleCreateMessage failed: %#lx\n", hr);
+    if(FAILED(hr))
+        return;
+    source = create_stream_from_string(message);
+    hr = IMimeMessage_Load(msg, source);
+    ok(hr == S_OK, "Load failed: %#lx\n", hr);
+    if(hr == S_OK) {
+        hr = IMimeMessage_GetTextBody(msg, TXT_PLAIN, IET_BINARY, &stream, &body);
+        ok(hr == S_OK, "GetTextBody failed: %#lx\n", hr);
+        ok(stream != NULL && body != NULL, "Missing outputs %p, %p\n", stream, body);
+        if(hr == S_OK && stream) {
+            hr = IStream_Stat(stream, &stat, STATFLAG_NONAME);
+            ok(hr == S_OK, "Stat failed: %#lx\n", hr);
+            if(hr == S_OK)
+                ok(stat.cbSize.HighPart == 0 && stat.cbSize.LowPart == 5,
+                   "Unexpected body size %lu:%lu\n", stat.cbSize.HighPart, stat.cbSize.LowPart);
+            count = 0;
+            hr = IStream_Read(stream, buf, sizeof(buf), &count);
+            ok(SUCCEEDED(hr), "Read failed: %#lx\n", hr);
+            ok(count == 5 && !memcmp(buf, "Hello", 5), "Unexpected single-part body\n");
+            IStream_Release(stream);
+        }
+    }
+    IStream_Release(source);
+    IMimeMessage_Release(msg);
+}
+
 START_TEST(mimeole)
 {
     OleInitialize(NULL);
@@ -1706,6 +1748,7 @@ START_TEST(mimeole)
     test_Allocator();
     test_CreateMessage();
     test_GetTextBody();
+    test_singlepart_message_extent();
     test_MessageSetProp();
     test_MessageGetPropInfo();
     test_MessageOptions();
