@@ -7434,6 +7434,17 @@ static void test_navigator(IHTMLDocument2 *doc)
     ok(hres == S_OK, "get_onLine failed: %08lx\n", hres);
     ok(b == VARIANT_TRUE, "onLine = %x\n", b);
 
+    /* WATER has no integrated Java applet runtime. Native IE may have one. */
+    if(!strcmp(winetest_platform, "wine")) {
+        b = VARIANT_TRUE;
+        hres = IOmNavigator_javaEnabled(navigator, &b);
+        ok(hres == S_OK, "javaEnabled failed: %08lx\n", hres);
+        ok(b == VARIANT_FALSE, "javaEnabled = %x\n", b);
+
+        hres = IOmNavigator_javaEnabled(navigator, NULL);
+        ok(hres == E_INVALIDARG, "javaEnabled(NULL) returned %08lx\n", hres);
+    }
+
     size = sizeof(buf);
     hres = ObtainUserAgentString(0, bufa, &size);
     ok(hres == S_OK, "ObtainUserAgentString failed: %08lx\n", hres);
