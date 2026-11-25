@@ -12044,6 +12044,30 @@ static void test_cond_comment(IHTMLDocument2 *doc)
     IHTMLElementCollection_Release(col);
 }
 
+static void test_cond_comment_version(IHTMLDocument2 *doc)
+{
+    IHTMLElementCollection *col;
+    HRESULT hres;
+
+    static const elem_type_t all_types[] = {
+        ET_HTML,
+        ET_HEAD,
+        ET_META,
+        ET_TITLE,
+        ET_BODY,
+        ET_BR,
+        ET_P,
+        ET_BR
+    };
+
+    hres = IHTMLDocument2_get_all(doc, &col);
+    ok(hres == S_OK, "get_all failed: %08lx\n", hres);
+    if(FAILED(hres))
+        return;
+    test_elem_collection((IUnknown*)col, all_types, ARRAY_SIZE(all_types));
+    IHTMLElementCollection_Release(col);
+}
+
 static HRESULT WINAPI Unknown_QueryInterface(IUnknown *iface, REFIID riid, void **ppv)
 {
     ok(IsEqualGUID(riid, &IID_IServiceProvider), "riid = %s\n", wine_dbgstr_guid(riid));
@@ -14000,6 +14024,15 @@ START_TEST(dom)
     run_domtest(emptydiv_str, test_create_stylesheet);
     run_domtest(indent_test_str, test_indent);
     run_domtest(cond_comment_str, test_cond_comment);
+    if(is_ie9plus)
+        run_domtest("<!DOCTYPE html><html><head>"
+                    "<meta http-equiv=\"x-ua-compatible\" content=\"IE=8\" />"
+                    "<title>Conditional comment versions</title></head><body>"
+                    "<!--[if gte IE 8]> <br> <![endif]-->"
+                    "<!--[if gte IE 8.1]> <div></div> <![endif]-->"
+                    "<!--[if lt IE 8.1]> <p></p> <![endif]-->"
+                    "<!--[if gte IE 7.1]> <br> <![endif]-->"
+                    "</body></html>", test_cond_comment_version);
     run_domtest(frameset_str, test_frameset);
     run_domtest(emptydiv_str, test_docfrag);
     run_domtest(doc_blank, test_replacechild_elems);
