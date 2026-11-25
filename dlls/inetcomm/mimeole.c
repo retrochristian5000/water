@@ -2203,7 +2203,7 @@ static HRESULT WINAPI MimeMessage_Load(IMimeMessage *iface, IStream *pStm)
     body_t *root_body;
     BODYOFFSETS offsets;
     ULARGE_INTEGER cur;
-    LARGE_INTEGER zero;
+    HRESULT hr;
 
     TRACE("(%p)->(%p)\n", iface, pStm);
 
@@ -2213,18 +2213,23 @@ static HRESULT WINAPI MimeMessage_Load(IMimeMessage *iface, IStream *pStm)
         return E_FAIL;
     }
 
+    if(!pStm)
+        return E_INVALIDARG;
+    hr = get_stream_size(pStm, &cur);
+    if(FAILED(hr))
+        return hr;
+    if(cur.HighPart)
+        return STG_E_MEDIUMFULL;
+
     empty_body_list(&This->body_tree);
 
     IStream_AddRef(pStm);
     This->stream = pStm;
     offsets.cbBoundaryStart = offsets.cbHeaderStart = 0;
-    offsets.cbBodyStart = offsets.cbBodyEnd = 0;
+    offsets.cbBodyStart = 0;
+    offsets.cbBodyEnd = cur.LowPart;
 
     root_body = create_sub_body(This, pStm, &offsets, NULL);
-
-    zero.QuadPart = 0;
-    IStream_Seek(pStm, zero, STREAM_SEEK_END, &cur);
-    offsets.cbBodyEnd = cur.LowPart;
     MimeBody_set_offsets(root_body->mime_body, &offsets);
 
     list_add_head(&This->body_tree, &root_body->entry);
