@@ -640,7 +640,17 @@ HRESULT WINAPI DllInstall(BOOL install, const WCHAR *cmdline)
 HRESULT WINAPI ShowHTMLDialog(HWND hwndParent, IMoniker *pMk, VARIANT *pvarArgIn,
         WCHAR *pchOptions, VARIANT *pvarArgOut)
 {
-    FIXME("(%p %p %p %s %p)\n", hwndParent, pMk, pvarArgIn, debugstr_w(pchOptions), pvarArgOut);
+    TRACE("(%p %p %p %s %p)\n", hwndParent, pMk, pvarArgIn, debugstr_w(pchOptions), pvarArgOut);
+
+    /* The moniker identifies the dialog document. The input arguments,
+     * features and output variant are optional. Do not initialize the
+     * renderer or modify caller-owned variants on invalid input. */
+    if(!pMk)
+        return E_INVALIDARG;
+
+    /* A modal host must retain the document and dialog arguments until
+     * the dialog closes. An ordinary browser window is not equivalent. */
+    FIXME("HTML modal dialog hosting is not implemented.\n");
     return E_NOTIMPL;
 }
 
