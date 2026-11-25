@@ -30561,6 +30561,117 @@ interface IElementBehaviorFactory : IUnknown
         [out] IElementBehavior **ppBehavior);
 }
 
+/*****************************************************************************
+ *    IHTMLDialog interface
+ */
+[
+    odl,
+    oleautomation,
+    dual,
+    uuid(3050f216-98b5-11cf-bb82-00aa00bdce0b)
+]
+interface IHTMLDialog : IDispatch
+{
+    [propput, id(DISPID_IHTMLDIALOG_DIALOGTOP), bindable]
+    HRESULT dialogTop([in] VARIANT v);
+
+    [propget, id(DISPID_IHTMLDIALOG_DIALOGTOP), bindable]
+    HRESULT dialogTop([out, retval] VARIANT *p);
+
+    [propput, id(DISPID_IHTMLDIALOG_DIALOGLEFT), bindable]
+    HRESULT dialogLeft([in] VARIANT v);
+
+    [propget, id(DISPID_IHTMLDIALOG_DIALOGLEFT), bindable]
+    HRESULT dialogLeft([out, retval] VARIANT *p);
+
+    [propput, id(DISPID_IHTMLDIALOG_DIALOGWIDTH), bindable]
+    HRESULT dialogWidth([in] VARIANT v);
+
+    [propget, id(DISPID_IHTMLDIALOG_DIALOGWIDTH), bindable]
+    HRESULT dialogWidth([out, retval] VARIANT *p);
+
+    [propput, id(DISPID_IHTMLDIALOG_DIALOGHEIGHT), bindable]
+    HRESULT dialogHeight([in] VARIANT v);
+
+    [propget, id(DISPID_IHTMLDIALOG_DIALOGHEIGHT), bindable]
+    HRESULT dialogHeight([out, retval] VARIANT *p);
+
+    [propget, id(DISPID_IHTMLDIALOG_DIALOGARGUMENTS)]
+    HRESULT dialogArguments([out, retval] VARIANT *p);
+
+    [propget, id(DISPID_IHTMLDIALOG_MENUARGUMENTS)]
+    HRESULT menuArguments([out, retval] VARIANT *p);
+
+    [propput, id(DISPID_IHTMLDIALOG_RETURNVALUE)]
+    HRESULT returnValue([in] VARIANT v);
+
+    [propget, id(DISPID_IHTMLDIALOG_RETURNVALUE)]
+    HRESULT returnValue([out, retval] VARIANT *p);
+
+    [id(DISPID_IHTMLDIALOG_CLOSE)]
+    HRESULT close();
+
+    [id(DISPID_IHTMLDIALOG_TOSTRING)]
+    HRESULT toString([out, retval] BSTR *p);
+}
+
+/*****************************************************************************
+ *    IHTMLDialog2 interface
+ */
+[
+    odl,
+    oleautomation,
+    dual,
+    uuid(3050f5e0-98b5-11cf-bb82-00aa00bdce0b)
+]
+interface IHTMLDialog2 : IDispatch
+{
+    [propput, id(DISPID_IHTMLDIALOG2_STATUS), hidden]
+    HRESULT status([in] BSTR v);
+
+    [propget, id(DISPID_IHTMLDIALOG2_STATUS), hidden]
+    HRESULT status([out, retval] BSTR *p);
+
+    [propput, id(DISPID_IHTMLDIALOG2_RESIZABLE), hidden]
+    HRESULT resizable([in] BSTR v);
+
+    [propget, id(DISPID_IHTMLDIALOG2_RESIZABLE), hidden]
+    HRESULT resizable([out, retval] BSTR *p);
+}
+
+/*****************************************************************************
+ *    IHTMLDialog3 interface
+ */
+[
+    odl,
+    oleautomation,
+    dual,
+    uuid(3050f388-98b5-11cf-bb82-00aa00bdce0b)
+]
+interface IHTMLDialog3 : IDispatch
+{
+    [propput, id(DISPID_IHTMLDIALOG3_UNADORNED), hidden]
+    HRESULT unadorned([in] BSTR v);
+
+    [propget, id(DISPID_IHTMLDIALOG3_UNADORNED), hidden]
+    HRESULT unadorned([out, retval] BSTR *p);
+
+    [propput, id(DISPID_IHTMLDIALOG3_DIALOGHIDE)]
+    HRESULT dialogHide([in] BSTR v);
+
+    [propget, id(DISPID_IHTMLDIALOG3_DIALOGHIDE)]
+    HRESULT dialogHide([out, retval] BSTR *p);
+}
+
+[
+    noncreatable,
+    uuid(3050f28a-98b5-11cf-bb82-00aa00bdce0b)
+]
+coclass HTMLDialog
+{
+    [default] interface IHTMLDialog;
+}
+
 } /* library MSHTML */
 
 interface IOleCommandTarget;
