@@ -1,0 +1,3 @@
+TESTDLL   = jview.exe
+
+SOURCES = options.c
