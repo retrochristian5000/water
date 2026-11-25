@@ -84,6 +84,43 @@ static void test_gecko_opt_out(void)
             "Failed to restore MSHTML backend setting.\n");
 }
 
+/* Test WATER's preflight without opening a dialog or loading a renderer.
+ * The native HRESULT for a NULL moniker has not been established. */
+static void test_show_html_dialog_invalid_moniker(void)
+{
+    HRESULT (WINAPI *show_html_dialog)(HWND, IMoniker *, VARIANT *, WCHAR *, VARIANT *);
+    HMODULE module;
+    VARIANT in, out;
+    HRESULT hr;
+
+    if(strcmp(winetest_platform, "wine")) {
+        skip("WATER-specific invalid moniker handling.\n");
+        return;
+    }
+
+    module = LoadLibraryW(L"mshtml.dll");
+    ok(module != NULL, "Could not load mshtml.dll: %lu\n", GetLastError());
+    if(!module)
+        return;
+
+    show_html_dialog = (void *)GetProcAddress(module, "ShowHTMLDialog");
+    ok(show_html_dialog != NULL, "ShowHTMLDialog export missing.\n");
+    if(show_html_dialog) {
+        hr = show_html_dialog(NULL, NULL, NULL, NULL, NULL);
+        ok(hr == E_INVALIDARG, "Missing moniker returned %#lx\n", hr);
+
+        V_VT(&in) = VT_I4;
+        V_I4(&in) = 42;
+        V_VT(&out) = VT_I4;
+        V_I4(&out) = 123;
+        hr = show_html_dialog(NULL, NULL, &in, NULL, &out);
+        ok(hr == E_INVALIDARG, "Missing moniker returned %#lx\n", hr);
+        ok(V_VT(&in) == VT_I4 && V_I4(&in) == 42, "Input variant changed.\n");
+        ok(V_VT(&out) == VT_I4 && V_I4(&out) == 123, "Output variant changed.\n");
+    }
+    FreeLibrary(module);
+}
+
 static void test_HTMLLoadOptions(void)
 {
     IHtmlLoadOptions *loadopts;
@@ -688,6 +725,7 @@ START_TEST(misc)
 {
     CoInitialize(NULL);
 
+    test_show_html_dialog_invalid_moniker();
     test_gecko_opt_out();
     test_HTMLLoadOptions();
     test_HTMLStorage();
