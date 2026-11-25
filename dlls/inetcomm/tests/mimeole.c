@@ -1627,6 +1627,75 @@ static void test_MimeOleObjectFromMoniker(void)
     }
 }
 
+static void test_GetTextBody(void)
+{
+    static const char message[] =
+        "MIME-Version: 1.0\r\n"
+        "Content-Type: multipart/alternative; boundary=example\r\n\r\n"
+        "--example\r\n"
+        "Content-Type: text/plain; charset=us-ascii\r\n\r\n"
+        "Hello\r\n"
+        "--example\r\n"
+        "Content-Type: text/html; charset=us-ascii\r\n"
+        "Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+        "<p>Hello=21</p>\r\n"
+        "--example--\r\n";
+    static const struct
+    {
+        DWORD type;
+        const char *body;
+    } tests[] = {
+        { TXT_PLAIN, "Hello" },
+        { TXT_HTML, "<p>Hello!</p>" },
+    };
+    IMimeMessage *msg;
+    IStream *source, *stream;
+    HBODY body;
+    char buf[64];
+    ULONG count;
+    unsigned int i;
+    HRESULT hr;
+
+    hr = MimeOleCreateMessage(NULL, &msg);
+    ok(hr == S_OK, "MimeOleCreateMessage failed: %#lx\n", hr);
+    if(FAILED(hr))
+        return;
+
+    /* WATER's empty-message error contract; native behavior is unverified. */
+    if(!strcmp(winetest_platform, "wine")) {
+        stream = (void *)0xdeadbeef;
+        body = (void *)0xdeadbeef;
+        hr = IMimeMessage_GetTextBody(msg, TXT_PLAIN, IET_BINARY, &stream, &body);
+        ok(hr == MIME_E_NO_DATA, "Empty message returned %#lx\n", hr);
+        ok(!stream && !body, "Unexpected outputs %p, %p\n", stream, body);
+    }
+
+    source = create_stream_from_string(message);
+    hr = IMimeMessage_Load(msg, source);
+    ok(hr == S_OK, "Load failed: %#lx\n", hr);
+    if(SUCCEEDED(hr)) {
+        for(i = 0; i < ARRAY_SIZE(tests); i++) {
+            stream = NULL;
+            body = NULL;
+            hr = IMimeMessage_GetTextBody(msg, tests[i].type, IET_BINARY, &stream, &body);
+            ok(hr == S_OK, "GetTextBody(%lu) failed: %#lx\n", tests[i].type, hr);
+            ok(stream != NULL && body != NULL, "Missing outputs %p, %p\n", stream, body);
+            if(hr != S_OK || !stream)
+                continue;
+
+            count = 0;
+            hr = IStream_Read(stream, buf, sizeof(buf), &count);
+            ok(SUCCEEDED(hr), "Read failed: %#lx\n", hr);
+            ok(count == strlen(tests[i].body), "Unexpected body size %lu\n", count);
+            ok(count == strlen(tests[i].body) && !memcmp(buf, tests[i].body, count),
+                    "Unexpected body data for type %lu\n", tests[i].type);
+            IStream_Release(stream);
+        }
+    }
+    IStream_Release(source);
+    IMimeMessage_Release(msg);
+}
+
 START_TEST(mimeole)
 {
     OleInitialize(NULL);
@@ -1636,6 +1705,7 @@ START_TEST(mimeole)
     test_SetData();
     test_Allocator();
     test_CreateMessage();
+    test_GetTextBody();
     test_MessageSetProp();
     test_MessageGetPropInfo();
     test_MessageOptions();
