@@ -1,0 +1,6 @@
+MODULE    = jview.exe
+
+EXTRADLLFLAGS = -mconsole -municode
+
+SOURCES = \
+	main.c
