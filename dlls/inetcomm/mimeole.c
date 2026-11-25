@@ -1704,6 +1704,13 @@ static HRESULT WINAPI MimeBody_GetData(
 
     TRACE("(%p)->(%d %p)\n", This, ietEncoding, ppStream);
 
+    if(!ppStream)
+        return E_INVALIDARG;
+    *ppStream = NULL;
+
+    if(!This->data)
+        return MIME_E_NO_DATA;
+
     if(This->encoding != ietEncoding) {
         switch(This->encoding) {
         case IET_BASE64:
@@ -2828,6 +2835,11 @@ static HRESULT WINAPI MimeMessage_GetTextBody(
 
     TRACE("(%p)->(%ld, %d, %p, %p)\n", iface, dwTxtType, ietEncoding, pStream, phBody);
 
+    if(!pStream || !phBody)
+        return E_INVALIDARG;
+    *pStream = NULL;
+    *phBody = NULL;
+
     find_struct.pszPriType = text;
 
     switch(dwTxtType)
@@ -2850,11 +2862,14 @@ static HRESULT WINAPI MimeMessage_GetTextBody(
         return hr;
     }
 
-    IMimeMessage_BindToObject(iface, hbody, &IID_IMimeBody, (void**)&mime_body);
+    hr = IMimeMessage_BindToObject(iface, hbody, &IID_IMimeBody, (void**)&mime_body);
+    if(hr != S_OK)
+        return hr;
 
-    IMimeBody_GetData(mime_body, ietEncoding, pStream);
-    *phBody = hbody;
+    hr = IMimeBody_GetData(mime_body, ietEncoding, pStream);
     IMimeBody_Release(mime_body);
+    if(hr == S_OK)
+        *phBody = hbody;
     return hr;
 }
 
