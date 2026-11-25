@@ -25,6 +25,7 @@
 #include "winbase.h"
 #include "ole2.h"
 #include "mshtml.h"
+#include "mshtmdid.h"
 #include "initguid.h"
 #include "optary.h"
 
@@ -119,6 +120,59 @@ static void test_show_html_dialog_invalid_moniker(void)
         ok(V_VT(&out) == VT_I4 && V_I4(&out) == 123, "Output variant changed.\n");
     }
     FreeLibrary(module);
+}
+
+/* Verify the public Automation metadata independently of the renderer. */
+static void test_html_dialog_typeinfo(void)
+{
+    static const struct
+    {
+        const IID *iid;
+        const WCHAR *name;
+        MEMBERID id;
+    } tests[] = {
+        { &IID_IHTMLDialog, L"dialogTop", DISPID_IHTMLDIALOG_DIALOGTOP },
+        { &IID_IHTMLDialog, L"dialogLeft", DISPID_IHTMLDIALOG_DIALOGLEFT },
+        { &IID_IHTMLDialog, L"dialogWidth", DISPID_IHTMLDIALOG_DIALOGWIDTH },
+        { &IID_IHTMLDialog, L"dialogHeight", DISPID_IHTMLDIALOG_DIALOGHEIGHT },
+        { &IID_IHTMLDialog, L"dialogArguments", DISPID_IHTMLDIALOG_DIALOGARGUMENTS },
+        { &IID_IHTMLDialog, L"menuArguments", DISPID_IHTMLDIALOG_MENUARGUMENTS },
+        { &IID_IHTMLDialog, L"returnValue", DISPID_IHTMLDIALOG_RETURNVALUE },
+        { &IID_IHTMLDialog, L"close", DISPID_IHTMLDIALOG_CLOSE },
+        { &IID_IHTMLDialog, L"toString", DISPID_IHTMLDIALOG_TOSTRING },
+        { &IID_IHTMLDialog2, L"status", DISPID_IHTMLDIALOG2_STATUS },
+        { &IID_IHTMLDialog2, L"resizable", DISPID_IHTMLDIALOG2_RESIZABLE },
+        { &IID_IHTMLDialog3, L"unadorned", DISPID_IHTMLDIALOG3_UNADORNED },
+        { &IID_IHTMLDialog3, L"dialogHide", DISPID_IHTMLDIALOG3_DIALOGHIDE },
+    };
+    ITypeLib *lib;
+    ITypeInfo *info;
+    unsigned int i;
+    MEMBERID id;
+    WCHAR *name;
+    HRESULT hr;
+
+    hr = LoadRegTypeLib(&LIBID_MSHTML, 4, 0, LOCALE_SYSTEM_DEFAULT, &lib);
+    ok(hr == S_OK, "Could not load MSHTML type library: %#lx\n", hr);
+    if(FAILED(hr))
+        return;
+
+    for(i = 0; i < ARRAY_SIZE(tests); i++) {
+        hr = ITypeLib_GetTypeInfoOfGuid(lib, tests[i].iid, &info);
+        ok(hr == S_OK, "Dialog interface %s missing: %#lx\n", wine_dbgstr_guid(tests[i].iid), hr);
+        if(FAILED(hr))
+            continue;
+
+        name = (WCHAR *)tests[i].name;
+        id = DISPID_UNKNOWN;
+        hr = ITypeInfo_GetIDsOfNames(info, &name, 1, &id);
+        ok(hr == S_OK, "Could not resolve %s: %#lx\n", wine_dbgstr_w(name), hr);
+        ok(id == tests[i].id, "Unexpected DISPID for %s: %#lx, expected %#lx\n",
+                wine_dbgstr_w(name), id, tests[i].id);
+        ITypeInfo_Release(info);
+    }
+
+    ITypeLib_Release(lib);
 }
 
 static void test_HTMLLoadOptions(void)
@@ -725,6 +779,7 @@ START_TEST(misc)
 {
     CoInitialize(NULL);
 
+    test_html_dialog_typeinfo();
     test_show_html_dialog_invalid_moniker();
     test_gecko_opt_out();
     test_HTMLLoadOptions();
