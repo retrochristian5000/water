@@ -1220,9 +1220,14 @@ static HRESULT WINAPI OmNavigator_javaEnabled(IOmNavigator *iface, VARIANT_BOOL 
 {
     OmNavigator *This = impl_from_IOmNavigator(iface);
 
-    FIXME("(%p)->(%p) semi-stub\n", This, enabled);
+    TRACE("(%p)->(%p)\n", This, enabled);
 
-    *enabled = VARIANT_TRUE;
+    if(!enabled)
+        return E_INVALIDARG;
+
+    /* No Java applet runtime is implemented by this HTML host. Do not
+     * advertise Java support based on document mode or JVM installation. */
+    *enabled = VARIANT_FALSE;
     return S_OK;
 }
 
