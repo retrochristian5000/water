@@ -45,6 +45,13 @@ START_TEST(msjava)
     if(!get_created || !get_defaults || !create_vm || !can_unload || !get_class)
         goto done;
 
+    /* Match the observed export ordinals of MSJVM 5.00.3810. */
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(147)) == (FARPROC)can_unload, "Wrong unload ordinal\n");
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(148)) == (FARPROC)get_class, "Wrong class ordinal\n");
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(241)) == (FARPROC)create_vm, "Wrong create ordinal\n");
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(242)) == (FARPROC)get_created, "Wrong enumerate ordinal\n");
+    ok(GetProcAddress(module, MAKEINTRESOURCEA(243)) == (FARPROC)get_defaults, "Wrong defaults ordinal\n");
+
     count = -1;
     ret = get_created(NULL, 0, &count);
     ok(ret == 0 && count == 0, "Enumeration returned %d, count %d\n", ret, count);
