@@ -1,0 +1,3 @@
+TESTDLL   = msjava.dll
+
+SOURCES = msjava.c
