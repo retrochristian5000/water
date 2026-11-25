@@ -1,0 +1,4 @@
+MODULE    = msjava.dll
+IMPORTLIB = msjava
+
+SOURCES = main.c
