@@ -12,12 +12,12 @@
 
 #include <stdarg.h>
 #include <stdlib.h>
-#include <wchar.h>
 #include <windows.h>
 #include <ole2.h>
 #include <commdlg.h>
 #include <shellapi.h>
 #include <shlwapi.h>
+#include "initguid.h"
 #include "mimeole.h"
 
 #define MAX_MESSAGE_SIZE (8 * 1024 * 1024)
@@ -195,7 +195,7 @@ static void open_message(HWND window, const WCHAR *path)
 
     hr = load_message(path, &text, &html_source);
     if(hr != S_OK) {
-        swprintf(error, ARRAY_SIZE(error), L"Unable to read message (0x%08lx).", hr);
+        wsprintfW(error, L"Unable to read message (0x%08lx).", hr);
         MessageBoxW(window, error, L"WATER Outlook Express", MB_OK | MB_ICONERROR);
         return;
     }
