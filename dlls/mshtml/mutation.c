@@ -170,7 +170,7 @@ static PRUnichar *handle_insert_comment(HTMLDocumentNode *doc, const PRUnichar *
             break;
         return NULL;
     case CMP_GTE:
-        if(compat_version >= majorv || (compat_version == majorv && !minorv))
+        if(compat_version > majorv || (compat_version == majorv && !minorv))
             break;
         return NULL;
     }
