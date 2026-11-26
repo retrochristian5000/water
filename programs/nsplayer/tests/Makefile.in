@@ -1,3 +1,5 @@
 TESTDLL   = nsplayer.exe
 
-SOURCES = player.c
+SOURCES = \
+	nsc.c \
+	player.c
