@@ -725,6 +725,65 @@ static void test_playlist(void)
     IWMPPlayer4_Release(player);
 }
 
+/* Exercise actual Windows Media playback, not just URL assignment. */
+static void test_windows_media_format(void)
+{
+    IWMPPlayer4 *player;
+    IWMPSettings *settings = NULL;
+    IWMPControls *controls = NULL;
+    IWMPMedia *media = NULL;
+    BSTR filename = NULL;
+    double duration = 0;
+    HRESULT hr;
+
+    /* Native playback may open a separate video window; the synchronous
+     * duration expectation below is specific to WATER's DirectShow path. */
+    if(strcmp(winetest_platform, "wine"))
+        return;
+
+    hr = CoCreateInstance(&CLSID_WindowsMediaPlayer, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IWMPPlayer4, (void **)&player);
+    ok(hr == S_OK, "Player creation failed: %#lx\n", hr);
+    if(FAILED(hr)) return;
+
+    hr = IWMPPlayer4_get_settings(player, &settings);
+    ok(hr == S_OK, "Settings unavailable: %#lx\n", hr);
+    if(FAILED(hr)) goto done;
+    hr = IWMPSettings_put_autoStart(settings, VARIANT_FALSE);
+    ok(hr == S_OK, "Disabling autoStart failed: %#lx\n", hr);
+    if(FAILED(hr)) goto done;
+    filename = SysAllocString(load_resource(L"test.wmv"));
+    if(!filename) goto done;
+    hr = IWMPPlayer4_put_URL(player, filename);
+    ok(hr == S_OK, "WMV URL assignment failed: %#lx\n", hr);
+    if(FAILED(hr)) goto done;
+    hr = IWMPPlayer4_get_controls(player, &controls);
+    ok(hr == S_OK, "Controls unavailable: %#lx\n", hr);
+    if(FAILED(hr)) goto done;
+
+    hr = IWMPControls_play(controls);
+    ok(hr == S_OK, "WMV1/WMA1 playback failed: %#lx\n", hr);
+    if(hr == S_OK) {
+        hr = IWMPPlayer4_get_currentMedia(player, &media);
+        ok(hr == S_OK, "Current media unavailable: %#lx\n", hr);
+        if(hr == S_OK && media) {
+            hr = IWMPMedia_get_duration(media, &duration);
+            ok(hr == S_OK && duration > 0.0, "WMV duration unavailable: %#lx, %f\n", hr, duration);
+        }
+        IWMPControls_stop(controls);
+    }
+
+done:
+    if(media) IWMPMedia_Release(media);
+    if(controls) IWMPControls_Release(controls);
+    if(settings) IWMPSettings_Release(settings);
+    IWMPPlayer4_Release(player);
+    if(filename) {
+        DeleteFileW(filename);
+        SysFreeString(filename);
+    }
+}
+
 START_TEST(media)
 {
     CoInitialize(NULL);
@@ -736,6 +795,7 @@ START_TEST(media)
     test_playlist();
     test_media_item();
     test_player_url();
+    test_windows_media_format();
     if (test_wmp()) {
         test_completion_event();
     } else {
