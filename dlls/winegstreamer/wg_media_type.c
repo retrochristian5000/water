@@ -633,6 +633,9 @@ static NTSTATUS wma_wave_format_from_gst_caps(const GstCaps *caps, WAVEFORMATEX 
         return wave_format_ex_from_gst_caps(caps, WAVE_FORMAT_WMAUDIO2, 0, sizeof(WMAUDIO2WAVEFORMAT), format, format_size);
     if (wmaversion == 3)
         return wave_format_ex_from_gst_caps(caps, WAVE_FORMAT_WMAUDIO3, 0, sizeof(WMAUDIO3WAVEFORMAT), format, format_size);
+    if (wmaversion == 4)
+        return wave_format_ex_from_gst_caps(caps, WAVE_FORMAT_WMAUDIO_LOSSLESS, 0,
+                sizeof(WMAUDIO3WAVEFORMAT), format, format_size);
 
     GST_FIXME("Unsupported wmaversion %u", wmaversion);
     return STATUS_NOT_IMPLEMENTED;
