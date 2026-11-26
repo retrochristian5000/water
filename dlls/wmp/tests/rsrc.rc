@@ -24,3 +24,7 @@ test.mp3 RCDATA "test.mp3"
 /* ffmpeg -ar 48000 -t 1 -f s16le -acodec pcm_s16le -ac 2 -i /dev/zero -acodec libmp3lame -aq 4 test1s.mp3 */
 /* @makedep: test1s.mp3 */
 test1s.mp3 RCDATA "test1s.mp3"
+
+/* Reuse the existing WMV1/WMA1 ASF fixture instead of storing a second copy. */
+/* @makedep: ../../qasf/tests/test.wmv */
+test.wmv RCDATA "../../qasf/tests/test.wmv"
