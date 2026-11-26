@@ -74,13 +74,21 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
         ERR("Could not report %s service status: %lu.\n", debugstr_w(name), GetLastError());
 }
 
+/* Keep the FTP service entry independent of the other IIS backends.
+ * Until configuration, authentication and transport are available, the
+ * common stopped-status path must not advertise a running FTP service. */
+static void WINAPI ftp_service_main(DWORD argc, WCHAR **argv)
+{
+    service_main(argc, argv);
+}
+
 int __cdecl wmain(int argc, WCHAR **argv)
 {
     SERVICE_TABLE_ENTRYW table[] =
     {
         { iisadminW, service_main },
         { w3svcW, service_main },
-        { msftpsvcW, service_main },
+        { msftpsvcW, ftp_service_main },
         { smtpsvcW, service_main },
         { nntpsvcW, service_main },
         { NULL, NULL }
