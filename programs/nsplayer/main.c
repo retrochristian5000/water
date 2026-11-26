@@ -22,6 +22,7 @@
 #include <oleauto.h>
 #include <commdlg.h>
 #include "nsplayer.h"
+#include "nsc.h"
 
 #include "wine/debug.h"
 
@@ -157,9 +158,63 @@ static void show_error(HRESULT hr)
     MessageBoxW(NULL, message, L"NetShow Player", MB_OK | MB_ICONERROR);
 }
 
+/* NSC files configure a broadcast, not a DirectShow media file. Do not
+ * connect to addresses or follow fallback/logging URLs during inspection. */
+static HRESULT inspect_station(const WCHAR *path)
+{
+    struct nsc_station station;
+    LARGE_INTEGER size;
+    HANDLE file;
+    DWORD read;
+    char *data;
+    enum nsc_result ret;
+    HRESULT hr;
+    WCHAR message[256];
+
+    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if(file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    if(!GetFileSizeEx(file, &size)) {
+        hr = HRESULT_FROM_WIN32(GetLastError());
+        CloseHandle(file);
+        return hr;
+    }
+    if(size.QuadPart <= 0 || size.QuadPart > NSC_MAX_SIZE) {
+        CloseHandle(file);
+        return HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+    }
+    if(!(data = malloc((size_t)size.QuadPart + 1))) {
+        CloseHandle(file);
+        return E_OUTOFMEMORY;
+    }
+    if(!ReadFile(file, data, (DWORD)size.QuadPart, &read, NULL))
+        hr = HRESULT_FROM_WIN32(GetLastError());
+    else if(read != size.QuadPart)
+        hr = HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+    else {
+        data[read] = 0;
+        ret = nsc_parse(data, read, &station);
+        if(ret == NSC_OK) {
+            swprintf(message, ARRAY_SIZE(message),
+                    L"Station: %hs:%u\\nStream formats: %u\\n\\nMulticast playback is not implemented.",
+                    station.address, station.port, station.formats);
+            MessageBoxW(NULL, message, L"NetShow Channel", MB_OK | MB_ICONINFORMATION);
+            hr = S_OK; /* successful inspection, not playback */
+        }else if(ret == NSC_NOMEM)
+            hr = E_OUTOFMEMORY;
+        else if(ret == NSC_UNSUPPORTED)
+            hr = HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
+        else
+            hr = HRESULT_FROM_WIN32(ERROR_INVALID_DATA);
+    }
+    free(data);
+    CloseHandle(file);
+    return hr;
+}
+
 static HRESULT choose_file(WCHAR *path, DWORD capacity)
 {
     static const WCHAR filters[] = L"ASF media (*.asf)\0*.asf\0"
+            L"NetShow channels (*.nsc)\0*.nsc\0"
             L"All files (*.*)\0*.*\0";
     OPENFILENAMEW dialog = {0};
     DWORD error;
@@ -213,7 +268,13 @@ int __cdecl wmain(int argc, WCHAR *argv[])
         }
     }
 
-    hr = play_target(target);
+    {
+        const WCHAR *ext = wcsrchr(target, '.');
+        if(ext && !lstrcmpiW(ext, L".nsc"))
+            hr = inspect_station(target);
+        else
+            hr = play_target(target);
+    }
     if (FAILED(hr) && hr != E_ABORT)
         show_error(hr);
     CoUninitialize();
