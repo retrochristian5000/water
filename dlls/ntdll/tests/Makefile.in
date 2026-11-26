@@ -30,5 +30,6 @@ SOURCES = \
 	threadpool.c \
 	time.c \
 	unwind.c \
+	version.c \
 	virtual.c \
 	wow64.c
