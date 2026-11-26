@@ -55,6 +55,9 @@ typedef enum
     WIN81,   /* Windows 8.1 */
     WIN10,   /* Windows 10 */
     WIN11,   /* Windows 11 */
+    NT351_SERVER, /* Windows NT Server 3.51 */
+    NT40_SERVER,  /* Windows NT Server 4.0 */
+    NT2K_SERVER,  /* Windows 2000 Server */
     NB_WINDOWS_VERSIONS
 } WINDOWS_VERSION;
 
@@ -175,9 +178,24 @@ static const RTL_OSVERSIONINFOEXW VersionData[NB_WINDOWS_VERSIONS] =
         sizeof(RTL_OSVERSIONINFOEXW), 10, 0, 22000, VER_PLATFORM_WIN32_NT,
         L"", 0, 0, VER_SUITE_SINGLEUSERTS, VER_NT_WORKSTATION, 0
     },
+    /* NT351_SERVER */
+    {
+        sizeof(RTL_OSVERSIONINFOEXW), 3, 51, 1057, VER_PLATFORM_WIN32_NT,
+        L"Service Pack 5", 5, 0, 0, VER_NT_SERVER, 0
+    },
+    /* NT40_SERVER */
+    {
+        sizeof(RTL_OSVERSIONINFOEXW), 4, 0, 1381, VER_PLATFORM_WIN32_NT,
+        L"Service Pack 6a", 6, 0, 0, VER_NT_SERVER, 0
+    },
+    /* NT2K_SERVER */
+    {
+        sizeof(RTL_OSVERSIONINFOEXW), 5, 0, 2195, VER_PLATFORM_WIN32_NT,
+        L"Service Pack 4", 4, 0, 0, VER_NT_SERVER, 0
+    },
 };
 
-static const struct { WCHAR name[12]; WINDOWS_VERSION ver; } version_names[] =
+static const struct { WCHAR name[16]; WINDOWS_VERSION ver; } version_names[] =
 {
     { L"win20", WIN20 },
     { L"win30", WIN30 },
@@ -187,6 +205,9 @@ static const struct { WCHAR name[12]; WINDOWS_VERSION ver; } version_names[] =
     { L"winme", WINME },
     { L"nt351", NT351 },
     { L"nt40", NT40 },
+    { L"nt351server", NT351_SERVER },
+    { L"nt40server", NT40_SERVER },
+    { L"win2kserver", NT2K_SERVER },
     { L"win2000", NT2K },
     { L"win2k", NT2K },
     { L"nt2k", NT2K },
