@@ -5306,6 +5306,54 @@ static void test_default_sync_source(void)
     ok(source.ref == 1, "Got outstanding refcount %ld.\n", source.ref);
 }
 
+/* ASF is a container signature, not a NetShow or WMP application identity. */
+static void test_asf_source_type(void)
+{
+    static const char header[] = {
+        0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11,
+        0xa6, 0xd9, 0x00, 0xaa, 0x00, 0x62, 0xce, 0x6c
+    };
+    IFilterGraph2 *graph;
+    IBaseFilter *filter;
+    IFileSourceFilter *source;
+    AM_MEDIA_TYPE mt = {0};
+    WCHAR *filename, *path = NULL;
+    CLSID clsid;
+    HRESULT hr;
+
+    /* WATER currently uses the async reader and shared splitter path.
+     * Native Windows may select a version-specific ASF source instead. */
+    if(strcmp(winetest_platform, "wine"))
+        return;
+
+    filename = create_file(L"asf_signature.bin", header, sizeof(header));
+    graph = create_graph();
+    hr = IFilterGraph2_AddSourceFilter(graph, filename, NULL, &filter);
+    ok(hr == S_OK, "ASF source creation failed: %#lx.\n", hr);
+    if(SUCCEEDED(hr)) {
+        hr = IBaseFilter_GetClassID(filter, &clsid);
+        ok(hr == S_OK && IsEqualGUID(&clsid, &CLSID_AsyncReader), "Unexpected ASF source: %#lx.\n", hr);
+        hr = IBaseFilter_QueryInterface(filter, &IID_IFileSourceFilter, (void **)&source);
+        ok(hr == S_OK, "File source unavailable: %#lx.\n", hr);
+        if(SUCCEEDED(hr)) {
+            hr = IFileSourceFilter_GetCurFile(source, &path, &mt);
+            ok(hr == S_OK, "GetCurFile failed: %#lx.\n", hr);
+            if(SUCCEEDED(hr)) {
+                ok(IsEqualGUID(&mt.majortype, &MEDIATYPE_Stream), "Unexpected ASF major type.\n");
+                ok(IsEqualGUID(&mt.subtype, &MEDIASUBTYPE_Asf), "Unexpected ASF subtype %s.\n",
+                        wine_dbgstr_guid(&mt.subtype));
+            }
+            CoTaskMemFree(path);
+            FreeMediaType(&mt);
+            IFileSourceFilter_Release(source);
+        }
+        IFilterGraph2_RemoveFilter(graph, filter);
+        IBaseFilter_Release(filter);
+    }
+    IFilterGraph2_Release(graph);
+    DeleteFileW(filename);
+}
+
 static void test_add_source_filter(void)
 {
     static const char bogus_data[20] = {0xde, 0xad, 0xbe, 0xef};
@@ -7485,6 +7533,7 @@ START_TEST(filtergraph)
     test_graph_seeking();
     test_default_sync_source();
     test_add_source_filter();
+    test_asf_source_type();
     test_window_threading();
     test_autoplug_uyvy();
     test_set_notify_flags();
