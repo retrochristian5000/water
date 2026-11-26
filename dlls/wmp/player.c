@@ -93,37 +93,77 @@ static ULONG WINAPI WMPPlayer4_Release(IWMPPlayer4 *iface)
     return IOleObject_Release(&This->IOleObject_iface);
 }
 
+/* Use each interface's own dual type information and vtable. In particular,
+ * IWMPPlayer and IWMPPlayer4 have different layouts. */
+static HRESULT automation_type_count(UINT *count)
+{
+    if (!count) return E_POINTER;
+    *count = 1;
+    return S_OK;
+}
+
+static HRESULT automation_type_info(typeinfo_id tid, UINT index, ITypeInfo **info)
+{
+    if (!info) return E_POINTER;
+    *info = NULL;
+    if (index) return DISP_E_BADINDEX;
+    return get_typeinfo(tid, info);
+}
+
+static HRESULT automation_ids(typeinfo_id tid, REFIID riid, LPOLESTR *names,
+        UINT count, DISPID *ids)
+{
+    ITypeInfo *info;
+    HRESULT hr;
+
+    if (!IsEqualGUID(riid, &IID_NULL)) return DISP_E_UNKNOWNINTERFACE;
+    hr = get_typeinfo(tid, &info);
+    if (SUCCEEDED(hr)) {
+        hr = ITypeInfo_GetIDsOfNames(info, names, count, ids);
+        ITypeInfo_Release(info);
+    }
+    return hr;
+}
+
+static HRESULT automation_invoke(typeinfo_id tid, void *iface, DISPID id,
+        REFIID riid, WORD flags, DISPPARAMS *params, VARIANT *result,
+        EXCEPINFO *exception, UINT *arg_error)
+{
+    ITypeInfo *info;
+    HRESULT hr;
+
+    if (!IsEqualGUID(riid, &IID_NULL)) return DISP_E_UNKNOWNINTERFACE;
+    hr = get_typeinfo(tid, &info);
+    if (SUCCEEDED(hr)) {
+        hr = ITypeInfo_Invoke(info, iface, id, flags, params, result, exception, arg_error);
+        ITypeInfo_Release(info);
+    }
+    return hr;
+}
+
 static HRESULT WINAPI WMPPlayer4_GetTypeInfoCount(IWMPPlayer4 *iface, UINT *pctinfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer4(iface);
-    FIXME("(%p)->(%p)\n", This, pctinfo);
-    return E_NOTIMPL;
+    return automation_type_count(pctinfo);
 }
 
 static HRESULT WINAPI WMPPlayer4_GetTypeInfo(IWMPPlayer4 *iface, UINT iTInfo,
         LCID lcid, ITypeInfo **ppTInfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer4(iface);
-    FIXME("(%p)->(%u %ld %p)\n", This, iTInfo, lcid, ppTInfo);
-    return E_NOTIMPL;
+    return automation_type_info(IWMPPlayer4_tid, iTInfo, ppTInfo);
 }
 
 static HRESULT WINAPI WMPPlayer4_GetIDsOfNames(IWMPPlayer4 *iface, REFIID riid,
         LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer4(iface);
-    FIXME("(%p)->(%s %p %u %ld %p)\n", This, debugstr_guid(riid), rgszNames, cNames, lcid, rgDispId);
-    return E_NOTIMPL;
+    return automation_ids(IWMPPlayer4_tid, riid, rgszNames, cNames, rgDispId);
 }
 
 static HRESULT WINAPI WMPPlayer4_Invoke(IWMPPlayer4 *iface, DISPID dispIdMember,
         REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult,
         EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer4(iface);
-    FIXME("(%p)->(%ld %s %ld %x %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid), lcid,
-          wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-    return E_NOTIMPL;
+    return automation_invoke(IWMPPlayer4_tid, iface, dispIdMember, riid, wFlags,
+            pDispParams, pVarResult, pExcepInfo, puArgErr);
 }
 
 static HRESULT WINAPI WMPPlayer4_close(IWMPPlayer4 *iface)
@@ -490,35 +530,27 @@ static ULONG WINAPI WMPPlayer_Release(IWMPPlayer *iface)
 
 static HRESULT WINAPI WMPPlayer_GetTypeInfoCount(IWMPPlayer *iface, UINT *pctinfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer(iface);
-    return WMPPlayer4_GetTypeInfoCount(&This->IWMPPlayer4_iface, pctinfo);
+    return automation_type_count(pctinfo);
 }
 
 static HRESULT WINAPI WMPPlayer_GetTypeInfo(IWMPPlayer *iface, UINT iTInfo,
         LCID lcid, ITypeInfo **ppTInfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer(iface);
-
-    return WMPPlayer4_GetTypeInfo(&This->IWMPPlayer4_iface, iTInfo,
-        lcid, ppTInfo);
+    return automation_type_info(IWMPPlayer_tid, iTInfo, ppTInfo);
 }
 
 static HRESULT WINAPI WMPPlayer_GetIDsOfNames(IWMPPlayer *iface, REFIID riid,
         LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer(iface);
-    return WMPPlayer4_GetIDsOfNames(&This->IWMPPlayer4_iface, riid,
-        rgszNames, cNames, lcid, rgDispId);
+    return automation_ids(IWMPPlayer_tid, riid, rgszNames, cNames, rgDispId);
 }
 
 static HRESULT WINAPI WMPPlayer_Invoke(IWMPPlayer *iface, DISPID dispIdMember,
         REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult,
         EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPPlayer(iface);
-    return WMPPlayer4_Invoke(&This->IWMPPlayer4_iface, dispIdMember,
-        riid, lcid, wFlags, pDispParams, pVarResult,
-        pExcepInfo, puArgErr);
+    return automation_invoke(IWMPPlayer_tid, iface, dispIdMember, riid, wFlags,
+            pDispParams, pVarResult, pExcepInfo, puArgErr);
 }
 
 static HRESULT WINAPI WMPPlayer_close(IWMPPlayer *iface)
@@ -809,35 +841,27 @@ static ULONG WINAPI WMPSettings_Release(IWMPSettings *iface)
 
 static HRESULT WINAPI WMPSettings_GetTypeInfoCount(IWMPSettings *iface, UINT *pctinfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPSettings(iface);
-    FIXME("(%p)->(%p)\n", This, pctinfo);
-    return E_NOTIMPL;
+    return automation_type_count(pctinfo);
 }
 
 static HRESULT WINAPI WMPSettings_GetTypeInfo(IWMPSettings *iface, UINT iTInfo,
         LCID lcid, ITypeInfo **ppTInfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPSettings(iface);
-    FIXME("(%p)->(%u %ld %p)\n", This, iTInfo, lcid, ppTInfo);
-    return E_NOTIMPL;
+    return automation_type_info(IWMPSettings_tid, iTInfo, ppTInfo);
 }
 
 static HRESULT WINAPI WMPSettings_GetIDsOfNames(IWMPSettings *iface, REFIID riid,
         LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPSettings(iface);
-    FIXME("(%p)->(%s %p %u %ld %p)\n", This, debugstr_guid(riid), rgszNames, cNames, lcid, rgDispId);
-    return E_NOTIMPL;
+    return automation_ids(IWMPSettings_tid, riid, rgszNames, cNames, rgDispId);
 }
 
 static HRESULT WINAPI WMPSettings_Invoke(IWMPSettings *iface, DISPID dispIdMember,
         REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult,
         EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPSettings(iface);
-    FIXME("(%p)->(%ld %s %ld %x %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid), lcid,
-          wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-    return E_NOTIMPL;
+    return automation_invoke(IWMPSettings_tid, iface, dispIdMember, riid, wFlags,
+            pDispParams, pVarResult, pExcepInfo, puArgErr);
 }
 
 static HRESULT WINAPI WMPSettings_get_isAvailable(IWMPSettings *iface, BSTR item, VARIANT_BOOL *p)
@@ -1410,35 +1434,27 @@ static ULONG WINAPI WMPControls_Release(IWMPControls *iface)
 
 static HRESULT WINAPI WMPControls_GetTypeInfoCount(IWMPControls *iface, UINT *pctinfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPControls(iface);
-    FIXME("(%p)->(%p)\n", This, pctinfo);
-    return E_NOTIMPL;
+    return automation_type_count(pctinfo);
 }
 
 static HRESULT WINAPI WMPControls_GetTypeInfo(IWMPControls *iface, UINT iTInfo,
         LCID lcid, ITypeInfo **ppTInfo)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPControls(iface);
-    FIXME("(%p)->(%u %ld %p)\n", This, iTInfo, lcid, ppTInfo);
-    return E_NOTIMPL;
+    return automation_type_info(IWMPControls_tid, iTInfo, ppTInfo);
 }
 
 static HRESULT WINAPI WMPControls_GetIDsOfNames(IWMPControls *iface, REFIID riid,
         LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPControls(iface);
-    FIXME("(%p)->(%s %p %u %ld %p)\n", This, debugstr_guid(riid), rgszNames, cNames, lcid, rgDispId);
-    return E_NOTIMPL;
+    return automation_ids(IWMPControls_tid, riid, rgszNames, cNames, rgDispId);
 }
 
 static HRESULT WINAPI WMPControls_Invoke(IWMPControls *iface, DISPID dispIdMember,
         REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult,
         EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-    WindowsMediaPlayer *This = impl_from_IWMPControls(iface);
-    FIXME("(%p)->(%ld %s %ld %x %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid), lcid,
-          wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-    return E_NOTIMPL;
+    return automation_invoke(IWMPControls_tid, iface, dispIdMember, riid, wFlags,
+            pDispParams, pVarResult, pExcepInfo, puArgErr);
 }
 
 static HRESULT WINAPI WMPControls_get_isAvailable(IWMPControls *iface, BSTR bstrItem, VARIANT_BOOL *pIsAvailable)
