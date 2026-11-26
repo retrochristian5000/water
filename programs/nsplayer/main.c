@@ -15,6 +15,8 @@
 
 #define COBJMACROS
 
+#include <stdio.h>
+#include <wchar.h>
 #include <windows.h>
 #include <dshow.h>
 #include <oleauto.h>
@@ -157,7 +159,7 @@ static void show_error(HRESULT hr)
 
 static HRESULT choose_file(WCHAR *path, DWORD capacity)
 {
-    static const WCHAR filters[] = L"NetShow media (*.asf;*.asx;*.nsc)\0*.asf;*.asx;*.nsc\0"
+    static const WCHAR filters[] = L"ASF media (*.asf)\0*.asf\0"
             L"All files (*.*)\0*.*\0";
     OPENFILENAMEW dialog = {0};
     DWORD error;
