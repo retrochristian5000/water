@@ -1694,27 +1694,18 @@ static BOOL HTTP_DomainMatches(LPCWSTR server, substr_t domain)
 
 static BOOL HTTP_ShouldBypassProxy(appinfo_t *lpwai, LPCWSTR server)
 {
-    LPCWSTR ptr;
-    BOOL ret = FALSE;
+    const WCHAR *ptr, *end;
 
-    if (!lpwai->proxyBypass) return FALSE;
-    ptr = lpwai->proxyBypass;
-    while(1) {
-        LPCWSTR tmp = ptr;
-
-        ptr = wcschr( ptr, ';' );
-        if (!ptr)
-            ptr = wcschr( tmp, ' ' );
-        if (!ptr)
-            ptr = tmp + lstrlenW(tmp);
-        ret = HTTP_DomainMatches( server, substr(tmp, ptr-tmp) );
-        if (ret || !*ptr)
-            break;
-        ptr++;
+    for (ptr = lpwai->proxyBypass; ptr && *ptr; ptr = end)
+    {
+        ptr += wcsspn(ptr, L"; \t\r\n");
+        if (!*ptr) break;
+        end = ptr + wcscspn(ptr, L"; \t\r\n");
+        if (HTTP_DomainMatches(server, substr(ptr, end - ptr)))
+            return TRUE;
     }
-    return ret;
+    return FALSE;
 }
-
 /***********************************************************************
  *           HTTP_DealWithProxy
  */
