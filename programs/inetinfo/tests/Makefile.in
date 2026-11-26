@@ -1,0 +1,3 @@
+TESTDLL = inetinfo.exe
+
+SOURCES = ftp.c
