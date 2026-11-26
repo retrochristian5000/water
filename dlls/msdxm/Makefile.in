@@ -1,0 +1,4 @@
+MODULE    = msdxm.dll
+IMPORTS   = ole32 oleaut32 uuid
+
+SOURCES = main.c
