@@ -195,7 +195,7 @@ static HRESULT inspect_station(const WCHAR *path)
         ret = nsc_parse(data, read, &station);
         if(ret == NSC_OK) {
             swprintf(message, ARRAY_SIZE(message),
-                    L"Station: %hs:%u\\nStream formats: %u\\n\\nMulticast playback is not implemented.",
+                    L"Station: %hs:%u\nStream formats: %u\n\nMulticast playback is not implemented.",
                     station.address, station.port, station.formats);
             MessageBoxW(NULL, message, L"NetShow Channel", MB_OK | MB_ICONINFORMATION);
             hr = S_OK; /* successful inspection, not playback */
@@ -271,7 +271,7 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     {
         const WCHAR *ext = wcsrchr(target, '.');
         if(ext && !lstrcmpiW(ext, L".nsc"))
-            hr = inspect_station(target);
+            hr = wcsstr(target, L"://") ? HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED) : inspect_station(target);
         else
             hr = play_target(target);
     }
