@@ -1,0 +1,3 @@
+TESTDLL   = nsplayer.exe
+
+SOURCES = player.c
