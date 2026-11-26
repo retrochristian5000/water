@@ -26,6 +26,10 @@
 
 #define TID_LIST \
     XIID(NULL) \
+    XIID(IWMPPlayer4) \
+    XIID(IWMPPlayer) \
+    XIID(IWMPSettings) \
+    XIID(IWMPControls) \
     CTID(WindowsMediaPlayer)
 
 typedef enum {
