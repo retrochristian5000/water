@@ -18,6 +18,8 @@
 #include <windows.h>
 #include <dshow.h>
 #include <oleauto.h>
+#include <commdlg.h>
+#include "nsplayer.h"
 
 #include "wine/debug.h"
 
@@ -25,17 +27,20 @@ WINE_DEFAULT_DEBUG_CHANNEL(nsplayer);
 
 static HRESULT wait_for_completion(IMediaEvent *event)
 {
+    OAEVENT graph_event;
     HANDLE event_handle;
     HRESULT hr = S_OK;
     BOOL done = FALSE;
 
-    hr = IMediaEvent_GetEventHandle(event, (OAEVENT *)&event_handle);
+    hr = IMediaEvent_GetEventHandle(event, &graph_event);
     if (FAILED(hr))
         return hr;
+    event_handle = (HANDLE)graph_event;
+    if (!event_handle) return E_UNEXPECTED;
 
     while (!done)
     {
-        DWORD wait = MsgWaitForMultipleObjects(1, &event_handle, FALSE, INFINITE, QS_ALLINPUT);
+        DWORD wait = MsgWaitForMultipleObjectsEx(1, &event_handle, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
 
         if (wait == WAIT_OBJECT_0)
         {
@@ -49,23 +54,7 @@ static HRESULT wait_for_completion(IMediaEvent *event)
 
                 TRACE("media event %#lx\n", event_code);
 
-                switch (event_code)
-                {
-                case EC_COMPLETE:
-                    terminal = TRUE;
-                    break;
-
-                case EC_USERABORT:
-                    terminal = TRUE;
-                    break;
-
-                case EC_ERRORABORT:
-                    event_hr = (HRESULT)param1;
-                    if (SUCCEEDED(event_hr))
-                        event_hr = E_FAIL;
-                    terminal = TRUE;
-                    break;
-                }
+                terminal = nsplayer_terminal_event(event_code, param1, &event_hr);
 
                 IMediaEvent_FreeEventParams(event, event_code, param1, param2);
 
@@ -145,7 +134,11 @@ static HRESULT play_target(const WCHAR *target)
     if (SUCCEEDED(hr))
         hr = wait_for_completion(event);
 
-    IMediaControl_Stop(control);
+    {
+        HRESULT stop_hr = IMediaControl_Stop(control);
+        if (SUCCEEDED(hr) && FAILED(stop_hr))
+            hr = stop_hr;
+    }
     IMediaEvent_Release(event);
     IMediaControl_Release(control);
 
@@ -153,24 +146,74 @@ static HRESULT play_target(const WCHAR *target)
     return hr;
 }
 
+static void show_error(HRESULT hr)
+{
+    WCHAR message[128];
+
+    swprintf(message, ARRAY_SIZE(message), L"NetShow could not play the selected media (error 0x%08lx).",
+            (unsigned long)hr);
+    MessageBoxW(NULL, message, L"NetShow Player", MB_OK | MB_ICONERROR);
+}
+
+static HRESULT choose_file(WCHAR *path, DWORD capacity)
+{
+    static const WCHAR filters[] = L"NetShow media (*.asf;*.asx;*.nsc)\0*.asf;*.asx;*.nsc\0"
+            L"All files (*.*)\0*.*\0";
+    OPENFILENAMEW dialog = {0};
+    DWORD error;
+
+    dialog.lStructSize = sizeof(dialog);
+    dialog.lpstrFilter = filters;
+    dialog.lpstrFile = path;
+    dialog.nMaxFile = capacity;
+    dialog.lpstrTitle = L"NetShow Player - Open File";
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
+
+    if (GetOpenFileNameW(&dialog))
+        return S_OK;
+    if (!(error = CommDlgExtendedError()))
+        return S_FALSE;
+    WARN("Open file dialog failed: %#lx\n", error);
+    return E_FAIL;
+}
+
 int __cdecl wmain(int argc, WCHAR *argv[])
 {
+    WCHAR path[32768] = {0};
+    const WCHAR *target;
+    enum nsplayer_action action;
     HRESULT hr;
 
-    if (argc < 2)
+    action = nsplayer_get_action(argc, (const WCHAR *const *)argv);
+    if (action == NSPLAYER_HELP || action == NSPLAYER_INVALID)
     {
-        FIXME("NetShow Player UI without a target is not implemented yet\n");
-        return 0;
+        MessageBoxW(NULL, L"Usage: nsplayer.exe [media file or location]", L"NetShow Player",
+                MB_OK | (action == NSPLAYER_HELP ? MB_ICONINFORMATION : MB_ICONERROR));
+        return action == NSPLAYER_INVALID;
     }
 
     hr = CoInitialize(NULL);
     if (FAILED(hr))
     {
-        ERR("CoInitialize failed, hr %#lx\n", hr);
+        show_error(hr);
         return 1;
     }
 
-    hr = play_target(argv[1]);
+    target = argc > 1 ? argv[1] : path;
+    if (action == NSPLAYER_OPEN_DIALOG)
+    {
+        hr = choose_file(path, ARRAY_SIZE(path));
+        if (hr != S_OK)
+        {
+            if (FAILED(hr)) show_error(hr);
+            CoUninitialize();
+            return FAILED(hr);
+        }
+    }
+
+    hr = play_target(target);
+    if (FAILED(hr) && hr != E_ABORT)
+        show_error(hr);
     CoUninitialize();
 
     return FAILED(hr);
