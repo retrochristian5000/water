@@ -150,7 +150,8 @@ static inline int nsc_format_name(const char *s)
     return !*s;
 }
 
-/* Metadata inspection only: not a full ABNF validator or ASF demuxer.
+/* data must be a writable buffer of size + 1 bytes with a trailing NUL.
+ * Metadata inspection only: not a full ABNF validator or ASF demuxer.
  * Recognize the documented version 3.0 subset; ignore optional properties
  * rather than using them to initiate network connections or logging. */
 static inline enum nsc_result nsc_parse(char *data, size_t size, struct nsc_station *station)
