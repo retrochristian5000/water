@@ -3066,6 +3066,67 @@ out:
     close_request(&req);
 }
 
+/* Check routing decisions without connecting to a proxy or origin server. */
+static void test_proxy_list_selection(void)
+{
+    static const struct
+    {
+        const WCHAR *proxy, *bypass, *host;
+        BOOL use_proxy;
+    } cases[] =
+    {
+        {L"ftp=localhost:8081;http=localhost:8080", NULL, L"origin.invalid", TRUE},
+        {L" ; ftp=localhost:8081; \t HTTP=localhost:8080 ; ", NULL, L"origin.invalid", TRUE},
+        {L"ftp=localhost:8081;localhost:8080", NULL, L"origin.invalid", TRUE},
+        {L"ftp=localhost:8081", NULL, L"origin.invalid", FALSE},
+        {L"localhost:8080", L"other.invalid; origin.invalid", L"origin.invalid", FALSE},
+        {L"localhost:8080", L"other.invalid origin.invalid;third.invalid", L"origin.invalid", FALSE},
+        {L"localhost:8080", L";; \t<local> ; ", L"intranet", FALSE},
+        {L"localhost:8080", L"other.invalid; *.example.invalid", L"a.example.invalid", FALSE},
+        {L"localhost:8080", L"other.invalid; *.example.invalid", L"notexample.invalid", TRUE},
+    };
+    INTERNET_DIAGNOSTIC_SOCKET_INFO info;
+    HINTERNET session, connection, request;
+    unsigned int i;
+    DWORD size;
+    BOOL ret;
+
+    /* This diagnostic option is only used here to observe WATER's
+     * pre-connection routing decision, not native socket behaviour. */
+    if (strcmp(winetest_platform, "wine")) return;
+
+    for (i = 0; i < ARRAY_SIZE(cases); ++i)
+    {
+        winetest_push_context("proxy case %u", i);
+        session = InternetOpenW(L"winetest", INTERNET_OPEN_TYPE_PROXY, cases[i].proxy, cases[i].bypass, 0);
+        ok(!!session, "InternetOpen failed: %lu.\n", GetLastError());
+        if (session)
+        {
+            connection = InternetConnectW(session, cases[i].host, INTERNET_DEFAULT_HTTP_PORT,
+                    NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+            ok(!!connection, "InternetConnect failed: %lu.\n", GetLastError());
+            if (connection)
+            {
+                request = HttpOpenRequestW(connection, L"GET", L"/", NULL, NULL, NULL, 0, 0);
+                ok(!!request, "HttpOpenRequest failed: %lu.\n", GetLastError());
+                if (request)
+                {
+                    size = sizeof(info);
+                    ret = InternetQueryOptionW(request, INTERNET_OPTION_DIAGNOSTIC_SOCKET_INFO, &info, &size);
+                    ok(ret, "Diagnostic query failed: %lu.\n", GetLastError());
+                    if (ret)
+                        ok(!!(info.Flags & IDSI_FLAG_PROXY) == cases[i].use_proxy,
+                                "Unexpected proxy routing, flags %#lx.\n", info.Flags);
+                    InternetCloseHandle(request);
+                }
+                InternetCloseHandle(connection);
+            }
+            InternetCloseHandle(session);
+        }
+        winetest_pop_context();
+    }
+}
+
 static void test_proxy_direct(int port)
 {
     HINTERNET hi, hc, hr;
@@ -6928,6 +6989,7 @@ static void test_http_connection(void)
     test_basic_request(si.port, "GET", "/test1");
     test_proxy_indirect(si.port);
     test_proxy_direct(si.port);
+    test_proxy_list_selection();
     test_header_handling_order(si.port);
     test_basic_request(si.port, "POST", "/test5");
     test_basic_request(si.port, "RPC_IN_DATA", "/test5");
