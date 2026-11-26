@@ -506,54 +506,34 @@ static LONG INTERNET_SaveProxySettings( proxyinfo_t *lpwpi )
  */
 WCHAR *INTERNET_FindProxyForProtocol(LPCWSTR szProxy, LPCWSTR proto)
 {
-    WCHAR *ret = NULL;
-    const WCHAR *ptr;
+    const WCHAR *ptr, *end, *equal;
+    const WCHAR *fallback = NULL;
+    size_t fallback_len = 0, proto_len = wcslen(proto);
 
     TRACE("(%s, %s)\n", debugstr_w(szProxy), debugstr_w(proto));
 
-    /* First, look for the specified protocol (proto=scheme://host:port) */
-    for (ptr = szProxy; ptr && *ptr; )
+    /* Windows proxy lists may use semicolons or whitespace. Match only
+     * complete entries, and prefer a protocol-specific entry to a default. */
+    for (ptr = szProxy; ptr && *ptr; ptr = end)
     {
-        LPCWSTR end, equal;
-
-        if (!(end = wcschr(ptr, ' ')))
-            end = ptr + lstrlenW(ptr);
-        if ((equal = wcschr(ptr, '=')) && equal < end &&
-             equal - ptr == lstrlenW(proto) &&
-             !wcsnicmp(proto, ptr, lstrlenW(proto)))
+        ptr += wcsspn(ptr, L"; \t\r\n");
+        if (!*ptr) break;
+        end = ptr + wcscspn(ptr, L"; \t\r\n");
+        equal = wmemchr(ptr, '=', end - ptr);
+        if (equal)
         {
-            ret = strndupW(equal + 1, end - equal - 1);
-            TRACE("found proxy for %s: %s\n", debugstr_w(proto), debugstr_w(ret));
-            return ret;
+            if (equal - ptr == proto_len && equal + 1 < end && !wcsnicmp(ptr, proto, proto_len))
+                return strndupW(equal + 1, end - equal - 1);
         }
-        if (*end == ' ')
-            ptr = end + 1;
-        else
-            ptr = end;
+        else if (!fallback)
+        {
+            fallback = ptr;
+            fallback_len = end - ptr;
+        }
     }
 
-    /* It wasn't found: look for no protocol */
-    for (ptr = szProxy; ptr && *ptr; )
-    {
-        LPCWSTR end;
-
-        if (!(end = wcschr(ptr, ' ')))
-            end = ptr + lstrlenW(ptr);
-        if (!wcschr(ptr, '='))
-        {
-            ret = strndupW(ptr, end - ptr);
-            TRACE("found proxy for %s: %s\n", debugstr_w(proto), debugstr_w(ret));
-            return ret;
-        }
-        if (*end == ' ')
-            ptr = end + 1;
-        else
-            ptr = end;
-    }
-
-    return NULL;
+    return fallback ? strndupW(fallback, fallback_len) : NULL;
 }
-
 /***********************************************************************
  *           InternetInitializeAutoProxyDll   (WININET.@)
  *
