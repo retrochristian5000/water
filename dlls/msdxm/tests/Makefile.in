@@ -1,0 +1,4 @@
+TESTDLL   = msdxm.dll
+IMPORTS   = ole32 oleaut32 uuid
+
+SOURCES = msdxm.c
