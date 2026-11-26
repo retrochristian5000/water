@@ -1288,6 +1288,78 @@ static void test_web_params(IOleObject *oleobj)
     IPersistPropertyBag_Release(persist);
 }
 
+static void test_web_dispatch(IOleObject *oleobj)
+{
+    IDispatch *player, *settings;
+    ITypeInfo *info;
+    DISPID id, put_id = DISPID_PROPERTYPUT;
+    DISPPARAMS args = {0};
+    VARIANT value, result;
+    WCHAR *name;
+    UINT count = 0;
+    HRESULT hr;
+
+    hr = IOleObject_QueryInterface(oleobj, &IID_IDispatch, (void **)&player);
+    ok(hr == S_OK, "Player dispatch unavailable: %#lx\n", hr);
+    if(FAILED(hr))
+        return;
+
+    hr = IDispatch_GetTypeInfoCount(player, &count);
+    ok(hr == S_OK && count == 1, "Type info count: %#lx, %u\n", hr, count);
+    hr = IDispatch_GetTypeInfo(player, 0, LOCALE_USER_DEFAULT, &info);
+    ok(hr == S_OK, "Type info unavailable: %#lx\n", hr);
+    if(SUCCEEDED(hr))
+        ITypeInfo_Release(info);
+
+    name = L"settings";
+    hr = IDispatch_GetIDsOfNames(player, &IID_NULL, &name, 1, LOCALE_USER_DEFAULT, &id);
+    ok(hr == S_OK, "settings lookup failed: %#lx\n", hr);
+    if(FAILED(hr))
+        goto done;
+    VariantInit(&result);
+    hr = IDispatch_Invoke(player, id, &IID_NULL, LOCALE_USER_DEFAULT,
+            DISPATCH_PROPERTYGET, &args, &result, NULL, NULL);
+    ok(hr == S_OK && V_VT(&result) == VT_DISPATCH, "settings invoke: %#lx, vt %u\n",
+            hr, V_VT(&result));
+    if(hr == S_OK && V_VT(&result) == VT_DISPATCH && V_DISPATCH(&result)) {
+        settings = V_DISPATCH(&result);
+        name = L"autoStart";
+        hr = IDispatch_GetIDsOfNames(settings, &IID_NULL, &name, 1, LOCALE_USER_DEFAULT, &id);
+        ok(hr == S_OK, "autoStart lookup failed: %#lx\n", hr);
+        if(SUCCEEDED(hr)) {
+            VariantInit(&value);
+            V_VT(&value) = VT_BOOL;
+            V_BOOL(&value) = VARIANT_FALSE;
+            args.rgvarg = &value;
+            args.rgdispidNamedArgs = &put_id;
+            args.cArgs = args.cNamedArgs = 1;
+            hr = IDispatch_Invoke(settings, id, &IID_NULL, LOCALE_USER_DEFAULT,
+                    DISPATCH_PROPERTYPUT, &args, NULL, NULL, NULL);
+            ok(hr == S_OK, "autoStart put failed: %#lx\n", hr);
+            memset(&args, 0, sizeof(args));
+            VariantInit(&value);
+            hr = IDispatch_Invoke(settings, id, &IID_NULL, LOCALE_USER_DEFAULT,
+                    DISPATCH_PROPERTYGET, &args, &value, NULL, NULL);
+            ok(hr == S_OK && V_VT(&value) == VT_BOOL && V_BOOL(&value) == VARIANT_FALSE,
+                    "autoStart get failed: %#lx, vt %u\n", hr, V_VT(&value));
+            VariantClear(&value);
+            /* Restore the default for the remaining control tests. */
+            V_VT(&value) = VT_BOOL;
+            V_BOOL(&value) = VARIANT_TRUE;
+            args.rgvarg = &value;
+            args.rgdispidNamedArgs = &put_id;
+            args.cArgs = args.cNamedArgs = 1;
+            hr = IDispatch_Invoke(settings, id, &IID_NULL, LOCALE_USER_DEFAULT,
+                    DISPATCH_PROPERTYPUT, &args, NULL, NULL, NULL);
+            ok(hr == S_OK, "autoStart restore failed: %#lx\n", hr);
+        }
+    }
+    VariantClear(&result);
+
+done:
+    IDispatch_Release(player);
+}
+
 static void test_wmp(void)
 {
     IProvideClassInfo2 *class_info;
@@ -1425,6 +1497,7 @@ static void test_wmp(void)
 
     test_wmp_ifaces(oleobj);
     test_web_params(oleobj);
+    test_web_dispatch(oleobj);
 
     hres = IOleObject_DoVerb(oleobj, OLEIVERB_HIDE, NULL, &ClientSite, 0, container_hwnd, &pos);
     ok(hres == S_OK, "DoVerb failed: %08lx\n", hres);
